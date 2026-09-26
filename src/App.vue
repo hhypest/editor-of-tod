@@ -20,6 +20,10 @@ const signCount = computed(() =>
   ),
 )
 
+function formatMetres(value: number | null): string {
+  return value === null ? 'не указано' : `${value} м`
+}
+
 async function onFileSelected(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -152,6 +156,151 @@ function saveOriginal(): void {
           следующих этапах.
         </p>
       </section>
+
+      <section v-if="imported" class="panel" aria-labelledby="inspection-title">
+        <h2 id="inspection-title">Сверка перенесённых данных</h2>
+        <p class="hint">
+          Значения показаны из файла без проверки нормативов. Координаты объектов приведены в
+          условных единицах SVG, расстояния — в метрах. Коды привязки и стороны сохранены из
+          проекта.
+        </p>
+
+        <h3>Параметры</h3>
+        <dl>
+          <div>
+            <dt>Участок</dt>
+            <dd>{{ imported.scheme.parameters.locationText || 'не указано' }}</dd>
+          </div>
+          <div>
+            <dt>Направления</dt>
+            <dd>
+              {{ imported.scheme.parameters.directions.left }} /
+              {{ imported.scheme.parameters.directions.right }}
+            </dd>
+          </div>
+          <div>
+            <dt>Расстояния d300 / d250 / d150 / d50</dt>
+            <dd>
+              {{ formatMetres(imported.scheme.parameters.signDistancesMetres.d300) }} /
+              {{ formatMetres(imported.scheme.parameters.signDistancesMetres.d250) }} /
+              {{ formatMetres(imported.scheme.parameters.signDistancesMetres.d150) }} /
+              {{ formatMetres(imported.scheme.parameters.signDistancesMetres.d50) }}
+            </dd>
+          </div>
+          <div>
+            <dt>Ступени скорости</dt>
+            <dd>{{ imported.scheme.parameters.speedStagesKmh.join(' / ') }} км/ч</dd>
+          </div>
+          <div>
+            <dt>Жёлтый фон временных знаков</dt>
+            <dd>{{ imported.scheme.parameters.yellowTemporarySigns ? 'да' : 'нет' }}</dd>
+          </div>
+          <div>
+            <dt>Б.33: отвод / буфер / зона работ</dt>
+            <dd>
+              {{ imported.scheme.parameters.workZones.b33.taperMetres }} /
+              {{ imported.scheme.parameters.workZones.b33.bufferMetres }} /
+              {{ imported.scheme.parameters.workZones.b33.workMetres }} м
+            </dd>
+          </div>
+          <div>
+            <dt>Б.34: отвод / буфер / зона работ</dt>
+            <dd>
+              {{ imported.scheme.parameters.workZones.b34.taperMetres }} /
+              {{ imported.scheme.parameters.workZones.b34.bufferMetres }} /
+              {{ imported.scheme.parameters.workZones.b34.workMetres }} м
+            </dd>
+          </div>
+        </dl>
+
+        <details>
+          <summary>Реквизиты из исходного проекта</summary>
+          <dl>
+            <div>
+              <dt>Разработчик</dt>
+              <dd>
+                {{ imported.scheme.titleBlock.developer.organization }} ·
+                {{ imported.scheme.titleBlock.developer.name }} ·
+                {{ imported.scheme.titleBlock.developer.date }}
+              </dd>
+            </div>
+            <div>
+              <dt>Работы</dt>
+              <dd>
+                {{ imported.scheme.titleBlock.work.organization }} ·
+                {{ imported.scheme.titleBlock.work.description }} ·
+                {{ imported.scheme.titleBlock.work.period }}
+              </dd>
+            </div>
+            <div>
+              <dt>Ответственные</dt>
+              <dd>{{ imported.scheme.titleBlock.responsible.join(' · ') }}</dd>
+            </div>
+            <div>
+              <dt>Утверждение</dt>
+              <dd>
+                {{ imported.scheme.titleBlock.approver.position }} ·
+                {{ imported.scheme.titleBlock.approver.organization }} ·
+                {{ imported.scheme.titleBlock.approver.name }}
+              </dd>
+            </div>
+            <div>
+              <dt>Согласование (текст из файла)</dt>
+              <dd>
+                {{ imported.scheme.titleBlock.agreement.position }} ·
+                {{ imported.scheme.titleBlock.agreement.name }} ·
+                {{ imported.scheme.titleBlock.agreement.year }}
+              </dd>
+            </div>
+          </dl>
+        </details>
+
+        <h3>Объекты на листе</h3>
+        <p v-if="imported.scheme.placements.length === 0" class="hint">Объектов нет.</p>
+        <div v-else class="table-scroll">
+          <table>
+            <caption>
+              Состав и координаты объектов, сохранённые при переносе
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">ID</th>
+                <th scope="col">Тип и содержимое</th>
+                <th scope="col">Положение SVG</th>
+                <th scope="col">Параметры стойки</th>
+                <th scope="col">Происхождение</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="placement in imported.scheme.placements" :key="placement.id">
+                <td>{{ placement.id }}</td>
+                <td>
+                  <template v-if="placement.kind === 'sign-post'">
+                    Стойка: {{ placement.signIds.join(', ') }}
+                    <small v-if="placement.distanceLabel">{{ placement.distanceLabel }}</small>
+                  </template>
+                  <template v-else>
+                    Элемент {{ placement.elementKind }}
+                    <small v-if="placement.text">{{ placement.text }}</small>
+                  </template>
+                </td>
+                <td>
+                  {{ placement.position.anchor }}; x={{ placement.position.offsetXSvg }}; y={{
+                    placement.kind === 'sign-post'
+                      ? placement.position.offsetYSvg
+                      : placement.position.ySvg
+                  }}
+                </td>
+                <td v-if="placement.kind === 'sign-post'">
+                  сторона {{ placement.side }}; опора {{ placement.stand }}
+                </td>
+                <td v-else>—</td>
+                <td>{{ placement.generatedByTemplate ? 'автоматически' : 'вручную' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   </main>
 </template>
@@ -274,6 +423,49 @@ dd {
 li {
   margin-bottom: 0.4rem;
   line-height: 1.5;
+}
+
+details {
+  margin-top: 1.5rem;
+}
+
+summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+caption {
+  margin-bottom: 0.5rem;
+  color: #526273;
+  font-size: 0.85rem;
+  text-align: left;
+}
+
+th,
+td {
+  padding: 0.75rem;
+  border-bottom: 1px solid #d8e1eb;
+  vertical-align: top;
+}
+
+th {
+  white-space: nowrap;
+}
+
+small {
+  display: block;
+  margin-top: 0.25rem;
+  color: #526273;
 }
 
 .actions {
