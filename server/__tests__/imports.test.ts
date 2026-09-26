@@ -6,6 +6,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { zipSync } from 'fflate'
 import { PNG } from 'pngjs'
 import { describe, expect, it } from 'vitest'
+import { createNewScheme } from '../../src/domain/create-scheme'
+import { linkPu66Card } from '../../src/domain/link-pu66'
 import { extractPu66Cells, schemeFields, type Pu66Import } from '../pu66'
 import { parseSignArchive } from '../signs'
 import { RegistryStore } from '../store'
@@ -86,13 +88,42 @@ describe('private import formats', () => {
       expect(store.importPu66([entry])).toEqual({ added: 1, updated: 0, unchanged: 0 })
       expect(store.importPu66([entry])).toEqual({ added: 0, updated: 0, unchanged: 1 })
       expect(store.listPu66()).toMatchObject([{ referenceId: '99999:88:3', revision: 1 }])
+      expect(store.getPu66Scheme(card.key)).toMatchObject({
+        ...schemeFields(card),
+        revision: 1,
+        updatedAt: expect.any(String),
+      })
+      const native = createNewScheme({
+        referenceId: 'TEST-NEW',
+        locationText: '',
+        directionLeft: '',
+        directionRight: '',
+        frontMetres: '18',
+        taperMetres: '8',
+        bufferMetres: '10',
+        speedStagesKmh: ['70', '50', '40'],
+        yellowTemporarySigns: false,
+      })
+      const selected = store.getPu66Scheme(card.key)
+      if (!selected) throw new Error('Synthetic card missing')
+      store.saveProject(linkPu66Card(native, selected), 0)
       const newSource = Buffer.from('synthetic workbook revision')
       const next = {
         ...entry,
+        card: { ...card, roadName: 'Обновлённая вымышленная дорога' },
         source: newSource,
         sha256: createHash('sha256').update(newSource).digest('hex'),
       }
       expect(store.importPu66([next])).toEqual({ added: 0, updated: 1, unchanged: 0 })
+      const newer = store.getPu66Scheme(card.key)
+      expect(newer?.revision).toBe(2)
+      expect(newer?.roadName).toBe('Обновлённая вымышленная дорога')
+      expect(newer).not.toHaveProperty('technicalRows')
+      expect(newer).not.toHaveProperty('carCountPerDay')
+      const saved = store.getProject(native.id)
+      expect(saved?.scheme.crossing.snapshot?.revision).toBe(1)
+      expect(saved?.scheme.crossing.snapshot?.roadName).toBe(selected.roadName)
+      expect(saved?.revision).toBe(1)
       store.close()
       const database = new DatabaseSync(path)
       expect(database.prepare('SELECT COUNT(*) AS total FROM pu66_revisions').get()).toMatchObject({

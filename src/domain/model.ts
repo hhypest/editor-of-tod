@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { pu66SnapshotSchema } from './pu66-snapshot'
 
 const finite = z.number().finite()
 const text = z.string().max(5_000)
@@ -16,11 +17,28 @@ const crossingV2Schema = z.strictObject({
   source: z.literal('legacy-pu66'),
   snapshot: z.null(),
 })
-const crossingSchema = z.strictObject({
+const crossingV3Schema = z.strictObject({
   referenceId: z.string().min(1).max(120),
   source: z.enum(['legacy-pu66', 'entered-by-editor']),
   snapshot: z.null(),
 })
+const crossingSchema = z.discriminatedUnion('source', [
+  z.strictObject({
+    referenceId: z.string().min(1).max(120),
+    source: z.literal('legacy-pu66'),
+    snapshot: z.null(),
+  }),
+  z.strictObject({
+    referenceId: z.string().min(1).max(120),
+    source: z.literal('entered-by-editor'),
+    snapshot: z.null(),
+  }),
+  z.strictObject({
+    referenceId: z.string().min(1).max(120),
+    source: z.literal('local-pu66'),
+    snapshot: pu66SnapshotSchema,
+  }),
+])
 
 const templateSchema = z.strictObject({
   code: z.enum(['b33', 'b34']),
@@ -120,6 +138,36 @@ function checkPlacements(
   }
 }
 
+function checkModernScheme(
+  scheme: {
+    placements: z.infer<typeof sharedFields.placements>
+    nextPlacementId: number
+    parameters: { workZones: { b33: WorkZone | null; b34: WorkZone | null } }
+    template: { code: 'b33' | 'b34' }
+    source: { kind: string }
+  },
+  context: z.RefinementCtx,
+): void {
+  checkPlacements(scheme, context)
+  const activeZone = scheme.parameters.workZones[scheme.template.code]
+  if (activeZone === null) {
+    context.addIssue({
+      code: 'custom',
+      path: ['parameters', 'workZones', scheme.template.code],
+      message: 'Для выбранного варианта нужны размеры зоны работ',
+    })
+  } else if (
+    scheme.source.kind === 'created-in-editor' &&
+    (activeZone.workMetres < 30 ? 'b34' : 'b33') !== scheme.template.code
+  ) {
+    context.addIssue({
+      code: 'custom',
+      path: ['parameters', 'workZones', scheme.template.code, 'workMetres'],
+      message: 'Длина фронта не соответствует выбранному варианту Б.33/Б.34',
+    })
+  }
+}
+
 /** Read-only validator for files and SQLite revisions produced before native project creation. */
 export const schemeV2Schema = z
   .strictObject({
@@ -134,10 +182,26 @@ export const schemeV2Schema = z
   })
   .superRefine(checkPlacements)
 
-export const schemeSchema = z
+export const schemeV3Schema = z
   .strictObject({
     ...sharedFields,
     schemaVersion: z.literal(3),
+    crossing: crossingV3Schema,
+    parameters: z.strictObject({
+      ...parameterFields,
+      workZones: z.strictObject({
+        b33: workZoneSchema.nullable(),
+        b34: workZoneSchema.nullable(),
+      }),
+    }),
+    source: z.union([legacySourceSchema, z.strictObject({ kind: z.literal('created-in-editor') })]),
+  })
+  .superRefine(checkModernScheme)
+
+export const schemeSchema = z
+  .strictObject({
+    ...sharedFields,
+    schemaVersion: z.literal(4),
     crossing: crossingSchema,
     parameters: z.strictObject({
       ...parameterFields,
@@ -148,29 +212,11 @@ export const schemeSchema = z
     }),
     source: z.union([legacySourceSchema, z.strictObject({ kind: z.literal('created-in-editor') })]),
   })
-  .superRefine((scheme, context) => {
-    checkPlacements(scheme, context)
-    const activeZone = scheme.parameters.workZones[scheme.template.code]
-    if (activeZone === null) {
-      context.addIssue({
-        code: 'custom',
-        path: ['parameters', 'workZones', scheme.template.code],
-        message: 'Для выбранного варианта нужны размеры зоны работ',
-      })
-    } else if (
-      scheme.source.kind === 'created-in-editor' &&
-      (activeZone.workMetres < 30 ? 'b34' : 'b33') !== scheme.template.code
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['parameters', 'workZones', scheme.template.code, 'workMetres'],
-        message: 'Длина фронта не соответствует выбранному варианту Б.33/Б.34',
-      })
-    }
-  })
+  .superRefine(checkModernScheme)
 
 export type Scheme = z.infer<typeof schemeSchema>
 export type SchemeV2 = z.infer<typeof schemeV2Schema>
+export type SchemeV3 = z.infer<typeof schemeV3Schema>
 export type Crossing = z.infer<typeof crossingSchema>
 export type Template = z.infer<typeof templateSchema>
 export type SignPlacement = z.infer<typeof signPlacementSchema>
@@ -178,12 +224,20 @@ export type WorkZone = z.infer<typeof workZoneSchema>
 
 export function upgradeSchemeV2(value: unknown): Scheme {
   const previous = schemeV2Schema.parse(value)
-  return schemeSchema.parse({ ...previous, schemaVersion: 3 })
+  return schemeSchema.parse({ ...previous, schemaVersion: 4 })
+}
+
+export function upgradeSchemeV3(value: unknown): Scheme {
+  const previous = schemeV3Schema.parse(value)
+  return schemeSchema.parse({ ...previous, schemaVersion: 4 })
 }
 
 export function parseStoredScheme(value: unknown): Scheme {
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 2) {
     return upgradeSchemeV2(value)
+  }
+  if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 3) {
+    return upgradeSchemeV3(value)
   }
   return schemeSchema.parse(value)
 }

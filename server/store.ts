@@ -471,10 +471,19 @@ export class RegistryStore {
     }))
   }
 
-  getPu66Scheme(key: string): ReturnType<typeof schemeFields> | null {
-    const row = this.db.prepare('SELECT payload_json FROM pu66_cards WHERE key = ?').get(key) as
-      { payload_json: string } | undefined
-    return row ? schemeFields(JSON.parse(row.payload_json) as Pu66Card) : null
+  getPu66Scheme(
+    key: string,
+  ): (ReturnType<typeof schemeFields> & { revision: number; updatedAt: string }) | null {
+    const row = this.db
+      .prepare('SELECT payload_json, revision, updated_at FROM pu66_cards WHERE key = ?')
+      .get(key) as { payload_json: string; revision: number; updated_at: string } | undefined
+    return row
+      ? {
+          ...schemeFields(JSON.parse(row.payload_json) as Pu66Card),
+          revision: row.revision,
+          updatedAt: row.updated_at,
+        }
+      : null
   }
 
   planSigns(entries: SignImport[]): { added: number; updated: number; unchanged: number } {
