@@ -143,7 +143,7 @@ describe('local API', () => {
     const revisions = await (await fetch(`${path}/revisions`)).json()
     expect(revisions).toHaveLength(2)
     const old = projectRecordSchema.parse(await (await fetch(`${path}/revisions/1`)).json())
-    expect(old.scheme.source.originalJson).toBe(fixture)
+    expect(old.scheme.source).toMatchObject({ originalJson: fixture })
     const restore = await fetch(`${path}/restore`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:5173' },
@@ -151,9 +151,11 @@ describe('local API', () => {
     })
     expect(restore.status).toBe(200)
     expect(projectRecordSchema.parse(await restore.json()).revision).toBe(3)
-    expect(
-      projectRecordSchema.parse(await (await fetch(path)).json()).scheme.source.originalJson,
-    ).toBe(fixture)
+    expect(projectRecordSchema.parse(await (await fetch(path)).json()).scheme.source).toMatchObject(
+      {
+        originalJson: fixture,
+      },
+    )
     expect(
       (await write({ scheme: { ...scheme, id: crypto.randomUUID() }, expectedRevision: 3 })).status,
     ).toBe(400)

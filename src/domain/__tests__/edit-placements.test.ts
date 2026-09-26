@@ -33,7 +33,7 @@ describe('editing saved placements', () => {
     })
     expect(updated.placements.slice(1)).toEqual(original.placements.slice(1))
     expect(updated.nextPlacementId).toBe(original.nextPlacementId)
-    expect(updated.source.originalJson).toBe(fixture)
+    expect(updated.source).toMatchObject({ originalJson: fixture })
     expect(original.placements[0]).toEqual(placement)
     expect(importSchemeJson(exportSchemeJson(updated)).scheme).toEqual(updated)
   })

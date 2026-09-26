@@ -13,7 +13,7 @@ describe('editing imported project details', () => {
     const draft = createSchemeDetailsDraft(source)
     draft.parameters.locationText = 'Новый учебный участок'
     draft.parameters.signDistancesMetres.d50 = '50,5'
-    draft.parameters.workZones.b34.workMetres = '18.5'
+    draft.parameters.workZones.b34!.workMetres = '18.5'
     draft.parameters.yellowTemporarySigns = false
     draft.titleBlock.work.description = 'Пробная работа'
     const updated = applySchemeDetails(source, draft)
@@ -23,7 +23,7 @@ describe('editing imported project details', () => {
     expect(updated.source).toEqual(source.source)
     expect(updated.placements).toEqual(source.placements)
     expect(updated.parameters.signDistancesMetres.d50).toBe(50.5)
-    expect(updated.parameters.workZones.b34.workMetres).toBe(18.5)
+    expect(updated.parameters.workZones.b34?.workMetres).toBe(18.5)
     expect(updated.titleBlock.work.description).toBe('Пробная работа')
     expect(source.parameters.signDistancesMetres.d50).toBeNull()
     expect(source.titleBlock.work.description).not.toBe('Пробная работа')
@@ -51,9 +51,9 @@ describe('editing imported project details', () => {
     draft.parameters.speedStagesKmh[0] = ''
     expect(() => applySchemeDetails(source, draft)).toThrow('первая ступень скорости')
     draft.parameters.speedStagesKmh[0] = '70'
-    draft.parameters.workZones.b33.workMetres = '0'
+    draft.parameters.workZones.b33!.workMetres = '0'
     expect(() => applySchemeDetails(source, draft)).toThrow('Б.33: фронт работ')
-    expect(source.parameters.workZones.b33.workMetres).toBeGreaterThan(0)
+    expect(source.parameters.workZones.b33?.workMetres).toBeGreaterThan(0)
   })
 
   it('validates text length before allowing an export', () => {

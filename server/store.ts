@@ -2,7 +2,7 @@ import { closeSync, constants, existsSync, mkdirSync, openSync, chmodSync } from
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { backup, DatabaseSync } from 'node:sqlite'
-import { schemeSchema, type Scheme } from '../src/domain/model.ts'
+import { parseStoredScheme, schemeSchema, type Scheme } from '../src/domain/model.ts'
 import {
   MAX_LOCAL_PROJECT_BYTES,
   type ProjectRecord,
@@ -312,7 +312,7 @@ export class RegistryStore {
       .get(id) as (Pick<StoredRow, 'revision' | 'updated_at'> & { scheme_json: string }) | undefined
     return row
       ? {
-          scheme: schemeSchema.parse(JSON.parse(row.scheme_json)),
+          scheme: parseStoredScheme(JSON.parse(row.scheme_json)),
           revision: row.revision,
           updatedAt: row.updated_at,
         }
@@ -337,7 +337,7 @@ export class RegistryStore {
       (Pick<StoredRow, 'revision' | 'updated_at'> & { scheme_json: string }) | undefined
     return row
       ? {
-          scheme: schemeSchema.parse(JSON.parse(row.scheme_json)),
+          scheme: parseStoredScheme(JSON.parse(row.scheme_json)),
           revision: row.revision,
           updatedAt: row.updated_at,
         }
@@ -355,7 +355,11 @@ export class RegistryStore {
         .get(checked.id) as
         (Pick<StoredRow, 'revision' | 'updated_at'> & { scheme_json: string }) | undefined
       if ((previous?.revision ?? 0) !== expectedRevision) throw new RevisionConflict()
-      if (!forceRevision && previous?.scheme_json === payload) {
+      if (
+        !forceRevision &&
+        previous &&
+        JSON.stringify(parseStoredScheme(JSON.parse(previous.scheme_json))) === payload
+      ) {
         this.db.exec('COMMIT')
         return { scheme: checked, revision: previous.revision, updatedAt: previous.updated_at }
       }

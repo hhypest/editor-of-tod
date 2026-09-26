@@ -1,8 +1,9 @@
 import type { ZodIssue } from 'zod'
 import { legacyV1Schema, type LegacyV1 } from './legacy-v1'
-import { schemeSchema, type Scheme, type WorkZone } from './model'
+import { schemeSchema, schemeV2Schema, upgradeSchemeV2, type Scheme, type WorkZone } from './model'
 
-export const MAX_PROJECT_FILE_BYTES = 10 * 1024 * 1024
+export const MAX_PROJECT_FILE_BYTES = 32 * 1024 * 1024
+const MAX_LEGACY_FILE_BYTES = 10 * 1024 * 1024
 
 export class SchemeImportError extends Error {
   constructor(
@@ -17,7 +18,7 @@ export class SchemeImportError extends Error {
 
 export interface ImportResult {
   scheme: Scheme
-  format: 'legacy-v1' | 'scheme-v2'
+  format: 'legacy-v1' | 'scheme-v2' | 'scheme-v3'
   warnings: string[]
 }
 
@@ -96,7 +97,7 @@ function migrateLegacy(
 
   const { params, head } = legacy
   const candidate = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id,
     createdAt: now,
     crossing: { referenceId: params.key, source: 'legacy-pu66', snapshot: null },
@@ -163,7 +164,7 @@ export function importSchemeJson(
   options: { id?: string; now?: string } = {},
 ): ImportResult {
   if (new TextEncoder().encode(json).length > MAX_PROJECT_FILE_BYTES) {
-    throw new SchemeImportError('too-large', 'Файл проекта больше 10 МБ.')
+    throw new SchemeImportError('too-large', 'Файл проекта больше 32 МБ.')
   }
 
   let value: unknown
@@ -178,16 +179,29 @@ export function importSchemeJson(
   }
 
   if ('schemaVersion' in value && value.schemaVersion === 2) {
-    const parsed = schemeSchema.safeParse(value)
+    const parsed = schemeV2Schema.safeParse(value)
     if (!parsed.success) invalidIssue(parsed.error.issues)
     return {
-      scheme: parsed.data,
+      scheme: upgradeSchemeV2(parsed.data),
       format: 'scheme-v2',
       warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
     }
   }
 
+  if ('schemaVersion' in value && value.schemaVersion === 3) {
+    const parsed = schemeSchema.safeParse(value)
+    if (!parsed.success) invalidIssue(parsed.error.issues)
+    return {
+      scheme: parsed.data,
+      format: 'scheme-v3',
+      warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
+    }
+  }
+
   if ('v' in value && value.v === 1) {
+    if (new TextEncoder().encode(json).length > MAX_LEGACY_FILE_BYTES) {
+      throw new SchemeImportError('too-large', 'Исходный файл v1 больше 10 МБ.')
+    }
     const parsed = legacyV1Schema.safeParse(value)
     if (!parsed.success) invalidIssue(parsed.error.issues)
     return migrateLegacy(
@@ -200,7 +214,7 @@ export function importSchemeJson(
 
   throw new SchemeImportError(
     'unsupported-version',
-    'Версия проекта не поддерживается. Поддерживаются v: 1 и schemaVersion: 2.',
+    'Версия проекта не поддерживается. Поддерживаются v: 1 и schemaVersion: 2 или 3.',
   )
 }
 

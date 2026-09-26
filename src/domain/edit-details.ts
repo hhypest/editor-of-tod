@@ -14,7 +14,7 @@ export type SchemeDetailsDraft = {
     signDistancesMetres: Record<'d300' | 'd250' | 'd150' | 'd50', string>
     speedStagesKmh: [string, string, string]
     yellowTemporarySigns: boolean
-    workZones: { b33: WorkZoneDraft; b34: WorkZoneDraft }
+    workZones: { b33: WorkZoneDraft | null; b34: WorkZoneDraft | null }
   }
   titleBlock: Scheme['titleBlock']
 }
@@ -54,8 +54,8 @@ export function createSchemeDetailsDraft(scheme: Scheme): SchemeDetailsDraft {
       ],
       yellowTemporarySigns: parameters.yellowTemporarySigns,
       workZones: {
-        b33: zoneDraft(parameters.workZones.b33),
-        b34: zoneDraft(parameters.workZones.b34),
+        b33: parameters.workZones.b33 ? zoneDraft(parameters.workZones.b33) : null,
+        b34: parameters.workZones.b34 ? zoneDraft(parameters.workZones.b34) : null,
       },
     },
     titleBlock: structuredClone(scheme.titleBlock),
@@ -85,7 +85,8 @@ function requiredMetres(value: string, field: string): number {
   return parsed
 }
 
-function parseZone(zone: WorkZoneDraft, name: string): WorkZone {
+function parseZone(zone: WorkZoneDraft | null, name: string): WorkZone | null {
+  if (!zone) return null
   return {
     taperMetres: requiredMetres(zone.taperMetres, `${name}: отвод`),
     bufferMetres: requiredMetres(zone.bufferMetres, `${name}: буфер`),

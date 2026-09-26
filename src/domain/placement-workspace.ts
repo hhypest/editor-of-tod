@@ -10,6 +10,7 @@ export const WORKSPACE_HEIGHT = 1188
 
 export function anchorCoordinates(scheme: Scheme): Record<Exclude<Anchor, 'abs'>, number> {
   const zone = scheme.parameters.workZones[scheme.template.code]
+  if (!zone) throw new Error('Параметры выбранного варианта схемы не заполнены.')
   const isShortFront = scheme.template.code === 'b34'
   const length = zone.taperMetres * (isShortFront ? 1 : 2) + zone.bufferMetres + zone.workMetres
   const unitsPerMetre = Math.min(9, 600 / length)
