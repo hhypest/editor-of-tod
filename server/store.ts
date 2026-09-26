@@ -2,6 +2,13 @@ import { closeSync, constants, existsSync, mkdirSync, openSync, chmodSync } from
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { backup, DatabaseSync } from 'node:sqlite'
+import { schemeSchema, type Scheme } from '../src/domain/model.ts'
+import {
+  MAX_LOCAL_PROJECT_BYTES,
+  type ProjectRecord,
+  type ProjectRevision,
+  type ProjectSummary,
+} from '../src/domain/local-projects.ts'
 import {
   crossingDraftSchema,
   normativeDraftSchema,
@@ -19,6 +26,12 @@ type StoredRow = { key: string; revision: number; payload_json: string; updated_
 export class RevisionConflict extends Error {
   constructor() {
     super('Запись изменилась после открытия. Обновите реестр и повторите правку.')
+  }
+}
+
+export class ProjectTooLarge extends Error {
+  constructor() {
+    super('Черновик больше 32 МБ. Скачайте JSON-копию проекта.')
   }
 }
 
@@ -99,7 +112,7 @@ export class RegistryStore {
     this.db.exec('PRAGMA foreign_keys = ON')
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version
-    if (version !== 0 && version !== 1 && version !== 2 && version !== 3) {
+    if (version !== 0 && version !== 1 && version !== 2 && version !== 3 && version !== 4) {
       this.db.close()
       throw new Error(`Неизвестная версия локальной базы: ${version}. Файл не изменён.`)
     }
@@ -187,6 +200,30 @@ export class RegistryStore {
       this.db.exec('VACUUM')
       this.db.exec('PRAGMA user_version = 3')
     }
+    if (version < 4) {
+      this.db.exec(`
+        BEGIN;
+        CREATE TABLE project_drafts (
+          id TEXT PRIMARY KEY,
+          revision INTEGER NOT NULL CHECK (revision > 0),
+          scheme_json TEXT NOT NULL CHECK (json_valid(scheme_json)),
+          reference_id TEXT NOT NULL,
+          location_text TEXT NOT NULL,
+          template_code TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE project_revisions (
+          id TEXT NOT NULL,
+          revision INTEGER NOT NULL CHECK (revision > 0),
+          scheme_json TEXT NOT NULL CHECK (json_valid(scheme_json)),
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (id, revision),
+          FOREIGN KEY (id) REFERENCES project_drafts(id)
+        );
+        PRAGMA user_version = 4;
+        COMMIT;
+      `)
+    }
     if (this.listNormative().length === 0) {
       for (const entry of initialNormativeEntries) this.saveNormative(entry, 0)
     }
@@ -257,6 +294,112 @@ export class RegistryStore {
     const parsed = normativeDraftSchema.parse(draft)
     const row = this.save('normative', parsed.id, parsed, expectedRevision)
     return { ...parsed, revision: row.revision, updatedAt: row.updated_at }
+  }
+
+  listProjects(): ProjectSummary[] {
+    return this.db
+      .prepare(
+        `SELECT id, reference_id AS referenceId, location_text AS locationText,
+          template_code AS templateCode, revision, updated_at AS updatedAt
+          FROM project_drafts ORDER BY updated_at DESC, id`,
+      )
+      .all() as ProjectSummary[]
+  }
+
+  getProject(id: string): ProjectRecord | null {
+    const row = this.db
+      .prepare('SELECT revision, scheme_json, updated_at FROM project_drafts WHERE id = ?')
+      .get(id) as (Pick<StoredRow, 'revision' | 'updated_at'> & { scheme_json: string }) | undefined
+    return row
+      ? {
+          scheme: schemeSchema.parse(JSON.parse(row.scheme_json)),
+          revision: row.revision,
+          updatedAt: row.updated_at,
+        }
+      : null
+  }
+
+  listProjectRevisions(id: string): ProjectRevision[] {
+    return this.db
+      .prepare(
+        `SELECT revision, updated_at AS updatedAt FROM project_revisions
+          WHERE id = ? ORDER BY revision DESC`,
+      )
+      .all(id) as ProjectRevision[]
+  }
+
+  getProjectRevision(id: string, revision: number): ProjectRecord | null {
+    const row = this.db
+      .prepare(
+        'SELECT revision, scheme_json, updated_at FROM project_revisions WHERE id = ? AND revision = ?',
+      )
+      .get(id, revision) as
+      (Pick<StoredRow, 'revision' | 'updated_at'> & { scheme_json: string }) | undefined
+    return row
+      ? {
+          scheme: schemeSchema.parse(JSON.parse(row.scheme_json)),
+          revision: row.revision,
+          updatedAt: row.updated_at,
+        }
+      : null
+  }
+
+  saveProject(scheme: Scheme, expectedRevision: number, forceRevision = false): ProjectRecord {
+    const checked = schemeSchema.parse(scheme)
+    const payload = JSON.stringify(checked)
+    if (Buffer.byteLength(payload) > MAX_LOCAL_PROJECT_BYTES) throw new ProjectTooLarge()
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const previous = this.db
+        .prepare('SELECT revision, scheme_json, updated_at FROM project_drafts WHERE id = ?')
+        .get(checked.id) as
+        (Pick<StoredRow, 'revision' | 'updated_at'> & { scheme_json: string }) | undefined
+      if ((previous?.revision ?? 0) !== expectedRevision) throw new RevisionConflict()
+      if (!forceRevision && previous?.scheme_json === payload) {
+        this.db.exec('COMMIT')
+        return { scheme: checked, revision: previous.revision, updatedAt: previous.updated_at }
+      }
+      const revision = expectedRevision + 1
+      const updatedAt = this.now()
+      this.db
+        .prepare(
+          `INSERT INTO project_drafts
+            (id, revision, scheme_json, reference_id, location_text, template_code, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET revision = excluded.revision,
+              scheme_json = excluded.scheme_json, reference_id = excluded.reference_id,
+              location_text = excluded.location_text, template_code = excluded.template_code,
+              updated_at = excluded.updated_at`,
+        )
+        .run(
+          checked.id,
+          revision,
+          payload,
+          checked.crossing.referenceId,
+          checked.parameters.locationText,
+          checked.template.code,
+          updatedAt,
+        )
+      this.db
+        .prepare(
+          'INSERT INTO project_revisions (id, revision, scheme_json, updated_at) VALUES (?, ?, ?, ?)',
+        )
+        .run(checked.id, revision, payload, updatedAt)
+      this.db.exec('COMMIT')
+      return { scheme: checked, revision, updatedAt }
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
+  restoreProject(
+    id: string,
+    sourceRevision: number,
+    expectedRevision: number,
+  ): ProjectRecord | null {
+    const previous = this.getProjectRevision(id, sourceRevision)
+    return previous ? this.saveProject(previous.scheme, expectedRevision, true) : null
   }
 
   planPu66(entries: Pu66Import[]): { added: number; updated: number; unchanged: number } {

@@ -1,13 +1,20 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Server } from 'node:http'
+import { readFileSync } from 'node:fs'
 import { zipSync } from 'fflate'
 import { PNG } from 'pngjs'
+import { importSchemeJson } from '../../src/domain/import'
+import { projectRecordSchema, projectSummarySchema } from '../../src/domain/local-projects'
 import { createRegistryServer } from '../index'
 import { parseSignArchive } from '../signs'
 import { RegistryStore } from '../store'
 
 const servers: Server[] = []
 const stores: RegistryStore[] = []
+const fixture = readFileSync(
+  new URL('../../tests/fixtures/manual-v1.json', import.meta.url),
+  'utf8',
+)
 afterEach(async () => {
   await Promise.all(
     servers
@@ -94,5 +101,61 @@ describe('local API', () => {
     expect((await fetch(`${url}/api/crossings`, options)).status).toBe(409)
     const rows = await (await fetch(`${url}/api/crossings`)).json()
     expect(rows).toMatchObject([{ referenceId: 'TEST-003', revision: 1 }])
+  })
+
+  it('saves local project snapshots through the API and restores a prior revision safely', async () => {
+    const store = new RegistryStore(':memory:')
+    stores.push(store)
+    const server = createRegistryServer(store, 0)
+    servers.push(server)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Server address missing')
+    const url = `http://127.0.0.1:${address.port}`
+    const scheme = importSchemeJson(fixture).scheme
+    const path = `${url}/api/projects/${scheme.id}`
+    const write = (payload: unknown, includeOrigin = true) =>
+      fetch(path, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(includeOrigin ? { Origin: 'http://127.0.0.1:5173' } : {}),
+        },
+        body: JSON.stringify(payload),
+      })
+
+    expect((await write({ scheme, expectedRevision: 0 }, false)).status).toBe(403)
+    expect((await write({ scheme, expectedRevision: 0 }, true)).status).toBe(200)
+    const longSource = {
+      ...scheme,
+      source: { ...scheme.source, originalJson: fixture + ' '.repeat(70_000) },
+    }
+    const updated = await write({ scheme: longSource, expectedRevision: 1 })
+    expect(updated.status).toBe(200)
+    expect(projectRecordSchema.parse(await updated.json()).revision).toBe(2)
+    expect((await write({ scheme, expectedRevision: 1 })).status).toBe(409)
+    expect((await fetch(`${url}/api/projects`)).status).toBe(200)
+    const summaries = projectSummarySchema
+      .array()
+      .parse(await (await fetch(`${url}/api/projects`)).json())
+    expect(summaries).toMatchObject([{ id: scheme.id, referenceId: 'TEST-001', revision: 2 }])
+    expect(JSON.stringify(summaries)).not.toContain('originalJson')
+    const revisions = await (await fetch(`${path}/revisions`)).json()
+    expect(revisions).toHaveLength(2)
+    const old = projectRecordSchema.parse(await (await fetch(`${path}/revisions/1`)).json())
+    expect(old.scheme.source.originalJson).toBe(fixture)
+    const restore = await fetch(`${path}/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:5173' },
+      body: JSON.stringify({ sourceRevision: 1, expectedRevision: 2 }),
+    })
+    expect(restore.status).toBe(200)
+    expect(projectRecordSchema.parse(await restore.json()).revision).toBe(3)
+    expect(
+      projectRecordSchema.parse(await (await fetch(path)).json()).scheme.source.originalJson,
+    ).toBe(fixture)
+    expect(
+      (await write({ scheme: { ...scheme, id: crypto.randomUUID() }, expectedRevision: 3 })).status,
+    ).toBe(400)
   })
 })

@@ -2,9 +2,14 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { readFile } from 'node:fs/promises'
 import { join, extname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { ZodError } from 'zod'
+import { z, ZodError } from 'zod'
+import {
+  MAX_LOCAL_PROJECT_BYTES,
+  projectRestoreSchema,
+  projectWriteSchema,
+} from '../src/domain/local-projects.ts'
 import { crossingWriteSchema, normativeWriteSchema } from '../src/domain/registry.ts'
-import { RegistryStore, RevisionConflict } from './store.ts'
+import { ProjectTooLarge, RegistryStore, RevisionConflict } from './store.ts'
 
 const port = 4100
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
@@ -28,7 +33,7 @@ function json(res: ServerResponse, status: number, data: unknown): void {
   res.end(JSON.stringify(data))
 }
 
-async function readJson(req: IncomingMessage): Promise<unknown> {
+async function readJson(req: IncomingMessage, maxBytes = 64 * 1024): Promise<unknown> {
   if (!req.headers['content-type']?.startsWith('application/json')) {
     throw new RequestError(415, 'Нужен Content-Type: application/json.')
   }
@@ -37,7 +42,7 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
   for await (const chunk of req) {
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
     size += bytes.length
-    if (size > 64 * 1024) throw new RequestError(413, 'Запись больше 64 КБ.')
+    if (size > maxBytes) throw new RequestError(413, 'Размер JSON-запроса превышен.')
     chunks.push(bytes)
   }
   try {
@@ -73,6 +78,12 @@ function decodeKey(encoded: string): string {
   } catch {
     throw new RequestError(400, 'Неверный код в адресе.')
   }
+}
+
+function projectId(encoded: string): string {
+  const id = decodeKey(encoded)
+  if (!z.uuid().safeParse(id).success) throw new RequestError(400, 'Неверный ID проекта.')
+  return id
 }
 
 async function serveBuiltApp(pathname: string, res: ServerResponse): Promise<void> {
@@ -111,6 +122,10 @@ export function createRegistryServer(store: RegistryStore, listenPort = port) {
       const actualPort = typeof address === 'object' && address ? address.port : listenPort
       checkRequest(req, actualPort)
       const pathname = new URL(req.url ?? '/', `http://127.0.0.1:${actualPort}`).pathname
+      const projectPath = /^\/api\/projects\/([^/]+)$/.exec(pathname)
+      const revisionListPath = /^\/api\/projects\/([^/]+)\/revisions$/.exec(pathname)
+      const revisionPath = /^\/api\/projects\/([^/]+)\/revisions\/(\d+)$/.exec(pathname)
+      const restorePath = /^\/api\/projects\/([^/]+)\/restore$/.exec(pathname)
       if (req.method === 'GET' && pathname === '/api/status') {
         json(res, 200, { ready: true })
       } else if (req.method === 'GET' && pathname === '/api/crossings') {
@@ -119,6 +134,23 @@ export function createRegistryServer(store: RegistryStore, listenPort = port) {
         json(res, 200, store.listNormative())
       } else if (req.method === 'GET' && pathname === '/api/pu66') {
         json(res, 200, store.listPu66())
+      } else if (req.method === 'GET' && pathname === '/api/projects') {
+        json(res, 200, store.listProjects())
+      } else if (req.method === 'GET' && revisionPath) {
+        const record = store.getProjectRevision(
+          projectId(revisionPath[1]!),
+          Number(revisionPath[2]),
+        )
+        if (!record) throw new RequestError(404, 'Редакция проекта не найдена.')
+        json(res, 200, record)
+      } else if (req.method === 'GET' && revisionListPath) {
+        const id = projectId(revisionListPath[1]!)
+        if (!store.getProject(id)) throw new RequestError(404, 'Проект не найден.')
+        json(res, 200, store.listProjectRevisions(id))
+      } else if (req.method === 'GET' && projectPath) {
+        const record = store.getProject(projectId(projectPath[1]!))
+        if (!record) throw new RequestError(404, 'Проект не найден.')
+        json(res, 200, record)
       } else if (
         req.method === 'GET' &&
         pathname.startsWith('/api/pu66/') &&
@@ -159,6 +191,20 @@ export function createRegistryServer(store: RegistryStore, listenPort = port) {
       } else if (req.method === 'PUT' && pathname === '/api/normative') {
         const { expectedRevision, ...draft } = normativeWriteSchema.parse(await readJson(req))
         json(res, 200, store.saveNormative(draft, expectedRevision))
+      } else if (req.method === 'PUT' && projectPath) {
+        const id = projectId(projectPath[1]!)
+        const { expectedRevision, scheme } = projectWriteSchema.parse(
+          await readJson(req, MAX_LOCAL_PROJECT_BYTES + 64 * 1024),
+        )
+        if (scheme.id !== id)
+          throw new RequestError(400, 'ID проекта в адресе и файле не совпадают.')
+        json(res, 200, store.saveProject(scheme, expectedRevision))
+      } else if (req.method === 'POST' && restorePath) {
+        const id = projectId(restorePath[1]!)
+        const { sourceRevision, expectedRevision } = projectRestoreSchema.parse(await readJson(req))
+        const restored = store.restoreProject(id, sourceRevision, expectedRevision)
+        if (!restored) throw new RequestError(404, 'Редакция проекта не найдена.')
+        json(res, 200, restored)
       } else if (req.method === 'POST' && pathname === '/api/backup') {
         json(res, 201, { filename: await store.createBackup() })
       } else if (req.method === 'GET' && !pathname.startsWith('/api/')) {
@@ -169,6 +215,7 @@ export function createRegistryServer(store: RegistryStore, listenPort = port) {
     } catch (error) {
       if (error instanceof RequestError) json(res, error.status, { error: error.message })
       else if (error instanceof RevisionConflict) json(res, 409, { error: error.message })
+      else if (error instanceof ProjectTooLarge) json(res, 413, { error: error.message })
       else if (error instanceof ZodError) {
         const issue = error.issues[0]
         json(res, 400, { error: `Неверное поле «${issue?.path.join('.') || 'запись'}».` })

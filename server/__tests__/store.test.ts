@@ -1,11 +1,17 @@
-import { mkdtempSync, rmSync, existsSync } from 'node:fs'
+import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
+import { importSchemeJson } from '../../src/domain/import'
 import { normativeDraftSchema, type CrossingDraft } from '../../src/domain/registry'
 import { RegistryStore, RevisionConflict } from '../store'
 
 const directories: string[] = []
+const fixture = readFileSync(
+  new URL('../../tests/fixtures/manual-v1.json', import.meta.url),
+  'utf8',
+)
 afterEach(() => {
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
@@ -82,5 +88,80 @@ describe('local SQLite registries', () => {
     } finally {
       store.close()
     }
+  })
+
+  it('keeps immutable project revisions, rejects stale saves and restores a previous version', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-project-'))
+    directories.push(directory)
+    const path = join(directory, 'registry.sqlite')
+    const scheme = importSchemeJson(fixture).scheme
+    const store = new RegistryStore(path, () => '2026-09-26T12:00:00.000Z')
+    try {
+      expect(store.listProjects()).toEqual([])
+      expect(store.saveProject(scheme, 0).revision).toBe(1)
+      expect(store.saveProject(scheme, 1).revision).toBe(1)
+      const changed = {
+        ...scheme,
+        parameters: { ...scheme.parameters, locationText: 'Изменённый учебный участок' },
+      }
+      expect(store.saveProject(changed, 1).revision).toBe(2)
+      expect(() => store.saveProject(scheme, 1)).toThrow(RevisionConflict)
+      expect(store.listProjects()).toMatchObject([
+        {
+          id: scheme.id,
+          referenceId: 'TEST-001',
+          revision: 2,
+          locationText: 'Изменённый учебный участок',
+        },
+      ])
+      expect(store.listProjectRevisions(scheme.id).map((entry) => entry.revision)).toEqual([2, 1])
+      expect(store.getProjectRevision(scheme.id, 1)?.scheme).toEqual(scheme)
+      expect(store.restoreProject(scheme.id, 1, 2)).toMatchObject({ revision: 3, scheme })
+      expect(store.restoreProject(scheme.id, 1, 3)).toMatchObject({ revision: 4, scheme })
+      expect(store.getProjectRevision(scheme.id, 2)?.scheme.parameters.locationText).toBe(
+        'Изменённый учебный участок',
+      )
+      expect(store.getProject(scheme.id)?.scheme.source.originalJson).toBe(fixture)
+      const backupName = await store.createBackup()
+      const backup = new RegistryStore(join(directory, 'backups', backupName))
+      try {
+        expect(backup.listProjectRevisions(scheme.id)).toHaveLength(4)
+      } finally {
+        backup.close()
+      }
+    } finally {
+      store.close()
+    }
+    const reopened = new RegistryStore(path)
+    try {
+      expect(reopened.getProject(scheme.id)?.revision).toBe(4)
+      expect(reopened.getProject(scheme.id)?.scheme.source.originalJson).toBe(fixture)
+    } finally {
+      reopened.close()
+    }
+  })
+
+  it('migrates a version 3 database without losing the existing manual registry', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-v3-upgrade-'))
+    directories.push(directory)
+    const path = join(directory, 'registry.sqlite')
+    const current = new RegistryStore(path)
+    current.saveCrossing(crossing, 0)
+    current.close()
+    const old = new DatabaseSync(path)
+    old.exec('DROP TABLE project_revisions; DROP TABLE project_drafts; PRAGMA user_version = 3;')
+    old.close()
+
+    const migrated = new RegistryStore(path)
+    try {
+      expect(migrated.listCrossings()).toMatchObject([{ referenceId: 'TEST-001', revision: 1 }])
+      expect(migrated.listProjects()).toEqual([])
+      expect(migrated.saveProject(importSchemeJson(fixture).scheme, 0).revision).toBe(1)
+    } finally {
+      migrated.close()
+    }
+    const database = new DatabaseSync(path)
+    expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 4 })
+    database.close()
   })
 })
