@@ -6,6 +6,7 @@ import { PNG } from 'pngjs'
 import { importSchemeJson } from '../../src/domain/import'
 import { projectRecordSchema, projectSummarySchema } from '../../src/domain/local-projects'
 import { createRegistryServer } from '../index'
+import { extractPu66Cells } from '../pu66'
 import { parseSignArchive } from '../signs'
 import { RegistryStore } from '../store'
 
@@ -25,6 +26,53 @@ afterEach(async () => {
 })
 
 describe('local API', () => {
+  it('returns only versioned scheme fields from a synthetic PU-66 card', async () => {
+    const values = new Map<string, string | number>([
+      ['A5', 'Карточка № 99'],
+      ['A9', 88],
+      ['D9', 3],
+      ['H9', 'Учебный участок (99999)'],
+      ['H17', 'Вымышленная дорога'],
+      ['A45', '№ п/п'],
+    ])
+    for (let item = 1; item <= 30; item++) {
+      values.set(`A${47 + item}`, item)
+      values.set(`B${47 + item}`, `Учебное поле ${item}`)
+      values.set(`L${47 + item}`, item + 1)
+    }
+    const card = extractPu66Cells((address) => values.get(address) ?? null)
+    const store = new RegistryStore(':memory:')
+    store.importPu66([
+      {
+        card,
+        source: Buffer.from('synthetic bytes'),
+        sha256: 'a'.repeat(64),
+        filename: 'TEST-99.xlsx',
+      },
+    ])
+    stores.push(store)
+    const server = createRegistryServer(store, 0)
+    servers.push(server)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Server address missing')
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/api/pu66/${encodeURIComponent(card.key)}/scheme`,
+    )
+    expect(response.status).toBe(200)
+    const selected = await response.json()
+    expect(selected).toEqual({
+      referenceId: '99999:88:3',
+      location: '88 км 3 пк',
+      axisLabel: '88 км 3 пк',
+      roadName: 'Вымышленная дорога',
+      crossingWidthMetres: 8,
+      revision: 1,
+      updatedAt: expect.any(String),
+    })
+    expect(JSON.stringify(selected)).not.toContain('technicalRows')
+  })
+
   it('serves both PNG sign variants and rejects the removed SVG format', async () => {
     const plain = new PNG({ width: 8, height: 8 })
     plain.data.fill(255)

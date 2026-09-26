@@ -1,6 +1,14 @@
 import type { ZodIssue } from 'zod'
 import { legacyV1Schema, type LegacyV1 } from './legacy-v1'
-import { schemeSchema, schemeV2Schema, upgradeSchemeV2, type Scheme, type WorkZone } from './model'
+import {
+  schemeSchema,
+  schemeV2Schema,
+  schemeV3Schema,
+  upgradeSchemeV2,
+  upgradeSchemeV3,
+  type Scheme,
+  type WorkZone,
+} from './model'
 
 export const MAX_PROJECT_FILE_BYTES = 32 * 1024 * 1024
 const MAX_LEGACY_FILE_BYTES = 10 * 1024 * 1024
@@ -18,7 +26,7 @@ export class SchemeImportError extends Error {
 
 export interface ImportResult {
   scheme: Scheme
-  format: 'legacy-v1' | 'scheme-v2' | 'scheme-v3'
+  format: 'legacy-v1' | 'scheme-v2' | 'scheme-v3' | 'scheme-v4'
   warnings: string[]
 }
 
@@ -97,7 +105,7 @@ function migrateLegacy(
 
   const { params, head } = legacy
   const candidate = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     id,
     createdAt: now,
     crossing: { referenceId: params.key, source: 'legacy-pu66', snapshot: null },
@@ -189,11 +197,21 @@ export function importSchemeJson(
   }
 
   if ('schemaVersion' in value && value.schemaVersion === 3) {
+    const parsed = schemeV3Schema.safeParse(value)
+    if (!parsed.success) invalidIssue(parsed.error.issues)
+    return {
+      scheme: upgradeSchemeV3(parsed.data),
+      format: 'scheme-v3',
+      warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
+    }
+  }
+
+  if ('schemaVersion' in value && value.schemaVersion === 4) {
     const parsed = schemeSchema.safeParse(value)
     if (!parsed.success) invalidIssue(parsed.error.issues)
     return {
       scheme: parsed.data,
-      format: 'scheme-v3',
+      format: 'scheme-v4',
       warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
     }
   }
@@ -214,7 +232,7 @@ export function importSchemeJson(
 
   throw new SchemeImportError(
     'unsupported-version',
-    'Версия проекта не поддерживается. Поддерживаются v: 1 и schemaVersion: 2 или 3.',
+    'Версия проекта не поддерживается. Поддерживаются v: 1 и schemaVersion: 2, 3 или 4.',
   )
 }
 

@@ -5,6 +5,7 @@ import ImportedData from './components/ImportedData.vue'
 import LocalProjects from './components/LocalProjects.vue'
 import NewScheme from './components/NewScheme.vue'
 import PlacementEditor from './components/PlacementEditor.vue'
+import Pu66Linker from './components/Pu66Linker.vue'
 import SchemeWorkspace from './components/SchemeWorkspace.vue'
 import SchemeDetailsEditor from './components/SchemeDetailsEditor.vue'
 import TemplateChoice from './components/TemplateChoice.vue'
@@ -130,9 +131,9 @@ function downloadJson(content: string, suffix: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
 }
 
-function saveV3(): void {
+function saveV4(): void {
   if (imported.value && !editorDirty.value) {
-    downloadJson(exportSchemeJson(imported.value.scheme), 'v3')
+    downloadJson(exportSchemeJson(imported.value.scheme), 'v4')
     modifiedSinceDownload.value = false
   }
 }
@@ -151,7 +152,7 @@ function createProject(scheme: Scheme): void {
     return
   imported.value = {
     scheme,
-    format: 'scheme-v3',
+    format: 'scheme-v4',
     warnings: [
       'Идентификатор переезда введён вручную; карточка ПУ-66 не сверена.',
       'Вариант выбран по длине фронта работ, нормативная проверка и расстановка знаков не выполнены.',
@@ -233,7 +234,7 @@ async function saveAsNew(): Promise<void> {
 function openProjectRecord(scheme: Scheme, revision: number): void {
   imported.value = {
     scheme,
-    format: 'scheme-v3',
+    format: 'scheme-v4',
     warnings: ['Схема не прошла нормативную проверку.'],
   }
   history.value = startHistory(scheme)
@@ -308,6 +309,22 @@ function onProjectApplied(scheme: Scheme): void {
   modifiedSinceLocalSave.value = true
 }
 
+function onPu66Linked(scheme: Scheme): void {
+  onProjectApplied(scheme)
+  if (!imported.value) return
+  imported.value = {
+    ...imported.value,
+    warnings: [
+      ...imported.value.warnings.filter(
+        (warning) =>
+          warning !== 'Идентификатор переезда введён вручную; карточка ПУ-66 не сверена.' &&
+          !warning.startsWith('Локальная карточка ПУ-66 закреплена'),
+      ),
+      'Локальная карточка ПУ-66 закреплена как снимок; её актуальность нужно проверить.',
+    ],
+  }
+}
+
 function stepBack(): void {
   if (!imported.value || !history.value || editorDirty.value || !history.value.past.length) return
   history.value = undoEdit(history.value)
@@ -351,7 +368,7 @@ function stepForward(): void {
         />
         <p class="hint">
           Поддерживаются файлы старого редактора <code>v: 1</code> и проекты
-          <code>schemaVersion: 2</code> или <code>schemaVersion: 3</code> размером до 32 МБ.
+          <code>schemaVersion: 2</code>, <code>3</code> или <code>4</code> размером до 32 МБ.
         </p>
         <p v-if="loading" class="hint" role="status">Проверяем файл…</p>
         <p v-if="errorMessage" class="error" role="alert">{{ errorMessage }}</p>
@@ -381,7 +398,9 @@ function stepForward(): void {
                   ? 'Перенос из v1'
                   : imported.format === 'scheme-v2'
                     ? 'Перенос из v2'
-                    : 'Формат проекта v3'
+                    : imported.format === 'scheme-v3'
+                      ? 'Перенос из v3'
+                      : 'Формат проекта v4'
               }}
             </p>
             <h2 id="result-title">Проект открыт для редактирования</h2>
@@ -433,9 +452,9 @@ function stepForward(): void {
             type="button"
             class="primary"
             :disabled="editorDirty || localBusy"
-            @click="saveV3"
+            @click="saveV4"
           >
-            Сохранить копию v3
+            Сохранить копию v4
           </button>
           <button
             v-if="imported.scheme.source.kind === 'legacy-html-v1'"
@@ -465,6 +484,10 @@ function stepForward(): void {
           Открыта локальная редакция № {{ localRevision
           }}{{ modifiedSinceLocalSave ? ' · есть новые правки' : '' }}.
         </p>
+        <p v-if="imported.scheme.crossing.source === 'local-pu66'" class="hint">
+          JSON-копия содержит отобранные сведения из локальной ПУ-66. Храните и передавайте её по
+          правилам обращения с конфиденциальными данными.
+        </p>
         <p v-if="editorDirty" class="hint" role="status">
           Сначала примените или отмените изменения в форме, затем скачайте копию проекта или
           воспользуйтесь историей действий.
@@ -473,7 +496,7 @@ function stepForward(): void {
           {{
             modifiedSinceLocalSave
               ? 'Применённые правки находятся в памяти браузера. Сохраните локально или скачайте JSON-копию.'
-              : 'Черновик сохранён локально. Для отдельной копии скачайте JSON v3.'
+              : 'Черновик сохранён локально. Для отдельной копии скачайте JSON v4.'
           }}
         </p>
         <p class="hint">
@@ -481,6 +504,14 @@ function stepForward(): void {
           печатный лист появится на следующем этапе.
         </p>
       </section>
+
+      <Pu66Linker
+        v-if="imported"
+        class="panel"
+        :scheme="imported.scheme"
+        :locked="editorDirty || localBusy"
+        @apply="onPu66Linked"
+      />
 
       <SchemeDetailsEditor
         v-if="imported"

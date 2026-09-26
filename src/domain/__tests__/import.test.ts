@@ -6,7 +6,7 @@ import {
   MAX_PROJECT_FILE_BYTES,
   SchemeImportError,
 } from '../import'
-import { schemeV2Schema } from '../model'
+import { schemeV2Schema, schemeV3Schema } from '../model'
 
 const importedAt = '2026-09-26T12:00:00.000Z'
 const id = '55740b36-080a-4cbe-9476-e71ffb1ab47f'
@@ -137,11 +137,11 @@ describe('import of autonomous editor projects', () => {
     expect(result.warnings.join(' ')).toContain('d50')
   })
 
-  it('exports and re-imports v3 without creating another identity or losing the source', () => {
+  it('exports and re-imports v4 without creating another identity or losing the source', () => {
     const first = importSchemeJson(JSON.stringify(sourceFixture()), { id, now: importedAt })
     const second = importSchemeJson(exportSchemeJson(first.scheme))
 
-    expect(second.format).toBe('scheme-v3')
+    expect(second.format).toBe('scheme-v4')
     expect(second.scheme).toEqual(first.scheme)
     expect(second.scheme.id).toBe(id)
   })
@@ -158,7 +158,19 @@ describe('import of autonomous editor projects', () => {
     expect(reopened.scheme.source).toMatchObject({
       originalJson: migrated.source.kind === 'legacy-html-v1' ? migrated.source.originalJson : '',
     })
-    expect(JSON.parse(exportSchemeJson(reopened.scheme)).schemaVersion).toBe(3)
+    expect(JSON.parse(exportSchemeJson(reopened.scheme)).schemaVersion).toBe(4)
+  })
+
+  it('opens the previous v3 format and writes the same data in v4', () => {
+    const migrated = importSchemeJson(JSON.stringify(sourceFixture()), {
+      id,
+      now: importedAt,
+    }).scheme
+    const v3 = schemeV3Schema.parse({ ...migrated, schemaVersion: 3 })
+    const reopened = importSchemeJson(JSON.stringify(v3))
+    expect(reopened.format).toBe('scheme-v3')
+    expect(reopened.scheme).toEqual(migrated)
+    expect(JSON.parse(exportSchemeJson(reopened.scheme)).schemaVersion).toBe(4)
   })
 
   it('keeps unknown old fields in the original snapshot', () => {

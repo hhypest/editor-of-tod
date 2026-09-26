@@ -52,7 +52,7 @@ export function createNewScheme(
     labels: { taper: '', buffer: '', work: '' },
   }
   const parsed = schemeSchema.safeParse({
-    schemaVersion: 3,
+    schemaVersion: 4,
     id: options.id ?? crypto.randomUUID(),
     createdAt: options.now ?? new Date().toISOString(),
     crossing: {

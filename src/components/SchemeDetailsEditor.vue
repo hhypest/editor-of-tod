@@ -59,7 +59,7 @@ function applyDraft(): void {
     const updated = applySchemeDetails(props.scheme, draft.value)
     dirty.value = false
     error.value = ''
-    status.value = 'Правки применены к проекту. Сохраните черновик или скачайте копию v3.'
+    status.value = 'Правки применены к проекту. Сохраните черновик или скачайте копию v4.'
     emit('apply', updated)
     emit('dirty', false)
   } catch (cause) {

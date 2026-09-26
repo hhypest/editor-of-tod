@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createNewScheme } from '../../src/domain/create-scheme'
 import { importSchemeJson } from '../../src/domain/import'
-import { schemeV2Schema } from '../../src/domain/model'
+import { schemeV2Schema, schemeV3Schema } from '../../src/domain/model'
 import { normativeDraftSchema, type CrossingDraft } from '../../src/domain/registry'
 import { RegistryStore, RevisionConflict } from '../store'
 
@@ -174,7 +174,7 @@ describe('local SQLite registries', () => {
     }
   })
 
-  it('opens saved v2 revisions as v3 without changing their stored history', () => {
+  it('opens saved v2 revisions as v4 without changing their stored history', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-project-v2-'))
     directories.push(directory)
     const path = join(directory, 'registry.sqlite')
@@ -223,9 +223,60 @@ describe('local SQLite registries', () => {
         .prepare('SELECT revision, scheme_json FROM project_revisions ORDER BY revision')
         .all() as { revision: number; scheme_json: string }[]
       expect(records.map((record) => JSON.parse(record.scheme_json).schemaVersion)).toEqual([
-        2, 3, 3,
+        2, 4, 4,
       ])
       expect(JSON.parse(records[0]!.scheme_json)).toEqual(previous)
+    } finally {
+      check.close()
+    }
+  })
+
+  it('reads an existing native v3 SQLite draft without rewriting its snapshot', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-project-v3-'))
+    directories.push(directory)
+    const path = join(directory, 'registry.sqlite')
+    const scheme = createNewScheme({
+      referenceId: 'TEST-PREVIOUS',
+      locationText: 'Условный участок',
+      directionLeft: '',
+      directionRight: '',
+      frontMetres: '18',
+      taperMetres: '8',
+      bufferMetres: '10',
+      speedStagesKmh: ['70', '50', '40'],
+      yellowTemporarySigns: false,
+    })
+    const old = schemeV3Schema.parse({ ...scheme, schemaVersion: 3 })
+    const initialized = new RegistryStore(path)
+    initialized.close()
+    const raw = new DatabaseSync(path)
+    const savedAt = '2026-09-26T12:00:00.000Z'
+    raw
+      .prepare(
+        'INSERT INTO project_drafts (id, revision, scheme_json, reference_id, location_text, template_code, updated_at) VALUES (?, 1, ?, ?, ?, ?, ?)',
+      )
+      .run(scheme.id, JSON.stringify(old), 'TEST-PREVIOUS', 'Условный участок', 'b34', savedAt)
+    raw
+      .prepare(
+        'INSERT INTO project_revisions (id, revision, scheme_json, updated_at) VALUES (?, 1, ?, ?)',
+      )
+      .run(scheme.id, JSON.stringify(old), savedAt)
+    raw.close()
+
+    const store = new RegistryStore(path)
+    try {
+      expect(store.getProject(scheme.id)?.scheme).toEqual(scheme)
+      expect(store.getProjectRevision(scheme.id, 1)?.scheme).toEqual(scheme)
+      expect(store.saveProject(scheme, 1).revision).toBe(1)
+    } finally {
+      store.close()
+    }
+    const check = new DatabaseSync(path)
+    try {
+      const row = check
+        .prepare('SELECT scheme_json FROM project_revisions WHERE id = ? AND revision = 1')
+        .get(scheme.id) as { scheme_json: string }
+      expect(JSON.parse(row.scheme_json)).toEqual(old)
     } finally {
       check.close()
     }
