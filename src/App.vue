@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import LocalRegistries from './components/LocalRegistries.vue'
 import ImportedData from './components/ImportedData.vue'
 import PlacementEditor from './components/PlacementEditor.vue'
+import SchemeWorkspace from './components/SchemeWorkspace.vue'
 import SchemeDetailsEditor from './components/SchemeDetailsEditor.vue'
 import TemplateChoice from './components/TemplateChoice.vue'
 import {
@@ -29,6 +30,7 @@ const detailsDirty = ref(false)
 const placementDirty = ref(false)
 const modifiedSinceDownload = ref(false)
 const history = ref<EditHistory<Scheme> | null>(null)
+const selectedPlacementId = ref<number | null>(null)
 const editorDirty = computed(() => detailsDirty.value || placementDirty.value)
 
 function beforeUnload(event: BeforeUnloadEvent): void {
@@ -71,6 +73,7 @@ async function onFileSelected(event: Event): Promise<void> {
 
   imported.value = null
   history.value = null
+  selectedPlacementId.value = null
   detailsDirty.value = false
   placementDirty.value = false
   modifiedSinceDownload.value = false
@@ -86,6 +89,7 @@ async function onFileSelected(event: Event): Promise<void> {
   try {
     imported.value = importSchemeJson(await file.text())
     history.value = startHistory(imported.value.scheme)
+    selectedPlacementId.value = imported.value.scheme.placements[0]?.id ?? null
   } catch (error) {
     errorMessage.value =
       error instanceof SchemeImportError ? error.message : 'Не удалось прочитать выбранный файл.'
@@ -241,7 +245,8 @@ function stepForward(): void {
           Применённые правки находятся в памяти браузера. Скачайте копию v2 для сохранения.
         </p>
         <p class="hint">
-          Исходный файл не изменяется. Визуальный лист и печать появятся на следующих этапах.
+          Исходный файл не изменяется. Рабочая область показывает условные координаты объектов;
+          печатный лист появится на следующем этапе.
         </p>
       </section>
 
@@ -254,21 +259,33 @@ function stepForward(): void {
         @dirty="detailsDirty = $event"
       />
 
+      <SchemeWorkspace
+        v-if="imported"
+        class="panel"
+        :scheme="imported.scheme"
+        :selected-id="selectedPlacementId"
+        :locked="editorDirty"
+        @apply="onProjectApplied"
+        @select="selectedPlacementId = $event"
+      />
+
       <PlacementEditor
         v-if="imported"
         class="panel"
         :scheme="imported.scheme"
         :locked="detailsDirty"
+        :selected-placement-id="selectedPlacementId"
         @apply="onProjectApplied"
         @dirty="placementDirty = $event"
+        @select="selectedPlacementId = $event"
       />
 
       <section v-if="imported" class="panel" aria-labelledby="inspection-title">
         <h2 id="inspection-title">Сверка перенесённых данных</h2>
         <p class="hint">
           Значения показаны из файла без проверки нормативов. Координаты объектов приведены в
-          условных единицах SVG, расстояния — в метрах. Коды привязки и стороны сохранены из
-          проекта.
+          условных единицах прежнего листа, расстояния — в метрах. Коды привязки и стороны сохранены
+          из проекта.
         </p>
 
         <h3>Параметры</h3>
@@ -372,7 +389,7 @@ function stepForward(): void {
               <tr>
                 <th scope="col">ID</th>
                 <th scope="col">Тип и содержимое</th>
-                <th scope="col">Положение SVG</th>
+                <th scope="col">Положение в условных координатах</th>
                 <th scope="col">Параметры стойки</th>
                 <th scope="col">Происхождение</th>
               </tr>
@@ -428,7 +445,7 @@ function stepForward(): void {
 }
 
 .shell {
-  max-width: 58rem;
+  max-width: 68rem;
   margin: 0 auto;
 }
 
