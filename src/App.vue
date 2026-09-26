@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import LocalRegistries from './components/LocalRegistries.vue'
 import ImportedData from './components/ImportedData.vue'
+import SchemeDetailsEditor from './components/SchemeDetailsEditor.vue'
 import TemplateChoice from './components/TemplateChoice.vue'
 import {
   exportSchemeJson,
@@ -10,11 +11,21 @@ import {
   SchemeImportError,
   type ImportResult,
 } from './domain/import'
+import type { Scheme } from './domain/model'
 
 const imported = ref<ImportResult | null>(null)
 const selectedFileName = ref('')
 const errorMessage = ref('')
 const loading = ref(false)
+const detailsDirty = ref(false)
+const modifiedSinceDownload = ref(false)
+
+function beforeUnload(event: BeforeUnloadEvent): void {
+  if (detailsDirty.value || modifiedSinceDownload.value) event.preventDefault()
+}
+
+onMounted(() => window.addEventListener('beforeunload', beforeUnload))
+onUnmounted(() => window.removeEventListener('beforeunload', beforeUnload))
 
 const signCount = computed(() =>
   imported.value?.scheme.placements.reduce(
@@ -41,8 +52,15 @@ async function onFileSelected(event: Event): Promise<void> {
   const file = input.files?.[0]
   input.value = ''
   if (!file) return
+  if (
+    (detailsDirty.value || modifiedSinceDownload.value) &&
+    !window.confirm('Есть правки, которые ещё не скачаны в JSON-файле. Открыть другой проект?')
+  )
+    return
 
   imported.value = null
+  detailsDirty.value = false
+  modifiedSinceDownload.value = false
   errorMessage.value = ''
   selectedFileName.value = file.name
 
@@ -78,11 +96,21 @@ function downloadJson(content: string, suffix: string): void {
 }
 
 function saveV2(): void {
-  if (imported.value) downloadJson(exportSchemeJson(imported.value.scheme), 'v2')
+  if (imported.value && !detailsDirty.value) {
+    downloadJson(exportSchemeJson(imported.value.scheme), 'v2')
+    modifiedSinceDownload.value = false
+  }
 }
 
 function saveOriginal(): void {
   if (imported.value) downloadJson(imported.value.scheme.source.originalJson, 'original_v1')
+}
+
+function onDetailsApplied(scheme: Scheme): void {
+  if (!imported.value) return
+  imported.value = { ...imported.value, scheme }
+  detailsDirty.value = false
+  modifiedSinceDownload.value = true
 }
 </script>
 
@@ -90,11 +118,11 @@ function saveOriginal(): void {
   <main class="page">
     <div class="shell">
       <header>
-        <p class="eyebrow">Редактор СОДД · этап миграции</p>
-        <h1>Импорт проекта переезда</h1>
+        <p class="eyebrow">Редактор СОДД · локальный проект</p>
+        <h1>Проект переезда</h1>
         <p class="lead">
-          Откройте JSON-проект автономного редактора. Приложение проверит структуру файла и создаст
-          копию в новом формате с сохранением исходных данных.
+          Откройте JSON-проект автономного редактора. Проверьте перенесённые данные, измените
+          параметры и реквизиты, затем скачайте копию в новом формате.
         </p>
       </header>
 
@@ -154,20 +182,36 @@ function saveOriginal(): void {
           </div>
         </dl>
 
-        <h3>Что нужно проверить</h3>
+        <h3>Предупреждения при импорте</h3>
         <ul>
           <li v-for="warning in imported.warnings" :key="warning">{{ warning }}</li>
         </ul>
 
         <div class="actions">
-          <button type="button" class="primary" @click="saveV2">Сохранить копию v2</button>
+          <button type="button" class="primary" :disabled="detailsDirty" @click="saveV2">
+            Сохранить копию v2
+          </button>
           <button type="button" @click="saveOriginal">Скачать исходный JSON</button>
         </div>
+        <p v-if="detailsDirty" class="hint" role="status">
+          Сначала примените или отмените изменения формы ниже, затем скачайте копию проекта.
+        </p>
+        <p v-else-if="modifiedSinceDownload" class="hint" role="status">
+          Применённые правки находятся в памяти браузера. Скачайте копию v2 для сохранения.
+        </p>
         <p class="hint">
-          Исходный файл не изменяется. Редактирование листа, каталог знаков и печать появятся на
-          следующих этапах.
+          Исходный файл не изменяется. Размещение объектов на листе и печать появятся на следующих
+          этапах.
         </p>
       </section>
+
+      <SchemeDetailsEditor
+        v-if="imported"
+        class="panel"
+        :scheme="imported.scheme"
+        @apply="onDetailsApplied"
+        @dirty="detailsDirty = $event"
+      />
 
       <section v-if="imported" class="panel" aria-labelledby="inspection-title">
         <h2 id="inspection-title">Сверка перенесённых данных</h2>
@@ -504,6 +548,11 @@ button {
 button.primary {
   background: #185ca5;
   color: #fff;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 button:hover,
