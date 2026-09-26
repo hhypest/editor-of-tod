@@ -43,6 +43,7 @@ npm run dev
 - `docs/standards.md` — реестр нормативных источников и правила их проверки.
 - [`ROADMAP.md`](ROADMAP.md) — очередность работ и критерии готовности.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — правила кода, проверок и изменений.
+- [`TESTING.MD`](TESTING.MD) — локальный запуск и проверка импорта на обезличенном примере.
 - [шаблон PR](.github/PULL_REQUEST_TEMPLATE.md) — что приложить к ревью.
 - [`CHANGELOG.md`](CHANGELOG.md) — история изменений репозитория.
 
