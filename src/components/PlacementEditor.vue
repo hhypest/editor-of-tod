@@ -12,11 +12,22 @@ import {
 import type { Scheme } from '../domain/model'
 
 type SignMeta = { code: string; width: number; height: number }
-const props = defineProps<{ scheme: Scheme; locked?: boolean }>()
-const emit = defineEmits<{ apply: [scheme: Scheme]; dirty: [value: boolean] }>()
-const selectedId = ref<number | null>(props.scheme.placements[0]?.id ?? null)
+const props = defineProps<{
+  scheme: Scheme
+  locked?: boolean
+  selectedPlacementId: number | null
+}>()
+const emit = defineEmits<{
+  apply: [scheme: Scheme]
+  dirty: [value: boolean]
+  select: [id: number | null]
+}>()
+const selectedId = ref<number | null>(props.selectedPlacementId)
+const initialPlacement = props.scheme.placements.find(
+  (placement) => placement.id === props.selectedPlacementId,
+)
 const draft = ref<PlacementDraft | null>(
-  props.scheme.placements[0] ? createPlacementDraft(props.scheme.placements[0]) : null,
+  initialPlacement ? createPlacementDraft(initialPlacement) : null,
 )
 const dirty = ref(false)
 const error = ref('')
@@ -56,9 +67,18 @@ watch(
       scheme.placements.find((placement) => placement.id === selectedId.value) ??
       scheme.placements[0]
     selectedId.value = selected?.id ?? null
+    if (selectedId.value !== props.selectedPlacementId) emit('select', selectedId.value)
     draft.value = selected ? createPlacementDraft(selected) : null
     dirty.value = false
     emit('dirty', false)
+  },
+)
+
+watch(
+  () => props.selectedPlacementId,
+  (id) => {
+    if (id === null || id === selectedId.value || dirty.value) return
+    selectPlacement(id)
   },
 )
 
@@ -78,6 +98,7 @@ function selectPlacement(id: number): void {
   if (!selected) return
   selectedId.value = id
   draft.value = createPlacementDraft(selected)
+  emit('select', id)
   error.value = ''
   status.value = ''
 }
@@ -115,6 +136,7 @@ function applyDraft(): void {
     dirty.value = false
     error.value = ''
     status.value = `Объект ${id} применён к проекту. Скачайте копию v2 для сохранения.`
+    emit('select', id)
     emit('apply', updated)
     emit('dirty', false)
   } catch (cause) {
@@ -132,6 +154,7 @@ function removeSelected(): void {
     draft.value = null
     status.value = `Объект ${id} удалён из проекта. Действие можно отменить.`
     error.value = ''
+    emit('select', updated.placements[0]?.id ?? null)
     emit('apply', updated)
   } catch (cause) {
     error.value = cause instanceof PlacementEditError ? cause.message : 'Не удалось удалить объект.'
