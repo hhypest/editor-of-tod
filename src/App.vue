@@ -6,6 +6,7 @@ import LocalProjects from './components/LocalProjects.vue'
 import NewScheme from './components/NewScheme.vue'
 import PlacementEditor from './components/PlacementEditor.vue'
 import Pu66Linker from './components/Pu66Linker.vue'
+import SchemeReview from './components/SchemeReview.vue'
 import SchemeWorkspace from './components/SchemeWorkspace.vue'
 import SchemeDetailsEditor from './components/SchemeDetailsEditor.vue'
 import TemplateChoice from './components/TemplateChoice.vue'
@@ -431,7 +432,11 @@ function stepForward(): void {
           </div>
         </dl>
 
-        <h3>Что требуется проверить</h3>
+        <h3>Сообщения при открытии проекта</h3>
+        <p class="hint">
+          Эти сообщения относятся к моменту открытия или создания проекта. Текущие незаполненные
+          поля и пункты ручной сверки показаны в следующем блоке.
+        </p>
         <ul>
           <li v-for="warning in imported.warnings" :key="warning">{{ warning }}</li>
         </ul>
@@ -504,6 +509,13 @@ function stepForward(): void {
           печатный лист появится на следующем этапе.
         </p>
       </section>
+
+      <SchemeReview
+        v-if="imported"
+        class="panel"
+        :scheme="imported.scheme"
+        :has-pending-input="editorDirty"
+      />
 
       <Pu66Linker
         v-if="imported"
