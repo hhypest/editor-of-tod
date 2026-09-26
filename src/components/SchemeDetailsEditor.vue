@@ -7,7 +7,7 @@ import {
 } from '../domain/edit-details'
 import type { Scheme } from '../domain/model'
 
-const props = defineProps<{ scheme: Scheme }>()
+const props = defineProps<{ scheme: Scheme; locked?: boolean }>()
 const emit = defineEmits<{ apply: [scheme: Scheme]; dirty: [value: boolean] }>()
 const draft = ref(createSchemeDetailsDraft(props.scheme))
 const dirty = ref(false)
@@ -25,6 +25,7 @@ watch(
 )
 
 function markDirty(): void {
+  if (props.locked) return
   error.value = ''
   status.value = ''
   if (!dirty.value) {
@@ -42,6 +43,7 @@ function discard(): void {
 }
 
 function applyDraft(): void {
+  if (props.locked) return
   try {
     const updated = applySchemeDetails(props.scheme, draft.value)
     dirty.value = false
@@ -63,7 +65,7 @@ function applyDraft(): void {
       — в км/ч. Изменение параметров не переставляет знаки и не проверяет соответствие схемы нормам.
     </p>
     <form @submit.prevent="applyDraft" @input="markDirty" @change="markDirty">
-      <fieldset>
+      <fieldset :disabled="locked">
         <legend>Параметры схемы</legend>
         <div class="fields">
           <label>Участок <input v-model="draft.parameters.locationText" type="text" /></label>
@@ -167,7 +169,7 @@ function applyDraft(): void {
         </div>
       </fieldset>
 
-      <fieldset>
+      <fieldset :disabled="locked">
         <legend>Реквизиты листа</legend>
         <h3>Разработчик</h3>
         <div class="fields">
@@ -214,8 +216,8 @@ function applyDraft(): void {
       <p v-if="error" class="error" role="alert">{{ error }}</p>
       <p v-if="status" class="hint" role="status">{{ status }}</p>
       <div class="actions">
-        <button type="submit" class="primary" :disabled="!dirty">Применить правки</button>
-        <button type="button" :disabled="!dirty" @click="discard">Отменить ввод</button>
+        <button type="submit" class="primary" :disabled="locked || !dirty">Применить правки</button>
+        <button type="button" :disabled="locked || !dirty" @click="discard">Отменить ввод</button>
       </div>
     </form>
   </section>
