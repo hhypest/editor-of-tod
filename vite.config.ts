@@ -7,6 +7,16 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue(), vueDevTools()],
+  server: {
+    host: '127.0.0.1',
+    strictPort: true,
+    proxy: { '/api': { target: 'http://127.0.0.1:4100', changeOrigin: true } },
+  },
+  preview: {
+    host: '127.0.0.1',
+    strictPort: true,
+    proxy: { '/api': { target: 'http://127.0.0.1:4100', changeOrigin: true } },
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

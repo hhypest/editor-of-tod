@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import LocalRegistries from './components/LocalRegistries.vue'
+import TemplateChoice from './components/TemplateChoice.vue'
 import {
   exportSchemeJson,
   importSchemeJson,
@@ -301,6 +303,8 @@ function saveOriginal(): void {
           </table>
         </div>
       </section>
+      <TemplateChoice />
+      <LocalRegistries />
     </div>
   </main>
 </template>
