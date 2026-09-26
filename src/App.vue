@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import LocalRegistries from './components/LocalRegistries.vue'
 import ImportedData from './components/ImportedData.vue'
+import PlacementEditor from './components/PlacementEditor.vue'
 import SchemeDetailsEditor from './components/SchemeDetailsEditor.vue'
 import TemplateChoice from './components/TemplateChoice.vue'
 import {
@@ -12,16 +13,26 @@ import {
   type ImportResult,
 } from './domain/import'
 import type { Scheme } from './domain/model'
+import {
+  recordEdit,
+  redoEdit,
+  startHistory,
+  undoEdit,
+  type EditHistory,
+} from './domain/edit-history'
 
 const imported = ref<ImportResult | null>(null)
 const selectedFileName = ref('')
 const errorMessage = ref('')
 const loading = ref(false)
 const detailsDirty = ref(false)
+const placementDirty = ref(false)
 const modifiedSinceDownload = ref(false)
+const history = ref<EditHistory<Scheme> | null>(null)
+const editorDirty = computed(() => detailsDirty.value || placementDirty.value)
 
 function beforeUnload(event: BeforeUnloadEvent): void {
-  if (detailsDirty.value || modifiedSinceDownload.value) event.preventDefault()
+  if (editorDirty.value || modifiedSinceDownload.value) event.preventDefault()
 }
 
 onMounted(() => window.addEventListener('beforeunload', beforeUnload))
@@ -53,13 +64,15 @@ async function onFileSelected(event: Event): Promise<void> {
   input.value = ''
   if (!file) return
   if (
-    (detailsDirty.value || modifiedSinceDownload.value) &&
+    (editorDirty.value || modifiedSinceDownload.value) &&
     !window.confirm('Есть правки, которые ещё не скачаны в JSON-файле. Открыть другой проект?')
   )
     return
 
   imported.value = null
+  history.value = null
   detailsDirty.value = false
+  placementDirty.value = false
   modifiedSinceDownload.value = false
   errorMessage.value = ''
   selectedFileName.value = file.name
@@ -72,6 +85,7 @@ async function onFileSelected(event: Event): Promise<void> {
   loading.value = true
   try {
     imported.value = importSchemeJson(await file.text())
+    history.value = startHistory(imported.value.scheme)
   } catch (error) {
     errorMessage.value =
       error instanceof SchemeImportError ? error.message : 'Не удалось прочитать выбранный файл.'
@@ -96,7 +110,7 @@ function downloadJson(content: string, suffix: string): void {
 }
 
 function saveV2(): void {
-  if (imported.value && !detailsDirty.value) {
+  if (imported.value && !editorDirty.value) {
     downloadJson(exportSchemeJson(imported.value.scheme), 'v2')
     modifiedSinceDownload.value = false
   }
@@ -106,10 +120,26 @@ function saveOriginal(): void {
   if (imported.value) downloadJson(imported.value.scheme.source.originalJson, 'original_v1')
 }
 
-function onDetailsApplied(scheme: Scheme): void {
+function onProjectApplied(scheme: Scheme): void {
   if (!imported.value) return
+  history.value = recordEdit(history.value ?? startHistory(imported.value.scheme), scheme)
   imported.value = { ...imported.value, scheme }
   detailsDirty.value = false
+  placementDirty.value = false
+  modifiedSinceDownload.value = true
+}
+
+function stepBack(): void {
+  if (!imported.value || !history.value || editorDirty.value || !history.value.past.length) return
+  history.value = undoEdit(history.value)
+  imported.value = { ...imported.value, scheme: history.value.present }
+  modifiedSinceDownload.value = true
+}
+
+function stepForward(): void {
+  if (!imported.value || !history.value || editorDirty.value || !history.value.future.length) return
+  history.value = redoEdit(history.value)
+  imported.value = { ...imported.value, scheme: history.value.present }
   modifiedSinceDownload.value = true
 }
 </script>
@@ -122,7 +152,7 @@ function onDetailsApplied(scheme: Scheme): void {
         <h1>Проект переезда</h1>
         <p class="lead">
           Откройте JSON-проект автономного редактора. Проверьте перенесённые данные, измените
-          параметры и реквизиты, затем скачайте копию в новом формате.
+          параметры и объекты, затем скачайте копию в новом формате.
         </p>
       </header>
 
@@ -188,20 +218,30 @@ function onDetailsApplied(scheme: Scheme): void {
         </ul>
 
         <div class="actions">
-          <button type="button" class="primary" :disabled="detailsDirty" @click="saveV2">
+          <button type="button" class="primary" :disabled="editorDirty" @click="saveV2">
             Сохранить копию v2
           </button>
           <button type="button" @click="saveOriginal">Скачать исходный JSON</button>
+          <button type="button" :disabled="editorDirty || !history?.past.length" @click="stepBack">
+            Отменить действие
+          </button>
+          <button
+            type="button"
+            :disabled="editorDirty || !history?.future.length"
+            @click="stepForward"
+          >
+            Повторить действие
+          </button>
         </div>
-        <p v-if="detailsDirty" class="hint" role="status">
-          Сначала примените или отмените изменения формы ниже, затем скачайте копию проекта.
+        <p v-if="editorDirty" class="hint" role="status">
+          Сначала примените или отмените изменения в форме, затем скачайте копию проекта или
+          воспользуйтесь историей действий.
         </p>
         <p v-else-if="modifiedSinceDownload" class="hint" role="status">
           Применённые правки находятся в памяти браузера. Скачайте копию v2 для сохранения.
         </p>
         <p class="hint">
-          Исходный файл не изменяется. Размещение объектов на листе и печать появятся на следующих
-          этапах.
+          Исходный файл не изменяется. Визуальный лист и печать появятся на следующих этапах.
         </p>
       </section>
 
@@ -209,8 +249,18 @@ function onDetailsApplied(scheme: Scheme): void {
         v-if="imported"
         class="panel"
         :scheme="imported.scheme"
-        @apply="onDetailsApplied"
+        :locked="placementDirty"
+        @apply="onProjectApplied"
         @dirty="detailsDirty = $event"
+      />
+
+      <PlacementEditor
+        v-if="imported"
+        class="panel"
+        :scheme="imported.scheme"
+        :locked="detailsDirty"
+        @apply="onProjectApplied"
+        @dirty="placementDirty = $event"
       />
 
       <section v-if="imported" class="panel" aria-labelledby="inspection-title">
