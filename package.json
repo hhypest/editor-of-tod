@@ -8,6 +8,8 @@
     "dev:api": "node server/index.ts",
     "dev:web": "vite",
     "local": "node server/index.ts",
+    "import:pu66": "node server/import-cli.ts pu66",
+    "import:signs": "node server/import-cli.ts signs",
     "build": "run-p type-check build-only",
     "preview": "run-p dev:api preview:web",
     "preview:web": "vite preview",
@@ -20,15 +22,24 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "check": "run-s format:check lint type-check test build-only"
+    "check:public": "node scripts/check-public-files.mjs",
+    "check": "run-s check:public format:check lint type-check test build-only"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
+    "fflate": "^0.8.3",
+    "imagetracerjs": "^1.2.6",
+    "pngjs": "^7.0.0",
     "vue": "^3.5.42",
     "zod": "^4.6.5"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   },
   "devDependencies": {
     "@tsconfig/node24": "^24.0.5",
     "@types/node": "^26.6.2",
+    "@types/pngjs": "^6.0.5",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/eslint-config-typescript": "^14.9.0",
     "@vue/tsconfig": "^0.9.1",
