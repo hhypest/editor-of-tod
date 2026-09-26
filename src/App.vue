@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import LocalRegistries from './components/LocalRegistries.vue'
+import ImportedData from './components/ImportedData.vue'
 import TemplateChoice from './components/TemplateChoice.vue'
 import {
   exportSchemeJson,
@@ -19,6 +20,15 @@ const signCount = computed(() =>
   imported.value?.scheme.placements.reduce(
     (count, placement) => count + (placement.kind === 'sign-post' ? placement.signIds.length : 0),
     0,
+  ),
+)
+const referencedSignIds = computed(() =>
+  Array.from(
+    new Set(
+      imported.value?.scheme.placements.flatMap((placement) =>
+        placement.kind === 'sign-post' ? placement.signIds : [],
+      ) ?? [],
+    ),
   ),
 )
 
@@ -305,6 +315,7 @@ function saveOriginal(): void {
       </section>
       <TemplateChoice />
       <LocalRegistries />
+      <ImportedData :referenced-sign-ids="referencedSignIds" />
     </div>
   </main>
 </template>

@@ -10,6 +10,8 @@ import {
   type NormativeDraft,
   type NormativeRecord,
 } from '../src/domain/registry.ts'
+import { type Pu66Card, type Pu66Import, localCardSummary, schemeFields } from './pu66.ts'
+import { type SignImport } from './signs.ts'
 
 type RegistryKind = 'crossings' | 'normative'
 type StoredRow = { key: string; revision: number; payload_json: string; updated_at: string }
@@ -97,7 +99,7 @@ export class RegistryStore {
     this.db.exec('PRAGMA foreign_keys = ON')
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version
-    if (version !== 0 && version !== 1) {
+    if (version !== 0 && version !== 1 && version !== 2) {
       this.db.close()
       throw new Error(`Неизвестная версия локальной базы: ${version}. Файл не изменён.`)
     }
@@ -125,6 +127,46 @@ export class RegistryStore {
           PRIMARY KEY (kind, key, revision)
         );
         PRAGMA user_version = 1;
+        COMMIT;
+      `)
+    }
+    if (version < 2) {
+      this.db.exec(`
+        BEGIN;
+        CREATE TABLE pu66_sources (
+          sha256 TEXT PRIMARY KEY,
+          original_name TEXT NOT NULL,
+          workbook BLOB NOT NULL
+        );
+        CREATE TABLE pu66_cards (
+          key TEXT PRIMARY KEY,
+          revision INTEGER NOT NULL,
+          payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
+          source_sha256 TEXT NOT NULL REFERENCES pu66_sources(sha256),
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE pu66_revisions (
+          key TEXT NOT NULL,
+          revision INTEGER NOT NULL,
+          payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
+          source_sha256 TEXT NOT NULL REFERENCES pu66_sources(sha256),
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (key, revision)
+        );
+        CREATE TABLE signs (
+          code TEXT PRIMARY KEY,
+          numbered_png BLOB NOT NULL,
+          plain_png BLOB NOT NULL,
+          plain_svg TEXT,
+          numbered_sha256 TEXT NOT NULL,
+          plain_sha256 TEXT NOT NULL,
+          zip_sha256 TEXT NOT NULL,
+          width INTEGER NOT NULL,
+          height INTEGER NOT NULL,
+          revision INTEGER NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        PRAGMA user_version = 2;
         COMMIT;
       `)
     }
@@ -198,6 +240,180 @@ export class RegistryStore {
     const parsed = normativeDraftSchema.parse(draft)
     const row = this.save('normative', parsed.id, parsed, expectedRevision)
     return { ...parsed, revision: row.revision, updatedAt: row.updated_at }
+  }
+
+  planPu66(entries: Pu66Import[]): { added: number; updated: number; unchanged: number } {
+    const seen = new Set<string>()
+    const result = { added: 0, updated: 0, unchanged: 0 }
+    const existing = this.db.prepare('SELECT source_sha256 FROM pu66_cards WHERE key = ?')
+    for (const entry of entries) {
+      if (seen.has(entry.card.key)) throw new Error(`Повторный ключ ПУ-66: ${entry.card.key}.`)
+      seen.add(entry.card.key)
+      const previous = existing.get(entry.card.key) as { source_sha256: string } | undefined
+      if (!previous) result.added++
+      else if (previous.source_sha256 === entry.sha256) result.unchanged++
+      else result.updated++
+    }
+    return result
+  }
+
+  importPu66(entries: Pu66Import[]): { added: number; updated: number; unchanged: number } {
+    const result = this.planPu66(entries)
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const source = this.db.prepare(
+        'INSERT OR IGNORE INTO pu66_sources (sha256, original_name, workbook) VALUES (?, ?, ?)',
+      )
+      const current = this.db.prepare(
+        `INSERT INTO pu66_cards (key, revision, payload_json, source_sha256, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET revision=excluded.revision, payload_json=excluded.payload_json,
+         source_sha256=excluded.source_sha256, updated_at=excluded.updated_at`,
+      )
+      const revisionInsert = this.db.prepare(
+        `INSERT INTO pu66_revisions (key, revision, payload_json, source_sha256, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      const previousQuery = this.db.prepare(
+        'SELECT revision, source_sha256 FROM pu66_cards WHERE key = ?',
+      )
+      for (const entry of entries) {
+        const previous = previousQuery.get(entry.card.key) as
+          { revision: number; source_sha256: string } | undefined
+        if (previous?.source_sha256 === entry.sha256) continue
+        source.run(entry.sha256, entry.filename.slice(0, 240), entry.source)
+        const revision = (previous?.revision ?? 0) + 1
+        const updatedAt = this.now()
+        const payload = JSON.stringify(entry.card)
+        current.run(entry.card.key, revision, payload, entry.sha256, updatedAt)
+        revisionInsert.run(entry.card.key, revision, payload, entry.sha256, updatedAt)
+      }
+      this.db.exec('COMMIT')
+      return result
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
+  listPu66(): Array<ReturnType<typeof localCardSummary> & { revision: number; updatedAt: string }> {
+    const rows = this.db
+      .prepare('SELECT revision, payload_json, updated_at FROM pu66_cards ORDER BY key')
+      .all() as Pick<StoredRow, 'revision' | 'payload_json' | 'updated_at'>[]
+    return rows.map((row) => ({
+      ...localCardSummary(JSON.parse(row.payload_json) as Pu66Card),
+      revision: row.revision,
+      updatedAt: row.updated_at,
+    }))
+  }
+
+  getPu66Scheme(key: string): ReturnType<typeof schemeFields> | null {
+    const row = this.db.prepare('SELECT payload_json FROM pu66_cards WHERE key = ?').get(key) as
+      { payload_json: string } | undefined
+    return row ? schemeFields(JSON.parse(row.payload_json) as Pu66Card) : null
+  }
+
+  planSigns(entries: SignImport[]): { added: number; updated: number; unchanged: number } {
+    const seen = new Set<string>()
+    const result = { added: 0, updated: 0, unchanged: 0 }
+    const existing = this.db.prepare(
+      'SELECT numbered_sha256, plain_sha256, plain_svg FROM signs WHERE code = ?',
+    )
+    for (const entry of entries) {
+      if (seen.has(entry.code)) throw new Error(`Повторный код знака: ${entry.code}.`)
+      seen.add(entry.code)
+      const previous = existing.get(entry.code) as
+        { numbered_sha256: string; plain_sha256: string; plain_svg: string | null } | undefined
+      if (!previous) result.added++
+      else if (
+        previous.numbered_sha256 === entry.numberedSha256 &&
+        previous.plain_sha256 === entry.plainSha256 &&
+        (!entry.plainSvg || previous.plain_svg === entry.plainSvg)
+      )
+        result.unchanged++
+      else result.updated++
+    }
+    return result
+  }
+
+  importSigns(entries: SignImport[]): { added: number; updated: number; unchanged: number } {
+    const result = this.planSigns(entries)
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const existing = this.db.prepare(
+        'SELECT numbered_sha256, plain_sha256, plain_svg, revision FROM signs WHERE code = ?',
+      )
+      const save = this.db.prepare(
+        `INSERT INTO signs (code, numbered_png, plain_png, plain_svg, numbered_sha256, plain_sha256,
+          zip_sha256, width, height, revision, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(code) DO UPDATE SET numbered_png=excluded.numbered_png, plain_png=excluded.plain_png,
+          plain_svg=excluded.plain_svg, numbered_sha256=excluded.numbered_sha256,
+          plain_sha256=excluded.plain_sha256, zip_sha256=excluded.zip_sha256, width=excluded.width,
+          height=excluded.height, revision=excluded.revision, updated_at=excluded.updated_at`,
+      )
+      for (const entry of entries) {
+        const previous = existing.get(entry.code) as
+          | {
+              numbered_sha256: string
+              plain_sha256: string
+              plain_svg: string | null
+              revision: number
+            }
+          | undefined
+        const samePng =
+          previous?.numbered_sha256 === entry.numberedSha256 &&
+          previous.plain_sha256 === entry.plainSha256
+        const svg = entry.plainSvg ?? (samePng ? previous?.plain_svg : null) ?? null
+        if (samePng && previous?.plain_svg === svg) continue
+        save.run(
+          entry.code,
+          entry.numberedPng,
+          entry.plainPng,
+          svg,
+          entry.numberedSha256,
+          entry.plainSha256,
+          entry.zipSha256,
+          entry.width,
+          entry.height,
+          (previous?.revision ?? 0) + 1,
+          this.now(),
+        )
+      }
+      this.db.exec('COMMIT')
+      return result
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
+  listSigns(
+    query = '',
+    limit = 100,
+  ): Array<{ code: string; width: number; height: number; vectorAvailable: boolean }> {
+    const rows = this.db
+      .prepare(
+        "SELECT code, width, height, plain_svg IS NOT NULL AS vector FROM signs WHERE code LIKE ? ESCAPE '\\' ORDER BY code LIMIT ?",
+      )
+      .all(`%${query.replace(/[\\%_]/g, '\\$&')}%`, limit) as Array<{
+      code: string
+      width: number
+      height: number
+      vector: number
+    }>
+    return rows.map((row) => ({
+      code: row.code,
+      width: row.width,
+      height: row.height,
+      vectorAvailable: Boolean(row.vector),
+    }))
+  }
+
+  getSignAsset(code: string, format: 'png' | 'svg', numbered: boolean): Uint8Array | string | null {
+    const column = format === 'svg' ? 'plain_svg' : numbered ? 'numbered_png' : 'plain_png'
+    const row = this.db.prepare(`SELECT ${column} AS asset FROM signs WHERE code = ?`).get(code) as
+      { asset: Uint8Array | string | null } | undefined
+    return row?.asset ?? null
   }
 
   history(

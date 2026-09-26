@@ -20,9 +20,18 @@ coverage
 # Local project files and reference material are not publication-ready.
 /private-data/
 /local-input/
+*.xls
+*.xlsx
+*.zip
+*.png
+*.jpg
+*.jpeg
+*.pdf
 *.sqlite
 *.sqlite-*
 *.db
+*.sqlite.zip
+*.db.zip
 
 # Editor directories and files
 .vscode/*

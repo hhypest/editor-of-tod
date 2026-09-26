@@ -67,6 +67,14 @@ function checkRequest(req: IncomingMessage, listenPort: number): void {
   }
 }
 
+function decodeKey(encoded: string): string {
+  try {
+    return decodeURIComponent(encoded)
+  } catch {
+    throw new RequestError(400, 'Неверный код в адресе.')
+  }
+}
+
 async function serveBuiltApp(pathname: string, res: ServerResponse): Promise<void> {
   const filename =
     pathname === '/' || pathname === '/index.html'
@@ -109,6 +117,42 @@ export function createRegistryServer(store: RegistryStore, listenPort = port) {
         json(res, 200, store.listCrossings())
       } else if (req.method === 'GET' && pathname === '/api/normative') {
         json(res, 200, store.listNormative())
+      } else if (req.method === 'GET' && pathname === '/api/pu66') {
+        json(res, 200, store.listPu66())
+      } else if (
+        req.method === 'GET' &&
+        pathname.startsWith('/api/pu66/') &&
+        pathname.endsWith('/scheme')
+      ) {
+        const encodedKey = pathname.slice('/api/pu66/'.length, -'/scheme'.length)
+        const key = decodeKey(encodedKey)
+        const fields = store.getPu66Scheme(key)
+        if (!fields) throw new RequestError(404, 'Карточка ПУ-66 не найдена.')
+        json(res, 200, fields)
+      } else if (req.method === 'GET' && pathname === '/api/signs') {
+        const query =
+          new URL(req.url ?? '/', `http://127.0.0.1:${actualPort}`).searchParams.get('query') ?? ''
+        if (query.length > 80) throw new RequestError(400, 'Поиск слишком длинный.')
+        json(res, 200, store.listSigns(query, 500))
+      } else if (req.method === 'GET' && /^\/api\/signs\/[^/]+\/image$/.test(pathname)) {
+        const code = decodeKey(pathname.slice('/api/signs/'.length, -'/image'.length))
+        if (!/^[0-9][0-9A-Za-z._-]*ж?$/.test(code))
+          throw new RequestError(400, 'Неверный код знака.')
+        const params = new URL(req.url ?? '/', `http://127.0.0.1:${actualPort}`).searchParams
+        const format = params.get('format') === 'svg' ? 'svg' : 'png'
+        const numbered = params.get('numbered') === '1'
+        if (format === 'svg' && numbered)
+          throw new RequestError(400, 'SVG с номером пока отсутствует.')
+        const asset = store.getSignAsset(code, format, numbered)
+        if (!asset) throw new RequestError(404, 'Изображение знака не найдено.')
+        res.writeHead(200, {
+          'Content-Type': format === 'svg' ? 'image/svg+xml; charset=utf-8' : 'image/png',
+          'Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff',
+          'Cross-Origin-Resource-Policy': 'same-origin',
+          'Content-Security-Policy': "default-src 'none'; sandbox",
+        })
+        res.end(asset)
       } else if (req.method === 'PUT' && pathname === '/api/crossings') {
         const { expectedRevision, ...draft } = crossingWriteSchema.parse(await readJson(req))
         json(res, 200, store.saveCrossing(draft, expectedRevision))
