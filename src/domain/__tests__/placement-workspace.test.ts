@@ -42,7 +42,7 @@ describe('coordinate workspace for imported objects', () => {
       sizeSvg: { width: 12, height: 12 },
     })
     expect(movedCone.placements.slice(1, 3)).toEqual(scheme34.placements.slice(1, 3))
-    expect(movedCone.source.originalJson).toBe(b34)
+    expect(movedCone.source).toMatchObject({ originalJson: b34 })
     expect(scheme34.placements[0]?.generatedByTemplate).toBe(true)
     expect(importSchemeJson(exportSchemeJson(movedCone)).scheme).toEqual(movedCone)
   })

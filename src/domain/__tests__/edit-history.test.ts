@@ -22,7 +22,7 @@ describe('undo and redo of applied project changes', () => {
     expect(redoEdit(oneBack).present).toBe(removed)
     expect(recordEdit(oneBack, removePlacement(edited, 2)).future).toEqual([])
     expect(importSchemeJson(exportSchemeJson(oneBack.present)).scheme).toEqual(edited)
-    expect(oneBack.present.source.originalJson).toBe(fixture)
+    expect(oneBack.present.source).toMatchObject({ originalJson: fixture })
     expect(history.present).toBe(removed)
   })
 

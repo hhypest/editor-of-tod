@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
+import { createNewScheme } from '../../src/domain/create-scheme'
 import { importSchemeJson } from '../../src/domain/import'
+import { schemeV2Schema } from '../../src/domain/model'
 import { normativeDraftSchema, type CrossingDraft } from '../../src/domain/registry'
 import { RegistryStore, RevisionConflict } from '../store'
 
@@ -121,7 +123,7 @@ describe('local SQLite registries', () => {
       expect(store.getProjectRevision(scheme.id, 2)?.scheme.parameters.locationText).toBe(
         'Изменённый учебный участок',
       )
-      expect(store.getProject(scheme.id)?.scheme.source.originalJson).toBe(fixture)
+      expect(store.getProject(scheme.id)?.scheme.source).toMatchObject({ originalJson: fixture })
       const backupName = await store.createBackup()
       const backup = new RegistryStore(join(directory, 'backups', backupName))
       try {
@@ -135,9 +137,97 @@ describe('local SQLite registries', () => {
     const reopened = new RegistryStore(path)
     try {
       expect(reopened.getProject(scheme.id)?.revision).toBe(4)
-      expect(reopened.getProject(scheme.id)?.scheme.source.originalJson).toBe(fixture)
+      expect(reopened.getProject(scheme.id)?.scheme.source).toMatchObject({ originalJson: fixture })
     } finally {
       reopened.close()
+    }
+  })
+
+  it('reopens native B.34 projects without inventing inactive B.33 measurements', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-native-'))
+    directories.push(directory)
+    const path = join(directory, 'registry.sqlite')
+    const scheme = createNewScheme({
+      referenceId: 'TEST-NATIVE',
+      locationText: 'Учебный участок',
+      directionLeft: '',
+      directionRight: '',
+      frontMetres: '18',
+      taperMetres: '8',
+      bufferMetres: '10',
+      speedStagesKmh: ['70', '50', '40'],
+      yellowTemporarySigns: false,
+    })
+    const store = new RegistryStore(path)
+    try {
+      expect(store.saveProject(scheme, 0).revision).toBe(1)
+    } finally {
+      store.close()
+    }
+    const reopened = new RegistryStore(path)
+    try {
+      expect(reopened.getProject(scheme.id)?.scheme).toEqual(scheme)
+      expect(reopened.getProjectRevision(scheme.id, 1)?.scheme.parameters.workZones.b33).toBeNull()
+      expect(reopened.listProjects()).toMatchObject([{ referenceId: 'TEST-NATIVE', revision: 1 }])
+    } finally {
+      reopened.close()
+    }
+  })
+
+  it('opens saved v2 revisions as v3 without changing their stored history', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-project-v2-'))
+    directories.push(directory)
+    const path = join(directory, 'registry.sqlite')
+    const scheme = importSchemeJson(fixture).scheme
+    const previous = schemeV2Schema.parse({ ...scheme, schemaVersion: 2 })
+    const initialized = new RegistryStore(path)
+    initialized.close()
+    const raw = new DatabaseSync(path)
+    const savedAt = '2026-09-26T12:00:00.000Z'
+    raw
+      .prepare(
+        'INSERT INTO project_drafts (id, revision, scheme_json, reference_id, location_text, template_code, updated_at) VALUES (?, 1, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        scheme.id,
+        JSON.stringify(previous),
+        scheme.crossing.referenceId,
+        scheme.parameters.locationText,
+        scheme.template.code,
+        savedAt,
+      )
+    raw
+      .prepare(
+        'INSERT INTO project_revisions (id, revision, scheme_json, updated_at) VALUES (?, 1, ?, ?)',
+      )
+      .run(scheme.id, JSON.stringify(previous), savedAt)
+    raw.close()
+
+    const store = new RegistryStore(path)
+    try {
+      expect(store.getProject(scheme.id)?.scheme).toEqual(scheme)
+      expect(store.getProjectRevision(scheme.id, 1)?.scheme).toEqual(scheme)
+      expect(store.saveProject(scheme, 1).revision).toBe(1)
+      const edited = {
+        ...scheme,
+        parameters: { ...scheme.parameters, locationText: 'Новая редакция' },
+      }
+      expect(store.saveProject(edited, 1).revision).toBe(2)
+      expect(store.restoreProject(scheme.id, 1, 2)?.scheme).toEqual(scheme)
+    } finally {
+      store.close()
+    }
+    const check = new DatabaseSync(path)
+    try {
+      const records = check
+        .prepare('SELECT revision, scheme_json FROM project_revisions ORDER BY revision')
+        .all() as { revision: number; scheme_json: string }[]
+      expect(records.map((record) => JSON.parse(record.scheme_json).schemaVersion)).toEqual([
+        2, 3, 3,
+      ])
+      expect(JSON.parse(records[0]!.scheme_json)).toEqual(previous)
+    } finally {
+      check.close()
     }
   })
 

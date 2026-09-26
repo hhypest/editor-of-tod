@@ -15,6 +15,17 @@ const error = ref('')
 const status = ref('')
 const zoneCodes = ['b33', 'b34'] as const
 
+function addZone(code: 'b33' | 'b34'): void {
+  if (props.locked || draft.value.parameters.workZones[code]) return
+  draft.value.parameters.workZones[code] = {
+    taperMetres: '',
+    bufferMetres: '',
+    workMetres: '',
+    labels: { taper: '', buffer: '', work: '' },
+  }
+  markDirty()
+}
+
 watch(
   () => props.scheme,
   (scheme) => {
@@ -48,7 +59,7 @@ function applyDraft(): void {
     const updated = applySchemeDetails(props.scheme, draft.value)
     dirty.value = false
     error.value = ''
-    status.value = 'Правки применены к проекту. Скачайте копию v2, чтобы сохранить их в файле.'
+    status.value = 'Правки применены к проекту. Сохраните черновик или скачайте копию v3.'
     emit('apply', updated)
     emit('dirty', false)
   } catch (cause) {
@@ -63,6 +74,8 @@ function applyDraft(): void {
     <p class="hint">
       Изменения применяются только к открытой копии проекта. Расстояния вводятся в метрах, скорости
       — в км/ч. Изменение параметров не переставляет знаки и не проверяет соответствие схемы нормам.
+      Для созданного здесь проекта изменение длины фронта через границу 30 м требует нового проекта
+      с другим вариантом.
     </p>
     <form @submit.prevent="applyDraft" @input="markDirty" @change="markDirty">
       <fieldset :disabled="locked">
@@ -131,39 +144,47 @@ function applyDraft(): void {
         </label>
         <div v-for="code in zoneCodes" :key="code">
           <h3>Зона {{ code.toUpperCase() }}</h3>
-          <div class="fields compact">
+          <button
+            v-if="!draft.parameters.workZones[code]"
+            type="button"
+            :disabled="locked"
+            @click="addZone(code)"
+          >
+            Добавить размеры {{ code.toUpperCase() }}
+          </button>
+          <div v-else class="fields compact">
             <label
               >Отвод, м
               <input
-                v-model="draft.parameters.workZones[code].taperMetres"
+                v-model="draft.parameters.workZones[code]!.taperMetres"
                 type="text"
                 inputmode="decimal"
             /></label>
             <label
               >Буфер, м
               <input
-                v-model="draft.parameters.workZones[code].bufferMetres"
+                v-model="draft.parameters.workZones[code]!.bufferMetres"
                 type="text"
                 inputmode="decimal"
             /></label>
             <label
               >Фронт работ, м
               <input
-                v-model="draft.parameters.workZones[code].workMetres"
+                v-model="draft.parameters.workZones[code]!.workMetres"
                 type="text"
                 inputmode="decimal"
             /></label>
             <label
               >Подпись отвода
-              <input v-model="draft.parameters.workZones[code].labels.taper" type="text"
+              <input v-model="draft.parameters.workZones[code]!.labels.taper" type="text"
             /></label>
             <label
               >Подпись буфера
-              <input v-model="draft.parameters.workZones[code].labels.buffer" type="text"
+              <input v-model="draft.parameters.workZones[code]!.labels.buffer" type="text"
             /></label>
             <label
               >Подпись фронта
-              <input v-model="draft.parameters.workZones[code].labels.work" type="text"
+              <input v-model="draft.parameters.workZones[code]!.labels.work" type="text"
             /></label>
           </div>
         </div>

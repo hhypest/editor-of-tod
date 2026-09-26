@@ -6,6 +6,7 @@ import {
   MAX_PROJECT_FILE_BYTES,
   SchemeImportError,
 } from '../import'
+import { schemeV2Schema } from '../model'
 
 const importedAt = '2026-09-26T12:00:00.000Z'
 const id = '55740b36-080a-4cbe-9476-e71ffb1ab47f'
@@ -108,7 +109,7 @@ describe('import of autonomous editor projects', () => {
     const result = importSchemeJson(source, { id, now: importedAt })
 
     expect(result.format).toBe('legacy-v1')
-    expect(result.scheme.source.originalJson).toBe(source)
+    expect(result.scheme.source).toMatchObject({ kind: 'legacy-html-v1', originalJson: source })
     expect(result.scheme.crossing).toMatchObject({ referenceId: 'TEST-001', snapshot: null })
     expect(result.scheme.parameters.signDistancesMetres).toEqual({
       d300: 300,
@@ -116,7 +117,7 @@ describe('import of autonomous editor projects', () => {
       d150: 150,
       d50: null,
     })
-    expect(result.scheme.parameters.workZones.b34.workMetres).toBe(30)
+    expect(result.scheme.parameters.workZones.b34?.workMetres).toBe(30)
     expect(result.scheme.placements[0]).toMatchObject({
       kind: 'sign-post',
       position: { anchor: 'L0', offsetXSvg: -520, offsetYSvg: 12 },
@@ -136,18 +137,34 @@ describe('import of autonomous editor projects', () => {
     expect(result.warnings.join(' ')).toContain('d50')
   })
 
-  it('exports and re-imports v2 without creating another identity or losing the source', () => {
+  it('exports and re-imports v3 without creating another identity or losing the source', () => {
     const first = importSchemeJson(JSON.stringify(sourceFixture()), { id, now: importedAt })
     const second = importSchemeJson(exportSchemeJson(first.scheme))
 
-    expect(second.format).toBe('scheme-v2')
+    expect(second.format).toBe('scheme-v3')
     expect(second.scheme).toEqual(first.scheme)
     expect(second.scheme.id).toBe(id)
+  })
+
+  it('accepts a saved v2 file and upgrades it without losing legacy fields or identity', () => {
+    const migrated = importSchemeJson(JSON.stringify(sourceFixture()), {
+      id,
+      now: importedAt,
+    }).scheme
+    const v2 = schemeV2Schema.parse({ ...migrated, schemaVersion: 2 })
+    const reopened = importSchemeJson(JSON.stringify(v2))
+    expect(reopened.format).toBe('scheme-v2')
+    expect(reopened.scheme).toEqual(migrated)
+    expect(reopened.scheme.source).toMatchObject({
+      originalJson: migrated.source.kind === 'legacy-html-v1' ? migrated.source.originalJson : '',
+    })
+    expect(JSON.parse(exportSchemeJson(reopened.scheme)).schemaVersion).toBe(3)
   })
 
   it('keeps unknown old fields in the original snapshot', () => {
     const withExtra = { ...sourceFixture(), futureLegacyField: { note: 'сохранить' } }
     const imported = importSchemeJson(JSON.stringify(withExtra), { id, now: importedAt })
+    if (imported.scheme.source.kind !== 'legacy-html-v1') throw new Error('Missing original')
     expect(JSON.parse(imported.scheme.source.originalJson)).toHaveProperty(
       'futureLegacyField.note',
       'сохранить',
@@ -163,7 +180,7 @@ describe('import of autonomous editor projects', () => {
     expect(result.warnings.join(' ')).toContain('Счётчик')
   })
 
-  it('rejects conflicting object identities in a saved v2 project', () => {
+  it('rejects conflicting object identities in a saved project', () => {
     const scheme = importSchemeJson(JSON.stringify(sourceFixture()), { id, now: importedAt }).scheme
     const duplicate = structuredClone(scheme)
     duplicate.placements[1]!.id = duplicate.placements[0]!.id

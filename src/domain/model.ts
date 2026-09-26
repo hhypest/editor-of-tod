@@ -11,9 +11,14 @@ const workZoneSchema = z.strictObject({
   labels: z.strictObject({ taper: text, buffer: text, work: text }),
 })
 
-const crossingSchema = z.strictObject({
+const crossingV2Schema = z.strictObject({
   referenceId: z.string().min(1).max(120),
   source: z.literal('legacy-pu66'),
+  snapshot: z.null(),
+})
+const crossingSchema = z.strictObject({
+  referenceId: z.string().min(1).max(120),
+  source: z.enum(['legacy-pu66', 'entered-by-editor']),
   snapshot: z.null(),
 })
 
@@ -56,65 +61,129 @@ const titleBlockSchema = z.strictObject({
   agreement: z.strictObject({ position: text, name: text, year: text }),
 })
 
-export const schemeSchema = z
-  .strictObject({
-    schemaVersion: z.literal(2),
-    id: z.uuid(),
-    createdAt: z.iso.datetime(),
-    crossing: crossingSchema,
-    template: templateSchema,
-    parameters: z.strictObject({
-      locationText: text,
-      directions: z.strictObject({ left: text, right: text }),
-      signDistancesMetres: z.strictObject({
-        d300: finite.nonnegative().nullable(),
-        d250: finite.nonnegative().nullable(),
-        d150: finite.nonnegative().nullable(),
-        d50: finite.nonnegative().nullable(),
-      }),
-      speedStagesKmh: z.tuple([finite.positive(), finite.positive(), finite.positive()]),
-      yellowTemporarySigns: z.boolean(),
-      workZones: z.strictObject({ b33: workZoneSchema, b34: workZoneSchema }),
-    }),
-    titleBlock: titleBlockSchema,
-    placements: z
-      .array(z.discriminatedUnion('kind', [signPlacementSchema, elementPlacementSchema]))
-      .max(2_000),
-    nextPlacementId: z.number().int().positive(),
-    source: z.strictObject({
-      kind: z.literal('legacy-html-v1'),
-      importedAt: z.iso.datetime(),
-      originalJson: z
-        .string()
-        .min(1)
-        .max(10 * 1024 * 1024),
-    }),
-  })
-  .superRefine((scheme, context) => {
-    const ids = new Set<number>()
-    let highestId = 0
-    for (const [index, placement] of scheme.placements.entries()) {
-      if (ids.has(placement.id)) {
-        context.addIssue({
-          code: 'custom',
-          path: ['placements', index, 'id'],
-          message: 'Повторяющийся идентификатор объекта',
-        })
-      }
-      ids.add(placement.id)
-      highestId = Math.max(highestId, placement.id)
-    }
-    if (scheme.nextPlacementId <= highestId) {
+const parameterFields = {
+  locationText: text,
+  directions: z.strictObject({ left: text, right: text }),
+  signDistancesMetres: z.strictObject({
+    d300: finite.nonnegative().nullable(),
+    d250: finite.nonnegative().nullable(),
+    d150: finite.nonnegative().nullable(),
+    d50: finite.nonnegative().nullable(),
+  }),
+  speedStagesKmh: z.tuple([finite.positive(), finite.positive(), finite.positive()]),
+  yellowTemporarySigns: z.boolean(),
+}
+
+const legacySourceSchema = z.strictObject({
+  kind: z.literal('legacy-html-v1'),
+  importedAt: z.iso.datetime(),
+  originalJson: z
+    .string()
+    .min(1)
+    .max(10 * 1024 * 1024),
+})
+
+const sharedFields = {
+  id: z.uuid(),
+  createdAt: z.iso.datetime(),
+  template: templateSchema,
+  titleBlock: titleBlockSchema,
+  placements: z
+    .array(z.discriminatedUnion('kind', [signPlacementSchema, elementPlacementSchema]))
+    .max(2_000),
+  nextPlacementId: z.number().int().positive(),
+}
+
+function checkPlacements(
+  scheme: { placements: z.infer<typeof sharedFields.placements>; nextPlacementId: number },
+  context: z.RefinementCtx,
+): void {
+  const ids = new Set<number>()
+  let highestId = 0
+  for (const [index, placement] of scheme.placements.entries()) {
+    if (ids.has(placement.id)) {
       context.addIssue({
         code: 'custom',
-        path: ['nextPlacementId'],
-        message: 'Номер следующего объекта уже занят',
+        path: ['placements', index, 'id'],
+        message: 'Повторяющийся идентификатор объекта',
+      })
+    }
+    ids.add(placement.id)
+    highestId = Math.max(highestId, placement.id)
+  }
+  if (scheme.nextPlacementId <= highestId) {
+    context.addIssue({
+      code: 'custom',
+      path: ['nextPlacementId'],
+      message: 'Номер следующего объекта уже занят',
+    })
+  }
+}
+
+/** Read-only validator for files and SQLite revisions produced before native project creation. */
+export const schemeV2Schema = z
+  .strictObject({
+    ...sharedFields,
+    schemaVersion: z.literal(2),
+    crossing: crossingV2Schema,
+    parameters: z.strictObject({
+      ...parameterFields,
+      workZones: z.strictObject({ b33: workZoneSchema, b34: workZoneSchema }),
+    }),
+    source: legacySourceSchema,
+  })
+  .superRefine(checkPlacements)
+
+export const schemeSchema = z
+  .strictObject({
+    ...sharedFields,
+    schemaVersion: z.literal(3),
+    crossing: crossingSchema,
+    parameters: z.strictObject({
+      ...parameterFields,
+      workZones: z.strictObject({
+        b33: workZoneSchema.nullable(),
+        b34: workZoneSchema.nullable(),
+      }),
+    }),
+    source: z.union([legacySourceSchema, z.strictObject({ kind: z.literal('created-in-editor') })]),
+  })
+  .superRefine((scheme, context) => {
+    checkPlacements(scheme, context)
+    const activeZone = scheme.parameters.workZones[scheme.template.code]
+    if (activeZone === null) {
+      context.addIssue({
+        code: 'custom',
+        path: ['parameters', 'workZones', scheme.template.code],
+        message: 'Для выбранного варианта нужны размеры зоны работ',
+      })
+    } else if (
+      scheme.source.kind === 'created-in-editor' &&
+      (activeZone.workMetres < 30 ? 'b34' : 'b33') !== scheme.template.code
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['parameters', 'workZones', scheme.template.code, 'workMetres'],
+        message: 'Длина фронта не соответствует выбранному варианту Б.33/Б.34',
       })
     }
   })
 
 export type Scheme = z.infer<typeof schemeSchema>
+export type SchemeV2 = z.infer<typeof schemeV2Schema>
 export type Crossing = z.infer<typeof crossingSchema>
 export type Template = z.infer<typeof templateSchema>
 export type SignPlacement = z.infer<typeof signPlacementSchema>
 export type WorkZone = z.infer<typeof workZoneSchema>
+
+export function upgradeSchemeV2(value: unknown): Scheme {
+  const previous = schemeV2Schema.parse(value)
+  return schemeSchema.parse({ ...previous, schemaVersion: 3 })
+}
+
+export function parseStoredScheme(value: unknown): Scheme {
+  if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 2) {
+    return upgradeSchemeV2(value)
+  }
+  return schemeSchema.parse(value)
+}

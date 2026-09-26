@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import LocalRegistries from './components/LocalRegistries.vue'
 import ImportedData from './components/ImportedData.vue'
 import LocalProjects from './components/LocalProjects.vue'
+import NewScheme from './components/NewScheme.vue'
 import PlacementEditor from './components/PlacementEditor.vue'
 import SchemeWorkspace from './components/SchemeWorkspace.vue'
 import SchemeDetailsEditor from './components/SchemeDetailsEditor.vue'
@@ -97,7 +98,7 @@ async function onFileSelected(event: Event): Promise<void> {
   selectedFileName.value = file.name
 
   if (file.size > MAX_PROJECT_FILE_BYTES) {
-    errorMessage.value = 'Файл проекта больше 10 МБ.'
+    errorMessage.value = 'Файл проекта больше 32 МБ.'
     return
   }
 
@@ -129,15 +130,47 @@ function downloadJson(content: string, suffix: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
 }
 
-function saveV2(): void {
+function saveV3(): void {
   if (imported.value && !editorDirty.value) {
-    downloadJson(exportSchemeJson(imported.value.scheme), 'v2')
+    downloadJson(exportSchemeJson(imported.value.scheme), 'v3')
     modifiedSinceDownload.value = false
   }
 }
 
 function saveOriginal(): void {
-  if (imported.value) downloadJson(imported.value.scheme.source.originalJson, 'original_v1')
+  if (imported.value?.scheme.source.kind === 'legacy-html-v1') {
+    downloadJson(imported.value.scheme.source.originalJson, 'original_v1')
+  }
+}
+
+function createProject(scheme: Scheme): void {
+  if (
+    hasUnsavedWork.value &&
+    !window.confirm('Есть правки без сохранённой копии. Создать другой проект?')
+  )
+    return
+  imported.value = {
+    scheme,
+    format: 'scheme-v3',
+    warnings: [
+      'Идентификатор переезда введён вручную; карточка ПУ-66 не сверена.',
+      'Вариант выбран по длине фронта работ, нормативная проверка и расстановка знаков не выполнены.',
+      ...(scheme.parameters.workZones[scheme.template.code]?.workMetres === 30
+        ? ['Ровно 30 м: требуется предметная сверка применимости варианта.']
+        : []),
+    ],
+  }
+  history.value = startHistory(scheme)
+  selectedPlacementId.value = null
+  selectedFileName.value = 'Новый проект · не сохранён'
+  localRevision.value = null
+  detailsDirty.value = false
+  placementDirty.value = false
+  modifiedSinceDownload.value = true
+  modifiedSinceLocalSave.value = true
+  localError.value = ''
+  localNotice.value = ''
+  errorMessage.value = ''
 }
 
 function showLocalError(cause: unknown): void {
@@ -200,7 +233,7 @@ async function saveAsNew(): Promise<void> {
 function openProjectRecord(scheme: Scheme, revision: number): void {
   imported.value = {
     scheme,
-    format: 'scheme-v2',
+    format: 'scheme-v3',
     warnings: ['Схема не прошла нормативную проверку.'],
   }
   history.value = startHistory(scheme)
@@ -299,10 +332,12 @@ function stepForward(): void {
         <p class="eyebrow">Редактор СОДД · локальный проект</p>
         <h1>Проект переезда</h1>
         <p class="lead">
-          Откройте JSON-проект автономного редактора. Проверьте перенесённые данные, измените
-          параметры и объекты, затем сохраните черновик на этом компьютере или скачайте JSON-копию.
+          Создайте проект с измеренными параметрами или откройте JSON. Измените объекты и реквизиты,
+          затем сохраните черновик на этом компьютере или скачайте JSON-копию.
         </p>
       </header>
+
+      <NewScheme class="panel" :locked="localBusy || loading" @create="createProject" />
 
       <section class="panel" aria-labelledby="import-title">
         <h2 id="import-title">Выбрать проект</h2>
@@ -316,7 +351,7 @@ function stepForward(): void {
         />
         <p class="hint">
           Поддерживаются файлы старого редактора <code>v: 1</code> и проекты
-          <code>schemaVersion: 2</code> размером до 10 МБ.
+          <code>schemaVersion: 2</code> или <code>schemaVersion: 3</code> размером до 32 МБ.
         </p>
         <p v-if="loading" class="hint" role="status">Проверяем файл…</p>
         <p v-if="errorMessage" class="error" role="alert">{{ errorMessage }}</p>
@@ -341,9 +376,15 @@ function stepForward(): void {
         <div class="result-heading">
           <div>
             <p class="eyebrow">
-              {{ imported.format === 'legacy-v1' ? 'Старый формат v1' : 'Новый формат v2' }}
+              {{
+                imported.format === 'legacy-v1'
+                  ? 'Перенос из v1'
+                  : imported.format === 'scheme-v2'
+                    ? 'Перенос из v2'
+                    : 'Формат проекта v3'
+              }}
             </p>
-            <h2 id="result-title">Структура проекта проверена</h2>
+            <h2 id="result-title">Проект открыт для редактирования</h2>
           </div>
           <span class="badge">Без нормативной проверки</span>
         </div>
@@ -354,7 +395,7 @@ function stepForward(): void {
             <dd>{{ selectedFileName }}</dd>
           </div>
           <div>
-            <dt>Переезд из файла</dt>
+            <dt>Идентификатор переезда</dt>
             <dd>{{ imported.scheme.crossing.referenceId }}</dd>
           </div>
           <div>
@@ -371,7 +412,7 @@ function stepForward(): void {
           </div>
         </dl>
 
-        <h3>Предупреждения при импорте</h3>
+        <h3>Что требуется проверить</h3>
         <ul>
           <li v-for="warning in imported.warnings" :key="warning">{{ warning }}</li>
         </ul>
@@ -392,11 +433,17 @@ function stepForward(): void {
             type="button"
             class="primary"
             :disabled="editorDirty || localBusy"
-            @click="saveV2"
+            @click="saveV3"
           >
-            Сохранить копию v2
+            Сохранить копию v3
           </button>
-          <button type="button" @click="saveOriginal">Скачать исходный JSON</button>
+          <button
+            v-if="imported.scheme.source.kind === 'legacy-html-v1'"
+            type="button"
+            @click="saveOriginal"
+          >
+            Скачать исходный JSON
+          </button>
           <button
             type="button"
             :disabled="editorDirty || localBusy || !history?.past.length"
@@ -426,7 +473,7 @@ function stepForward(): void {
           {{
             modifiedSinceLocalSave
               ? 'Применённые правки находятся в памяти браузера. Сохраните локально или скачайте JSON-копию.'
-              : 'Черновик сохранён локально. Для отдельной копии скачайте JSON v2.'
+              : 'Черновик сохранён локально. Для отдельной копии скачайте JSON v3.'
           }}
         </p>
         <p class="hint">
@@ -466,11 +513,10 @@ function stepForward(): void {
       />
 
       <section v-if="imported" class="panel" aria-labelledby="inspection-title">
-        <h2 id="inspection-title">Сверка перенесённых данных</h2>
+        <h2 id="inspection-title">Данные открытого проекта</h2>
         <p class="hint">
-          Значения показаны из файла без проверки нормативов. Координаты объектов приведены в
-          условных единицах прежнего листа, расстояния — в метрах. Коды привязки и стороны сохранены
-          из проекта.
+          Значения показаны без нормативной проверки. Координаты объектов заданы в условных единицах
+          рабочей области, расстояния — в метрах.
         </p>
 
         <h3>Параметры</h3>
@@ -506,23 +552,29 @@ function stepForward(): void {
           <div>
             <dt>Б.33: отвод / буфер / зона работ</dt>
             <dd>
-              {{ imported.scheme.parameters.workZones.b33.taperMetres }} /
-              {{ imported.scheme.parameters.workZones.b33.bufferMetres }} /
-              {{ imported.scheme.parameters.workZones.b33.workMetres }} м
+              <template v-if="imported.scheme.parameters.workZones.b33">
+                {{ imported.scheme.parameters.workZones.b33.taperMetres }} /
+                {{ imported.scheme.parameters.workZones.b33.bufferMetres }} /
+                {{ imported.scheme.parameters.workZones.b33.workMetres }} м
+              </template>
+              <template v-else>не заполнено</template>
             </dd>
           </div>
           <div>
             <dt>Б.34: отвод / буфер / зона работ</dt>
             <dd>
-              {{ imported.scheme.parameters.workZones.b34.taperMetres }} /
-              {{ imported.scheme.parameters.workZones.b34.bufferMetres }} /
-              {{ imported.scheme.parameters.workZones.b34.workMetres }} м
+              <template v-if="imported.scheme.parameters.workZones.b34">
+                {{ imported.scheme.parameters.workZones.b34.taperMetres }} /
+                {{ imported.scheme.parameters.workZones.b34.bufferMetres }} /
+                {{ imported.scheme.parameters.workZones.b34.workMetres }} м
+              </template>
+              <template v-else>не заполнено</template>
             </dd>
           </div>
         </dl>
 
         <details>
-          <summary>Реквизиты из исходного проекта</summary>
+          <summary>Реквизиты проекта</summary>
           <dl>
             <div>
               <dt>Разработчик</dt>
@@ -553,7 +605,7 @@ function stepForward(): void {
               </dd>
             </div>
             <div>
-              <dt>Согласование (текст из файла)</dt>
+              <dt>Согласование (текст)</dt>
               <dd>
                 {{ imported.scheme.titleBlock.agreement.position }} ·
                 {{ imported.scheme.titleBlock.agreement.name }} ·
@@ -568,7 +620,7 @@ function stepForward(): void {
         <div v-else class="table-scroll">
           <table>
             <caption>
-              Состав и координаты объектов, сохранённые при переносе
+              Состав и координаты объектов проекта
             </caption>
             <thead>
               <tr>
