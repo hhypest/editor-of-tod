@@ -4,9 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "run-p dev:api dev:web",
+    "dev:api": "node server/index.ts",
+    "dev:web": "vite",
+    "local": "node server/index.ts",
     "build": "run-p type-check build-only",
-    "preview": "vite preview",
+    "preview": "run-p dev:api preview:web",
+    "preview:web": "vite preview",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
     "lint": "run-s lint:oxlint lint:eslint",
@@ -44,6 +48,6 @@
     "vue-tsc": "^3.3.11"
   },
   "engines": {
-    "node": "^22.18.0 || >=24.12.0"
+    "node": "^24.12.0"
   }
 }
