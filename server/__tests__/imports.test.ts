@@ -179,7 +179,12 @@ describe('private import formats', () => {
       store.importSigns([entry])
       store.close()
       const old = new DatabaseSync(path)
-      old.exec('ALTER TABLE signs ADD COLUMN plain_svg TEXT; PRAGMA user_version = 2;')
+      old.exec(`
+        DROP TABLE project_revisions;
+        DROP TABLE project_drafts;
+        ALTER TABLE signs ADD COLUMN plain_svg TEXT;
+        PRAGMA user_version = 2;
+      `)
       old.prepare('UPDATE signs SET plain_svg = ? WHERE code = ?').run(marker, entry.code)
       old.close()
 
@@ -195,7 +200,7 @@ describe('private import formats', () => {
       migrated.close()
 
       const database = new DatabaseSync(path)
-      expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 3 })
+      expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 4 })
       expect(
         (database.prepare('PRAGMA table_info(signs)').all() as { name: string }[]).map(
           (column) => column.name,

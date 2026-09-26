@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import LocalRegistries from './components/LocalRegistries.vue'
 import ImportedData from './components/ImportedData.vue'
+import LocalProjects from './components/LocalProjects.vue'
 import PlacementEditor from './components/PlacementEditor.vue'
 import SchemeWorkspace from './components/SchemeWorkspace.vue'
 import SchemeDetailsEditor from './components/SchemeDetailsEditor.vue'
@@ -14,6 +15,8 @@ import {
   type ImportResult,
 } from './domain/import'
 import type { Scheme } from './domain/model'
+import { schemeSchema } from './domain/model'
+import { getLocalProject, restoreLocalRevision, saveLocalProject } from './services/local-projects'
 import {
   recordEdit,
   redoEdit,
@@ -29,12 +32,21 @@ const loading = ref(false)
 const detailsDirty = ref(false)
 const placementDirty = ref(false)
 const modifiedSinceDownload = ref(false)
+const modifiedSinceLocalSave = ref(false)
+const localRevision = ref<number | null>(null)
+const localBusy = ref(false)
+const localError = ref('')
+const localNotice = ref('')
+const projectsRefreshKey = ref(0)
 const history = ref<EditHistory<Scheme> | null>(null)
 const selectedPlacementId = ref<number | null>(null)
 const editorDirty = computed(() => detailsDirty.value || placementDirty.value)
+const hasUnsavedWork = computed(
+  () => editorDirty.value || (modifiedSinceDownload.value && modifiedSinceLocalSave.value),
+)
 
 function beforeUnload(event: BeforeUnloadEvent): void {
-  if (editorDirty.value || modifiedSinceDownload.value) event.preventDefault()
+  if (hasUnsavedWork.value) event.preventDefault()
 }
 
 onMounted(() => window.addEventListener('beforeunload', beforeUnload))
@@ -66,8 +78,8 @@ async function onFileSelected(event: Event): Promise<void> {
   input.value = ''
   if (!file) return
   if (
-    (editorDirty.value || modifiedSinceDownload.value) &&
-    !window.confirm('Есть правки, которые ещё не скачаны в JSON-файле. Открыть другой проект?')
+    hasUnsavedWork.value &&
+    !window.confirm('Есть правки без сохранённой копии. Открыть другой проект?')
   )
     return
 
@@ -77,6 +89,10 @@ async function onFileSelected(event: Event): Promise<void> {
   detailsDirty.value = false
   placementDirty.value = false
   modifiedSinceDownload.value = false
+  modifiedSinceLocalSave.value = false
+  localRevision.value = null
+  localError.value = ''
+  localNotice.value = ''
   errorMessage.value = ''
   selectedFileName.value = file.name
 
@@ -124,6 +140,131 @@ function saveOriginal(): void {
   if (imported.value) downloadJson(imported.value.scheme.source.originalJson, 'original_v1')
 }
 
+function showLocalError(cause: unknown): void {
+  localError.value =
+    cause instanceof Error ? cause.message : 'Операция с локальной базой не удалась.'
+  if (localError.value.includes('Запись изменилась')) {
+    localError.value += ' Ваши правки остались открытыми. Обновите список черновиков.'
+    if (localRevision.value === null) {
+      localError.value += ' Для отдельной копии используйте «Сохранить как новый черновик».'
+    }
+  }
+}
+
+async function saveLocally(): Promise<void> {
+  if (!imported.value || editorDirty.value || localBusy.value) return
+  localBusy.value = true
+  localError.value = ''
+  localNotice.value = ''
+  try {
+    const schemeAtSave = imported.value.scheme
+    const saved = await saveLocalProject(schemeAtSave, localRevision.value ?? 0)
+    localRevision.value = saved.revision
+    if (imported.value.scheme === schemeAtSave) modifiedSinceLocalSave.value = false
+    projectsRefreshKey.value++
+    localNotice.value = `Черновик сохранён в SQLite: редакция № ${saved.revision}.`
+  } catch (cause) {
+    showLocalError(cause)
+  } finally {
+    localBusy.value = false
+  }
+}
+
+async function saveAsNew(): Promise<void> {
+  if (!imported.value || editorDirty.value || localBusy.value) return
+  localBusy.value = true
+  localError.value = ''
+  localNotice.value = ''
+  try {
+    const copy = schemeSchema.parse({
+      ...imported.value.scheme,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+    })
+    const saved = await saveLocalProject(copy, 0)
+    imported.value = { ...imported.value, scheme: saved.scheme }
+    history.value = startHistory(saved.scheme)
+    localRevision.value = saved.revision
+    modifiedSinceLocalSave.value = false
+    modifiedSinceDownload.value = true
+    selectedFileName.value = `Локальный черновик · редакция № ${saved.revision}`
+    projectsRefreshKey.value++
+    localNotice.value = 'Создан отдельный черновик с новым ID. Скачайте его JSON при необходимости.'
+  } catch (cause) {
+    showLocalError(cause)
+  } finally {
+    localBusy.value = false
+  }
+}
+
+function openProjectRecord(scheme: Scheme, revision: number): void {
+  imported.value = {
+    scheme,
+    format: 'scheme-v2',
+    warnings: ['Схема не прошла нормативную проверку.'],
+  }
+  history.value = startHistory(scheme)
+  selectedPlacementId.value = scheme.placements[0]?.id ?? null
+  selectedFileName.value = `Локальный черновик · редакция № ${revision}`
+  localRevision.value = revision
+  detailsDirty.value = false
+  placementDirty.value = false
+  modifiedSinceDownload.value = false
+  modifiedSinceLocalSave.value = false
+}
+
+async function openLocal(id: string): Promise<void> {
+  if (localBusy.value || loading.value) return
+  if (
+    hasUnsavedWork.value &&
+    !window.confirm('Есть правки без сохранённой копии. Открыть черновик?')
+  )
+    return
+  localBusy.value = true
+  localError.value = ''
+  localNotice.value = ''
+  try {
+    const record = await getLocalProject(id)
+    openProjectRecord(record.scheme, record.revision)
+  } catch (cause) {
+    showLocalError(cause)
+  } finally {
+    localBusy.value = false
+  }
+}
+
+async function restoreLocal(
+  id: string,
+  sourceRevision: number,
+  expectedRevision: number,
+): Promise<void> {
+  if (
+    localBusy.value ||
+    imported.value?.scheme.id !== id ||
+    localRevision.value !== expectedRevision
+  )
+    return
+  if (
+    !window.confirm(
+      `Восстановить редакцию № ${sourceRevision} как новую редакцию проекта? Несохранённые правки в открытой вкладке будут заменены; сохранённая текущая редакция останется в истории.`,
+    )
+  )
+    return
+  localBusy.value = true
+  localError.value = ''
+  localNotice.value = ''
+  try {
+    const record = await restoreLocalRevision(id, sourceRevision, expectedRevision)
+    openProjectRecord(record.scheme, record.revision)
+    projectsRefreshKey.value++
+    localNotice.value = `Редакция № ${sourceRevision} восстановлена как № ${record.revision}.`
+  } catch (cause) {
+    showLocalError(cause)
+  } finally {
+    localBusy.value = false
+  }
+}
+
 function onProjectApplied(scheme: Scheme): void {
   if (!imported.value) return
   history.value = recordEdit(history.value ?? startHistory(imported.value.scheme), scheme)
@@ -131,6 +272,7 @@ function onProjectApplied(scheme: Scheme): void {
   detailsDirty.value = false
   placementDirty.value = false
   modifiedSinceDownload.value = true
+  modifiedSinceLocalSave.value = true
 }
 
 function stepBack(): void {
@@ -138,6 +280,7 @@ function stepBack(): void {
   history.value = undoEdit(history.value)
   imported.value = { ...imported.value, scheme: history.value.present }
   modifiedSinceDownload.value = true
+  modifiedSinceLocalSave.value = true
 }
 
 function stepForward(): void {
@@ -145,6 +288,7 @@ function stepForward(): void {
   history.value = redoEdit(history.value)
   imported.value = { ...imported.value, scheme: history.value.present }
   modifiedSinceDownload.value = true
+  modifiedSinceLocalSave.value = true
 }
 </script>
 
@@ -156,7 +300,7 @@ function stepForward(): void {
         <h1>Проект переезда</h1>
         <p class="lead">
           Откройте JSON-проект автономного редактора. Проверьте перенесённые данные, измените
-          параметры и объекты, затем скачайте копию в новом формате.
+          параметры и объекты, затем сохраните черновик на этом компьютере или скачайте JSON-копию.
         </p>
       </header>
 
@@ -167,6 +311,7 @@ function stepForward(): void {
           id="scheme-file"
           type="file"
           accept=".json,application/json"
+          :disabled="localBusy"
           @change="onFileSelected"
         />
         <p class="hint">
@@ -176,6 +321,16 @@ function stepForward(): void {
         <p v-if="loading" class="hint" role="status">Проверяем файл…</p>
         <p v-if="errorMessage" class="error" role="alert">{{ errorMessage }}</p>
       </section>
+
+      <LocalProjects
+        class="panel"
+        :active-id="imported?.scheme.id ?? null"
+        :active-revision="localRevision"
+        :refresh-key="projectsRefreshKey"
+        :locked="localBusy || loading"
+        @open="openLocal"
+        @restore="restoreLocal"
+      />
 
       <section
         v-if="imported"
@@ -222,27 +377,57 @@ function stepForward(): void {
         </ul>
 
         <div class="actions">
-          <button type="button" class="primary" :disabled="editorDirty" @click="saveV2">
+          <button
+            type="button"
+            class="primary"
+            :disabled="editorDirty || localBusy"
+            @click="saveLocally"
+          >
+            Сохранить локально
+          </button>
+          <button type="button" :disabled="editorDirty || localBusy" @click="saveAsNew">
+            Сохранить как новый черновик
+          </button>
+          <button
+            type="button"
+            class="primary"
+            :disabled="editorDirty || localBusy"
+            @click="saveV2"
+          >
             Сохранить копию v2
           </button>
           <button type="button" @click="saveOriginal">Скачать исходный JSON</button>
-          <button type="button" :disabled="editorDirty || !history?.past.length" @click="stepBack">
+          <button
+            type="button"
+            :disabled="editorDirty || localBusy || !history?.past.length"
+            @click="stepBack"
+          >
             Отменить действие
           </button>
           <button
             type="button"
-            :disabled="editorDirty || !history?.future.length"
+            :disabled="editorDirty || localBusy || !history?.future.length"
             @click="stepForward"
           >
             Повторить действие
           </button>
         </div>
+        <p v-if="localError" class="error" role="alert">{{ localError }}</p>
+        <p v-if="localNotice" class="hint" role="status">{{ localNotice }}</p>
+        <p v-if="localRevision !== null" class="hint">
+          Открыта локальная редакция № {{ localRevision
+          }}{{ modifiedSinceLocalSave ? ' · есть новые правки' : '' }}.
+        </p>
         <p v-if="editorDirty" class="hint" role="status">
           Сначала примените или отмените изменения в форме, затем скачайте копию проекта или
           воспользуйтесь историей действий.
         </p>
         <p v-else-if="modifiedSinceDownload" class="hint" role="status">
-          Применённые правки находятся в памяти браузера. Скачайте копию v2 для сохранения.
+          {{
+            modifiedSinceLocalSave
+              ? 'Применённые правки находятся в памяти браузера. Сохраните локально или скачайте JSON-копию.'
+              : 'Черновик сохранён локально. Для отдельной копии скачайте JSON v2.'
+          }}
         </p>
         <p class="hint">
           Исходный файл не изменяется. Рабочая область показывает условные координаты объектов;
@@ -254,7 +439,7 @@ function stepForward(): void {
         v-if="imported"
         class="panel"
         :scheme="imported.scheme"
-        :locked="placementDirty"
+        :locked="placementDirty || localBusy"
         @apply="onProjectApplied"
         @dirty="detailsDirty = $event"
       />
@@ -264,7 +449,7 @@ function stepForward(): void {
         class="panel"
         :scheme="imported.scheme"
         :selected-id="selectedPlacementId"
-        :locked="editorDirty"
+        :locked="editorDirty || localBusy"
         @apply="onProjectApplied"
         @select="selectedPlacementId = $event"
       />
@@ -273,7 +458,7 @@ function stepForward(): void {
         v-if="imported"
         class="panel"
         :scheme="imported.scheme"
-        :locked="detailsDirty"
+        :locked="detailsDirty || localBusy"
         :selected-placement-id="selectedPlacementId"
         @apply="onProjectApplied"
         @dirty="placementDirty = $event"
