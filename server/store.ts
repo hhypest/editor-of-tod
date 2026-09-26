@@ -99,7 +99,7 @@ export class RegistryStore {
     this.db.exec('PRAGMA foreign_keys = ON')
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version
-    if (version !== 0 && version !== 1 && version !== 2) {
+    if (version !== 0 && version !== 1 && version !== 2 && version !== 3) {
       this.db.close()
       throw new Error(`Неизвестная версия локальной базы: ${version}. Файл не изменён.`)
     }
@@ -157,7 +157,6 @@ export class RegistryStore {
           code TEXT PRIMARY KEY,
           numbered_png BLOB NOT NULL,
           plain_png BLOB NOT NULL,
-          plain_svg TEXT,
           numbered_sha256 TEXT NOT NULL,
           plain_sha256 TEXT NOT NULL,
           zip_sha256 TEXT NOT NULL,
@@ -166,9 +165,27 @@ export class RegistryStore {
           revision INTEGER NOT NULL,
           updated_at TEXT NOT NULL
         );
-        PRAGMA user_version = 2;
+        PRAGMA user_version = 3;
         COMMIT;
       `)
+    }
+    if (version === 2) {
+      // A failed VACUUM can be retried on the next launch without losing the PNGs.
+      const columns = this.db.prepare('PRAGMA table_info(signs)').all() as { name: string }[]
+      if (columns.some((column) => column.name === 'plain_svg')) {
+        this.db.exec('PRAGMA secure_delete = ON')
+        this.db.exec('BEGIN IMMEDIATE')
+        try {
+          this.db.exec('ALTER TABLE signs DROP COLUMN plain_svg')
+          this.db.exec('COMMIT')
+        } catch (error) {
+          this.db.exec('ROLLBACK')
+          throw error
+        }
+      }
+      // Rebuild the file so removed vector data is not left in unused SQLite pages.
+      this.db.exec('VACUUM')
+      this.db.exec('PRAGMA user_version = 3')
     }
     if (this.listNormative().length === 0) {
       for (const entry of initialNormativeEntries) this.saveNormative(entry, 0)
@@ -317,18 +334,17 @@ export class RegistryStore {
     const seen = new Set<string>()
     const result = { added: 0, updated: 0, unchanged: 0 }
     const existing = this.db.prepare(
-      'SELECT numbered_sha256, plain_sha256, plain_svg FROM signs WHERE code = ?',
+      'SELECT numbered_sha256, plain_sha256 FROM signs WHERE code = ?',
     )
     for (const entry of entries) {
       if (seen.has(entry.code)) throw new Error(`Повторный код знака: ${entry.code}.`)
       seen.add(entry.code)
       const previous = existing.get(entry.code) as
-        { numbered_sha256: string; plain_sha256: string; plain_svg: string | null } | undefined
+        { numbered_sha256: string; plain_sha256: string } | undefined
       if (!previous) result.added++
       else if (
         previous.numbered_sha256 === entry.numberedSha256 &&
-        previous.plain_sha256 === entry.plainSha256 &&
-        (!entry.plainSvg || previous.plain_svg === entry.plainSvg)
+        previous.plain_sha256 === entry.plainSha256
       )
         result.unchanged++
       else result.updated++
@@ -341,13 +357,13 @@ export class RegistryStore {
     this.db.exec('BEGIN IMMEDIATE')
     try {
       const existing = this.db.prepare(
-        'SELECT numbered_sha256, plain_sha256, plain_svg, revision FROM signs WHERE code = ?',
+        'SELECT numbered_sha256, plain_sha256, revision FROM signs WHERE code = ?',
       )
       const save = this.db.prepare(
-        `INSERT INTO signs (code, numbered_png, plain_png, plain_svg, numbered_sha256, plain_sha256,
-          zip_sha256, width, height, revision, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO signs (code, numbered_png, plain_png, numbered_sha256, plain_sha256,
+          zip_sha256, width, height, revision, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(code) DO UPDATE SET numbered_png=excluded.numbered_png, plain_png=excluded.plain_png,
-          plain_svg=excluded.plain_svg, numbered_sha256=excluded.numbered_sha256,
+          numbered_sha256=excluded.numbered_sha256,
           plain_sha256=excluded.plain_sha256, zip_sha256=excluded.zip_sha256, width=excluded.width,
           height=excluded.height, revision=excluded.revision, updated_at=excluded.updated_at`,
       )
@@ -356,20 +372,17 @@ export class RegistryStore {
           | {
               numbered_sha256: string
               plain_sha256: string
-              plain_svg: string | null
               revision: number
             }
           | undefined
         const samePng =
           previous?.numbered_sha256 === entry.numberedSha256 &&
           previous.plain_sha256 === entry.plainSha256
-        const svg = entry.plainSvg ?? (samePng ? previous?.plain_svg : null) ?? null
-        if (samePng && previous?.plain_svg === svg) continue
+        if (samePng) continue
         save.run(
           entry.code,
           entry.numberedPng,
           entry.plainPng,
-          svg,
           entry.numberedSha256,
           entry.plainSha256,
           entry.zipSha256,
@@ -387,32 +400,27 @@ export class RegistryStore {
     }
   }
 
-  listSigns(
-    query = '',
-    limit = 100,
-  ): Array<{ code: string; width: number; height: number; vectorAvailable: boolean }> {
+  listSigns(query = '', limit = 100): Array<{ code: string; width: number; height: number }> {
     const rows = this.db
       .prepare(
-        "SELECT code, width, height, plain_svg IS NOT NULL AS vector FROM signs WHERE code LIKE ? ESCAPE '\\' ORDER BY code LIMIT ?",
+        "SELECT code, width, height FROM signs WHERE code LIKE ? ESCAPE '\\' ORDER BY code LIMIT ?",
       )
       .all(`%${query.replace(/[\\%_]/g, '\\$&')}%`, limit) as Array<{
       code: string
       width: number
       height: number
-      vector: number
     }>
     return rows.map((row) => ({
       code: row.code,
       width: row.width,
       height: row.height,
-      vectorAvailable: Boolean(row.vector),
     }))
   }
 
-  getSignAsset(code: string, format: 'png' | 'svg', numbered: boolean): Uint8Array | string | null {
-    const column = format === 'svg' ? 'plain_svg' : numbered ? 'numbered_png' : 'plain_png'
+  getSignPng(code: string, numbered: boolean): Uint8Array | null {
+    const column = numbered ? 'numbered_png' : 'plain_png'
     const row = this.db.prepare(`SELECT ${column} AS asset FROM signs WHERE code = ?`).get(code) as
-      { asset: Uint8Array | string | null } | undefined
+      { asset: Uint8Array } | undefined
     return row?.asset ?? null
   }
 

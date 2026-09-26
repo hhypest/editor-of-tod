@@ -10,16 +10,14 @@ const databasePath = fileURLToPath(new URL('../private-data/registry.sqlite', im
 export async function runImport(args: string[], store: RegistryStore): Promise<string> {
   const [kind, ...rest] = args
   const apply = rest.includes('--apply')
-  const vectorize = rest.includes('--vector')
   const paths = rest.filter((arg) => !arg.startsWith('--'))
   if (
     (kind !== 'pu66' && kind !== 'signs') ||
     (kind === 'signs' ? paths.length !== 1 : paths.length < 1 || paths.length > 100) ||
-    rest.some((arg) => arg.startsWith('--') && !['--apply', '--vector'].includes(arg)) ||
-    (kind === 'pu66' && vectorize)
+    rest.some((arg) => arg.startsWith('--') && arg !== '--apply')
   ) {
     throw new Error(
-      'Использование: npm run import:pu66 -- [--apply] файлы.xlsx... или npm run import:signs -- [--apply] [--vector] знаки.zip',
+      'Использование: npm run import:pu66 -- [--apply] файлы.xlsx... или npm run import:signs -- [--apply] знаки.zip',
     )
   }
   const buffers = await Promise.all(
@@ -43,10 +41,10 @@ export async function runImport(args: string[], store: RegistryStore): Promise<s
     const result = store.importPu66(entries)
     return `ПУ-66: добавлено ${result.added}, обновлено ${result.updated}, без изменений ${result.unchanged}. Резервная копия: private-data/backups/${backup}.`
   }
-  const entries = parseSignArchive(buffers[0]!, vectorize)
+  const entries = parseSignArchive(buffers[0]!)
   const planned = store.planSigns(entries)
   if (!apply)
-    return `Просмотр знаков: новых ${planned.added}, обновлений ${planned.updated}, без изменений ${planned.unchanged}. Для записи добавьте --apply${vectorize ? ' --vector' : ''}.`
+    return `Просмотр знаков: новых ${planned.added}, обновлений ${planned.updated}, без изменений ${planned.unchanged}. Для записи добавьте --apply.`
   if (planned.added + planned.updated === 0) return 'Знаки: данные уже загружены, изменений нет.'
   const backup = await store.createBackup()
   const result = store.importSigns(entries)

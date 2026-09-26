@@ -1,13 +1,11 @@
 import { createHash } from 'node:crypto'
 import { unzipSync } from 'fflate'
 import { PNG } from 'pngjs'
-import ImageTracer from 'imagetracerjs'
 
 export type SignImport = {
   code: string
   numberedPng: Buffer
   plainPng: Buffer
-  plainSvg: string | null
   width: number
   height: number
   numberedSha256: string
@@ -26,7 +24,7 @@ function filename(name: string): string {
   return recovered.includes('\uFFFD') ? name : recovered
 }
 
-export function parseSignArchive(source: Buffer, vectorize = false): SignImport[] {
+export function parseSignArchive(source: Buffer): SignImport[] {
   if (source.length > 64 * 1024 * 1024 || source.length < 100) {
     throw new Error('Нужен ZIP набора знаков размером до 64 МБ.')
   }
@@ -84,31 +82,10 @@ export function parseSignArchive(source: Buffer, vectorize = false): SignImport[
   return Array.from(pairs, ([code, pair]) => {
     if (!pair.plain || !pair.numbered) throw new Error(`Знак ${code}: нужна пара PNG.`)
     const image = PNG.sync.read(pair.plain)
-    const plainSvg = vectorize
-      ? ImageTracer.imagedataToSVG(
-          { width: image.width, height: image.height, data: image.data },
-          {
-            ltres: 1,
-            qtres: 1,
-            pathomit: 12,
-            colorsampling: 0,
-            numberofcolors: 8,
-            colorquantcycles: 3,
-            roundcoords: 1,
-            viewbox: true,
-            blurradius: 1,
-            blurdelta: 20,
-          },
-        )
-      : null
-    if (plainSvg && (plainSvg.length > 2_000_000 || !plainSvg.startsWith('<svg '))) {
-      throw new Error(`Знак ${code}: не удалось создать безопасный SVG.`)
-    }
     return {
       code,
       numberedPng: pair.numbered,
       plainPng: pair.plain,
-      plainSvg,
       width: image.width,
       height: image.height,
       numberedSha256: digest(pair.numbered),

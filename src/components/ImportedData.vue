@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 
 const props = defineProps<{ referencedSignIds: string[] }>()
-type Sign = { code: string; width: number; height: number; vectorAvailable: boolean }
+type Sign = { code: string; width: number; height: number }
 type Crossing = {
   referenceId: string
   location: string
@@ -20,7 +20,6 @@ const crossings = ref<Crossing[]>([])
 const search = ref('')
 const error = ref('')
 const busy = ref(false)
-const preferVector = ref(false)
 
 const visible = computed(() =>
   signs.value
@@ -54,8 +53,7 @@ async function load(): Promise<void> {
 }
 
 function imageUrl(sign: Sign): string {
-  const format = preferVector.value && sign.vectorAvailable ? 'svg' : 'png'
-  return `/api/signs/${encodeURIComponent(sign.code)}/image?format=${format}`
+  return `/api/signs/${encodeURIComponent(sign.code)}/image`
 }
 
 onMounted(load)
@@ -89,14 +87,6 @@ onMounted(load)
     <p>Найдено {{ signs.length }} знаков. Поиск показывает первые 48 совпадений.</p>
     <label for="sign-search">Номер знака</label>
     <input id="sign-search" v-model="search" type="search" placeholder="Например, 3.24_40_ж" />
-    <label class="vector-toggle">
-      <input v-model="preferVector" type="checkbox" />
-      Показывать векторную производную, если она создана
-    </label>
-    <p class="hint">
-      Автоматически трассированный SVG приблизителен. Для точного изображения и печати используйте
-      исходный PNG до проверки специалистом.
-    </p>
 
     <div v-if="referenced.length" class="referenced">
       <h4>Знаки открытого JSON-проекта</h4>
@@ -109,9 +99,7 @@ onMounted(load)
     <div class="gallery">
       <figure v-for="sign in visible" :key="sign.code">
         <img :src="imageUrl(sign)" :alt="`Знак ${sign.code}`" loading="lazy" />
-        <figcaption>
-          {{ sign.code }} <small v-if="sign.vectorAvailable">SVG доступен</small>
-        </figcaption>
+        <figcaption>{{ sign.code }}</figcaption>
       </figure>
     </div>
   </section>
@@ -132,7 +120,6 @@ h2 {
   color: #a22030;
   font-weight: 600;
 }
-.hint,
 small {
   color: #526273;
 }
@@ -157,10 +144,6 @@ input[type='search'] {
   border: 1px solid #93a5b8;
   border-radius: 0.35rem;
   font: inherit;
-}
-.vector-toggle {
-  display: block;
-  margin: 0.7rem 0;
 }
 .gallery {
   display: grid;
