@@ -139,14 +139,14 @@ export function createRegistryServer(store: RegistryStore, listenPort = port) {
         if (!/^[0-9][0-9A-Za-z._-]*ж?$/.test(code))
           throw new RequestError(400, 'Неверный код знака.')
         const params = new URL(req.url ?? '/', `http://127.0.0.1:${actualPort}`).searchParams
-        const format = params.get('format') === 'svg' ? 'svg' : 'png'
+        const format = params.get('format')
+        if (format && format !== 'png')
+          throw new RequestError(400, 'Изображения знаков доступны только в PNG.')
         const numbered = params.get('numbered') === '1'
-        if (format === 'svg' && numbered)
-          throw new RequestError(400, 'SVG с номером пока отсутствует.')
-        const asset = store.getSignAsset(code, format, numbered)
+        const asset = store.getSignPng(code, numbered)
         if (!asset) throw new RequestError(404, 'Изображение знака не найдено.')
         res.writeHead(200, {
-          'Content-Type': format === 'svg' ? 'image/svg+xml; charset=utf-8' : 'image/png',
+          'Content-Type': 'image/png',
           'Cache-Control': 'no-store',
           'X-Content-Type-Options': 'nosniff',
           'Cross-Origin-Resource-Policy': 'same-origin',

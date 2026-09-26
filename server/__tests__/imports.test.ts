@@ -111,21 +111,23 @@ describe('private import formats', () => {
     }
   })
 
-  it('loads paired sign variants and an optional approximate vector', () => {
+  it('loads both PNG sign variants without generating vector data', () => {
     const source = signZip()
-    const entries = parseSignArchive(source, true)
+    const entries = parseSignArchive(source)
     expect(entries).toHaveLength(1)
     expect(entries[0]?.code).toBe('1.1_ж')
-    expect(entries[0]?.plainSvg).toContain('<svg ')
+    expect(entries[0]).not.toHaveProperty('plainSvg')
     const store = new RegistryStore(':memory:')
     try {
       expect(store.importSigns(entries)).toMatchObject({ added: 1 })
       expect(store.importSigns(parseSignArchive(source))).toMatchObject({ unchanged: 1 })
-      expect(store.listSigns()).toMatchObject([{ code: '1.1_ж', vectorAvailable: true }])
-      expect(Buffer.from(store.getSignAsset('1.1_ж', 'png', true) as Uint8Array)).toEqual(
+      expect(store.listSigns()).toEqual([{ code: '1.1_ж', width: 30, height: 30 }])
+      expect(Buffer.from(store.getSignPng('1.1_ж', true) as Uint8Array)).toEqual(
         entries[0]?.numberedPng,
       )
-      expect(store.getSignAsset('1.1_ж', 'svg', false)).toBe(entries[0]?.plainSvg)
+      expect(Buffer.from(store.getSignPng('1.1_ж', false) as Uint8Array)).toEqual(
+        entries[0]?.plainPng,
+      )
     } finally {
       store.close()
     }
@@ -161,6 +163,49 @@ describe('private import formats', () => {
       expect(migrated.listPu66()).toEqual([])
       migrated.close()
       expect(readFileSync(path).subarray(0, 16).toString()).toBe('SQLite format 3\u0000')
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('upgrades a version 2 database and removes stored SVG bytes while preserving the PNGs', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-v2-upgrade-'))
+    const path = join(directory, 'registry.sqlite')
+    const marker = '<svg id="synthetic-obsolete-sign">'
+    try {
+      const source = signZip()
+      const entry = parseSignArchive(source)[0]!
+      const store = new RegistryStore(path)
+      store.importSigns([entry])
+      store.close()
+      const old = new DatabaseSync(path)
+      old.exec('ALTER TABLE signs ADD COLUMN plain_svg TEXT; PRAGMA user_version = 2;')
+      old.prepare('UPDATE signs SET plain_svg = ? WHERE code = ?').run(marker, entry.code)
+      old.close()
+
+      const migrated = new RegistryStore(path)
+      expect(migrated.listSigns()).toEqual([{ code: entry.code, width: 30, height: 30 }])
+      expect(Buffer.from(migrated.getSignPng(entry.code, true) as Uint8Array)).toEqual(
+        entry.numberedPng,
+      )
+      expect(Buffer.from(migrated.getSignPng(entry.code, false) as Uint8Array)).toEqual(
+        entry.plainPng,
+      )
+      expect(migrated.planSigns([entry])).toMatchObject({ unchanged: 1 })
+      migrated.close()
+
+      const database = new DatabaseSync(path)
+      expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 3 })
+      expect(
+        (database.prepare('PRAGMA table_info(signs)').all() as { name: string }[]).map(
+          (column) => column.name,
+        ),
+      ).not.toContain('plain_svg')
+      expect(database.prepare('PRAGMA integrity_check').get()).toMatchObject({
+        integrity_check: 'ok',
+      })
+      database.close()
+      expect(readFileSync(path).includes(Buffer.from(marker))).toBe(false)
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
