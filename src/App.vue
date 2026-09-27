@@ -6,6 +6,7 @@ import LocalProjects from './components/LocalProjects.vue'
 import NewScheme from './components/NewScheme.vue'
 import PlacementEditor from './components/PlacementEditor.vue'
 import Pu66Linker from './components/Pu66Linker.vue'
+import SchemeDraftSheet from './components/SchemeDraftSheet.vue'
 import SchemeReview from './components/SchemeReview.vue'
 import SchemeWorkspace from './components/SchemeWorkspace.vue'
 import SchemeDetailsEditor from './components/SchemeDetailsEditor.vue'
@@ -544,6 +545,15 @@ function stepForward(): void {
         @select="selectedPlacementId = $event"
       />
 
+      <SchemeDraftSheet
+        v-if="imported"
+        class="panel print-host"
+        :scheme="imported.scheme"
+        :has-pending-input="editorDirty"
+        :local-revision="localRevision"
+        :modified-since-local-save="modifiedSinceLocalSave"
+      />
+
       <PlacementEditor
         v-if="imported"
         class="panel"
@@ -906,5 +916,42 @@ button:hover,
 button:focus-visible {
   outline: 2px solid #185ca5;
   outline-offset: 2px;
+}
+
+@page {
+  size: A4 landscape;
+  margin: 0;
+}
+
+@media print {
+  :global(html),
+  :global(body) {
+    margin: 0;
+    padding: 0;
+  }
+
+  .page {
+    padding: 0;
+    min-height: 0;
+    background: #fff;
+  }
+
+  .shell {
+    max-width: none;
+    margin: 0;
+  }
+
+  .shell > :not(.print-host) {
+    display: none !important;
+  }
+
+  .print-host {
+    display: block;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
 }
 </style>
