@@ -392,6 +392,9 @@ async function printDraft(): Promise<void> {
 h2 {
   margin: 0 0 0.6rem;
 }
+#sheet-title {
+  scroll-margin-top: 1rem;
+}
 .hint {
   color: #526273;
   line-height: 1.5;
