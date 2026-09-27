@@ -8,6 +8,7 @@ import { PNG } from 'pngjs'
 import { describe, expect, it } from 'vitest'
 import { createNewScheme } from '../../src/domain/create-scheme'
 import { linkPu66Card } from '../../src/domain/link-pu66'
+import { annualPu66ReviewStatus } from '../../src/domain/pu66-review'
 import { extractPu66Cells, schemeFields, type Pu66Import } from '../pu66'
 import { parseSignArchive } from '../signs'
 import { RegistryStore } from '../store'
@@ -57,6 +58,50 @@ function signZip() {
 }
 
 describe('private import formats', () => {
+  it('uses the latest actual review date after a historical entry is backfilled', () => {
+    const store = new RegistryStore(':memory:', () => '2027-02-01T12:00:00.000Z')
+    try {
+      const card = sampleCard(5)
+      const source = Buffer.from('synthetic workbook')
+      store.importPu66([
+        {
+          card,
+          source,
+          sha256: createHash('sha256').update(source).digest('hex'),
+          filename: 'TEST-99.xlsx',
+        },
+      ])
+      store.recordPu66Verification(card.key, {
+        expectedRevision: 1,
+        verifiedAt: '2027-01-30',
+        verifiedBy: 'Учебное подразделение А',
+      })
+      store.recordPu66Verification(card.key, {
+        expectedRevision: 1,
+        verifiedAt: '2026-01-30',
+        verifiedBy: 'Учебное подразделение Б',
+      })
+      const latest = store.listPu66()[0]?.verification
+      expect(latest).toMatchObject({ verifiedAt: '2027-01-30' })
+      expect(annualPu66ReviewStatus(latest?.verifiedAt ?? null, '2027-02-01')).toMatchObject({
+        kind: 'current',
+        nextDue: '2028-01-30',
+      })
+      expect(store.listPu66Verifications(card.key)?.map((record) => record.verifiedAt)).toEqual([
+        '2026-01-30',
+        '2027-01-30',
+      ])
+      store.recordPu66Verification(card.key, {
+        expectedRevision: 1,
+        verifiedAt: '2027-01-30',
+        verifiedBy: 'Учебное подразделение В',
+      })
+      expect(store.listPu66()[0]?.verification?.verifiedBy).toBe('Учебное подразделение В')
+    } finally {
+      store.close()
+    }
+  })
+
   it('reads both observed row offsets and exposes only fields selected for a scheme', () => {
     for (const cardRow of [4, 5]) {
       const card = sampleCard(cardRow)

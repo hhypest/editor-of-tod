@@ -511,7 +511,7 @@ export class RegistryStore {
          LEFT JOIN pu66_verifications AS v ON v.id = (
            SELECT id FROM pu66_verifications
            WHERE key = c.key AND card_revision = c.revision
-           ORDER BY id DESC LIMIT 1
+           ORDER BY verified_at DESC, id DESC LIMIT 1
          )
          ORDER BY c.key`,
       )
