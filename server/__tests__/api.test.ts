@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Server } from 'node:http'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { zipSync } from 'fflate'
 import { PNG } from 'pngjs'
 import { importSchemeJson } from '../../src/domain/import'
@@ -12,6 +14,7 @@ import { RegistryStore } from '../store'
 
 const servers: Server[] = []
 const stores: RegistryStore[] = []
+const directories: string[] = []
 const fixture = readFileSync(
   new URL('../../tests/fixtures/manual-v1.json', import.meta.url),
   'utf8',
@@ -23,6 +26,7 @@ afterEach(async () => {
       .map((server) => new Promise<void>((resolve) => server.close(() => resolve()))),
   )
   for (const store of stores.splice(0)) store.close()
+  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 
 describe('local API', () => {
@@ -133,6 +137,51 @@ describe('local API', () => {
       expect(Buffer.from(await response.arrayBuffer())).toEqual(expectedPng)
     }
     expect((await fetch(url + '?format=svg')).status).toBe(400)
+  })
+
+  it('exposes sign archive preview and apply only to the local interface', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-api-signs-'))
+    directories.push(directory)
+    const store = new RegistryStore(join(directory, 'registry.sqlite'))
+    stores.push(store)
+    const server = createRegistryServer(store, 0)
+    servers.push(server)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Server address missing')
+    const base = `http://127.0.0.1:${address.port}/api/signs`
+    const image = new PNG({ width: 8, height: 8 })
+    image.data.fill(255)
+    const png = PNG.sync.write(image)
+    const archive = Buffer.from(
+      zipSync({ 'PNG с номером/1.25.png': png, 'PNG без номера/1.25.png': png }),
+    )
+    const body = {
+      archive: { name: 'synthetic.zip', data: archive.toString('base64') },
+      pdf: null,
+      documentCode: 'ГОСТ Р TEST',
+      edition: '2024',
+    }
+    const post = (endpoint: string, data: unknown, local = true) =>
+      fetch(`${base}/import/${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(local ? { Origin: 'http://127.0.0.1:5173' } : {}),
+        },
+        body: JSON.stringify(data),
+      })
+    expect((await post('preview', body, false)).status).toBe(403)
+    const response = await post('preview', body)
+    expect(response.status).toBe(200)
+    const preview = (await response.json()) as { fingerprint: string; added: number }
+    expect(preview.added).toBe(1)
+    expect((await post('apply', { ...body, expectedFingerprint: '0'.repeat(64) })).status).toBe(409)
+    expect(
+      (await post('apply', { ...body, expectedFingerprint: preview.fingerprint })).status,
+    ).toBe(200)
+    expect(await (await fetch(`${base}/catalog`)).json()).toMatchObject({ edition: '2024' })
+    expect(await (await fetch(base)).json()).toEqual([{ code: '1.25', width: 8, height: 8 }])
   })
 
   it('accepts a same-origin write and rejects missing origin, invalid input, and stale revisions', async () => {

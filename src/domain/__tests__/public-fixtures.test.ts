@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import b34Source from '../../../tests/fixtures/legacy-b34-manual.json?raw'
 import b33Source from '../../../tests/fixtures/manual-v1.json?raw'
+import reviewB33 from '../../../tests/fixtures/review-b33-v4.json?raw'
+import reviewB34 from '../../../tests/fixtures/review-b34-v4.json?raw'
+import { projectDraftSheet } from '../draft-sheet'
 import { exportSchemeJson, importSchemeJson } from '../import'
 
 const id = '55740b36-080a-4cbe-9476-e71ffb1ab47f'
@@ -64,5 +67,29 @@ describe('public examples for manual migration checks', () => {
       'Проверка сохранения неизвестных полей',
     )
     expect(importSchemeJson(exportSchemeJson(imported.scheme)).scheme).toEqual(imported.scheme)
+  })
+
+  it('offers anonymized review sheets with archive codes and two regulators', () => {
+    for (const [source, expected] of [
+      [reviewB33, 'b33'],
+      [reviewB34, 'b34'],
+    ] as const) {
+      const { scheme } = importSchemeJson(source)
+      const sheet = projectDraftSheet(scheme)
+      expect(sheet.template).toBe(expected)
+      expect(sheet.outsideIds).toEqual([])
+      expect(sheet.placements.filter((item) => item.kind === 'sign-post')).toHaveLength(8)
+      expect(
+        sheet.placements.filter((item) => item.kind === 'element' && item.elementKind === 'reg'),
+      ).toHaveLength(2)
+      expect(
+        sheet.placements.some((item) => item.kind === 'element' && item.elementKind === 'car'),
+      ).toBe(true)
+      expect(
+        scheme.placements.flatMap((item) => (item.kind === 'sign-post' ? item.signIds : [])),
+      ).not.toContain('3.24_50')
+      expect(scheme.crossing.source).toBe('entered-by-editor')
+      expect(importSchemeJson(exportSchemeJson(scheme)).scheme).toEqual(scheme)
+    }
   })
 })

@@ -42,6 +42,7 @@ const localBusy = ref(false)
 const localError = ref('')
 const localNotice = ref('')
 const projectsRefreshKey = ref(0)
+const signCatalogVersion = ref(0)
 const history = ref<EditHistory<Scheme> | null>(null)
 const selectedPlacementId = ref<number | null>(null)
 const editorDirty = computed(() => detailsDirty.value || placementDirty.value)
@@ -537,6 +538,7 @@ function stepForward(): void {
 
       <SchemeWorkspace
         v-if="imported"
+        :key="`workspace-${signCatalogVersion}`"
         class="panel"
         :scheme="imported.scheme"
         :selected-id="selectedPlacementId"
@@ -547,6 +549,7 @@ function stepForward(): void {
 
       <SchemeDraftSheet
         v-if="imported"
+        :key="`sheet-${signCatalogVersion}`"
         class="panel print-host"
         :scheme="imported.scheme"
         :has-pending-input="editorDirty"
@@ -556,6 +559,7 @@ function stepForward(): void {
 
       <PlacementEditor
         v-if="imported"
+        :key="`placements-${signCatalogVersion}`"
         class="panel"
         :scheme="imported.scheme"
         :locked="detailsDirty || localBusy"
@@ -716,7 +720,11 @@ function stepForward(): void {
       </section>
       <TemplateChoice />
       <LocalRegistries />
-      <ImportedData :referenced-sign-ids="referencedSignIds" />
+      <ImportedData
+        :referenced-sign-ids="referencedSignIds"
+        :locked="editorDirty"
+        @signs-updated="signCatalogVersion++"
+      />
     </div>
   </main>
 </template>

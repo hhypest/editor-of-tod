@@ -37,13 +37,13 @@ function sampleCard(cardRow: number) {
   return extractPu66Cells((address) => values.get(address) ?? null)
 }
 
-function signZip() {
+function signZip(code = '1.1_ж', color = 210) {
   const image = new PNG({ width: 30, height: 30 })
   image.data.fill(255)
   for (let y = 8; y < 22; y++) {
     for (let x = 8; x < 22; x++) {
       const offset = (y * 30 + x) * 4
-      image.data[offset] = 210
+      image.data[offset] = color
       image.data[offset + 1] = 0
       image.data[offset + 2] = 0
     }
@@ -51,8 +51,8 @@ function signZip() {
   const png = PNG.sync.write(image)
   return Buffer.from(
     zipSync({
-      'PNG с номером/1.1_ж.png': png,
-      'PNG без номера/1.1_ж.png': png,
+      [`PNG с номером/${code}.png`]: png,
+      [`PNG без номера/${code}.png`]: png,
     }),
   )
 }
@@ -251,7 +251,7 @@ describe('private import formats', () => {
       expect(migrated.listPu66()[0]?.verification).toBeNull()
       migrated.close()
       const current = new DatabaseSync(path)
-      expect(current.prepare('PRAGMA user_version').get()).toEqual({ user_version: 5 })
+      expect(current.prepare('PRAGMA user_version').get()).toEqual({ user_version: 6 })
       current.close()
     } finally {
       rmSync(directory, { recursive: true, force: true })
@@ -277,6 +277,46 @@ describe('private import formats', () => {
       )
     } finally {
       store.close()
+    }
+  })
+
+  it('replaces the active archive, records its edition, and retains prior PNG revisions locally', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-sign-history-'))
+    const path = join(directory, 'registry.sqlite')
+    try {
+      const first = parseSignArchive(signZip('1.25', 210))
+      const second = parseSignArchive(signZip('3.20', 190))
+      const source = { documentCode: 'ГОСТ Р TEST', edition: '2024', pdfSha256: null }
+      const updated = { ...source, edition: '2026' }
+      const store = new RegistryStore(path)
+      expect(store.importSigns(first, source)).toMatchObject({ added: 1 })
+      expect(store.latestSignCatalog()).toMatchObject({ edition: '2024', signCount: 1 })
+      expect(store.importSigns(first, source)).toMatchObject({ unchanged: 1 })
+      expect(store.planSigns(first, updated)).toMatchObject({ updated: 1 })
+      expect(store.importSigns(first, updated)).toMatchObject({ updated: 1 })
+      expect(store.importSigns(second, updated)).toMatchObject({ added: 1, retired: 1 })
+      expect(store.listSigns()).toEqual([{ code: '3.20', width: 30, height: 30 }])
+      expect(store.getSignPng('1.25', false)).toBeNull()
+      expect(store.importSigns(first, updated)).toMatchObject({ added: 1, retired: 1 })
+      expect(Buffer.from(store.getSignPng('1.25', false) as Uint8Array)).toEqual(first[0]?.plainPng)
+      store.close()
+      const database = new DatabaseSync(path)
+      expect(database.prepare('SELECT COUNT(*) AS total FROM sign_catalog_batches').get()).toEqual({
+        total: 4,
+      })
+      expect(
+        database
+          .prepare('SELECT revision, active FROM sign_revisions WHERE code = ? ORDER BY revision')
+          .all('1.25'),
+      ).toEqual([
+        { revision: 1, active: 1 },
+        { revision: 2, active: 1 },
+        { revision: 3, active: 0 },
+        { revision: 4, active: 1 },
+      ])
+      database.close()
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
     }
   })
 
@@ -348,7 +388,7 @@ describe('private import formats', () => {
       migrated.close()
 
       const database = new DatabaseSync(path)
-      expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 5 })
+      expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 6 })
       expect(
         (database.prepare('PRAGMA table_info(signs)').all() as { name: string }[]).map(
           (column) => column.name,

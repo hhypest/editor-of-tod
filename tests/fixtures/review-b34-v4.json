@@ -1,0 +1,544 @@
+{
+  "id": "11111111-1111-4111-8111-111111111134",
+  "createdAt": "2026-09-27T12:00:00.000Z",
+  "template": {
+    "code": "b34",
+    "sourceReference": "ОДМ 218.6.019-2016",
+    "reviewStatus": "not-verified"
+  },
+  "titleBlock": {
+    "developer": {
+      "organization": "Учебное подразделение",
+      "name": "Составитель",
+      "date": "2026-09-27"
+    },
+    "work": {
+      "organization": "Учебное подразделение",
+      "description": "Условные текущие работы",
+      "period": "Учебный период"
+    },
+    "responsible": ["Ответственный за работы", "Ответственный за движение"],
+    "approver": {
+      "position": "Представитель владельца дороги",
+      "organization": "Учебная дорожная организация",
+      "name": "На проверке"
+    },
+    "agreement": {
+      "position": "Представитель Госавтоинспекции",
+      "name": "На проверке",
+      "year": "2026"
+    }
+  },
+  "placements": [
+    {
+      "kind": "sign-post",
+      "id": 1,
+      "generatedByTemplate": false,
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 165,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "right",
+      "signIds": ["1.25"],
+      "distanceLabel": "300 м"
+    },
+    {
+      "kind": "sign-post",
+      "id": 2,
+      "generatedByTemplate": false,
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 350,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "right",
+      "signIds": ["3.20", "3.24_70"],
+      "distanceLabel": "250 м"
+    },
+    {
+      "kind": "sign-post",
+      "id": 3,
+      "generatedByTemplate": false,
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 510,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "right",
+      "signIds": ["1.20.2", "3.24_40"],
+      "distanceLabel": "150 м"
+    },
+    {
+      "kind": "sign-post",
+      "id": 4,
+      "generatedByTemplate": false,
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 1250,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "right",
+      "signIds": ["3.31"],
+      "distanceLabel": null
+    },
+    {
+      "kind": "sign-post",
+      "id": 5,
+      "generatedByTemplate": false,
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 165,
+        "offsetYSvg": 0
+      },
+      "side": "down",
+      "stand": "right",
+      "signIds": ["1.25"],
+      "distanceLabel": "300 м"
+    },
+    {
+      "kind": "sign-post",
+      "id": 6,
+      "generatedByTemplate": false,
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 350,
+        "offsetYSvg": 0
+      },
+      "side": "down",
+      "stand": "right",
+      "signIds": ["3.24_70", "3.20"],
+      "distanceLabel": "250 м"
+    },
+    {
+      "kind": "sign-post",
+      "id": 7,
+      "generatedByTemplate": false,
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 510,
+        "offsetYSvg": 0
+      },
+      "side": "down",
+      "stand": "right",
+      "signIds": ["3.24_40", "1.20.2"],
+      "distanceLabel": "150 м"
+    },
+    {
+      "kind": "sign-post",
+      "id": 8,
+      "generatedByTemplate": false,
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 1450,
+        "offsetYSvg": 0
+      },
+      "side": "down",
+      "stand": "right",
+      "signIds": ["3.31"],
+      "distanceLabel": null
+    },
+    {
+      "kind": "element",
+      "id": 9,
+      "generatedByTemplate": false,
+      "elementKind": "car",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 625,
+        "ySvg": 465
+      },
+      "sizeSvg": {
+        "width": 92,
+        "height": 65
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 10,
+      "generatedByTemplate": false,
+      "elementKind": "complex",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 540,
+        "ySvg": 440
+      },
+      "sizeSvg": {
+        "width": 82,
+        "height": 65
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 11,
+      "generatedByTemplate": false,
+      "elementKind": "pit",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 750,
+        "ySvg": 470
+      },
+      "sizeSvg": {
+        "width": 80,
+        "height": 36
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 12,
+      "generatedByTemplate": false,
+      "elementKind": "cone",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 585,
+        "ySvg": 400
+      },
+      "sizeSvg": {
+        "width": 25,
+        "height": 31
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 13,
+      "generatedByTemplate": false,
+      "elementKind": "cone",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 610,
+        "ySvg": 400
+      },
+      "sizeSvg": {
+        "width": 25,
+        "height": 31
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 14,
+      "generatedByTemplate": false,
+      "elementKind": "cone",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 640,
+        "ySvg": 400
+      },
+      "sizeSvg": {
+        "width": 25,
+        "height": 31
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 15,
+      "generatedByTemplate": false,
+      "elementKind": "cone",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 670,
+        "ySvg": 400
+      },
+      "sizeSvg": {
+        "width": 25,
+        "height": 31
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 16,
+      "generatedByTemplate": false,
+      "elementKind": "cone",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 705,
+        "ySvg": 400
+      },
+      "sizeSvg": {
+        "width": 25,
+        "height": 31
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 17,
+      "generatedByTemplate": false,
+      "elementKind": "cone",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 740,
+        "ySvg": 400
+      },
+      "sizeSvg": {
+        "width": 25,
+        "height": 31
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 18,
+      "generatedByTemplate": false,
+      "elementKind": "cone",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 775,
+        "ySvg": 400
+      },
+      "sizeSvg": {
+        "width": 25,
+        "height": 31
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 19,
+      "generatedByTemplate": false,
+      "elementKind": "cone",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 810,
+        "ySvg": 400
+      },
+      "sizeSvg": {
+        "width": 25,
+        "height": 31
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 20,
+      "generatedByTemplate": false,
+      "elementKind": "cone",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 845,
+        "ySvg": 400
+      },
+      "sizeSvg": {
+        "width": 25,
+        "height": 31
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 21,
+      "generatedByTemplate": false,
+      "elementKind": "cone",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 880,
+        "ySvg": 400
+      },
+      "sizeSvg": {
+        "width": 25,
+        "height": 31
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 22,
+      "generatedByTemplate": false,
+      "elementKind": "cone",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 915,
+        "ySvg": 400
+      },
+      "sizeSvg": {
+        "width": 25,
+        "height": 31
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 23,
+      "generatedByTemplate": false,
+      "elementKind": "cone",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 950,
+        "ySvg": 400
+      },
+      "sizeSvg": {
+        "width": 25,
+        "height": 31
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 24,
+      "generatedByTemplate": false,
+      "elementKind": "cone",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 985,
+        "ySvg": 400
+      },
+      "sizeSvg": {
+        "width": 25,
+        "height": 31
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 25,
+      "generatedByTemplate": false,
+      "elementKind": "cone",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 1020,
+        "ySvg": 400
+      },
+      "sizeSvg": {
+        "width": 25,
+        "height": 31
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 26,
+      "generatedByTemplate": false,
+      "elementKind": "cone",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 1055,
+        "ySvg": 400
+      },
+      "sizeSvg": {
+        "width": 25,
+        "height": 31
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 27,
+      "generatedByTemplate": false,
+      "elementKind": "reg",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 470,
+        "ySvg": 352
+      },
+      "sizeSvg": {
+        "width": 30,
+        "height": 48
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 28,
+      "generatedByTemplate": false,
+      "elementKind": "reg",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 1180,
+        "ySvg": 535
+      },
+      "sizeSvg": {
+        "width": 30,
+        "height": 48
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    }
+  ],
+  "nextPlacementId": 29,
+  "schemaVersion": 4,
+  "crossing": {
+    "referenceId": "TEST-REVIEW-B34",
+    "source": "entered-by-editor",
+    "snapshot": null
+  },
+  "parameters": {
+    "locationText": "Условный переезд, 10 км 2 пк",
+    "directions": {
+      "left": "Город А",
+      "right": "Город Б"
+    },
+    "signDistancesMetres": {
+      "d300": null,
+      "d250": null,
+      "d150": null,
+      "d50": null
+    },
+    "speedStagesKmh": [70, 50, 40],
+    "yellowTemporarySigns": false,
+    "workZones": {
+      "b33": null,
+      "b34": {
+        "taperMetres": 10,
+        "bufferMetres": 10,
+        "workMetres": 18,
+        "labels": {
+          "taper": "",
+          "buffer": "",
+          "work": ""
+        }
+      }
+    }
+  },
+  "source": {
+    "kind": "created-in-editor"
+  }
+}

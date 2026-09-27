@@ -17,6 +17,12 @@ import {
   PU66_UPLOAD_REQUEST_BYTES,
 } from './pu66-web-import.ts'
 import {
+  applySignUpload,
+  InvalidSignUpload,
+  previewSignUpload,
+  SIGN_UPLOAD_REQUEST_BYTES,
+} from './sign-web-import.ts'
+import {
   InvalidPu66Verification,
   ProjectTooLarge,
   RegistryStore,
@@ -204,7 +210,13 @@ export function createRegistryServer(store: RegistryStore, listenPort = port) {
         const query =
           new URL(req.url ?? '/', `http://127.0.0.1:${actualPort}`).searchParams.get('query') ?? ''
         if (query.length > 80) throw new RequestError(400, 'Поиск слишком длинный.')
-        json(res, 200, store.listSigns(query, 500))
+        json(res, 200, store.listSigns(query, 2_000))
+      } else if (req.method === 'GET' && pathname === '/api/signs/catalog') {
+        json(res, 200, store.latestSignCatalog())
+      } else if (req.method === 'POST' && pathname === '/api/signs/import/preview') {
+        json(res, 200, previewSignUpload(store, await readJson(req, SIGN_UPLOAD_REQUEST_BYTES)))
+      } else if (req.method === 'POST' && pathname === '/api/signs/import/apply') {
+        json(res, 200, await applySignUpload(store, await readJson(req, SIGN_UPLOAD_REQUEST_BYTES)))
       } else if (req.method === 'GET' && /^\/api\/signs\/[^/]+\/image$/.test(pathname)) {
         const code = decodeKey(pathname.slice('/api/signs/'.length, -'/image'.length))
         if (!/^[0-9][0-9A-Za-z._-]*ж?$/.test(code))
@@ -256,6 +268,7 @@ export function createRegistryServer(store: RegistryStore, listenPort = port) {
       else if (error instanceof RevisionConflict) json(res, 409, { error: error.message })
       else if (error instanceof InvalidPu66Verification) json(res, 400, { error: error.message })
       else if (error instanceof InvalidPu66Upload) json(res, error.status, { error: error.message })
+      else if (error instanceof InvalidSignUpload) json(res, error.status, { error: error.message })
       else if (error instanceof ProjectTooLarge) json(res, 413, { error: error.message })
       else if (error instanceof ZodError) {
         const issue = error.issues[0]

@@ -13,8 +13,18 @@ import {
   recordPu66Verification,
   type Pu66ImportPlan,
 } from '../services/local-pu66'
+import {
+  applySignFiles,
+  getSignCatalog,
+  MAX_WEB_SIGN_ARCHIVE_BYTES,
+  MAX_WEB_SIGN_PDF_BYTES,
+  previewSignFiles,
+  type SignCatalog,
+  type SignImportPlan,
+} from '../services/local-signs'
 
-const props = defineProps<{ referencedSignIds: string[] }>()
+const props = defineProps<{ referencedSignIds: string[]; locked: boolean }>()
+const emit = defineEmits<{ signsUpdated: [] }>()
 type Sign = { code: string; width: number; height: number }
 type Crossing = {
   referenceId: string
@@ -39,6 +49,17 @@ const importFiles = ref<File[]>([])
 const importInput = ref<HTMLInputElement | null>(null)
 const importPlan = ref<Pu66ImportPlan | null>(null)
 const importBusy = ref(false)
+const signArchive = ref<File | null>(null)
+const signPdf = ref<File | null>(null)
+const signDocumentCode = ref('ГОСТ Р 52290-2024')
+const signEdition = ref('2024')
+const signPlan = ref<SignImportPlan | null>(null)
+const signCatalog = ref<SignCatalog | null>(null)
+const signBusy = ref(false)
+const signNotice = ref('')
+const signError = ref('')
+const signZipInput = ref<HTMLInputElement | null>(null)
+const signPdfInput = ref<HTMLInputElement | null>(null)
 const verificationKey = ref('')
 const verifiedAt = ref('')
 const verifiedBy = ref('')
@@ -77,18 +98,77 @@ async function load(): Promise<void> {
   busy.value = true
   error.value = ''
   try {
-    const [cardsResponse, signsResponse] = await Promise.all([
+    const [cardsResponse, signsResponse, catalog] = await Promise.all([
       fetch('/api/pu66'),
       fetch('/api/signs'),
+      getSignCatalog(),
     ])
     if (!cardsResponse.ok || !signsResponse.ok)
       throw new Error('Не удалось прочитать локальный каталог.')
     crossings.value = (await cardsResponse.json()) as Crossing[]
     signs.value = (await signsResponse.json()) as Sign[]
+    signCatalog.value = catalog
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Локальный каталог недоступен.'
   } finally {
     busy.value = false
+  }
+}
+
+function changeSignFiles(event: Event, kind: 'zip' | 'pdf'): void {
+  const file = (event.target as HTMLInputElement).files?.[0] ?? null
+  if (kind === 'zip') signArchive.value = file
+  else signPdf.value = file
+  signPlan.value = null
+  signError.value = ''
+  signNotice.value = ''
+}
+
+async function previewSigns(): Promise<void> {
+  if (!signArchive.value || props.locked) return
+  signBusy.value = true
+  signError.value = ''
+  signNotice.value = ''
+  signPlan.value = null
+  try {
+    signPlan.value = await previewSignFiles(
+      signArchive.value,
+      signPdf.value,
+      signDocumentCode.value,
+      signEdition.value,
+    )
+  } catch (cause) {
+    signError.value = cause instanceof Error ? cause.message : 'Не удалось проверить архив.'
+  } finally {
+    signBusy.value = false
+  }
+}
+
+async function applySigns(): Promise<void> {
+  if (!signPlan.value || !signArchive.value || props.locked) return
+  signBusy.value = true
+  signError.value = ''
+  try {
+    const result = await applySignFiles(
+      signArchive.value,
+      signPdf.value,
+      signDocumentCode.value,
+      signEdition.value,
+      signPlan.value.fingerprint,
+    )
+    signPlan.value = null
+    signArchive.value = null
+    signPdf.value = null
+    if (signZipInput.value) signZipInput.value.value = ''
+    if (signPdfInput.value) signPdfInput.value.value = ''
+    await load()
+    emit('signsUpdated')
+    signNotice.value = `Знаки: новых ${result.added}, обновлено ${result.updated}, исключено из текущего набора ${result.retired}. ${result.backup ? `Копия SQLite: private-data/backups/${result.backup}.` : 'Изменений нет.'}`
+  } catch (cause) {
+    signPlan.value = null
+    signError.value = `${cause instanceof Error ? cause.message : 'Не удалось записать каталог.'} Повторите просмотр перед записью.`
+  } finally {
+    signBusy.value = false
   }
 }
 
@@ -299,6 +379,86 @@ onMounted(load)
     </div>
 
     <h3>Каталог дорожных знаков</h3>
+    <div class="verification-form">
+      <h4>Импорт PNG знаков из локального архива</h4>
+      <p>
+        Архив содержит пары «с номером» и «без номера». Укажите редакцию ГОСТ, с которой сверяли
+        архив; PDF можно приложить для записи его SHA-256. Приложение не извлекает изображения из
+        PDF и не подтверждает, что архив соответствует документу. Файлы остаются только в локальной
+        базе, перед заменой создаётся резервная копия. Отсутствующие в новом архиве коды исключаются
+        из текущего каталога, прежние редакции PNG сохраняются в SQLite.
+      </p>
+      <p v-if="locked" role="status">Сначала примените или отмените правки открытого проекта.</p>
+      <label
+        >Документ
+        <input
+          v-model="signDocumentCode"
+          maxlength="120"
+          :disabled="signBusy || locked"
+          @input="signPlan = null"
+      /></label>
+      <label
+        >Редакция
+        <input
+          v-model="signEdition"
+          maxlength="120"
+          :disabled="signBusy || locked"
+          @input="signPlan = null"
+      /></label>
+      <label>
+        ZIP знаков (до {{ MAX_WEB_SIGN_ARCHIVE_BYTES / 1024 / 1024 }} МБ)
+        <input
+          ref="signZipInput"
+          type="file"
+          accept=".zip"
+          :disabled="signBusy || locked"
+          @change="changeSignFiles($event, 'zip')"
+        />
+      </label>
+      <label>
+        PDF ГОСТ для хеша (необязательно, до {{ MAX_WEB_SIGN_PDF_BYTES / 1024 / 1024 }} МБ)
+        <input
+          ref="signPdfInput"
+          type="file"
+          accept=".pdf"
+          :disabled="signBusy || locked"
+          @change="changeSignFiles($event, 'pdf')"
+        />
+      </label>
+      <button type="button" :disabled="signBusy || locked || !signArchive" @click="previewSigns">
+        Просмотреть изменения знаков
+      </button>
+      <p v-if="signBusy" role="status">Проверка или запись локального каталога…</p>
+      <p v-if="signError" role="alert" class="error">{{ signError }}</p>
+      <p v-if="signNotice" role="status">{{ signNotice }}</p>
+      <div v-if="signPlan" class="import-plan">
+        <p>
+          В архиве {{ signPlan.signCount }} знаков: новых {{ signPlan.added }}, обновлений
+          {{ signPlan.updated }}, неизменных {{ signPlan.unchanged }}, исключается из текущего
+          набора {{ signPlan.retired }}. Источник: {{ signPlan.source.documentCode }}, редакция
+          {{ signPlan.source.edition
+          }}{{
+            signPlan.source.pdfSha256
+              ? `, PDF SHA-256 ${signPlan.source.pdfSha256}`
+              : ', PDF не выбран'
+          }}.
+        </p>
+        <button
+          type="button"
+          :disabled="
+            signBusy || locked || signPlan.added + signPlan.updated + signPlan.retired === 0
+          "
+          @click="applySigns"
+        >
+          Подтвердить каталог и создать копию SQLite
+        </button>
+      </div>
+    </div>
+    <p v-if="signCatalog">
+      Текущий набор: {{ signCatalog.documentCode }}, редакция {{ signCatalog.edition }},
+      {{ signCatalog.signCount }} знаков; импорт {{ signCatalog.importedAt }}.
+    </p>
+    <p v-else-if="signs.length">Для прежнего импорта редакция источника не указана.</p>
     <p>Найдено {{ signs.length }} знаков. Поиск показывает первые 48 совпадений.</p>
     <label for="sign-search">Номер знака</label>
     <input id="sign-search" v-model="search" type="search" placeholder="Например, 3.24_40_ж" />

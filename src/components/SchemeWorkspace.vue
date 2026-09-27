@@ -9,6 +9,7 @@ import {
 } from '../domain/placement-workspace'
 import type { Scheme } from '../domain/model'
 import { figureDimensions } from '../domain/figure-dimensions'
+import RoadworkSymbol from './RoadworkSymbol.vue'
 
 type Placement = Scheme['placements'][number]
 type Drag = {
@@ -263,7 +264,12 @@ function nameFor(placement: Placement): string {
               <small class="object-id">№ {{ placement.id }}</small>
             </template>
             <template v-else>
-              <span>{{ placement.elementKind }}</span>
+              <RoadworkSymbol
+                :kind="placement.elementKind"
+                :width="placement.sizeSvg.width"
+                :height="placement.sizeSvg.height"
+                :known-signs="catalog"
+              />
               <small class="object-id">№ {{ placement.id }}</small>
             </template>
           </button>
