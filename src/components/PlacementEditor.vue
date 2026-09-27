@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import {
   createPlacementDraft,
   newSignDraft,
+  newSymbolDraft,
   newTextDraft,
   PlacementEditError,
   removePlacement,
@@ -10,6 +11,7 @@ import {
   type PlacementDraft,
 } from '../domain/edit-placements'
 import type { Scheme } from '../domain/model'
+import { anchorCoordinates } from '../domain/placement-workspace'
 
 type SignMeta = { code: string; width: number; height: number }
 const props = defineProps<{
@@ -56,7 +58,8 @@ onMounted(async () => {
     if (!response.ok) throw new Error('Каталог знаков недоступен.')
     catalog.value = (await response.json()) as SignMeta[]
   } catch {
-    catalogError.value = 'Не удалось открыть локальный каталог PNG; коды можно ввести вручную.'
+    catalogError.value =
+      'Не удалось открыть локальный каталог PNG. Для стойки сначала импортируйте архив.'
   }
 })
 
@@ -103,10 +106,20 @@ function selectPlacement(id: number): void {
   status.value = ''
 }
 
-function createNew(kind: 'sign-post' | 'text'): void {
+function createNew(kind: 'sign-post' | 'text' | 'reg' | 'car' | 'cone' | 'complex' | 'pit'): void {
   if (dirty.value || props.locked) return
   selectedId.value = null
-  draft.value = kind === 'sign-post' ? newSignDraft() : newTextDraft()
+  const anchor = anchorCoordinates(props.scheme)
+  draft.value =
+    kind === 'sign-post'
+      ? newSignDraft()
+      : kind === 'text'
+        ? newTextDraft()
+        : newSymbolDraft(
+            kind,
+            kind === 'reg' ? anchor.L0 - 30 : anchor.Z0,
+            kind === 'reg' ? 350 : 465,
+          )
   markDirty()
 }
 
@@ -131,6 +144,15 @@ function applyDraft(): void {
   if (!draft.value || props.locked) return
   try {
     const id = draft.value.id ?? props.scheme.nextPlacementId
+    if (draft.value.kind === 'sign-post') {
+      const codes = draft.value.signCodes
+        .split(/[,;\n]/)
+        .map((code) => code.trim())
+        .filter(Boolean)
+      if (!catalog.value.length || codes.some((code) => !knownCodes.value.has(code))) {
+        throw new PlacementEditError('Выберите только коды PNG из локального архива знаков.')
+      }
+    }
     const updated = savePlacement(props.scheme, draft.value)
     selectedId.value = id
     dirty.value = false
@@ -166,9 +188,9 @@ function removeSelected(): void {
   <section aria-labelledby="placements-title">
     <h2 id="placements-title">Объекты проекта</h2>
     <p class="hint">
-      Выберите объект для изменения свойств или добавьте ручную стойку/надпись. Координаты сохранены
-      в условной системе старого листа, не в метрах. После ручной правки автоматический объект
-      становится ручным. Расстановка по ОДМ здесь не выполняется.
+      Выберите объект для изменения свойств или добавьте стойку, надпись или условное обозначение.
+      Координаты сохранены в условной системе старого листа, не в метрах. После ручной правки
+      автоматический объект становится ручным. Расстановка по ОДМ здесь не выполняется.
     </p>
     <p v-if="locked" class="hint" role="status">
       Сначала примените или отмените изменения параметров выше.
@@ -179,6 +201,21 @@ function removeSelected(): void {
       </button>
       <button type="button" :disabled="dirty || locked" @click="createNew('text')">
         Добавить надпись
+      </button>
+      <button type="button" :disabled="dirty || locked" @click="createNew('reg')">
+        Добавить регулировщика
+      </button>
+      <button type="button" :disabled="dirty || locked" @click="createNew('car')">
+        Добавить машину прикрытия
+      </button>
+      <button type="button" :disabled="dirty || locked" @click="createNew('cone')">
+        Добавить конус
+      </button>
+      <button type="button" :disabled="dirty || locked" @click="createNew('pit')">
+        Добавить место работ
+      </button>
+      <button type="button" :disabled="dirty || locked" @click="createNew('complex')">
+        Добавить переносной комплекс
       </button>
     </div>
 

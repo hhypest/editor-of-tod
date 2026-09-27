@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import type { Scheme } from '../domain/model'
 import { projectDraftSheet } from '../domain/draft-sheet'
+import RoadworkSymbol from './RoadworkSymbol.vue'
 
 const props = defineProps<{
   scheme: Scheme
@@ -10,11 +11,47 @@ const props = defineProps<{
   modifiedSinceLocalSave: boolean
 }>()
 const sheet = computed(() => projectDraftSheet(props.scheme))
+const requiredSigns = computed(() => {
+  const codes = sheet.value.placements.flatMap((item) =>
+    item.kind === 'sign-post'
+      ? item.signIds
+      : item.elementKind === 'car'
+        ? ['4.2.2']
+        : item.elementKind === 'complex'
+          ? ['1.25', '4.2.2']
+          : [],
+  )
+  return [...new Set(codes)]
+})
+const missingSigns = computed(() =>
+  requiredSigns.value.filter((code) => !knownSigns.value.has(code) || brokenImages.value.has(code)),
+)
+const usedSymbols = computed(
+  () =>
+    [
+      ...new Set(
+        sheet.value.placements
+          .filter((item) => item.kind === 'element' && item.elementKind !== 'text')
+          .map((item) => (item.kind === 'element' ? item.elementKind : 'pit')),
+      ),
+    ] as Array<'reg' | 'cone' | 'car' | 'complex' | 'pit'>,
+)
+const symbolLabels = {
+  reg: 'Регулировщик с жезлом',
+  cone: 'Дорожный конус',
+  car: 'Машина прикрытия',
+  complex: 'Переносной комплекс знаков',
+  pit: 'Место работ',
+}
+function titleRow(label: string): string {
+  return sheet.value.titleRows.find((row) => row.label === label)?.value ?? ''
+}
 const paper = ref<HTMLElement | null>(null)
 const zoom = ref(0.75)
 const knownSigns = ref<Set<string>>(new Set())
 const brokenImages = ref<Set<string>>(new Set())
 const catalogState = ref<'loading' | 'ready' | 'partial' | 'unavailable'>('loading')
+const catalogSource = ref<{ documentCode: string; edition: string } | null>(null)
 const printError = ref('')
 const previewSize = computed(() => ({
   width: `${1122.52 * zoom.value}px`,
@@ -25,15 +62,22 @@ async function loadSigns(): Promise<void> {
   catalogState.value = 'loading'
   brokenImages.value = new Set()
   try {
-    const response = await fetch('/api/signs')
-    if (!response.ok) throw new Error('Каталог недоступен')
+    const [response, sourceResponse] = await Promise.all([
+      fetch('/api/signs'),
+      fetch('/api/signs/catalog'),
+    ])
+    if (!response.ok || !sourceResponse.ok) throw new Error('Каталог недоступен')
     const list = (await response.json()) as Array<{ code: string }>
+    catalogSource.value = (await sourceResponse.json()) as {
+      documentCode: string
+      edition: string
+    } | null
     if (!Array.isArray(list)) throw new Error('Неверный ответ каталога')
     knownSigns.value = new Set(list.map((sign) => sign.code))
-    // The existing API returns at most 500 records. A missing code is then inconclusive.
-    catalogState.value = list.length === 500 ? 'partial' : 'ready'
+    catalogState.value = list.length === 2_000 ? 'partial' : 'ready'
   } catch {
     knownSigns.value = new Set()
+    catalogSource.value = null
     catalogState.value = 'unavailable'
   }
 }
@@ -55,12 +99,28 @@ function printableText(value: string): string {
 async function printDraft(): Promise<void> {
   printError.value = ''
   if (props.hasPendingInput || catalogState.value === 'loading') return
+  if (catalogState.value !== 'ready') {
+    printError.value = 'Для печати нужен полный доступ к локальному каталогу PNG знаков.'
+    return
+  }
+  if (!catalogSource.value || catalogSource.value.edition === 'не указана') {
+    printError.value = 'Для печати укажите редакцию ГОСТ при импорте локального архива PNG.'
+    return
+  }
+  if (missingSigns.value.length) {
+    printError.value = `В локальном архиве отсутствуют PNG: ${missingSigns.value.join(', ')}. Обновите архив или исправьте объекты.`
+    return
+  }
   const schemeAtStart = props.scheme
   if (sheet.value.outsideIds.length) {
     printError.value = `Объекты № ${sheet.value.outsideIds.join(', ')} выходят за пределы рисунка. Исправьте их положение перед печатью.`
     return
   }
   await nextTick()
+  if (missingSigns.value.length) {
+    printError.value = `Не удалось загрузить PNG: ${missingSigns.value.join(', ')}.`
+    return
+  }
   if (!paper.value) return
   const page = paper.value
   const images = [...page.querySelectorAll<HTMLImageElement>('img[data-sign-code]')]
@@ -148,8 +208,12 @@ async function printDraft(): Promise<void> {
         {{
           catalogState === 'unavailable'
             ? 'Локальный каталог знаков недоступен; на листе показаны коды вместо PNG.'
-            : 'Каталог содержит не менее 500 записей: для кодов вне полученного списка показан текст.'
+            : 'Каталог содержит не менее 2000 записей: полный список для печати не получен.'
         }}
+      </p>
+      <p v-if="catalogState === 'ready' && missingSigns.length" class="error" role="status">
+        Нет PNG в локальном архиве: {{ missingSigns.join(', ') }}. Печать заблокирована до
+        исправления.
       </p>
       <p v-if="sheet.outsideIds.length" class="hint">
         За пределами рисунка: № {{ sheet.outsideIds.join(', ') }}. Их положение нужно исправить
@@ -162,197 +226,161 @@ async function printDraft(): Promise<void> {
       <div class="preview-space" :style="previewSize">
         <div ref="paper" class="sheet-paper" :style="{ transform: `scale(${zoom})` }">
           <header class="paper-header" data-print-fit>
-            <div>
-              <p class="paper-kicker">Условный лист организации движения</p>
-              <h3>Переезд {{ sheet.referenceId }} · {{ sheet.template.toUpperCase() }}</h3>
-              <p>{{ printableText(sheet.location) }}</p>
+            <div class="paper-signatures">
+              <strong>Разработано</strong>
+              <span>{{ printableText(titleRow('Разработчик')) }}</span>
+              <span>{{ printableText(titleRow('Дата разработки')) }}</span>
             </div>
-            <strong class="draft-mark">ЧЕРНОВИК<br />НЕ ДЛЯ СОГЛАСОВАНИЯ</strong>
+            <div class="paper-heading">
+              <h3>Организация движения и ограждение зоны дорожных работ</h3>
+              <strong
+                >Железнодорожный переезд {{ sheet.referenceId }} · схема
+                {{ sheet.template.toUpperCase() }}</strong
+              >
+              <span>Фронт {{ sheet.front }} м · {{ printableText(titleRow('Работы')) }}</span>
+              <span
+                >{{ printableText(sheet.location) }} · {{ printableText(titleRow('Период')) }}</span
+              >
+              <span>Ответственные: {{ printableText(titleRow('Ответственные')) }}</span>
+            </div>
+            <div class="paper-signatures right">
+              <strong>Утверждает владелец дороги</strong>
+              <span>{{ printableText(titleRow('Владелец дороги')) }}</span>
+              <strong>Согласовывает Госавтоинспекция</strong>
+              <span>{{ printableText(titleRow('Госавтоинспекция')) }}</span>
+            </div>
           </header>
-
-          <div class="paper-content">
-            <div class="drawing-column">
-              <div class="drawing-frame">
-                <div class="drawing-stage">
-                  <div class="road" aria-hidden="true"><div class="road-centre" /></div>
-                  <div
-                    class="crossing-axis"
-                    :style="{ left: `${sheet.axisX}px` }"
-                    aria-hidden="true"
-                  />
-                  <div
-                    v-for="segment in sheet.dimensionChain"
-                    :key="segment.part"
-                    class="zone-segment"
-                    :class="`segment-${segment.part}`"
-                    :style="{
-                      left: `${segment.startX}px`,
-                      width: `${segment.endX - segment.startX}px`,
-                    }"
-                    aria-hidden="true"
-                  />
-                  <span class="axis-label" :style="{ left: `${sheet.axisX}px` }">Ось</span>
-                  <div
-                    v-for="item in sheet.placements"
-                    :key="item.id"
-                    class="placed-object"
-                    :class="
-                      item.kind === 'sign-post'
-                        ? 'sign-post'
-                        : item.elementKind === 'text'
-                          ? 'placed-element text-element'
-                          : 'placed-element'
-                    "
-                    :style="{
-                      left: `${item.x}px`,
-                      top: `${item.y}px`,
-                      ...(item.kind === 'element' && item.elementKind !== 'text'
-                        ? {
-                            minWidth: `${Math.max(item.width, 28)}px`,
-                            minHeight: `${Math.max(item.height, 28)}px`,
-                          }
-                        : {}),
-                    }"
-                    :data-object-id="item.id"
-                  >
-                    <template v-if="item.kind === 'sign-post'">
-                      <div class="post-signs">
-                        <span v-for="(code, index) in item.signIds" :key="index" class="sign-face">
-                          <img
-                            v-if="knownSigns.has(code) && !brokenImages.has(code)"
-                            :src="imageUrl(code)"
-                            :alt="`Знак ${code}`"
-                            :data-sign-code="code"
-                            @error="imageFailed(code)"
-                          />
-                          <span v-else>{{ code }}</span>
-                        </span>
-                      </div>
-                      <span class="object-caption">№ {{ item.id }} {{ item.distanceLabel }}</span>
-                    </template>
-                    <template v-else-if="item.elementKind === 'text'">
-                      <span
-                        class="free-text"
-                        :style="{
-                          fontSize: `${item.fontSize}px`,
-                          fontWeight: item.bold ? 700 : 400,
-                        }"
-                        >{{ item.text }}</span
-                      >
-                    </template>
-                    <template v-else>{{ item.elementKind }} № {{ item.id }}</template>
-                  </div>
-                </div>
+          <div class="draft-watermark">ЧЕРНОВИК · ДЛЯ ВНУТРЕННЕЙ СВЕРКИ</div>
+          <div class="drawing-frame">
+            <div class="drawing-stage">
+              <div class="road" aria-hidden="true">
+                <span class="road-arrow west">←</span><span class="road-arrow east">→</span>
+                <div class="road-centre" />
               </div>
-              <p class="drawing-note">
-                Условный эскиз. Координаты и длины на рисунке не являются масштабом местности.
-              </p>
+              <span class="direction left">{{ printableText(sheet.directions.left) }} ←</span>
+              <span class="direction right">{{ printableText(sheet.directions.right) }} →</span>
+              <div class="crossing-axis" :style="{ left: `${sheet.axisX}px` }" aria-hidden="true" />
+              <span class="axis-label" :style="{ left: `${sheet.axisX}px` }">
+                {{ sheet.crossingFromPu66?.axisLabel || 'Ось переезда' }}
+              </span>
+              <div
+                v-for="segment in sheet.dimensionChain"
+                :key="segment.part"
+                class="zone-segment"
+                :class="`segment-${segment.part}`"
+                :style="{
+                  left: `${segment.startX}px`,
+                  width: `${segment.endX - segment.startX}px`,
+                }"
+                aria-hidden="true"
+              />
+              <div
+                v-for="part in sheet.dimensionChain"
+                :key="`dimension-${part.part}`"
+                class="dimension"
+                :style="{ left: `${part.startX}px`, width: `${part.endX - part.startX}px` }"
+              >
+                <span>{{ part.enteredMetres }} м</span>
+              </div>
+              <div
+                v-for="item in sheet.placements"
+                :key="item.id"
+                class="placed-object"
+                :class="
+                  item.kind === 'sign-post'
+                    ? 'sign-post'
+                    : item.elementKind === 'text'
+                      ? 'text-element'
+                      : 'symbol-element'
+                "
+                :style="{ left: `${item.x}px`, top: `${item.y}px` }"
+                :data-object-id="item.id"
+              >
+                <template v-if="item.kind === 'sign-post'">
+                  <div class="post-signs">
+                    <span v-for="(code, index) in item.signIds" :key="index" class="sign-face">
+                      <img
+                        v-if="knownSigns.has(code) && !brokenImages.has(code)"
+                        :src="imageUrl(code)"
+                        :alt="`Знак ${code}`"
+                        :data-sign-code="code"
+                        @error="imageFailed(code)"
+                      />
+                      <span v-else class="missing-sign">{{ code }}: нет PNG</span>
+                    </span>
+                  </div>
+                  <span class="object-caption">№ {{ item.id }} {{ item.distanceLabel }}</span>
+                </template>
+                <template v-else-if="item.elementKind === 'text'">
+                  <span
+                    class="free-text"
+                    :style="{ fontSize: `${item.fontSize}px`, fontWeight: item.bold ? 700 : 400 }"
+                  >
+                    {{ item.text }}
+                  </span>
+                </template>
+                <template v-else>
+                  <RoadworkSymbol
+                    :kind="item.elementKind"
+                    :width="item.width"
+                    :height="item.height"
+                    :known-signs="knownSigns"
+                  />
+                  <small class="symbol-id">№ {{ item.id }}</small>
+                </template>
+              </div>
             </div>
-
-            <aside class="paper-parameters" data-print-fit>
-              <template v-if="sheet.crossingFromPu66">
-                <h4>Сведения из закреплённой ПУ-66</h4>
-                <dl>
-                  <div>
-                    <dt>Место переезда</dt>
-                    <dd>{{ printableText(sheet.crossingFromPu66.location) }}</dd>
-                  </div>
-                  <div>
-                    <dt>Подпись оси</dt>
-                    <dd>{{ printableText(sheet.crossingFromPu66.axisLabel) }}</dd>
-                  </div>
-                  <div>
-                    <dt>Автомобильная дорога</dt>
-                    <dd>{{ printableText(sheet.crossingFromPu66.roadName) }}</dd>
-                  </div>
-                  <div>
-                    <dt>Ширина проезжей части, м</dt>
-                    <dd>{{ printableText(sheet.crossingFromPu66.carriagewayWidthMetres) }}</dd>
-                  </div>
-                </dl>
-              </template>
-              <h4>Введённые параметры</h4>
-              <dl>
-                <div>
-                  <dt>Направления</dt>
-                  <dd>
-                    {{ printableText(sheet.directions.left) }} /
-                    {{ printableText(sheet.directions.right) }}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Фронт / отвод / буфер</dt>
-                  <dd>{{ sheet.front }} / {{ sheet.taper }} / {{ sheet.buffer }} м</dd>
-                </div>
-                <div v-if="Object.values(sheet.zoneLabels).some(Boolean)">
-                  <dt>Подписи зон</dt>
-                  <dd>
-                    {{
-                      [sheet.zoneLabels.taper, sheet.zoneLabels.buffer, sheet.zoneLabels.work]
-                        .filter(Boolean)
-                        .join(' / ')
-                    }}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Скорости</dt>
-                  <dd>{{ sheet.speeds.join(' / ') }} км/ч</dd>
-                </div>
-                <div>
-                  <dt>Жёлтый фон</dt>
-                  <dd>{{ sheet.yellowTemporarySigns ? 'да' : 'нет' }}</dd>
-                </div>
-                <div v-for="distance in sheet.distances" :key="distance.label">
-                  <dt>{{ distance.label }}</dt>
-                  <dd>{{ distance.value === null ? 'не указано' : `${distance.value} м` }}</dd>
-                </div>
-              </dl>
-              <h4>Цепочка по рис. {{ sheet.template.toUpperCase() }}</h4>
-              <table class="dimension-table">
-                <thead>
-                  <tr>
-                    <th>Участок</th>
-                    <th>Введено</th>
-                    <th>Рисунок</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="part in sheet.dimensionChain" :key="part.part">
-                    <th scope="row">{{ part.title }}</th>
-                    <td>{{ part.enteredMetres }} м</td>
-                    <td :class="{ 'dimension-differs': !part.agreesWithFigure }">
-                      {{ part.figureLabel }}{{ part.agreesWithFigure ? '' : ' · сверить' }}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              <p v-if="sheet.template === 'b34'" class="dimension-note">
-                * Ровно 30 м по правилу проекта относится к Б.33.
+          </div>
+          <footer class="paper-footer" data-print-fit>
+            <div class="legend">
+              <h4>Условные обозначения</h4>
+              <div v-for="kind in usedSymbols" :key="kind">
+                <RoadworkSymbol
+                  :kind="kind"
+                  :width="kind === 'car' ? 50 : 24"
+                  :height="30"
+                  :known-signs="knownSigns"
+                />
+                <span>{{ symbolLabels[kind] }}</span>
+              </div>
+              <p v-if="!usedSymbols.length">
+                Условные обозначения добавляются составителем в редакторе.
               </p>
               <p>
-                Стойки: {{ sheet.placements.filter((item) => item.kind === 'sign-post').length }};
-                объектов всего: {{ sheet.placements.length }}.
+                Знаки на стойках: PNG локального архива ·
+                {{
+                  catalogSource
+                    ? `${catalogSource.documentCode}, редакция ${catalogSource.edition}`
+                    : 'редакция не указана'
+                }}.
               </p>
-            </aside>
-          </div>
-
-          <footer class="paper-footer" data-print-fit>
-            <div class="title-grid">
-              <div v-for="row in sheet.titleRows" :key="row.label" class="title-row">
-                <span>{{ row.label }}</span
-                ><strong>{{ printableText(row.value) }}</strong>
-              </div>
             </div>
-            <p>
-              Проект {{ sheet.id }} · {{ sheet.createdAt }} ·
-              {{
-                localRevision === null
-                  ? 'нет сохранённой редакции SQLite'
-                  : modifiedSinceLocalSave
-                    ? `изменено после локальной редакции № ${localRevision}`
-                    : `локальная редакция № ${localRevision}`
-              }}. Нормативная применимость не подтверждена.
-            </p>
+            <div class="sheet-notes">
+              <h4>Параметры и примечания</h4>
+              <p>
+                Проезжая часть:
+                {{ printableText(sheet.crossingFromPu66?.carriagewayWidthMetres || '') }} м; дорога:
+                {{ printableText(sheet.crossingFromPu66?.roadName || '') }}.
+              </p>
+              <p>
+                Размеры: отвод {{ sheet.taper }} м, буфер {{ sheet.buffer }} м, фронт
+                {{ sheet.front }} м. Скорости: {{ sheet.speeds.join(' / ') }} км/ч.
+              </p>
+              <p>
+                Размерная цепочка на рисунке условна. Сверьте длины, расстановку, режим движения и
+                актуальный источник.
+              </p>
+              <p>
+                Проект {{ sheet.id }} ·
+                {{
+                  localRevision === null
+                    ? 'не сохранён в SQLite'
+                    : modifiedSinceLocalSave
+                      ? `изменён после редакции № ${localRevision}`
+                      : `редакция № ${localRevision}`
+                }}. Нормативная применимость не подтверждена.
+              </p>
+            </div>
           </footer>
         </div>
       </div>
@@ -363,6 +391,9 @@ async function printDraft(): Promise<void> {
 <style scoped>
 h2 {
   margin: 0 0 0.6rem;
+}
+#sheet-title {
+  scroll-margin-top: 1rem;
 }
 .hint {
   color: #526273;
@@ -415,253 +446,289 @@ h2 {
   box-sizing: border-box;
   padding: 7mm;
   display: grid;
-  grid-template-rows: 23mm 132mm 1fr;
-  gap: 3mm;
+  grid-template-rows: 39mm 115mm 38mm;
+  gap: 2mm;
   overflow: hidden;
   position: relative;
   transform-origin: top left;
   background: white;
   color: #182533;
   font:
-    9pt/1.3 Arial,
+    8pt/1.25 Arial,
     sans-serif;
   box-shadow: 0 3px 12px #8e9eae;
 }
 .paper-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 5mm;
-  overflow: hidden;
-  border-bottom: 0.5mm solid #273e54;
-}
-.paper-header h3 {
-  font-size: 15pt;
-  margin: 0.7mm 0;
-}
-.paper-header p {
-  margin: 0;
-}
-.paper-kicker {
-  font-size: 8pt;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-.draft-mark {
-  text-align: right;
-  color: #9b2934;
-  font-size: 10pt;
-  white-space: nowrap;
-}
-.paper-content {
   display: grid;
-  grid-template-columns: 178mm 100mm;
-  gap: 5mm;
-  min-height: 0;
+  grid-template-columns: 1fr 2.6fr 1fr;
+  gap: 3mm;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
-.drawing-column {
-  min-width: 0;
+.paper-signatures {
+  display: flex;
+  flex-direction: column;
+  gap: 1mm;
+  padding-top: 2mm;
+}
+.paper-signatures strong {
+  font-size: 8pt;
+}
+.paper-signatures.right {
+  padding-top: 0;
+}
+.paper-heading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1mm;
+  text-align: center;
+}
+.paper-heading h3 {
+  font-size: 11pt;
+  line-height: 1.16;
+  margin: 0 0 1mm;
+}
+.paper-heading strong {
+  font-size: 8pt;
+}
+.draft-watermark {
+  position: absolute;
+  top: 37mm;
+  left: 79mm;
+  right: 79mm;
+  z-index: 3;
+  padding: 0.5mm;
+  background: white;
+  color: #9b2934;
+  font-size: 7pt;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-align: center;
 }
 .drawing-frame {
-  width: 178mm;
-  height: 126mm;
   box-sizing: border-box;
-  border: 0.3mm solid #8b9bad;
+  width: 283mm;
+  height: 115mm;
   overflow: hidden;
+  position: relative;
 }
 .drawing-stage {
   position: relative;
+  left: 25px;
   width: 1680px;
-  height: 1188px;
-  transform: scale(0.4);
+  height: 720px;
+  transform: scale(0.6);
   transform-origin: top left;
-  background: #f9fbfd;
+  background: white;
 }
 .road {
   position: absolute;
   top: 410px;
-  left: 80px;
-  width: 1520px;
+  left: 48px;
+  width: 1584px;
   height: 112px;
-  border: 4px solid #566778;
-  background: #e5ebf0;
+  background: #bbb;
+  border-top: 15px solid #e6e6e6;
+  border-bottom: 15px solid #e6e6e6;
+  box-sizing: border-box;
 }
 .road-centre {
   position: absolute;
-  top: 50%;
+  top: 48%;
   width: 100%;
-  border-top: 3px dashed #536576;
+  border-top: 3px dashed white;
+}
+.road-arrow {
+  position: absolute;
+  z-index: 1;
+  color: white;
+  font:
+    bold 64px/1 Arial,
+    sans-serif;
+}
+.road-arrow.west {
+  top: 0;
+  left: 45px;
+}
+.road-arrow.east {
+  bottom: 0;
+  right: 45px;
+}
+.direction {
+  position: absolute;
+  top: 348px;
+  max-width: 210px;
+  font-size: 20px;
+}
+.direction.left {
+  left: 48px;
+}
+.direction.right {
+  right: 48px;
+  top: 545px;
+  text-align: right;
 }
 .crossing-axis {
   position: absolute;
-  top: 215px;
-  width: 48px;
-  height: 526px;
-  margin-left: -24px;
-  background: repeating-linear-gradient(0deg, #627486 0 9px, #e3e8ed 9px 18px);
-  opacity: 0.65;
-}
-.zone-segment {
-  position: absolute;
-  top: 410px;
-  height: 120px;
-  box-sizing: border-box;
-  border: 2px solid #9b6b23;
-  background: repeating-linear-gradient(45deg, #f4bb6a66 0 10px, #fff7e966 10px 20px);
-  pointer-events: none;
-}
-.segment-buffer {
-  border-color: #427e9e;
-  background: #9ecbd066;
-}
-.segment-front {
-  background: rgb(245 158 11 / 32%);
-  border: 3px dashed #a76a04;
+  z-index: 1;
+  top: 228px;
+  width: 6px;
+  height: 380px;
+  margin-left: -3px;
+  background: #202020;
 }
 .axis-label {
   position: absolute;
-  top: 193px;
-  transform: translateX(-50%);
-  font-size: 27px;
+  top: 230px;
+  max-width: 160px;
+  font-size: 17px;
+  transform: rotate(-90deg) translateX(-100%);
+  transform-origin: left top;
+}
+.zone-segment {
+  position: absolute;
+  top: 470px;
+  height: 38px;
+  box-sizing: border-box;
+  border-top: 2px dashed #9c3232;
+  background: repeating-linear-gradient(45deg, #ececec 0 8px, #fff 8px 18px);
+  opacity: 0.65;
+  pointer-events: none;
+}
+.segment-buffer {
+  border-color: #4a677b;
+  background: #ecf3f6;
+}
+.segment-front {
+  border: 2px solid #4e4e4e;
+  background: repeating-linear-gradient(45deg, #fff 0 11px, #84909a 11px 13px);
+}
+.dimension {
+  position: absolute;
+  top: 666px;
+  height: 24px;
+  box-sizing: border-box;
+  border-top: 2px solid #222;
+  text-align: center;
+}
+.dimension::before,
+.dimension::after {
+  content: '';
+  position: absolute;
+  bottom: 8px;
+  width: 1px;
+  height: 146px;
+  background: #303030;
+}
+.dimension::before {
+  left: 0;
+}
+.dimension::after {
+  right: 0;
+}
+.dimension span {
+  display: inline-block;
+  position: relative;
+  top: -25px;
+  background: white;
+  padding: 0 6px;
+  font-size: 21px;
 }
 .placed-object {
   position: absolute;
-  z-index: 1;
+  z-index: 2;
   max-width: 340px;
   overflow-wrap: anywhere;
 }
 .sign-post {
-  background: #fff;
-  border: 2px solid #2e4d65;
-  padding: 4px;
+  transform: translateY(-50%);
 }
 .post-signs {
   display: flex;
-  flex-wrap: wrap;
-  max-width: 320px;
-  gap: 3px;
+  max-width: 330px;
+  gap: 5px;
+  align-items: center;
 }
 .sign-face {
   display: inline-grid;
   place-items: center;
-  min-width: 58px;
+  min-width: 51px;
   height: 62px;
-  border: 1px solid #526273;
-  background: #fff;
-  padding: 2px;
-  font-size: 17px;
+  background: white;
 }
 .sign-face img {
-  max-width: 64px;
+  max-width: 70px;
   max-height: 62px;
   object-fit: contain;
 }
+.missing-sign {
+  padding: 2px;
+  background: #fff;
+  color: #9b2934;
+  font-size: 13px;
+}
 .object-caption {
   display: block;
-  font-size: 16px;
+  font-size: 14px;
+  text-align: center;
 }
-.placed-element {
-  min-width: 28px;
-  min-height: 24px;
-  border: 2px solid #455c70;
+.symbol-element {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.symbol-id {
+  position: absolute;
+  top: -17px;
+  left: 0;
+  font-size: 12px;
   background: #fff;
-  font-size: 18px;
-}
-.text-element {
-  border: 0;
-  background: transparent;
 }
 .free-text {
   white-space: pre-wrap;
 }
-.drawing-note {
-  font-size: 7pt;
-  margin: 1mm 0 0;
-}
-.paper-parameters {
-  border: 0.3mm solid #8b9bad;
-  padding: 2mm;
-  box-sizing: border-box;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-}
-.paper-parameters h4 {
-  margin: 1.5mm 0 1mm;
-  font-size: 10pt;
-}
-.paper-parameters h4:first-child {
-  margin-top: 0;
-}
-.paper-parameters dl {
+.paper-footer {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1.4mm;
-  margin: 0;
-}
-.paper-parameters dl > div {
-  border-bottom: 1px solid #d2dbe4;
-  padding: 0.5mm 0;
-}
-.paper-parameters dt {
-  font-size: 7pt;
-  color: #526273;
-}
-.paper-parameters dd {
-  margin: 0;
-  font-weight: 600;
-}
-.dimension-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 7pt;
-}
-.dimension-table th,
-.dimension-table td {
-  padding: 1mm 0.7mm;
-  text-align: left;
-  border-bottom: 1px solid #d2dbe4;
-}
-.dimension-table th {
-  font-weight: 500;
-}
-.dimension-table td:last-child {
-  white-space: nowrap;
-}
-.dimension-differs {
-  color: #9b2934;
-  font-weight: 700;
-}
-.dimension-note {
-  margin: 1mm 0 0;
-  font-size: 7pt;
-}
-.paper-footer {
+  gap: 7mm;
   min-height: 0;
   overflow: hidden;
-  border-top: 0.5mm solid #273e54;
-  padding-top: 1mm;
-  box-sizing: border-box;
-}
-.title-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1mm 4mm;
-}
-.title-row {
-  display: grid;
-  grid-template-columns: 26mm 1fr;
-  gap: 1mm;
-  border-bottom: 1px solid #d2dbe4;
+  padding-top: 2mm;
+  border-top: 1px solid #777;
   overflow-wrap: anywhere;
+  font-size: 7pt;
 }
-.title-row span {
-  color: #526273;
+.paper-footer h4 {
+  margin: 0 0 1mm;
+  font-size: 9pt;
+  text-decoration: underline;
 }
 .paper-footer p {
-  font-size: 7pt;
-  margin: 1.5mm 0 0;
+  margin: 1mm 0;
+}
+.legend > div {
+  display: flex;
+  align-items: center;
+  gap: 2mm;
+  min-height: 7mm;
+}
+.legend {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-content: start;
+  gap: 0 2mm;
+}
+.legend h4,
+.legend p {
+  grid-column: 1 / -1;
+}
+.legend > div span:last-child {
+  font-size: 6pt;
+}
+.sheet-notes p:last-child {
   color: #9b2934;
 }
-
 @media print {
   .screen-only {
     display: none !important;

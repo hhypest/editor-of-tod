@@ -304,7 +304,7 @@ describe('local SQLite registries', () => {
       migrated.close()
     }
     const database = new DatabaseSync(path)
-    expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 5 })
+    expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 6 })
     database.close()
   })
 })

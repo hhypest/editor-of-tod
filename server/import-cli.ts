@@ -44,11 +44,12 @@ export async function runImport(args: string[], store: RegistryStore): Promise<s
   const entries = parseSignArchive(buffers[0]!)
   const planned = store.planSigns(entries)
   if (!apply)
-    return `Просмотр знаков: новых ${planned.added}, обновлений ${planned.updated}, без изменений ${planned.unchanged}. Для записи добавьте --apply.`
-  if (planned.added + planned.updated === 0) return 'Знаки: данные уже загружены, изменений нет.'
+    return `Просмотр знаков: новых ${planned.added}, обновлений ${planned.updated}, исключается ${planned.retired}, без изменений ${planned.unchanged}. Для записи добавьте --apply.`
+  if (planned.added + planned.updated + planned.retired === 0)
+    return 'Знаки: данные уже загружены, изменений нет.'
   const backup = await store.createBackup()
   const result = store.importSigns(entries)
-  return `Знаки: добавлено ${result.added}, обновлено ${result.updated}, без изменений ${result.unchanged}. Резервная копия: private-data/backups/${backup}.`
+  return `Знаки: добавлено ${result.added}, обновлено ${result.updated}, исключено ${result.retired}, без изменений ${result.unchanged}. Резервная копия: private-data/backups/${backup}.`
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

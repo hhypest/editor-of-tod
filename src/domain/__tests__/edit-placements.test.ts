@@ -3,6 +3,7 @@ import fixture from '../../../tests/fixtures/legacy-b34-manual.json?raw'
 import {
   createPlacementDraft,
   newSignDraft,
+  newSymbolDraft,
   newTextDraft,
   PlacementEditError,
   removePlacement,
@@ -85,6 +86,18 @@ describe('editing saved placements', () => {
     expect(updated.placements.filter((item) => item.id !== 11)).toEqual(
       original.placements.filter((item) => item.id !== 11),
     )
+  })
+
+  it('adds two movable regulators and a cover vehicle to the short-front variant', () => {
+    const first = savePlacement(original, newSymbolDraft('reg', 520, 350))
+    const second = savePlacement(first, newSymbolDraft('reg', 1200, 540))
+    const withCar = savePlacement(second, newSymbolDraft('car', 640, 465))
+    expect(withCar.placements.slice(-3)).toMatchObject([
+      { elementKind: 'reg', position: { offsetXSvg: 520, ySvg: 350 } },
+      { elementKind: 'reg', position: { offsetXSvg: 1200, ySvg: 540 } },
+      { elementKind: 'car', sizeSvg: { width: 92, height: 65 } },
+    ])
+    expect(importSchemeJson(exportSchemeJson(withCar)).scheme).toEqual(withCar)
   })
 
   it('rejects invalid numbers and empty sign/text entries without changing the project', () => {

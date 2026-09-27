@@ -42,6 +42,7 @@ const localBusy = ref(false)
 const localError = ref('')
 const localNotice = ref('')
 const projectsRefreshKey = ref(0)
+const signCatalogVersion = ref(0)
 const history = ref<EditHistory<Scheme> | null>(null)
 const selectedPlacementId = ref<number | null>(null)
 const editorDirty = computed(() => detailsDirty.value || placementDirty.value)
@@ -433,6 +434,8 @@ function stepForward(): void {
           </div>
         </dl>
 
+        <a class="sheet-shortcut" href="#sheet-title">Перейти к черновому листу A4 и печати</a>
+
         <h3>Сообщения при открытии проекта</h3>
         <p class="hint">
           Эти сообщения относятся к моменту открытия или создания проекта. Текущие незаполненные
@@ -507,7 +510,7 @@ function stepForward(): void {
         </p>
         <p class="hint">
           Исходный файл не изменяется. Рабочая область показывает условные координаты объектов;
-          печатный лист появится на следующем этапе.
+          черновой лист A4 расположен ниже рабочей области и доступен для внутренней сверки.
         </p>
       </section>
 
@@ -537,6 +540,7 @@ function stepForward(): void {
 
       <SchemeWorkspace
         v-if="imported"
+        :key="`workspace-${signCatalogVersion}`"
         class="panel"
         :scheme="imported.scheme"
         :selected-id="selectedPlacementId"
@@ -547,6 +551,7 @@ function stepForward(): void {
 
       <SchemeDraftSheet
         v-if="imported"
+        :key="`sheet-${signCatalogVersion}`"
         class="panel print-host"
         :scheme="imported.scheme"
         :has-pending-input="editorDirty"
@@ -556,6 +561,7 @@ function stepForward(): void {
 
       <PlacementEditor
         v-if="imported"
+        :key="`placements-${signCatalogVersion}`"
         class="panel"
         :scheme="imported.scheme"
         :locked="detailsDirty || localBusy"
@@ -716,7 +722,11 @@ function stepForward(): void {
       </section>
       <TemplateChoice />
       <LocalRegistries />
-      <ImportedData :referenced-sign-ids="referencedSignIds" />
+      <ImportedData
+        :referenced-sign-ids="referencedSignIds"
+        :locked="editorDirty"
+        @signs-updated="signCatalogVersion++"
+      />
     </div>
   </main>
 </template>
@@ -782,6 +792,22 @@ h3 {
   display: block;
   margin-bottom: 0.5rem;
   font-weight: 600;
+}
+
+.sheet-shortcut {
+  display: inline-block;
+  padding: 0.7rem 1rem;
+  border: 1px solid #185ca5;
+  border-radius: 0.45rem;
+  color: #185ca5;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.sheet-shortcut:hover,
+.sheet-shortcut:focus-visible {
+  outline: 2px solid #185ca5;
+  outline-offset: 2px;
 }
 
 input[type='file'] {

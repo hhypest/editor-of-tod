@@ -88,6 +88,33 @@ export function newTextDraft(): PlacementDraft {
   }
 }
 
+export function newSymbolDraft(
+  kind: 'reg' | 'car' | 'cone' | 'complex' | 'pit',
+  x: number,
+  y: number,
+): PlacementDraft {
+  const sizes = {
+    reg: [30, 48],
+    car: [92, 65],
+    cone: [25, 31],
+    complex: [82, 65],
+    pit: [80, 36],
+  } as const
+  return {
+    kind: 'element',
+    id: null,
+    anchor: 'abs',
+    x: String(x),
+    y: String(y),
+    elementKind: kind,
+    width: String(sizes[kind][0]),
+    height: String(sizes[kind][1]),
+    text: '',
+    fontSize: '',
+    bold: false,
+  }
+}
+
 function numberField(value: string, name: string, minimum?: number): number {
   const normalized = value.trim().replace(',', '.')
   if (!/^-?\d+(?:\.\d+)?$/.test(normalized)) {

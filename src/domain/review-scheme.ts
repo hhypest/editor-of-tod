@@ -174,13 +174,15 @@ export function reviewScheme(scheme: Scheme): ReviewFinding[] {
   }
 
   if (scheme.template.code === 'b34') {
+    const regulators = placements.filter(
+      (placement) => placement.kind === 'element' && placement.elementKind === 'reg',
+    ).length
     findings.push({
       id: 'b34-traffic',
       kind: 'verify',
       title: 'Условия движения для Б.34',
-      detail:
-        'Подпись к рисунку Б.34 указывает на регулировщика при интенсивности более 250 авт./ч в двух направлениях или ограниченной видимости. Оцените эти условия на месте и зафиксируйте решение составителя.',
-      target: '#details-title',
+      detail: `На листе размещено регулировщиков: ${regulators}. Подпись к рисунку Б.34 указывает на регулировщика при интенсивности более 250 авт./ч в двух направлениях или ограниченной видимости. Оцените условия на месте и зафиксируйте решение составителя.`,
+      target: '#placements-title',
     })
   }
 
