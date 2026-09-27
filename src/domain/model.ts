@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { pu66SnapshotSchema } from './pu66-snapshot'
+import { pu66SnapshotSchema } from './pu66-snapshot.ts'
 
 const finite = z.number().finite()
 const text = z.string().max(5_000)

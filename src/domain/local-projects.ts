@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { schemeSchema } from './model'
+import { schemeSchema } from './model.ts'
 
 export const MAX_LOCAL_PROJECT_BYTES = 32 * 1024 * 1024
 
