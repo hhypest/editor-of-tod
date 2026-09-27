@@ -1,7 +1,7 @@
-import { closeSync, constants, existsSync, mkdirSync, openSync, chmodSync } from 'node:fs'
+import { closeSync, constants, existsSync, mkdirSync, openSync, chmodSync, rmSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
-import { backup, DatabaseSync } from 'node:sqlite'
+import { DatabaseSync } from 'node:sqlite'
 import { parseStoredScheme, schemeSchema, type Scheme } from '../src/domain/model.ts'
 import {
   MAX_LOCAL_PROJECT_BYTES,
@@ -603,8 +603,13 @@ export class RegistryStore {
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     const filename = `registry-${this.now().replaceAll(':', '-').replaceAll('.', '-')}-${randomUUID().slice(0, 8)}.sqlite`
     const path = join(directory, filename)
-    await backup(this.db, path)
-    if (process.platform !== 'win32') chmodSync(path, 0o600)
+    try {
+      this.db.prepare('VACUUM INTO ?').run(path)
+      if (process.platform !== 'win32') chmodSync(path, 0o600)
+    } catch (error) {
+      rmSync(path, { force: true })
+      throw error
+    }
     return filename
   }
 
