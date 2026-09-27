@@ -45,18 +45,26 @@ describe('local SQLite registries', () => {
       ).toBe(2)
       expect(() => store.saveCrossing(crossing, 1)).toThrow(RevisionConflict)
       expect(store.history('crossings', 'TEST-001').map((row) => row.revision)).toEqual([1, 2])
+      console.log('crossing-backup: before createBackup')
       const backupName = await store.createBackup()
+      console.log('crossing-backup: after createBackup')
       const backupPath = join(directory, 'backups', backupName)
       expect(existsSync(backupPath)).toBe(true)
+      console.log('crossing-backup: before opening backup')
       const restored = new RegistryStore(backupPath)
+      console.log('crossing-backup: after opening backup')
       try {
         expect(restored.listCrossings()).toMatchObject([{ referenceId: 'TEST-001', revision: 2 }])
         expect(restored.history('crossings', 'TEST-001')).toHaveLength(2)
       } finally {
+        console.log('crossing-backup: before closing backup')
         restored.close()
+        console.log('crossing-backup: after closing backup')
       }
     } finally {
+      console.log('crossing-backup: before closing source')
       store.close()
+      console.log('crossing-backup: after closing source')
     }
     const reopened = new RegistryStore(path)
     try {
