@@ -41,7 +41,7 @@ describe('local API', () => {
       values.set(`L${47 + item}`, item + 1)
     }
     const card = extractPu66Cells((address) => values.get(address) ?? null)
-    const store = new RegistryStore(':memory:')
+    const store = new RegistryStore(':memory:', () => '2026-09-27T12:00:00.000Z')
     store.importPu66([
       {
         card,
@@ -71,6 +71,37 @@ describe('local API', () => {
       updatedAt: expect.any(String),
     })
     expect(JSON.stringify(selected)).not.toContain('technicalRows')
+    const verificationUrl = `http://127.0.0.1:${address.port}/api/pu66/${encodeURIComponent(card.key)}/verification`
+    const verification = {
+      expectedRevision: 1,
+      verifiedAt: '2026-01-30',
+      verifiedBy: 'Учебное линейное подразделение',
+    }
+    const write = (body: unknown, withOrigin = true) =>
+      fetch(verificationUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(withOrigin ? { Origin: 'http://127.0.0.1:5173' } : {}),
+        },
+        body: JSON.stringify(body),
+      })
+    expect((await write(verification, false)).status).toBe(403)
+    expect((await write({ ...verification, verifiedAt: '2099-01-30' })).status).toBe(400)
+    expect((await write(verification)).status).toBe(201)
+    expect((await write({ ...verification, expectedRevision: 2 })).status).toBe(409)
+    const localList = await (await fetch(`http://127.0.0.1:${address.port}/api/pu66`)).json()
+    expect(localList).toMatchObject([
+      { verification: { cardRevision: 1, verifiedAt: '2026-01-30' } },
+    ])
+    const historyUrl = `http://127.0.0.1:${address.port}/api/pu66/${encodeURIComponent(card.key)}/verifications`
+    expect(await (await fetch(historyUrl)).json()).toMatchObject([
+      { cardRevision: 1, verifiedAt: '2026-01-30' },
+    ])
+    expect(
+      (await fetch(`http://127.0.0.1:${address.port}/api/pu66/missing/verifications`)).status,
+    ).toBe(404)
+    expect(await (await fetch(response.url)).json()).toEqual(selected)
   })
 
   it('serves both PNG sign variants and rejects the removed SVG format', async () => {

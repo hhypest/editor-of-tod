@@ -17,6 +17,12 @@ import {
   type NormativeDraft,
   type NormativeRecord,
 } from '../src/domain/registry.ts'
+import {
+  localCalendarDate,
+  pu66VerificationWriteSchema,
+  type Pu66Verification,
+  type Pu66VerificationWrite,
+} from '../src/domain/pu66-review.ts'
 import { type Pu66Card, type Pu66Import, localCardSummary, schemeFields } from './pu66.ts'
 import { type SignImport } from './signs.ts'
 
@@ -32,6 +38,12 @@ export class RevisionConflict extends Error {
 export class ProjectTooLarge extends Error {
   constructor() {
     super('Черновик больше 32 МБ. Скачайте JSON-копию проекта.')
+  }
+}
+
+export class InvalidPu66Verification extends Error {
+  constructor() {
+    super('Дата сверки ПУ-66 не может быть в будущем.')
   }
 }
 
@@ -112,7 +124,14 @@ export class RegistryStore {
     this.db.exec('PRAGMA foreign_keys = ON')
     const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
       .user_version
-    if (version !== 0 && version !== 1 && version !== 2 && version !== 3 && version !== 4) {
+    if (
+      version !== 0 &&
+      version !== 1 &&
+      version !== 2 &&
+      version !== 3 &&
+      version !== 4 &&
+      version !== 5
+    ) {
       this.db.close()
       throw new Error(`Неизвестная версия локальной базы: ${version}. Файл не изменён.`)
     }
@@ -221,6 +240,23 @@ export class RegistryStore {
           FOREIGN KEY (id) REFERENCES project_drafts(id)
         );
         PRAGMA user_version = 4;
+        COMMIT;
+      `)
+    }
+    if (version < 5) {
+      this.db.exec(`
+        BEGIN;
+        CREATE TABLE pu66_verifications (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          key TEXT NOT NULL,
+          card_revision INTEGER NOT NULL CHECK (card_revision > 0),
+          verified_at TEXT NOT NULL,
+          verified_by TEXT NOT NULL,
+          recorded_at TEXT NOT NULL,
+          FOREIGN KEY (key, card_revision) REFERENCES pu66_revisions(key, revision)
+        );
+        CREATE INDEX pu66_verifications_by_card ON pu66_verifications(key, card_revision, id);
+        PRAGMA user_version = 5;
         COMMIT;
       `)
     }
@@ -460,14 +496,94 @@ export class RegistryStore {
     }
   }
 
-  listPu66(): Array<ReturnType<typeof localCardSummary> & { revision: number; updatedAt: string }> {
+  listPu66(): Array<
+    ReturnType<typeof localCardSummary> & {
+      revision: number
+      updatedAt: string
+      verification: Pu66Verification | null
+    }
+  > {
     const rows = this.db
-      .prepare('SELECT revision, payload_json, updated_at FROM pu66_cards ORDER BY key')
-      .all() as Pick<StoredRow, 'revision' | 'payload_json' | 'updated_at'>[]
+      .prepare(
+        `SELECT c.revision, c.payload_json, c.updated_at,
+           v.verified_at, v.verified_by, v.recorded_at
+         FROM pu66_cards AS c
+         LEFT JOIN pu66_verifications AS v ON v.id = (
+           SELECT id FROM pu66_verifications
+           WHERE key = c.key AND card_revision = c.revision
+           ORDER BY verified_at DESC, id DESC LIMIT 1
+         )
+         ORDER BY c.key`,
+      )
+      .all() as Array<
+      Pick<StoredRow, 'revision' | 'payload_json' | 'updated_at'> & {
+        verified_at: string | null
+        verified_by: string | null
+        recorded_at: string | null
+      }
+    >
     return rows.map((row) => ({
       ...localCardSummary(JSON.parse(row.payload_json) as Pu66Card),
       revision: row.revision,
       updatedAt: row.updated_at,
+      verification:
+        row.verified_at && row.verified_by && row.recorded_at
+          ? {
+              cardRevision: row.revision,
+              verifiedAt: row.verified_at,
+              verifiedBy: row.verified_by,
+              recordedAt: row.recorded_at,
+            }
+          : null,
+    }))
+  }
+
+  recordPu66Verification(key: string, input: Pu66VerificationWrite): Pu66Verification | null {
+    const { expectedRevision, verifiedAt, verifiedBy } = pu66VerificationWriteSchema.parse(input)
+    const now = this.now()
+    if (verifiedAt > localCalendarDate(new Date(now))) throw new InvalidPu66Verification()
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const current = this.db.prepare('SELECT revision FROM pu66_cards WHERE key = ?').get(key) as
+        { revision: number } | undefined
+      if (!current) {
+        this.db.exec('ROLLBACK')
+        return null
+      }
+      if (current.revision !== expectedRevision) throw new RevisionConflict()
+      this.db
+        .prepare(
+          `INSERT INTO pu66_verifications (key, card_revision, verified_at, verified_by, recorded_at)
+           VALUES (?, ?, ?, ?, ?)`,
+        )
+        .run(key, current.revision, verifiedAt, verifiedBy, now)
+      this.db.exec('COMMIT')
+      return { cardRevision: current.revision, verifiedAt, verifiedBy, recordedAt: now }
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
+  listPu66Verifications(key: string): Pu66Verification[] | null {
+    const current = this.db.prepare('SELECT 1 FROM pu66_cards WHERE key = ?').get(key)
+    if (!current) return null
+    const rows = this.db
+      .prepare(
+        `SELECT card_revision, verified_at, verified_by, recorded_at
+         FROM pu66_verifications WHERE key = ? ORDER BY id DESC`,
+      )
+      .all(key) as Array<{
+      card_revision: number
+      verified_at: string
+      verified_by: string
+      recorded_at: string
+    }>
+    return rows.map((row) => ({
+      cardRevision: row.card_revision,
+      verifiedAt: row.verified_at,
+      verifiedBy: row.verified_by,
+      recordedAt: row.recorded_at,
     }))
   }
 

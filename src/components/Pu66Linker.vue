@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { linkPu66Card } from '../domain/link-pu66'
 import type { Scheme } from '../domain/model'
 import type { Pu66SchemeRecord } from '../domain/pu66-snapshot'
+import { annualPu66ReviewStatus, localCalendarDate } from '../domain/pu66-review'
 import { getPu66SchemeRecord, listPu66Cards, type Pu66ListEntry } from '../services/local-pu66'
 
 const props = defineProps<{ scheme: Scheme; locked?: boolean }>()
@@ -13,6 +14,16 @@ const preview = ref<Pu66SchemeRecord | null>(null)
 const busy = ref(false)
 const error = ref('')
 const notice = ref('')
+const selectedVerification = computed(
+  () => cards.value.find((card) => card.referenceId === key.value)?.verification ?? null,
+)
+
+const reviewStatus = computed(() =>
+  annualPu66ReviewStatus(
+    selectedVerification.value?.verifiedAt ?? null,
+    localCalendarDate(new Date()),
+  ),
+)
 
 const alreadyLinked = computed(() => {
   if (!preview.value || props.scheme.crossing.source !== 'local-pu66') return false
@@ -130,6 +141,16 @@ onMounted(load)
     <p v-if="!cards.length && !busy" class="hint">Импортированных карточек пока нет.</p>
     <div v-if="preview">
       <p class="hint">Перед применением сравните старую привязку и выбранную карточку.</p>
+      <p class="hint" role="status">
+        {{
+          reviewStatus.kind === 'unverified'
+            ? 'Для этой редакции ПУ-66 сверка линейным подразделением не зарегистрирована.'
+            : reviewStatus.kind === 'current'
+              ? `Сверка зарегистрирована ${selectedVerification?.verifiedAt}; следующий срок — ${reviewStatus.nextDue}.`
+              : `Срок ежегодной сверки наступил или прошёл (${reviewStatus.nextDue}). Уточните актуальность карточки.`
+        }}
+        Привязка не заменяет проверку перед выпуском схемы.
+      </p>
       <div class="table-scroll">
         <table>
           <thead>

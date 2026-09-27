@@ -214,20 +214,22 @@ function applyDraft(): void {
             >Ответственный 2 <input v-model="draft.titleBlock.responsible[1]" type="text"
           /></label>
         </div>
-        <h3>Утверждение</h3>
+        <h3>Утверждает владелец автомобильной дороги</h3>
         <div class="fields">
           <label
             >Должность <input v-model="draft.titleBlock.approver.position" type="text"
           /></label>
           <label
-            >Организация <input v-model="draft.titleBlock.approver.organization" type="text"
+            >Владелец дороги / организация
+            <input v-model="draft.titleBlock.approver.organization" type="text"
           /></label>
           <label>ФИО <input v-model="draft.titleBlock.approver.name" type="text" /></label>
         </div>
-        <h3>Согласование</h3>
+        <h3>Согласовывает Госавтоинспекция</h3>
         <div class="fields">
           <label
-            >Должность <input v-model="draft.titleBlock.agreement.position" type="text"
+            >Должность и подразделение
+            <input v-model="draft.titleBlock.agreement.position" type="text"
           /></label>
           <label>ФИО <input v-model="draft.titleBlock.agreement.name" type="text" /></label>
           <label>Год <input v-model="draft.titleBlock.agreement.year" type="text" /></label>

@@ -71,7 +71,7 @@ export function reviewScheme(scheme: Scheme): ReviewFinding[] {
     },
     {
       id: 'approver',
-      title: 'Утверждение',
+      title: 'Утверждение владельцем дороги',
       fields: [
         ['должность', titleBlock.approver.position],
         ['организация', titleBlock.approver.organization],
@@ -80,7 +80,7 @@ export function reviewScheme(scheme: Scheme): ReviewFinding[] {
     },
     {
       id: 'agreement',
-      title: 'Согласование',
+      title: 'Согласование с Госавтоинспекцией',
       fields: [
         ['должность', titleBlock.agreement.position],
         ['ФИО', titleBlock.agreement.name],
@@ -155,7 +155,8 @@ export function reviewScheme(scheme: Scheme): ReviewFinding[] {
       id: 'boundary-30',
       kind: 'verify',
       title: 'Фронт работ ровно 30 м',
-      detail: 'Пограничный случай Б.33/Б.34 требует отдельной предметной сверки с ОДМ.',
+      detail:
+        'Б.33 выбран по подтверждённому правилу проекта. Подпись и размерное обозначение ОДМ различаются; проверьте применимость остальных условий схемы.',
       target: '#details-title',
     })
   }

@@ -9,7 +9,13 @@ import {
   projectWriteSchema,
 } from '../src/domain/local-projects.ts'
 import { crossingWriteSchema, normativeWriteSchema } from '../src/domain/registry.ts'
-import { ProjectTooLarge, RegistryStore, RevisionConflict } from './store.ts'
+import { pu66VerificationWriteSchema } from '../src/domain/pu66-review.ts'
+import {
+  InvalidPu66Verification,
+  ProjectTooLarge,
+  RegistryStore,
+  RevisionConflict,
+} from './store.ts'
 
 const port = 4100
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
@@ -161,6 +167,25 @@ export function createRegistryServer(store: RegistryStore, listenPort = port) {
         const fields = store.getPu66Scheme(key)
         if (!fields) throw new RequestError(404, 'Карточка ПУ-66 не найдена.')
         json(res, 200, fields)
+      } else if (
+        req.method === 'GET' &&
+        pathname.startsWith('/api/pu66/') &&
+        pathname.endsWith('/verifications')
+      ) {
+        const key = decodeKey(pathname.slice('/api/pu66/'.length, -'/verifications'.length))
+        const history = store.listPu66Verifications(key)
+        if (!history) throw new RequestError(404, 'Карточка ПУ-66 не найдена.')
+        json(res, 200, history)
+      } else if (
+        req.method === 'POST' &&
+        pathname.startsWith('/api/pu66/') &&
+        pathname.endsWith('/verification')
+      ) {
+        const key = decodeKey(pathname.slice('/api/pu66/'.length, -'/verification'.length))
+        const input = pu66VerificationWriteSchema.parse(await readJson(req))
+        const verification = store.recordPu66Verification(key, input)
+        if (!verification) throw new RequestError(404, 'Карточка ПУ-66 не найдена.')
+        json(res, 201, verification)
       } else if (req.method === 'GET' && pathname === '/api/signs') {
         const query =
           new URL(req.url ?? '/', `http://127.0.0.1:${actualPort}`).searchParams.get('query') ?? ''
@@ -215,6 +240,7 @@ export function createRegistryServer(store: RegistryStore, listenPort = port) {
     } catch (error) {
       if (error instanceof RequestError) json(res, error.status, { error: error.message })
       else if (error instanceof RevisionConflict) json(res, 409, { error: error.message })
+      else if (error instanceof InvalidPu66Verification) json(res, 400, { error: error.message })
       else if (error instanceof ProjectTooLarge) json(res, 413, { error: error.message })
       else if (error instanceof ZodError) {
         const issue = error.issues[0]
