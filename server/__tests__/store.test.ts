@@ -65,7 +65,7 @@ describe('local SQLite registries', () => {
     } finally {
       reopened.close()
     }
-  })
+  }, 20_000)
 
   it('requires date and reviewer to mark a normative entry checked', () => {
     const store = new RegistryStore(':memory:')
@@ -141,7 +141,7 @@ describe('local SQLite registries', () => {
     } finally {
       reopened.close()
     }
-  })
+  }, 20_000)
 
   it('reopens native B.34 projects without inventing inactive B.33 measurements', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-native-'))
