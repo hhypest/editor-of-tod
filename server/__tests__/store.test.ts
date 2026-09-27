@@ -290,7 +290,9 @@ describe('local SQLite registries', () => {
     current.saveCrossing(crossing, 0)
     current.close()
     const old = new DatabaseSync(path)
-    old.exec('DROP TABLE project_revisions; DROP TABLE project_drafts; PRAGMA user_version = 3;')
+    old.exec(
+      'DROP TABLE pu66_verifications; DROP TABLE project_revisions; DROP TABLE project_drafts; PRAGMA user_version = 3;',
+    )
     old.close()
 
     const migrated = new RegistryStore(path)
@@ -302,7 +304,7 @@ describe('local SQLite registries', () => {
       migrated.close()
     }
     const database = new DatabaseSync(path)
-    expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 4 })
+    expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 5 })
     database.close()
   })
 })

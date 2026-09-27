@@ -75,7 +75,7 @@ describe('private import formats', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-private-import-'))
     const path = join(directory, 'registry.sqlite')
     try {
-      const store = new RegistryStore(path)
+      const store = new RegistryStore(path, () => '2026-09-27T12:00:00.000Z')
       const source = Buffer.from('synthetic workbook bytes')
       const card = sampleCard(5)
       const entry: Pu66Import = {
@@ -88,6 +88,31 @@ describe('private import formats', () => {
       expect(store.importPu66([entry])).toEqual({ added: 1, updated: 0, unchanged: 0 })
       expect(store.importPu66([entry])).toEqual({ added: 0, updated: 0, unchanged: 1 })
       expect(store.listPu66()).toMatchObject([{ referenceId: '99999:88:3', revision: 1 }])
+      expect(store.listPu66()[0]?.verification).toBeNull()
+      expect(() =>
+        store.recordPu66Verification(card.key, {
+          expectedRevision: 1,
+          verifiedAt: '2027-01-30',
+          verifiedBy: 'Учебное линейное подразделение',
+        }),
+      ).toThrow('не может быть в будущем')
+      expect(
+        store.recordPu66Verification(card.key, {
+          expectedRevision: 1,
+          verifiedAt: '2026-01-30',
+          verifiedBy: 'Учебное линейное подразделение',
+        }),
+      ).toMatchObject({ cardRevision: 1, verifiedAt: '2026-01-30' })
+      expect(store.listPu66()[0]?.verification).toMatchObject({
+        verifiedBy: 'Учебное линейное подразделение',
+      })
+      expect(() =>
+        store.recordPu66Verification(card.key, {
+          expectedRevision: 2,
+          verifiedAt: '2026-01-30',
+          verifiedBy: 'Учебное линейное подразделение',
+        }),
+      ).toThrow('Запись изменилась')
       expect(store.getPu66Scheme(card.key)).toMatchObject({
         ...schemeFields(card),
         revision: 1,
@@ -117,6 +142,10 @@ describe('private import formats', () => {
       expect(store.importPu66([next])).toEqual({ added: 0, updated: 1, unchanged: 0 })
       const newer = store.getPu66Scheme(card.key)
       expect(newer?.revision).toBe(2)
+      expect(store.listPu66()[0]?.verification).toBeNull()
+      expect(store.listPu66Verifications(card.key)).toMatchObject([
+        { cardRevision: 1, verifiedAt: '2026-01-30' },
+      ])
       expect(newer?.roadName).toBe('Обновлённая вымышленная дорога')
       expect(newer).not.toHaveProperty('technicalRows')
       expect(newer).not.toHaveProperty('carCountPerDay')
@@ -124,6 +153,15 @@ describe('private import formats', () => {
       expect(saved?.scheme.crossing.snapshot?.revision).toBe(1)
       expect(saved?.scheme.crossing.snapshot?.roadName).toBe(selected.roadName)
       expect(saved?.revision).toBe(1)
+      store.recordPu66Verification(card.key, {
+        expectedRevision: 2,
+        verifiedAt: '2026-09-27',
+        verifiedBy: 'Учебное линейное подразделение',
+      })
+      expect(store.listPu66Verifications(card.key)).toMatchObject([
+        { cardRevision: 2, verifiedAt: '2026-09-27' },
+        { cardRevision: 1, verifiedAt: '2026-01-30' },
+      ])
       store.close()
       const database = new DatabaseSync(path)
       expect(database.prepare('SELECT COUNT(*) AS total FROM pu66_revisions').get()).toMatchObject({
@@ -132,11 +170,44 @@ describe('private import formats', () => {
       expect(database.prepare('SELECT COUNT(*) AS total FROM pu66_sources').get()).toMatchObject({
         total: 2,
       })
+      expect(
+        database.prepare('SELECT COUNT(*) AS total FROM pu66_verifications').get(),
+      ).toMatchObject({ total: 2 })
       const sourceRow = database
         .prepare('SELECT workbook FROM pu66_sources WHERE sha256 = ?')
         .get(entry.sha256) as { workbook: Uint8Array }
       expect(Buffer.from(sourceRow.workbook)).toEqual(source)
       database.close()
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('upgrades a version 4 database and preserves imported cards', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-v4-verification-'))
+    const path = join(directory, 'registry.sqlite')
+    try {
+      const original = new RegistryStore(path)
+      const card = sampleCard(5)
+      original.importPu66([
+        {
+          card,
+          source: Buffer.from('synthetic workbook'),
+          sha256: 'b'.repeat(64),
+          filename: 'TEST-99.xlsx',
+        },
+      ])
+      original.close()
+      const old = new DatabaseSync(path)
+      old.exec('DROP TABLE pu66_verifications; PRAGMA user_version = 4;')
+      old.close()
+      const migrated = new RegistryStore(path)
+      expect(migrated.listPu66()).toMatchObject([{ referenceId: card.key, revision: 1 }])
+      expect(migrated.listPu66()[0]?.verification).toBeNull()
+      migrated.close()
+      const current = new DatabaseSync(path)
+      expect(current.prepare('PRAGMA user_version').get()).toEqual({ user_version: 5 })
+      current.close()
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
@@ -211,6 +282,7 @@ describe('private import formats', () => {
       store.close()
       const old = new DatabaseSync(path)
       old.exec(`
+        DROP TABLE pu66_verifications;
         DROP TABLE project_revisions;
         DROP TABLE project_drafts;
         ALTER TABLE signs ADD COLUMN plain_svg TEXT;
@@ -231,7 +303,7 @@ describe('private import formats', () => {
       migrated.close()
 
       const database = new DatabaseSync(path)
-      expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 4 })
+      expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 5 })
       expect(
         (database.prepare('PRAGMA table_info(signs)').all() as { name: string }[]).map(
           (column) => column.name,

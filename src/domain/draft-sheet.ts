@@ -151,7 +151,7 @@ export function projectDraftSheet(scheme: Scheme): DraftSheet {
       { label: 'Период', value: scheme.titleBlock.work.period },
       { label: 'Ответственные', value: scheme.titleBlock.responsible.filter(Boolean).join(' · ') },
       {
-        label: 'Утверждение',
+        label: 'Владелец дороги',
         value: [
           scheme.titleBlock.approver.position,
           scheme.titleBlock.approver.organization,
@@ -161,7 +161,7 @@ export function projectDraftSheet(scheme: Scheme): DraftSheet {
           .join(' · '),
       },
       {
-        label: 'Согласование',
+        label: 'Госавтоинспекция',
         value: [
           scheme.titleBlock.agreement.position,
           scheme.titleBlock.agreement.name,
