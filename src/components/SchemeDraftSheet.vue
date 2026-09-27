@@ -247,6 +247,27 @@ async function printDraft(): Promise<void> {
             </div>
 
             <aside class="paper-parameters" data-print-fit>
+              <template v-if="sheet.crossingFromPu66">
+                <h4>Сведения из закреплённой ПУ-66</h4>
+                <dl>
+                  <div>
+                    <dt>Место переезда</dt>
+                    <dd>{{ printableText(sheet.crossingFromPu66.location) }}</dd>
+                  </div>
+                  <div>
+                    <dt>Подпись оси</dt>
+                    <dd>{{ printableText(sheet.crossingFromPu66.axisLabel) }}</dd>
+                  </div>
+                  <div>
+                    <dt>Автомобильная дорога</dt>
+                    <dd>{{ printableText(sheet.crossingFromPu66.roadName) }}</dd>
+                  </div>
+                  <div>
+                    <dt>Ширина проезжей части, м</dt>
+                    <dd>{{ printableText(sheet.crossingFromPu66.carriagewayWidthMetres) }}</dd>
+                  </div>
+                </dl>
+              </template>
               <h4>Введённые параметры</h4>
               <dl>
                 <div>
@@ -529,8 +550,11 @@ h2 {
   overflow-wrap: anywhere;
 }
 .paper-parameters h4 {
-  margin: 0 0 1mm;
+  margin: 1.5mm 0 1mm;
   font-size: 10pt;
+}
+.paper-parameters h4:first-child {
+  margin-top: 0;
 }
 .paper-parameters dl {
   display: grid;

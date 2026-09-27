@@ -65,7 +65,7 @@ describe('provisional print projection', () => {
     })
   })
 
-  it('does not project the confidential snapshot or the source JSON onto the sheet', () => {
+  it('projects only the selected PU-66 fields and never the source JSON onto the sheet', () => {
     const legacy = importSchemeJson(b33).scheme
     const withPrivateSource = {
       ...legacy,
@@ -79,16 +79,23 @@ describe('provisional print projection', () => {
 
     const linked = linkPu66Card(nativeScheme(), {
       referenceId: 'TEST-PU66',
-      location: 'PRIVATE-CARD-DETAIL',
-      axisLabel: 'PRIVATE-AXIS',
-      roadName: 'PRIVATE-ROAD',
+      location: 'Учебный переезд',
+      axisLabel: '12 км 3 пк',
+      roadName: 'Условная дорога',
       crossingWidthMetres: 8,
-      revision: 1,
-      updatedAt: '2026-09-26T12:00:00.000Z',
+      revision: 17,
+      updatedAt: '2026-09-25T12:00:00.000Z',
     })
-    const printed = JSON.stringify(projectDraftSheet(linked))
-    expect(printed).toContain('TEST-PU66')
-    expect(printed).not.toContain('PRIVATE-')
+    const sheet = projectDraftSheet(linked)
+    expect(sheet.referenceId).toBe('TEST-PU66')
+    expect(sheet.crossingFromPu66).toEqual({
+      location: 'Учебный переезд',
+      axisLabel: '12 км 3 пк',
+      roadName: 'Условная дорога',
+      carriagewayWidthMetres: '8',
+    })
+    expect(projectDraftSheet(nativeScheme()).crossingFromPu66).toBeNull()
+    expect(JSON.stringify(sheet)).not.toContain('2026-09-25T12:00:00.000Z')
   })
 
   it('identifies placed elements outside the drawing rather than silently cropping them', () => {
