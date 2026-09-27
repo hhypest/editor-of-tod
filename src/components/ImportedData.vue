@@ -5,7 +5,14 @@ import {
   localCalendarDate,
   type Pu66Verification,
 } from '../domain/pu66-review'
-import { listPu66Verifications, recordPu66Verification } from '../services/local-pu66'
+import {
+  applyPu66Files,
+  listPu66Verifications,
+  MAX_WEB_PU66_FILES,
+  previewPu66Files,
+  recordPu66Verification,
+  type Pu66ImportPlan,
+} from '../services/local-pu66'
 
 const props = defineProps<{ referencedSignIds: string[] }>()
 type Sign = { code: string; width: number; height: number }
@@ -28,6 +35,10 @@ const search = ref('')
 const error = ref('')
 const busy = ref(false)
 const notice = ref('')
+const importFiles = ref<File[]>([])
+const importInput = ref<HTMLInputElement | null>(null)
+const importPlan = ref<Pu66ImportPlan | null>(null)
+const importBusy = ref(false)
 const verificationKey = ref('')
 const verifiedAt = ref('')
 const verifiedBy = ref('')
@@ -78,6 +89,48 @@ async function load(): Promise<void> {
     error.value = cause instanceof Error ? cause.message : 'Локальный каталог недоступен.'
   } finally {
     busy.value = false
+  }
+}
+
+function selectImportFiles(event: Event): void {
+  const input = event.target as HTMLInputElement
+  importFiles.value = Array.from(input.files ?? [])
+  importPlan.value = null
+  error.value = ''
+  notice.value = ''
+}
+
+async function previewImport(): Promise<void> {
+  importBusy.value = true
+  importPlan.value = null
+  error.value = ''
+  notice.value = ''
+  try {
+    importPlan.value = await previewPu66Files(importFiles.value)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Не удалось проверить книги ПУ-66.'
+  } finally {
+    importBusy.value = false
+  }
+}
+
+async function applyImport(): Promise<void> {
+  if (!importPlan.value || !importFiles.value.length) return
+  importBusy.value = true
+  error.value = ''
+  notice.value = ''
+  try {
+    const result = await applyPu66Files(importFiles.value, importPlan.value.fingerprint)
+    importPlan.value = null
+    importFiles.value = []
+    if (importInput.value) importInput.value.value = ''
+    await load()
+    notice.value = `ПУ-66: добавлено ${result.added}, обновлено ${result.updated}. Резервная копия: private-data/backups/${result.backup}. Импорт не подтверждает сверку.`
+  } catch (cause) {
+    importPlan.value = null
+    error.value = `${cause instanceof Error ? cause.message : 'Не удалось импортировать ПУ-66.'} Выполните просмотр заново перед повторной записью.`
+  } finally {
+    importBusy.value = false
   }
 }
 
@@ -133,13 +186,62 @@ onMounted(load)
   <section class="imported" aria-labelledby="imported-title">
     <h2 id="imported-title">Импортированные локальные каталоги</h2>
     <p>
-      Загрузите разрешённые файлы командами из TESTING.MD на своём компьютере. После импорта
-      обновите списки. Здесь показана краткая сводка для составителя; отдельная выборка для схемы
-      содержит только её реквизиты. Полная исходная книга хранится в локальной базе.
+      Здесь показана краткая сводка для составителя; отдельная выборка для схемы содержит только её
+      реквизиты. Полная исходная книга хранится в локальной базе. Для больших пакетов сохраняется
+      командный импорт из TESTING.MD.
     </p>
     <p v-if="error" role="alert" class="error">{{ error }}</p>
     <p v-if="notice" role="status">{{ notice }}</p>
-    <button type="button" :disabled="busy" @click="load">Обновить каталоги</button>
+    <button type="button" :disabled="busy || importBusy" @click="load">Обновить каталоги</button>
+
+    <div class="verification-form">
+      <h3>Импорт ПУ-66 из Excel</h3>
+      <p>
+        Выберите до {{ MAX_WEB_PU66_FILES }} разрешённых файлов XLSX размером до 4 МБ каждый.
+        Сначала просмотрите план, затем подтвердите запись. Книги отправляются только локальному
+        процессу на этом компьютере; перед изменением SQLite создаётся резервная копия.
+      </p>
+      <label>
+        Книги ПУ-66
+        <input
+          ref="importInput"
+          type="file"
+          accept=".xlsx"
+          multiple
+          :disabled="importBusy"
+          @change="selectImportFiles"
+        />
+      </label>
+      <button type="button" :disabled="importBusy || !importFiles.length" @click="previewImport">
+        Просмотреть изменения
+      </button>
+      <p v-if="importBusy" role="status">Проверка книг или запись в локальную базу…</p>
+      <div v-if="importPlan" class="import-plan">
+        <p>
+          Новых: {{ importPlan.added }}; обновлений: {{ importPlan.updated }}; без изменений:
+          {{ importPlan.unchanged }}.
+        </p>
+        <ul>
+          <li v-for="item in importPlan.items" :key="item.referenceId">
+            {{ item.filename }} — {{ item.location }}; {{ item.roadName || 'дорога не указана' }}:
+            {{
+              item.action === 'add'
+                ? 'новая карточка'
+                : item.action === 'update'
+                  ? `обновление редакции ${item.currentRevision}`
+                  : `редакция ${item.currentRevision} без изменений`
+            }}.
+          </li>
+        </ul>
+        <button
+          type="button"
+          :disabled="importBusy || importPlan.added + importPlan.updated === 0"
+          @click="applyImport"
+        >
+          Подтвердить импорт и создать копию SQLite
+        </button>
+      </div>
+    </div>
 
     <h3>Локальная сверка импортированных карточек</h3>
     <p v-if="crossings.length === 0">Импортированных карточек пока нет.</p>
@@ -269,9 +371,13 @@ input[type='search'] {
   border-radius: 0.4rem;
 }
 .verification-form h4,
+.verification-form h3,
 .verification-form p {
   flex-basis: 100%;
   margin: 0;
+}
+.import-plan {
+  flex-basis: 100%;
 }
 .verification-form label {
   display: grid;

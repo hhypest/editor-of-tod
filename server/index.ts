@@ -11,6 +11,12 @@ import {
 import { crossingWriteSchema, normativeWriteSchema } from '../src/domain/registry.ts'
 import { pu66VerificationWriteSchema } from '../src/domain/pu66-review.ts'
 import {
+  applyPu66Upload,
+  InvalidPu66Upload,
+  previewPu66Upload,
+  PU66_UPLOAD_REQUEST_BYTES,
+} from './pu66-web-import.ts'
+import {
   InvalidPu66Verification,
   ProjectTooLarge,
   RegistryStore,
@@ -140,6 +146,14 @@ export function createRegistryServer(store: RegistryStore, listenPort = port) {
         json(res, 200, store.listNormative())
       } else if (req.method === 'GET' && pathname === '/api/pu66') {
         json(res, 200, store.listPu66())
+      } else if (req.method === 'POST' && pathname === '/api/pu66/import/preview') {
+        json(
+          res,
+          200,
+          await previewPu66Upload(store, await readJson(req, PU66_UPLOAD_REQUEST_BYTES)),
+        )
+      } else if (req.method === 'POST' && pathname === '/api/pu66/import/apply') {
+        json(res, 200, await applyPu66Upload(store, await readJson(req, PU66_UPLOAD_REQUEST_BYTES)))
       } else if (req.method === 'GET' && pathname === '/api/projects') {
         json(res, 200, store.listProjects())
       } else if (req.method === 'GET' && revisionPath) {
@@ -241,6 +255,7 @@ export function createRegistryServer(store: RegistryStore, listenPort = port) {
       if (error instanceof RequestError) json(res, error.status, { error: error.message })
       else if (error instanceof RevisionConflict) json(res, 409, { error: error.message })
       else if (error instanceof InvalidPu66Verification) json(res, 400, { error: error.message })
+      else if (error instanceof InvalidPu66Upload) json(res, error.status, { error: error.message })
       else if (error instanceof ProjectTooLarge) json(res, 413, { error: error.message })
       else if (error instanceof ZodError) {
         const issue = error.issues[0]
