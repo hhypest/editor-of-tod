@@ -443,16 +443,45 @@ export class RegistryStore {
   }
 
   planPu66(entries: Pu66Import[]): { added: number; updated: number; unchanged: number } {
-    const seen = new Set<string>()
     const result = { added: 0, updated: 0, unchanged: 0 }
-    const existing = this.db.prepare('SELECT source_sha256 FROM pu66_cards WHERE key = ?')
+    for (const entry of this.inspectPu66(entries)) {
+      if (entry.action === 'add') result.added++
+      else if (entry.action === 'update') result.updated++
+      else result.unchanged++
+    }
+    return result
+  }
+
+  inspectPu66(entries: Pu66Import[]): Array<{
+    filename: string
+    referenceId: string
+    location: string
+    roadName: string
+    action: 'add' | 'update' | 'unchanged'
+    currentRevision: number
+    sourceSha256: string
+  }> {
+    const seen = new Set<string>()
+    const existing = this.db.prepare('SELECT revision, source_sha256 FROM pu66_cards WHERE key = ?')
+    const result: ReturnType<RegistryStore['inspectPu66']> = []
     for (const entry of entries) {
       if (seen.has(entry.card.key)) throw new Error(`Повторный ключ ПУ-66: ${entry.card.key}.`)
       seen.add(entry.card.key)
-      const previous = existing.get(entry.card.key) as { source_sha256: string } | undefined
-      if (!previous) result.added++
-      else if (previous.source_sha256 === entry.sha256) result.unchanged++
-      else result.updated++
+      const previous = existing.get(entry.card.key) as
+        { revision: number; source_sha256: string } | undefined
+      result.push({
+        filename: entry.filename,
+        referenceId: entry.card.key,
+        location: `${entry.card.kilometre} км ${entry.card.picket} пк`,
+        roadName: entry.card.roadName,
+        action: !previous
+          ? 'add'
+          : previous.source_sha256 === entry.sha256
+            ? 'unchanged'
+            : 'update',
+        currentRevision: previous?.revision ?? 0,
+        sourceSha256: entry.sha256,
+      })
     }
     return result
   }
