@@ -1,4 +1,5 @@
 import type { Scheme } from './model'
+import { figureDimensions } from './figure-dimensions'
 
 export type ReviewFinding = {
   id: string
@@ -149,6 +150,39 @@ export function reviewScheme(scheme: Scheme): ReviewFinding[] {
     detail: `Вариант ${scheme.template.code.toUpperCase()} и размещение объектов не прошли предметную проверку. Сверьте геометрию, условия работ, существующие знаки и применимую редакцию ОДМ.`,
     target: '#placements-title',
   })
+
+  const differingDimensions = figureDimensions(scheme).filter((part) => !part.agreesWithFigure)
+  if (differingDimensions.length) {
+    findings.push({
+      id: 'figure-dimensions',
+      kind: 'verify',
+      title: `Размерная цепочка рисунка ${scheme.template.code.toUpperCase()}`,
+      detail: `Введённые размеры отличаются от рисунка ОДМ: ${differingDimensions.map((part) => `${part.title.toLowerCase()} ${part.enteredMetres} м (на рисунке ${part.figureLabel})`).join('; ')}. Сверьте размеры и условия конкретных работ.`,
+      target: '#details-title',
+    })
+  }
+
+  const frontMetres = parameters.workZones[scheme.template.code]?.workMetres
+  if (frontMetres !== undefined && (frontMetres < 30 ? 'b34' : 'b33') !== scheme.template.code) {
+    findings.push({
+      id: 'variant-front',
+      kind: 'verify',
+      title: 'Вариант и длина фронта',
+      detail: `В импортированном проекте выбран ${scheme.template.code.toUpperCase()} при фронте ${frontMetres} м. По подтверждённому правилу проекта нужен ${frontMetres < 30 ? 'Б.34' : 'Б.33'}. Проверьте исходный лист перед правкой.`,
+      target: '#details-title',
+    })
+  }
+
+  if (scheme.template.code === 'b34') {
+    findings.push({
+      id: 'b34-traffic',
+      kind: 'verify',
+      title: 'Условия движения для Б.34',
+      detail:
+        'Подпись к рисунку Б.34 указывает на регулировщика при интенсивности более 250 авт./ч в двух направлениях или ограниченной видимости. Оцените эти условия на месте и зафиксируйте решение составителя.',
+      target: '#details-title',
+    })
+  }
 
   if (parameters.workZones[scheme.template.code]?.workMetres === 30) {
     findings.push({

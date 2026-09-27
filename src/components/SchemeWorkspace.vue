@@ -8,6 +8,7 @@ import {
   WORKSPACE_WIDTH,
 } from '../domain/placement-workspace'
 import type { Scheme } from '../domain/model'
+import { figureDimensions } from '../domain/figure-dimensions'
 
 type Placement = Scheme['placements'][number]
 type Drag = {
@@ -27,6 +28,7 @@ const error = ref('')
 const catalog = ref<Set<string>>(new Set())
 const catalogUnavailable = ref(false)
 const anchors = computed(() => anchorCoordinates(props.scheme))
+const dimensions = computed(() => figureDimensions(props.scheme))
 const guides = computed(() =>
   (['L0', 'L1', 'Z0', 'Z1', 'E', 'AX'] as const).map((name) => ({
     name,
@@ -148,9 +150,18 @@ function nameFor(placement: Placement): string {
       </label>
     </div>
     <p class="notice">
-      Это координатный просмотр, а не готовый лист СОДД. Направления, разметка дороги, размеры,
-      нормативная расстановка и печать здесь не воспроизведены.
+      Цветные участки показывают введённую размерную цепочку рисунка
+      {{ scheme.template.code.toUpperCase() }}: отвод, участок перед фронтом, фронт работ{{
+        scheme.template.code === 'b33' ? ' и выходной отвод' : ''
+      }}. Масштаб условный; расстановка знаков и применимость схемы требуют предметной сверки.
     </p>
+    <ol class="dimension-summary" aria-label="Сравнение размеров с рисунком ОДМ">
+      <li v-for="part in dimensions" :key="part.part" :class="{ differs: !part.agreesWithFigure }">
+        {{ part.title }}: {{ part.enteredMetres }} м (рисунок: {{ part.figureLabel }}){{
+          part.agreesWithFigure ? '' : ' — сверить'
+        }}
+      </li>
+    </ol>
     <p v-if="locked" class="hint" role="status">
       Сначала примените или отмените изменения в форме. Перемещение временно заблокировано.
     </p>
@@ -177,6 +188,14 @@ function nameFor(placement: Placement): string {
           }"
         >
           <div class="axis" aria-hidden="true"><span>Y = 466</span></div>
+          <div
+            v-for="part in dimensions"
+            :key="part.part"
+            class="dimension-segment"
+            :class="`segment-${part.part}`"
+            :style="{ left: `${part.startX}px`, width: `${part.endX - part.startX}px` }"
+            aria-hidden="true"
+          />
           <div
             v-for="guide in guides"
             :key="guide.name"
@@ -296,6 +315,18 @@ select {
   background: #fff6e8;
   line-height: 1.5;
 }
+.dimension-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.5rem;
+  margin: 0 0 1rem;
+  padding-left: 1.5rem;
+  font-size: 0.9rem;
+}
+.dimension-summary .differs {
+  color: #9b2934;
+  font-weight: 600;
+}
 .error {
   color: #a22030;
   font-weight: 600;
@@ -334,6 +365,23 @@ select {
   padding: 0.15rem;
   background: #fff;
   font-size: 13px;
+}
+.dimension-segment {
+  position: absolute;
+  top: 470px;
+  height: 38px;
+  box-sizing: border-box;
+  border: 2px solid #9b6b23;
+  background: repeating-linear-gradient(45deg, #f4bb6a88 0 10px, #fff7e988 10px 20px);
+  pointer-events: none;
+}
+.segment-buffer {
+  border-color: #427e9e;
+  background: #9ecbd088;
+}
+.segment-front {
+  border: 3px dashed #a76a04;
+  background: #f59e0b66;
 }
 .guide {
   position: absolute;

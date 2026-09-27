@@ -34,6 +34,11 @@ describe('provisional print projection', () => {
       )
       expect(sheet.zoneStartX).toBeLessThan(sheet.zoneEndX)
       expect(sheet.zoneLabels).toEqual(scheme.parameters.workZones[scheme.template.code]?.labels)
+      expect(sheet.dimensionChain.map((part) => part.enteredMetres)).toEqual(
+        sheet.template === 'b33'
+          ? [sheet.taper, sheet.buffer, sheet.front, sheet.taper]
+          : [sheet.taper, sheet.buffer, sheet.front],
+      )
       expect(
         sheet.placements.filter((item) => item.kind === 'element').map((item) => item.text),
       ).toEqual(

@@ -1,4 +1,5 @@
 import type { Scheme } from './model'
+import { figureDimensions, type FigureDimension } from './figure-dimensions'
 import {
   anchorCoordinates,
   placementCoordinates,
@@ -45,6 +46,7 @@ export type DraftSheet = {
   taper: number
   buffer: number
   zoneLabels: { taper: string; buffer: string; work: string }
+  dimensionChain: FigureDimension[]
   speeds: number[]
   distances: Array<{ label: string; value: number | null }>
   yellowTemporarySigns: boolean
@@ -124,6 +126,7 @@ export function projectDraftSheet(scheme: Scheme): DraftSheet {
     taper: zone.taperMetres,
     buffer: zone.bufferMetres,
     zoneLabels: { ...zone.labels },
+    dimensionChain: figureDimensions(scheme),
     speeds: [...scheme.parameters.speedStagesKmh],
     distances: (['d300', 'd250', 'd150', 'd50'] as const).map((label) => ({
       label,

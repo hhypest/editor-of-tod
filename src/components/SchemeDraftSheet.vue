@@ -181,10 +181,13 @@ async function printDraft(): Promise<void> {
                     aria-hidden="true"
                   />
                   <div
-                    class="work-zone"
+                    v-for="segment in sheet.dimensionChain"
+                    :key="segment.part"
+                    class="zone-segment"
+                    :class="`segment-${segment.part}`"
                     :style="{
-                      left: `${sheet.zoneStartX}px`,
-                      width: `${sheet.zoneEndX - sheet.zoneStartX}px`,
+                      left: `${segment.startX}px`,
+                      width: `${segment.endX - segment.startX}px`,
                     }"
                     aria-hidden="true"
                   />
@@ -304,6 +307,28 @@ async function printDraft(): Promise<void> {
                   <dd>{{ distance.value === null ? 'не указано' : `${distance.value} м` }}</dd>
                 </div>
               </dl>
+              <h4>Цепочка по рис. {{ sheet.template.toUpperCase() }}</h4>
+              <table class="dimension-table">
+                <thead>
+                  <tr>
+                    <th>Участок</th>
+                    <th>Введено</th>
+                    <th>Рисунок</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="part in sheet.dimensionChain" :key="part.part">
+                    <th scope="row">{{ part.title }}</th>
+                    <td>{{ part.enteredMetres }} м</td>
+                    <td :class="{ 'dimension-differs': !part.agreesWithFigure }">
+                      {{ part.figureLabel }}{{ part.agreesWithFigure ? '' : ' · сверить' }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <p v-if="sheet.template === 'b34'" class="dimension-note">
+                * Ровно 30 м по правилу проекта относится к Б.33.
+              </p>
               <p>
                 Стойки: {{ sheet.placements.filter((item) => item.kind === 'sign-post').length }};
                 объектов всего: {{ sheet.placements.length }}.
@@ -475,10 +500,20 @@ h2 {
   background: repeating-linear-gradient(0deg, #627486 0 9px, #e3e8ed 9px 18px);
   opacity: 0.65;
 }
-.work-zone {
+.zone-segment {
   position: absolute;
-  top: 405px;
-  height: 126px;
+  top: 410px;
+  height: 120px;
+  box-sizing: border-box;
+  border: 2px solid #9b6b23;
+  background: repeating-linear-gradient(45deg, #f4bb6a66 0 10px, #fff7e966 10px 20px);
+  pointer-events: none;
+}
+.segment-buffer {
+  border-color: #427e9e;
+  background: #9ecbd066;
+}
+.segment-front {
   background: rgb(245 158 11 / 32%);
   border: 3px dashed #a76a04;
 }
@@ -573,6 +608,31 @@ h2 {
 .paper-parameters dd {
   margin: 0;
   font-weight: 600;
+}
+.dimension-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 7pt;
+}
+.dimension-table th,
+.dimension-table td {
+  padding: 1mm 0.7mm;
+  text-align: left;
+  border-bottom: 1px solid #d2dbe4;
+}
+.dimension-table th {
+  font-weight: 500;
+}
+.dimension-table td:last-child {
+  white-space: nowrap;
+}
+.dimension-differs {
+  color: #9b2934;
+  font-weight: 700;
+}
+.dimension-note {
+  margin: 1mm 0 0;
+  font-size: 7pt;
 }
 .paper-footer {
   min-height: 0;

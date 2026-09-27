@@ -4,6 +4,8 @@ import { applySchemeDetails, createSchemeDetailsDraft } from '../edit-details'
 import { newSignDraft, savePlacement } from '../edit-placements'
 import { linkPu66Card } from '../link-pu66'
 import { reviewScheme } from '../review-scheme'
+import legacyB34 from '../../../tests/fixtures/legacy-b34-manual.json?raw'
+import { importSchemeJson } from '../import'
 
 function newProject(frontMetres = '18') {
   return createNewScheme(
@@ -31,7 +33,7 @@ describe('live draft review', () => {
     ).toEqual(['place', 'developer', 'work', 'responsible', 'approver', 'agreement', 'placements'])
     expect(
       initialFindings.filter((finding) => finding.kind === 'verify').map((finding) => finding.id),
-    ).toEqual(['crossing', 'template'])
+    ).toEqual(['crossing', 'template', 'figure-dimensions', 'b34-traffic'])
 
     const draft = createSchemeDetailsDraft(initial)
     draft.parameters.locationText = 'Учебный участок'
@@ -88,5 +90,39 @@ describe('live draft review', () => {
     )
     expect(findings.find((finding) => finding.id === 'template')?.kind).toBe('verify')
     expect(findings.some((finding) => finding.id === 'boundary-30')).toBe(true)
+  })
+
+  it('removes the figure size difference after correction, but keeps manual applicability checks', () => {
+    const initial = newProject()
+    const draft = createSchemeDetailsDraft(initial)
+    draft.parameters.workZones.b34!.taperMetres = '10'
+    draft.parameters.workZones.b34!.bufferMetres = '10'
+    const findings = reviewScheme(applySchemeDetails(initial, draft))
+    expect(findings.some((finding) => finding.id === 'figure-dimensions')).toBe(false)
+    expect(findings.some((finding) => finding.id === 'b34-traffic')).toBe(true)
+    expect(findings.some((finding) => finding.id === 'template')).toBe(true)
+
+    const longFront = reviewScheme(newProject('30'))
+    expect(longFront.find((finding) => finding.id === 'figure-dimensions')?.detail).toContain(
+      'участок перед фронтом 12 м (на рисунке 15 м)',
+    )
+    expect(longFront.some((finding) => finding.id === 'b34-traffic')).toBe(false)
+  })
+
+  it('treats an imported B.34 with exactly 30 m as a variant conflict, not as a false figure-size error', () => {
+    const scheme = importSchemeJson(legacyB34).scheme
+    const atBoundary = {
+      ...scheme,
+      parameters: {
+        ...scheme.parameters,
+        workZones: {
+          ...scheme.parameters.workZones,
+          b34: { ...scheme.parameters.workZones.b34!, workMetres: 30 },
+        },
+      },
+    }
+    const findings = reviewScheme(atBoundary)
+    expect(findings.some((finding) => finding.id === 'variant-front')).toBe(true)
+    expect(findings.some((finding) => finding.id === 'figure-dimensions')).toBe(false)
   })
 })
