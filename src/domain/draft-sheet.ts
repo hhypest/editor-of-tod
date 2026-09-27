@@ -34,6 +34,12 @@ export type DraftSheet = {
   referenceId: string
   template: 'b33' | 'b34'
   location: string
+  crossingFromPu66: {
+    location: string
+    axisLabel: string
+    roadName: string
+    carriagewayWidthMetres: string
+  } | null
   directions: { left: string; right: string }
   front: number
   taper: number
@@ -61,7 +67,7 @@ function renderDistanceLabel(
   })
 }
 
-/** Whitelist of fields used on a provisional A4 sheet; no PU-66 snapshot or legacy source. */
+/** Whitelist of fields used on a provisional A4 sheet; never include the whole PU-66 snapshot or legacy source. */
 export function projectDraftSheet(scheme: Scheme): DraftSheet {
   const zone = scheme.parameters.workZones[scheme.template.code]
   if (!zone) throw new Error('Размеры выбранного варианта не заполнены.')
@@ -101,6 +107,18 @@ export function projectDraftSheet(scheme: Scheme): DraftSheet {
     referenceId: scheme.crossing.referenceId,
     template: scheme.template.code,
     location: scheme.parameters.locationText,
+    crossingFromPu66:
+      scheme.crossing.source === 'local-pu66'
+        ? {
+            location: scheme.crossing.snapshot.location,
+            axisLabel: scheme.crossing.snapshot.axisLabel,
+            roadName: scheme.crossing.snapshot.roadName,
+            carriagewayWidthMetres:
+              scheme.crossing.snapshot.crossingWidthMetres === null
+                ? ''
+                : String(scheme.crossing.snapshot.crossingWidthMetres).trim(),
+          }
+        : null,
     directions: { ...scheme.parameters.directions },
     front: zone.workMetres,
     taper: zone.taperMetres,
