@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   applySchemeDetails,
   createSchemeDetailsDraft,
@@ -7,8 +7,18 @@ import {
 } from '../domain/edit-details'
 import type { Scheme } from '../domain/model'
 
-const props = defineProps<{ scheme: Scheme; locked?: boolean }>()
+const props = defineProps<{
+  scheme: Scheme
+  locked?: boolean
+  mode?: 'source' | 'geometry' | 'title'
+}>()
 const emit = defineEmits<{ apply: [scheme: Scheme]; dirty: [value: boolean] }>()
+const heading = computed(() => {
+  if (props.mode === 'source') return 'Место работ и направления'
+  if (props.mode === 'geometry') return 'Размеры и параметры схемы'
+  if (props.mode === 'title') return 'Реквизиты листа и согласования'
+  return 'Параметры и реквизиты проекта'
+})
 const draft = ref(createSchemeDetailsDraft(props.scheme))
 const dirty = ref(false)
 const error = ref('')
@@ -70,16 +80,14 @@ function applyDraft(): void {
 
 <template>
   <section aria-labelledby="details-title">
-    <h2 id="details-title">Параметры и реквизиты проекта</h2>
+    <h2 id="details-title">{{ heading }}</h2>
     <p class="hint">
-      Изменения применяются только к открытой копии проекта. Расстояния вводятся в метрах, скорости
-      — в км/ч. Изменение параметров не переставляет знаки и не проверяет соответствие схемы нормам.
-      Для созданного здесь проекта изменение длины фронта через границу 30 м требует нового проекта
-      с другим вариантом.
+      Изменения применяются к открытой копии проекта после нажатия «Применить правки». Они не
+      переставляют знаки и не подтверждают соответствие схемы нормам.
     </p>
     <form @submit.prevent="applyDraft" @input="markDirty" @change="markDirty">
-      <fieldset :disabled="locked">
-        <legend>Параметры схемы</legend>
+      <fieldset v-if="!mode || mode === 'source'" :disabled="locked">
+        <legend>Место работ</legend>
         <div class="fields">
           <label>Участок <input v-model="draft.parameters.locationText" type="text" /></label>
           <label
@@ -89,6 +97,13 @@ function applyDraft(): void {
             >Направление справа <input v-model="draft.parameters.directions.right" type="text"
           /></label>
         </div>
+      </fieldset>
+      <fieldset v-if="!mode || mode === 'geometry'" :disabled="locked">
+        <legend>Параметры схемы</legend>
+        <p class="hint">
+          Расстояния вводятся в метрах, скорости — в км/ч. Для созданного в редакторе проекта
+          изменение фронта через границу 30 м требует нового проекта с другим вариантом.
+        </p>
         <h3>Расстояния до знаков, м</h3>
         <p class="hint">
           Неизвестное расстояние оставьте пустым. Допускается дробная часть через запятую или точку.
@@ -190,7 +205,7 @@ function applyDraft(): void {
         </div>
       </fieldset>
 
-      <fieldset :disabled="locked">
+      <fieldset v-if="!mode || mode === 'title'" :disabled="locked">
         <legend>Реквизиты листа</legend>
         <h3>Разработчик</h3>
         <div class="fields">

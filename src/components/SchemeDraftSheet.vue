@@ -9,6 +9,7 @@ const props = defineProps<{
   hasPendingInput: boolean
   localRevision: number | null
   modifiedSinceLocalSave: boolean
+  previewOnly?: boolean
 }>()
 const sheet = computed(() => projectDraftSheet(props.scheme))
 const requiredSigns = computed(() => {
@@ -47,7 +48,7 @@ function titleRow(label: string): string {
   return sheet.value.titleRows.find((row) => row.label === label)?.value ?? ''
 }
 const paper = ref<HTMLElement | null>(null)
-const zoom = ref(0.75)
+const zoom = ref(props.previewOnly ? 0.19 : 0.75)
 const knownSigns = ref<Set<string>>(new Set())
 const brokenImages = ref<Set<string>>(new Set())
 const catalogState = ref<'loading' | 'ready' | 'partial' | 'unavailable'>('loading')
@@ -171,8 +172,12 @@ async function printDraft(): Promise<void> {
 </script>
 
 <template>
-  <section aria-labelledby="sheet-title">
-    <div class="screen-only">
+  <section
+    :class="{ thumbnail: previewOnly }"
+    :aria-labelledby="previewOnly ? undefined : 'sheet-title'"
+    :aria-hidden="previewOnly ? true : undefined"
+  >
+    <div v-if="!previewOnly" class="screen-only">
       <h2 id="sheet-title">Черновой лист A4</h2>
       <p class="hint">
         Лист показывает применённые данные проекта и условные координаты объектов. Он не строит
@@ -436,6 +441,14 @@ h2 {
   overflow-x: auto;
   background: #e4ebf2;
   padding: 0.8rem;
+}
+.thumbnail .preview-scroll {
+  overflow: hidden;
+  padding: 0;
+  background: white;
+}
+.thumbnail .sheet-paper {
+  box-shadow: none;
 }
 .preview-space {
   position: relative;

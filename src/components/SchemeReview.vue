@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Scheme } from '../domain/model'
-import { reviewScheme } from '../domain/review-scheme'
+import { reviewScheme, type ReviewFinding } from '../domain/review-scheme'
 
 const props = defineProps<{ scheme: Scheme; hasPendingInput: boolean }>()
+const emit = defineEmits<{ navigate: [finding: ReviewFinding] }>()
 const findings = computed(() => reviewScheme(props.scheme))
 const toFill = computed(() => findings.value.filter((finding) => finding.kind === 'fill'))
 const toVerify = computed(() => findings.value.filter((finding) => finding.kind === 'verify'))
@@ -26,7 +27,7 @@ const toVerify = computed(() => findings.value.filter((finding) => finding.kind 
     <ul v-else>
       <li v-for="finding in toFill" :key="finding.id">
         <strong>{{ finding.title }}</strong> — {{ finding.detail }}
-        <a :href="finding.target">Перейти</a>
+        <a :href="finding.target" @click.prevent="emit('navigate', finding)">Перейти</a>
       </li>
     </ul>
 
@@ -34,7 +35,7 @@ const toVerify = computed(() => findings.value.filter((finding) => finding.kind 
     <ul>
       <li v-for="finding in toVerify" :key="finding.id">
         <strong>{{ finding.title }}</strong> — {{ finding.detail }}
-        <a :href="finding.target">Перейти</a>
+        <a :href="finding.target" @click.prevent="emit('navigate', finding)">Перейти</a>
       </li>
     </ul>
   </section>
