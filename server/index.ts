@@ -8,6 +8,7 @@ import {
   projectRestoreSchema,
   projectWriteSchema,
 } from '../src/domain/local-projects.ts'
+import { recoveryDeleteSchema, recoveryWriteSchema } from '../src/domain/recovery.ts'
 import { crossingWriteSchema, normativeWriteSchema } from '../src/domain/registry.ts'
 import { pu66VerificationWriteSchema } from '../src/domain/pu66-review.ts'
 import {
@@ -146,6 +147,7 @@ export function createRegistryServer(store: RegistryStore, listenPort = port) {
       const revisionListPath = /^\/api\/projects\/([^/]+)\/revisions$/.exec(pathname)
       const revisionPath = /^\/api\/projects\/([^/]+)\/revisions\/(\d+)$/.exec(pathname)
       const restorePath = /^\/api\/projects\/([^/]+)\/restore$/.exec(pathname)
+      const recoveryPath = /^\/api\/recovery\/([^/]+)$/.exec(pathname)
       if (req.method === 'GET' && pathname === '/api/status') {
         json(res, 200, { ready: true })
       } else if (req.method === 'GET' && pathname === '/api/crossings') {
@@ -164,6 +166,12 @@ export function createRegistryServer(store: RegistryStore, listenPort = port) {
         json(res, 200, await applyPu66Upload(store, await readJson(req, PU66_UPLOAD_REQUEST_BYTES)))
       } else if (req.method === 'GET' && pathname === '/api/projects') {
         json(res, 200, store.listProjects())
+      } else if (req.method === 'GET' && pathname === '/api/recovery') {
+        json(res, 200, store.listRecoveries())
+      } else if (req.method === 'GET' && recoveryPath) {
+        const record = store.getRecovery(projectId(recoveryPath[1]!))
+        if (!record) throw new RequestError(404, 'Копия восстановления не найдена.')
+        json(res, 200, record)
       } else if (req.method === 'GET' && revisionPath) {
         const record = store.getProjectRevision(
           projectId(revisionPath[1]!),
@@ -255,6 +263,19 @@ export function createRegistryServer(store: RegistryStore, listenPort = port) {
         if (scheme.id !== id)
           throw new RequestError(400, 'ID проекта в адресе и файле не совпадают.')
         json(res, 200, store.saveProject(scheme, expectedRevision))
+      } else if (req.method === 'PUT' && recoveryPath) {
+        const id = projectId(recoveryPath[1]!)
+        const input = recoveryWriteSchema.parse(
+          await readJson(req, MAX_LOCAL_PROJECT_BYTES + 64 * 1024),
+        )
+        if (input.sessionId !== id)
+          throw new RequestError(400, 'ID копии восстановления в адресе и запросе не совпадают.')
+        json(res, 200, store.saveRecovery(input))
+      } else if (req.method === 'DELETE' && recoveryPath) {
+        const id = projectId(recoveryPath[1]!)
+        const { expectedVersion } = recoveryDeleteSchema.parse(await readJson(req))
+        store.deleteRecovery(id, expectedVersion)
+        json(res, 200, { deleted: true })
       } else if (req.method === 'POST' && restorePath) {
         const id = projectId(restorePath[1]!)
         const { sourceRevision, expectedRevision } = projectRestoreSchema.parse(await readJson(req))

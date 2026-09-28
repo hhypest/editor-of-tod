@@ -43,6 +43,14 @@ const {
   templateError,
   signPinMessage,
   editorDirty,
+  recoveryCopies,
+  activeRecoveryId,
+  recoveryStatus,
+  recoverySeed,
+  pendingDetails,
+  pendingPlacement,
+  openRecovery,
+  discardRecovery,
   onFileSelected,
   saveV5,
   saveOriginal,
@@ -61,6 +69,20 @@ const {
 
 const signCatalogVersion = ref(0)
 onMounted(() => void refreshSetupStatus())
+const saveState = computed(() => {
+  if (recoveryStatus.value === 'error') return 'Копия восстановления не записана'
+  if (recoveryStatus.value === 'pending' || recoveryStatus.value === 'saving')
+    return 'Записываем копию восстановления…'
+  if (editorDirty.value)
+    return recoveryStatus.value === 'saved'
+      ? 'Неприменённый ввод · копия восстановления записана'
+      : 'Есть неприменённый ввод'
+  if (modifiedSinceLocalSave.value)
+    return recoveryStatus.value === 'saved'
+      ? 'Копия восстановления записана · сохраните редакцию'
+      : 'Есть несохранённые правки'
+  return localRevision.value === null ? 'Не сохранён в SQLite' : 'Черновик сохранён'
+})
 
 async function refreshSetupStatus(): Promise<void> {
   try {
@@ -144,15 +166,7 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
       </div>
       <div class="top-actions">
         <span v-if="imported" class="save-state" role="status">
-          {{
-            editorDirty
-              ? 'Есть неприменённый ввод'
-              : modifiedSinceLocalSave
-                ? 'Есть несохранённые правки'
-                : localRevision === null
-                  ? 'Не сохранён в SQLite'
-                  : 'Черновик сохранён'
-          }}
+          {{ saveState }}
         </span>
         <button
           type="button"
@@ -262,6 +276,34 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
               Создайте новую схему, откройте сохранённую редакцию или загрузите прежний JSON-проект.
             </p>
           </div>
+          <section v-if="recoveryCopies.length" class="module" aria-labelledby="recovery-heading">
+            <h2 id="recovery-heading">Копии восстановления</h2>
+            <p class="hint">
+              Здесь остаётся неприменённый ввод и правки после закрытия окна. Копия записана в
+              локальную SQLite отдельно от сохранённых редакций.
+            </p>
+            <ul>
+              <li v-for="copy in recoveryCopies" :key="copy.sessionId">
+                <strong>{{ copy.referenceId }}</strong> · {{ copy.fileName }} ·
+                {{ new Date(copy.updatedAt).toLocaleString('ru-RU') }}
+                <span v-if="copy.sessionId === activeRecoveryId"> · открыта сейчас</span>
+                <button
+                  type="button"
+                  :disabled="localBusy || loading"
+                  @click="openRecovery(copy.sessionId)"
+                >
+                  Восстановить
+                </button>
+                <button
+                  type="button"
+                  :disabled="localBusy || copy.sessionId === activeRecoveryId"
+                  @click="discardRecovery(copy.sessionId, copy.version)"
+                >
+                  Удалить копию
+                </button>
+              </li>
+            </ul>
+          </section>
           <section
             v-if="setupStatus && (!setupStatus.signs || !setupStatus.cards)"
             class="setup-guide module"
@@ -556,8 +598,10 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
               :scheme="imported.scheme"
               :locked="detailsDirty || localBusy"
               :selected-placement-id="selectedPlacementId"
+              :recovery="recoverySeed"
               @apply="onProjectApplied"
               @dirty="placementDirty = $event"
+              @draft="pendingPlacement = $event"
               @select="selectedPlacementId = $event"
             />
           </section>
@@ -588,9 +632,11 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
             class="module details-module"
             :scheme="imported.scheme"
             :mode="detailsMode"
+            :recovery="recoverySeed"
             :locked="placementDirty || localBusy"
             @apply="onProjectApplied"
             @dirty="detailsDirty = $event"
+            @draft="pendingDetails = $event"
           />
           <SchemeDraftSheet
             v-show="activeView === 'review'"

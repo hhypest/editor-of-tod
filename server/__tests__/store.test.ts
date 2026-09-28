@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createNewScheme } from '../../src/domain/create-scheme'
 import { importSchemeJson } from '../../src/domain/import'
+import { createSchemeDetailsDraft } from '../../src/domain/edit-details'
 import { schemeV2Schema, schemeV3Schema } from '../../src/domain/model'
 import { normativeDraftSchema, type CrossingDraft } from '../../src/domain/registry'
 import { RegistryStore, RevisionConflict } from '../store'
@@ -32,6 +33,58 @@ const crossing: CrossingDraft = {
 }
 
 describe('local SQLite registries', () => {
+  it('recovers uncommitted fields without making a project revision and rejects stale recovery writes', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-recovery-'))
+    directories.push(directory)
+    const path = join(directory, 'registry.sqlite')
+    const scheme = importSchemeJson(fixture).scheme
+    const sessionId = randomUUID()
+    const detailsDraft = createSchemeDetailsDraft(scheme)
+    detailsDraft.parameters.locationText = 'Неприменённое значение'
+    const input = {
+      sessionId,
+      scheme,
+      baseRevision: null,
+      detailsDraft,
+      placementDraft: null,
+      fileName: 'учебный.json',
+      expectedVersion: 0,
+    }
+    const store = new RegistryStore(path)
+    try {
+      expect(store.saveRecovery(input).version).toBe(1)
+      expect(store.listProjects()).toEqual([])
+      expect(store.listProjectRevisions(scheme.id)).toEqual([])
+      expect(store.listRecoveries()).toMatchObject([{ sessionId, referenceId: 'TEST-001' }])
+      expect(() => store.saveRecovery(input)).toThrow(RevisionConflict)
+      expect(store.saveRecovery({ ...input, expectedVersion: 1 }).version).toBe(2)
+    } finally {
+      store.close()
+    }
+    const reopened = new RegistryStore(path)
+    try {
+      expect(reopened.getRecovery(sessionId)).toMatchObject({
+        scheme,
+        detailsDraft,
+        version: 2,
+      })
+      expect(() => reopened.deleteRecovery(sessionId, 1)).toThrow(RevisionConflict)
+      reopened.deleteRecovery(sessionId, 2)
+      expect(reopened.getRecovery(sessionId)).toBeNull()
+      expect(reopened.listProjects()).toEqual([])
+    } finally {
+      reopened.close()
+    }
+    const raw = new DatabaseSync(path)
+    try {
+      expect(raw.prepare('SELECT COUNT(*) AS count FROM project_sources').get()).toMatchObject({
+        count: 0,
+      })
+    } finally {
+      raw.close()
+    }
+  })
+
   it('keeps crossing revisions, rejects stale edits, and persists only in a local file', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-registry-'))
     directories.push(directory)
@@ -336,7 +389,7 @@ describe('local SQLite registries', () => {
     }
   })
 
-  it('opens v6 project history without rewriting old snapshots during the v7 upgrade', () => {
+  it('opens v6 project history without rewriting old snapshots during the v8 upgrade', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-v6-project-'))
     directories.push(directory)
     const path = join(directory, 'registry.sqlite')
@@ -345,7 +398,7 @@ describe('local SQLite registries', () => {
     initialized.close()
     const raw = new DatabaseSync(path)
     const oldPayload = JSON.stringify(scheme)
-    raw.exec('DROP TABLE project_sources; PRAGMA user_version = 6;')
+    raw.exec('DROP TABLE project_recovery; DROP TABLE project_sources; PRAGMA user_version = 6;')
     raw
       .prepare('INSERT INTO project_drafts VALUES (?, 1, ?, ?, ?, ?, ?)')
       .run(
@@ -372,7 +425,7 @@ describe('local SQLite registries', () => {
     }
     const check = new DatabaseSync(path)
     try {
-      expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 7 })
+      expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 8 })
       const rows = check
         .prepare('SELECT scheme_json FROM project_revisions ORDER BY revision')
         .all() as { scheme_json: string }[]
@@ -413,7 +466,7 @@ describe('local SQLite registries', () => {
     current.close()
     const old = new DatabaseSync(path)
     old.exec(
-      'DROP TABLE project_sources; DROP TABLE pu66_verifications; DROP TABLE project_revisions; DROP TABLE project_drafts; PRAGMA user_version = 3;',
+      'DROP TABLE project_recovery; DROP TABLE project_sources; DROP TABLE pu66_verifications; DROP TABLE project_revisions; DROP TABLE project_drafts; PRAGMA user_version = 3;',
     )
     old.close()
 
@@ -426,7 +479,7 @@ describe('local SQLite registries', () => {
       migrated.close()
     }
     const database = new DatabaseSync(path)
-    expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 7 })
+    expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 8 })
     database.close()
   })
 })

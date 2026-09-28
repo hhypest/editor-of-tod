@@ -4,6 +4,7 @@ import {
   applySchemeDetails,
   createSchemeDetailsDraft,
   SchemeEditError,
+  type SchemeDetailsDraft,
 } from '../domain/edit-details'
 import type { Scheme } from '../domain/model'
 
@@ -11,8 +12,13 @@ const props = defineProps<{
   scheme: Scheme
   locked?: boolean
   mode?: 'source' | 'geometry' | 'title'
+  recovery?: { details: SchemeDetailsDraft | null } | null
 }>()
-const emit = defineEmits<{ apply: [scheme: Scheme]; dirty: [value: boolean] }>()
+const emit = defineEmits<{
+  apply: [scheme: Scheme]
+  dirty: [value: boolean]
+  draft: [value: SchemeDetailsDraft | null]
+}>()
 const heading = computed(() => {
   if (props.mode === 'source') return 'Место работ и направления'
   if (props.mode === 'geometry') return 'Размеры и параметры схемы'
@@ -43,6 +49,22 @@ watch(
     dirty.value = false
     emit('dirty', false)
   },
+)
+
+watch(
+  () => props.recovery,
+  (recovery) => {
+    if (!recovery?.details) return
+    draft.value = structuredClone(recovery.details)
+    dirty.value = true
+    emit('dirty', true)
+  },
+)
+
+watch(
+  [draft, dirty],
+  () => emit('draft', dirty.value ? JSON.parse(JSON.stringify(draft.value)) : null),
+  { deep: true, flush: 'post' },
 )
 
 function markDirty(): void {

@@ -10,6 +10,12 @@ import {
   type ProjectSummary,
 } from '../src/domain/local-projects.ts'
 import {
+  recoveryRecordSchema,
+  type RecoveryRecord,
+  type RecoverySummary,
+  type RecoveryWrite,
+} from '../src/domain/recovery.ts'
+import {
   crossingDraftSchema,
   normativeDraftSchema,
   type CrossingDraft,
@@ -152,7 +158,8 @@ export class RegistryStore {
         version !== 4 &&
         version !== 5 &&
         version !== 6 &&
-        version !== 7
+        version !== 7 &&
+        version !== 8
       ) {
         this.db.close()
         throw new Error(`Неизвестная версия локальной базы: ${version}. Файл не изменён.`)
@@ -329,6 +336,24 @@ export class RegistryStore {
           original_json TEXT NOT NULL
         );
         PRAGMA user_version = 7;
+        COMMIT;
+      `)
+      }
+      if (version < 8) {
+        this.db.exec(`
+        BEGIN;
+        CREATE TABLE IF NOT EXISTS project_recovery (
+          session_id TEXT PRIMARY KEY,
+          version INTEGER NOT NULL CHECK (version > 0),
+          scheme_json TEXT NOT NULL CHECK (json_valid(scheme_json)),
+          base_revision INTEGER CHECK (base_revision >= 0),
+          details_json TEXT CHECK (details_json IS NULL OR json_valid(details_json)),
+          placement_json TEXT CHECK (placement_json IS NULL OR json_valid(placement_json)),
+          file_name TEXT NOT NULL,
+          reference_id TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        PRAGMA user_version = 8;
         COMMIT;
       `)
       }
@@ -561,6 +586,119 @@ export class RegistryStore {
   ): ProjectRecord | null {
     const previous = this.getProjectRevision(id, sourceRevision)
     return previous ? this.saveProject(previous.scheme, expectedRevision, true) : null
+  }
+
+  listRecoveries(): RecoverySummary[] {
+    return this.db
+      .prepare(
+        `SELECT session_id AS sessionId, version, base_revision AS baseRevision,
+          file_name AS fileName, reference_id AS referenceId, updated_at AS updatedAt
+          FROM project_recovery ORDER BY updated_at DESC`,
+      )
+      .all() as RecoverySummary[]
+  }
+
+  getRecovery(sessionId: string): RecoveryRecord | null {
+    const row = this.db
+      .prepare('SELECT * FROM project_recovery WHERE session_id = ?')
+      .get(sessionId) as
+      | {
+          version: number
+          scheme_json: string
+          base_revision: number | null
+          details_json: string | null
+          placement_json: string | null
+          file_name: string
+          updated_at: string
+        }
+      | undefined
+    return row
+      ? recoveryRecordSchema.parse({
+          sessionId,
+          version: row.version,
+          scheme: this.parseProject(row.scheme_json),
+          baseRevision: row.base_revision,
+          detailsDraft: row.details_json === null ? null : JSON.parse(row.details_json),
+          placementDraft: row.placement_json === null ? null : JSON.parse(row.placement_json),
+          fileName: row.file_name,
+          updatedAt: row.updated_at,
+        })
+      : null
+  }
+
+  saveRecovery(input: RecoveryWrite): RecoveryRecord {
+    const payload = JSON.stringify(input)
+    if (Buffer.byteLength(payload) > MAX_LOCAL_PROJECT_BYTES) throw new ProjectTooLarge()
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const existing = this.db
+        .prepare('SELECT version FROM project_recovery WHERE session_id = ?')
+        .get(input.sessionId) as { version: number } | undefined
+      if ((existing?.version ?? 0) !== input.expectedVersion) throw new RevisionConflict()
+      const version = input.expectedVersion + 1
+      const updatedAt = this.now()
+      this.db
+        .prepare(
+          `INSERT INTO project_recovery
+            (session_id, version, scheme_json, base_revision, details_json, placement_json,
+              file_name, reference_id, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+              version = excluded.version, scheme_json = excluded.scheme_json,
+              base_revision = excluded.base_revision, details_json = excluded.details_json,
+              placement_json = excluded.placement_json, file_name = excluded.file_name,
+              reference_id = excluded.reference_id, updated_at = excluded.updated_at`,
+        )
+        .run(
+          input.sessionId,
+          version,
+          this.storeProjectSource(input.scheme),
+          input.baseRevision,
+          input.detailsDraft === null ? null : JSON.stringify(input.detailsDraft),
+          input.placementDraft === null ? null : JSON.stringify(input.placementDraft),
+          input.fileName,
+          input.scheme.crossing.referenceId,
+          updatedAt,
+        )
+      this.db.exec('COMMIT')
+      const { expectedVersion: _expectedVersion, ...record } = input
+      void _expectedVersion
+      return { ...record, version, updatedAt }
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
+  deleteRecovery(sessionId: string, expectedVersion: number): void {
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const existing = this.db
+        .prepare('SELECT version, scheme_json FROM project_recovery WHERE session_id = ?')
+        .get(sessionId) as { version: number; scheme_json: string } | undefined
+      if (!existing || existing.version !== expectedVersion) throw new RevisionConflict()
+      this.db.prepare('DELETE FROM project_recovery WHERE session_id = ?').run(sessionId)
+      const stored = JSON.parse(existing.scheme_json) as {
+        source?: { originalJsonSha256?: unknown }
+      }
+      const sha256 = stored.source?.originalJsonSha256
+      if (typeof sha256 === 'string') {
+        const referenced = this.db
+          .prepare(
+            `SELECT 1 FROM (
+              SELECT scheme_json FROM project_drafts
+              UNION ALL SELECT scheme_json FROM project_revisions
+              UNION ALL SELECT scheme_json FROM project_recovery
+            ) WHERE json_extract(scheme_json, '$.source.originalJsonSha256') = ? LIMIT 1`,
+          )
+          .get(sha256)
+        if (!referenced) this.db.prepare('DELETE FROM project_sources WHERE sha256 = ?').run(sha256)
+      }
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
   }
 
   planPu66(entries: Pu66Import[]): { added: number; updated: number; unchanged: number } {
