@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import LocalRegistries from './components/LocalRegistries.vue'
 import ImportedData from './components/ImportedData.vue'
 import LocalProjects from './components/LocalProjects.vue'
@@ -11,6 +11,7 @@ import SchemeReview from './components/SchemeReview.vue'
 import SchemeWorkspace from './components/SchemeWorkspace.vue'
 import SchemeDetailsEditor from './components/SchemeDetailsEditor.vue'
 import TemplateChoice from './components/TemplateChoice.vue'
+import ProjectDataInspector from './components/ProjectDataInspector.vue'
 import {
   exportSchemeJson,
   importSchemeJson,
@@ -20,6 +21,7 @@ import {
 } from './domain/import'
 import type { Scheme } from './domain/model'
 import { schemeSchema } from './domain/model'
+import { reviewScheme, type ReviewFinding } from './domain/review-scheme'
 import { getLocalProject, restoreLocalRevision, saveLocalProject } from './services/local-projects'
 import {
   recordEdit,
@@ -45,6 +47,12 @@ const projectsRefreshKey = ref(0)
 const signCatalogVersion = ref(0)
 const history = ref<EditHistory<Scheme> | null>(null)
 const selectedPlacementId = ref<number | null>(null)
+type View = 'projects' | 'source' | 'geometry' | 'objects' | 'review' | 'registries'
+const stages = ['source', 'geometry', 'objects', 'review'] as const
+const activeView = ref<View>('projects')
+const projectTab = ref<'new' | 'file' | 'local'>('new')
+const registryTab = ref<'imports' | 'entries'>('imports')
+const registriesVisited = ref(false)
 const editorDirty = computed(() => detailsDirty.value || placementDirty.value)
 const hasUnsavedWork = computed(
   () => editorDirty.value || (modifiedSinceDownload.value && modifiedSinceLocalSave.value),
@@ -57,11 +65,17 @@ function beforeUnload(event: BeforeUnloadEvent): void {
 onMounted(() => window.addEventListener('beforeunload', beforeUnload))
 onUnmounted(() => window.removeEventListener('beforeunload', beforeUnload))
 
-const signCount = computed(() =>
-  imported.value?.scheme.placements.reduce(
-    (count, placement) => count + (placement.kind === 'sign-post' ? placement.signIds.length : 0),
-    0,
-  ),
+const fillCount = computed(() =>
+  imported.value
+    ? reviewScheme(imported.value.scheme).filter((finding) => finding.kind === 'fill').length
+    : 0,
+)
+const detailsMode = computed<'source' | 'geometry' | 'title'>(() =>
+  activeView.value === 'source' ? 'source' : activeView.value === 'geometry' ? 'geometry' : 'title',
+)
+const frontMetres = computed(
+  () =>
+    imported.value?.scheme.parameters.workZones[imported.value.scheme.template.code]?.workMetres,
 )
 const referencedSignIds = computed(() =>
   Array.from(
@@ -73,8 +87,27 @@ const referencedSignIds = computed(() =>
   ),
 )
 
-function formatMetres(value: number | null): string {
-  return value === null ? 'не указано' : `${value} м`
+function showView(view: View): void {
+  if (!imported.value && stages.includes(view as (typeof stages)[number])) return
+  if (view === 'registries') registriesVisited.value = true
+  activeView.value = view
+}
+
+async function navigateToFinding(finding: ReviewFinding): Promise<void> {
+  let view: View = 'review'
+  if (finding.target === '#pu66-link-title' || finding.id === 'place') view = 'source'
+  else if (finding.target === '#placements-title') view = 'objects'
+  else if (finding.target === '#imported-title') {
+    view = 'registries'
+    registryTab.value = 'imports'
+  } else if (
+    finding.id.startsWith('distance-') ||
+    ['figure-dimensions', 'variant-front', 'boundary-30'].includes(finding.id)
+  )
+    view = 'geometry'
+  showView(view)
+  await nextTick()
+  document.getElementById(finding.target.slice(1))?.scrollIntoView({ block: 'start' })
 }
 
 async function onFileSelected(event: Event): Promise<void> {
@@ -111,6 +144,7 @@ async function onFileSelected(event: Event): Promise<void> {
     imported.value = importSchemeJson(await file.text())
     history.value = startHistory(imported.value.scheme)
     selectedPlacementId.value = imported.value.scheme.placements[0]?.id ?? null
+    showView('source')
   } catch (error) {
     errorMessage.value =
       error instanceof SchemeImportError ? error.message : 'Не удалось прочитать выбранный файл.'
@@ -175,6 +209,7 @@ function createProject(scheme: Scheme): void {
   localError.value = ''
   localNotice.value = ''
   errorMessage.value = ''
+  showView('source')
 }
 
 function showLocalError(cause: unknown): void {
@@ -248,6 +283,7 @@ function openProjectRecord(scheme: Scheme, revision: number): void {
   placementDirty.value = false
   modifiedSinceDownload.value = false
   modifiedSinceLocalSave.value = false
+  showView('source')
 }
 
 async function openLocal(id: string): Promise<void> {
@@ -346,638 +382,1084 @@ function stepForward(): void {
 </script>
 
 <template>
-  <main class="page">
-    <div class="shell">
-      <header>
-        <p class="eyebrow">Редактор СОДД · локальный проект</p>
-        <h1>Проект переезда</h1>
-        <p class="lead">
-          Создайте проект с измеренными параметрами или откройте JSON. Измените объекты и реквизиты,
-          затем сохраните черновик на этом компьютере или скачайте JSON-копию.
-        </p>
-      </header>
-
-      <NewScheme class="panel" :locked="localBusy || loading" @create="createProject" />
-
-      <section class="panel" aria-labelledby="import-title">
-        <h2 id="import-title">Выбрать проект</h2>
-        <label for="scheme-file" class="file-label">Файл проекта .json</label>
-        <input
-          id="scheme-file"
-          type="file"
-          accept=".json,application/json"
-          :disabled="localBusy"
-          @change="onFileSelected"
-        />
-        <p class="hint">
-          Поддерживаются файлы старого редактора <code>v: 1</code> и проекты
-          <code>schemaVersion: 2</code>, <code>3</code> или <code>4</code> размером до 32 МБ.
-        </p>
-        <p v-if="loading" class="hint" role="status">Проверяем файл…</p>
-        <p v-if="errorMessage" class="error" role="alert">{{ errorMessage }}</p>
-      </section>
-
-      <LocalProjects
-        class="panel"
-        :active-id="imported?.scheme.id ?? null"
-        :active-revision="localRevision"
-        :refresh-key="projectsRefreshKey"
-        :locked="localBusy || loading"
-        @open="openLocal"
-        @restore="restoreLocal"
-      />
-
-      <section
-        v-if="imported"
-        class="panel result"
-        aria-labelledby="result-title"
-        aria-live="polite"
-      >
-        <div class="result-heading">
-          <div>
-            <p class="eyebrow">
-              {{
-                imported.format === 'legacy-v1'
-                  ? 'Перенос из v1'
-                  : imported.format === 'scheme-v2'
-                    ? 'Перенос из v2'
-                    : imported.format === 'scheme-v3'
-                      ? 'Перенос из v3'
-                      : 'Формат проекта v4'
-              }}
-            </p>
-            <h2 id="result-title">Проект открыт для редактирования</h2>
-          </div>
-          <span class="badge">Без нормативной проверки</span>
-        </div>
-
-        <dl>
-          <div>
-            <dt>Файл</dt>
-            <dd>{{ selectedFileName }}</dd>
-          </div>
-          <div>
-            <dt>Идентификатор переезда</dt>
-            <dd>{{ imported.scheme.crossing.referenceId }}</dd>
-          </div>
-          <div>
-            <dt>Вариант</dt>
-            <dd>{{ imported.scheme.template.code.toUpperCase() }}</dd>
-          </div>
-          <div>
-            <dt>Объектов на листе</dt>
-            <dd>{{ imported.scheme.placements.length }}</dd>
-          </div>
-          <div>
-            <dt>Указаний знаков</dt>
-            <dd>{{ signCount }}</dd>
-          </div>
-        </dl>
-
-        <a class="sheet-shortcut" href="#sheet-title">Перейти к черновому листу A4 и печати</a>
-
-        <h3>Сообщения при открытии проекта</h3>
-        <p class="hint">
-          Эти сообщения относятся к моменту открытия или создания проекта. Текущие незаполненные
-          поля и пункты ручной сверки показаны в следующем блоке.
-        </p>
-        <ul>
-          <li v-for="warning in imported.warnings" :key="warning">{{ warning }}</li>
-        </ul>
-
-        <div class="actions">
-          <button
-            type="button"
-            class="primary"
-            :disabled="editorDirty || localBusy"
-            @click="saveLocally"
-          >
-            Сохранить локально
-          </button>
-          <button type="button" :disabled="editorDirty || localBusy" @click="saveAsNew">
-            Сохранить как новый черновик
-          </button>
-          <button
-            type="button"
-            class="primary"
-            :disabled="editorDirty || localBusy"
-            @click="saveV4"
-          >
-            Сохранить копию v4
-          </button>
-          <button
-            v-if="imported.scheme.source.kind === 'legacy-html-v1'"
-            type="button"
-            @click="saveOriginal"
-          >
-            Скачать исходный JSON
-          </button>
-          <button
-            type="button"
-            :disabled="editorDirty || localBusy || !history?.past.length"
-            @click="stepBack"
-          >
-            Отменить действие
-          </button>
-          <button
-            type="button"
-            :disabled="editorDirty || localBusy || !history?.future.length"
-            @click="stepForward"
-          >
-            Повторить действие
-          </button>
-        </div>
-        <p v-if="localError" class="error" role="alert">{{ localError }}</p>
-        <p v-if="localNotice" class="hint" role="status">{{ localNotice }}</p>
-        <p v-if="localRevision !== null" class="hint">
-          Открыта локальная редакция № {{ localRevision
-          }}{{ modifiedSinceLocalSave ? ' · есть новые правки' : '' }}.
-        </p>
-        <p v-if="imported.scheme.crossing.source === 'local-pu66'" class="hint">
-          JSON-копия содержит отобранные сведения из локальной ПУ-66. Храните и передавайте её по
-          правилам обращения с конфиденциальными данными.
-        </p>
-        <p v-if="editorDirty" class="hint" role="status">
-          Сначала примените или отмените изменения в форме, затем скачайте копию проекта или
-          воспользуйтесь историей действий.
-        </p>
-        <p v-else-if="modifiedSinceDownload" class="hint" role="status">
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="brand-line">
+        <strong class="brand">СОДД <span>/ редактор</span></strong>
+        <span v-if="imported" class="project-name">{{ imported.scheme.crossing.referenceId }}</span>
+        <span v-else class="project-name">Локальное рабочее место</span>
+      </div>
+      <div class="top-actions">
+        <span v-if="imported" class="save-state" role="status">
           {{
-            modifiedSinceLocalSave
-              ? 'Применённые правки находятся в памяти браузера. Сохраните локально или скачайте JSON-копию.'
-              : 'Черновик сохранён локально. Для отдельной копии скачайте JSON v4.'
+            editorDirty
+              ? 'Есть неприменённый ввод'
+              : modifiedSinceLocalSave
+                ? 'Есть несохранённые правки'
+                : localRevision === null
+                  ? 'Не сохранён в SQLite'
+                  : 'Черновик сохранён'
           }}
-        </p>
-        <p class="hint">
-          Исходный файл не изменяется. Рабочая область показывает условные координаты объектов;
-          черновой лист A4 расположен ниже рабочей области и доступен для внутренней сверки.
-        </p>
-      </section>
+        </span>
+        <button
+          type="button"
+          class="header-button"
+          :aria-current="activeView === 'projects' ? 'page' : undefined"
+          @click="showView('projects')"
+        >
+          Проекты
+        </button>
+        <button
+          type="button"
+          class="header-button"
+          :aria-current="activeView === 'registries' ? 'page' : undefined"
+          @click="showView('registries')"
+        >
+          Реестры
+        </button>
+        <button
+          v-if="imported"
+          type="button"
+          class="top-save"
+          :disabled="editorDirty || localBusy"
+          @click="saveLocally"
+        >
+          Сохранить локально
+        </button>
+      </div>
+    </header>
 
-      <SchemeReview
-        v-if="imported"
-        class="panel"
-        :scheme="imported.scheme"
-        :has-pending-input="editorDirty"
-      />
-
-      <Pu66Linker
-        v-if="imported"
-        class="panel"
-        :scheme="imported.scheme"
-        :locked="editorDirty || localBusy"
-        @apply="onPu66Linked"
-      />
-
-      <SchemeDetailsEditor
-        v-if="imported"
-        class="panel"
-        :scheme="imported.scheme"
-        :locked="placementDirty || localBusy"
-        @apply="onProjectApplied"
-        @dirty="detailsDirty = $event"
-      />
-
-      <SchemeWorkspace
-        v-if="imported"
-        :key="`workspace-${signCatalogVersion}`"
-        class="panel"
-        :scheme="imported.scheme"
-        :selected-id="selectedPlacementId"
-        :locked="editorDirty || localBusy"
-        @apply="onProjectApplied"
-        @select="selectedPlacementId = $event"
-      />
-
-      <SchemeDraftSheet
-        v-if="imported"
-        :key="`sheet-${signCatalogVersion}`"
-        class="panel print-host"
-        :scheme="imported.scheme"
-        :has-pending-input="editorDirty"
-        :local-revision="localRevision"
-        :modified-since-local-save="modifiedSinceLocalSave"
-      />
-
-      <PlacementEditor
-        v-if="imported"
-        :key="`placements-${signCatalogVersion}`"
-        class="panel"
-        :scheme="imported.scheme"
-        :locked="detailsDirty || localBusy"
-        :selected-placement-id="selectedPlacementId"
-        @apply="onProjectApplied"
-        @dirty="placementDirty = $event"
-        @select="selectedPlacementId = $event"
-      />
-
-      <section v-if="imported" class="panel" aria-labelledby="inspection-title">
-        <h2 id="inspection-title">Данные открытого проекта</h2>
-        <p class="hint">
-          Значения показаны без нормативной проверки. Координаты объектов заданы в условных единицах
-          рабочей области, расстояния — в метрах.
-        </p>
-
-        <h3>Параметры</h3>
-        <dl>
-          <div>
-            <dt>Участок</dt>
-            <dd>{{ imported.scheme.parameters.locationText || 'не указано' }}</dd>
-          </div>
-          <div>
-            <dt>Направления</dt>
-            <dd>
-              {{ imported.scheme.parameters.directions.left }} /
-              {{ imported.scheme.parameters.directions.right }}
-            </dd>
-          </div>
-          <div>
-            <dt>Расстояния d300 / d250 / d150 / d50</dt>
-            <dd>
-              {{ formatMetres(imported.scheme.parameters.signDistancesMetres.d300) }} /
-              {{ formatMetres(imported.scheme.parameters.signDistancesMetres.d250) }} /
-              {{ formatMetres(imported.scheme.parameters.signDistancesMetres.d150) }} /
-              {{ formatMetres(imported.scheme.parameters.signDistancesMetres.d50) }}
-            </dd>
-          </div>
-          <div>
-            <dt>Ступени скорости</dt>
-            <dd>{{ imported.scheme.parameters.speedStagesKmh.join(' / ') }} км/ч</dd>
-          </div>
-          <div>
-            <dt>Жёлтый фон временных знаков</dt>
-            <dd>{{ imported.scheme.parameters.yellowTemporarySigns ? 'да' : 'нет' }}</dd>
-          </div>
-          <div>
-            <dt>Б.33: отвод / буфер / зона работ</dt>
-            <dd>
-              <template v-if="imported.scheme.parameters.workZones.b33">
-                {{ imported.scheme.parameters.workZones.b33.taperMetres }} /
-                {{ imported.scheme.parameters.workZones.b33.bufferMetres }} /
-                {{ imported.scheme.parameters.workZones.b33.workMetres }} м
-              </template>
-              <template v-else>не заполнено</template>
-            </dd>
-          </div>
-          <div>
-            <dt>Б.34: отвод / буфер / зона работ</dt>
-            <dd>
-              <template v-if="imported.scheme.parameters.workZones.b34">
-                {{ imported.scheme.parameters.workZones.b34.taperMetres }} /
-                {{ imported.scheme.parameters.workZones.b34.bufferMetres }} /
-                {{ imported.scheme.parameters.workZones.b34.workMetres }} м
-              </template>
-              <template v-else>не заполнено</template>
-            </dd>
-          </div>
-        </dl>
-
-        <details>
-          <summary>Реквизиты проекта</summary>
-          <dl>
-            <div>
-              <dt>Разработчик</dt>
-              <dd>
-                {{ imported.scheme.titleBlock.developer.organization }} ·
-                {{ imported.scheme.titleBlock.developer.name }} ·
-                {{ imported.scheme.titleBlock.developer.date }}
-              </dd>
-            </div>
-            <div>
-              <dt>Работы</dt>
-              <dd>
-                {{ imported.scheme.titleBlock.work.organization }} ·
-                {{ imported.scheme.titleBlock.work.description }} ·
-                {{ imported.scheme.titleBlock.work.period }}
-              </dd>
-            </div>
-            <div>
-              <dt>Ответственные</dt>
-              <dd>{{ imported.scheme.titleBlock.responsible.join(' · ') }}</dd>
-            </div>
-            <div>
-              <dt>Утверждение</dt>
-              <dd>
-                {{ imported.scheme.titleBlock.approver.position }} ·
-                {{ imported.scheme.titleBlock.approver.organization }} ·
-                {{ imported.scheme.titleBlock.approver.name }}
-              </dd>
-            </div>
-            <div>
-              <dt>Согласование (текст)</dt>
-              <dd>
-                {{ imported.scheme.titleBlock.agreement.position }} ·
-                {{ imported.scheme.titleBlock.agreement.name }} ·
-                {{ imported.scheme.titleBlock.agreement.year }}
-              </dd>
-            </div>
-          </dl>
-        </details>
-
-        <h3>Объекты на листе</h3>
-        <p v-if="imported.scheme.placements.length === 0" class="hint">Объектов нет.</p>
-        <div v-else class="table-scroll">
-          <table>
-            <caption>
-              Состав и координаты объектов проекта
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">ID</th>
-                <th scope="col">Тип и содержимое</th>
-                <th scope="col">Положение в условных координатах</th>
-                <th scope="col">Параметры стойки</th>
-                <th scope="col">Происхождение</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="placement in imported.scheme.placements" :key="placement.id">
-                <td>{{ placement.id }}</td>
-                <td>
-                  <template v-if="placement.kind === 'sign-post'">
-                    Стойка: {{ placement.signIds.join(', ') }}
-                    <small v-if="placement.distanceLabel">{{ placement.distanceLabel }}</small>
-                  </template>
-                  <template v-else>
-                    Элемент {{ placement.elementKind }}
-                    <small v-if="placement.text">{{ placement.text }}</small>
-                  </template>
-                </td>
-                <td>
-                  {{ placement.position.anchor }}; x={{ placement.position.offsetXSvg }}; y={{
-                    placement.kind === 'sign-post'
-                      ? placement.position.offsetYSvg
-                      : placement.position.ySvg
-                  }}
-                </td>
-                <td v-if="placement.kind === 'sign-post'">
-                  сторона {{ placement.side }}; опора {{ placement.stand }}
-                </td>
-                <td v-else>—</td>
-                <td>{{ placement.generatedByTemplate ? 'автоматически' : 'вручную' }}</td>
-              </tr>
-            </tbody>
-          </table>
+    <div class="app-layout">
+      <aside class="sidebar" aria-label="Этапы работы">
+        <p class="sidebar-caption">{{ imported ? 'Схема · 4 этапа' : 'Начало работы' }}</p>
+        <nav class="steps" aria-label="Подготовка схемы">
+          <button
+            type="button"
+            class="step"
+            :class="{ selected: activeView === 'source' }"
+            :disabled="!imported"
+            :aria-current="activeView === 'source' ? 'step' : undefined"
+            @click="showView('source')"
+          >
+            <span class="step-number">1</span
+            ><span><strong>Исходные данные</strong><small>Переезд и ПУ-66</small></span>
+          </button>
+          <button
+            type="button"
+            class="step"
+            :class="{ selected: activeView === 'geometry' }"
+            :disabled="!imported"
+            :aria-current="activeView === 'geometry' ? 'step' : undefined"
+            @click="showView('geometry')"
+          >
+            <span class="step-number">2</span
+            ><span><strong>Схема движения</strong><small>Размеры и вариант</small></span>
+          </button>
+          <button
+            type="button"
+            class="step"
+            :class="{ selected: activeView === 'objects' }"
+            :disabled="!imported"
+            :aria-current="activeView === 'objects' ? 'step' : undefined"
+            @click="showView('objects')"
+          >
+            <span class="step-number">3</span
+            ><span><strong>Знаки и объекты</strong><small>Поле и свойства</small></span>
+          </button>
+          <button
+            type="button"
+            class="step"
+            :class="{ selected: activeView === 'review' }"
+            :disabled="!imported"
+            :aria-current="activeView === 'review' ? 'step' : undefined"
+            @click="showView('review')"
+          >
+            <span class="step-number">4</span
+            ><span><strong>Проверка и лист</strong><small>A4 для сверки</small></span>
+          </button>
+        </nav>
+        <div class="sidebar-bottom">
+          <p class="sidebar-caption">Рабочее место</p>
+          <button
+            type="button"
+            :class="{ selected: activeView === 'projects' }"
+            @click="showView('projects')"
+          >
+            Мои проекты
+          </button>
+          <button
+            type="button"
+            :class="{ selected: activeView === 'registries' }"
+            @click="showView('registries')"
+          >
+            Локальные реестры
+          </button>
         </div>
-      </section>
-      <TemplateChoice />
-      <LocalRegistries />
-      <ImportedData
-        :referenced-sign-ids="referencedSignIds"
-        :locked="editorDirty"
-        @signs-updated="signCatalogVersion++"
-      />
+      </aside>
+
+      <div class="content">
+        <p v-if="localError" class="feedback error" role="alert">{{ localError }}</p>
+        <p v-if="localNotice" class="feedback notice" role="status">{{ localNotice }}</p>
+
+        <section v-show="activeView === 'projects'" class="view" aria-labelledby="projects-heading">
+          <div class="view-heading">
+            <p class="eyebrow">Рабочее место</p>
+            <h1 id="projects-heading">Проекты схем</h1>
+            <p>
+              Создайте новую схему, откройте сохранённую редакцию или загрузите прежний JSON-проект.
+            </p>
+          </div>
+          <div class="tabs" role="group" aria-label="Способ открытия проекта">
+            <button type="button" :aria-pressed="projectTab === 'new'" @click="projectTab = 'new'">
+              Новый проект
+            </button>
+            <button
+              type="button"
+              :aria-pressed="projectTab === 'local'"
+              @click="projectTab = 'local'"
+            >
+              Черновики SQLite
+            </button>
+            <button
+              type="button"
+              :aria-pressed="projectTab === 'file'"
+              @click="projectTab = 'file'"
+            >
+              Открыть JSON
+            </button>
+          </div>
+          <NewScheme
+            v-show="projectTab === 'new'"
+            class="module"
+            :locked="localBusy || loading"
+            @create="createProject"
+          />
+          <LocalProjects
+            v-if="projectTab === 'local'"
+            class="module"
+            :active-id="imported?.scheme.id ?? null"
+            :active-revision="localRevision"
+            :refresh-key="projectsRefreshKey"
+            :locked="localBusy || loading"
+            @open="openLocal"
+            @restore="restoreLocal"
+          />
+          <section v-show="projectTab === 'file'" class="module" aria-labelledby="import-title">
+            <h2 id="import-title">Открыть файл проекта</h2>
+            <label for="scheme-file" class="file-label">Файл .json с вашего компьютера</label>
+            <input
+              id="scheme-file"
+              type="file"
+              accept=".json,application/json"
+              :disabled="localBusy"
+              @change="onFileSelected"
+            />
+            <p class="hint">
+              Поддерживаются v1 и schemaVersion 2, 3, 4 размером до 32 МБ. Открытие само по себе не
+              записывает файл в SQLite.
+            </p>
+            <p v-if="loading" class="hint" role="status">Проверяем файл…</p>
+            <p v-if="errorMessage" class="error" role="alert">{{ errorMessage }}</p>
+          </section>
+        </section>
+
+        <section
+          v-if="registriesVisited"
+          v-show="activeView === 'registries'"
+          class="view"
+          aria-labelledby="registries-heading"
+        >
+          <div class="view-heading">
+            <p class="eyebrow">Отдельный раздел</p>
+            <h1 id="registries-heading">Локальные реестры</h1>
+            <p>Карточки ПУ-66 и каталог знаков остаются в базе на этом компьютере.</p>
+          </div>
+          <div class="tabs" role="group" aria-label="Раздел реестров">
+            <button
+              type="button"
+              :aria-pressed="registryTab === 'imports'"
+              @click="registryTab = 'imports'"
+            >
+              Импорт Excel и знаков
+            </button>
+            <button
+              type="button"
+              :aria-pressed="registryTab === 'entries'"
+              @click="registryTab = 'entries'"
+            >
+              Карточки и нормативы
+            </button>
+          </div>
+          <ImportedData
+            v-show="registryTab === 'imports'"
+            class="module"
+            :referenced-sign-ids="referencedSignIds"
+            :locked="editorDirty"
+            @signs-updated="signCatalogVersion++"
+          />
+          <LocalRegistries v-show="registryTab === 'entries'" class="module" />
+        </section>
+
+        <template v-if="imported">
+          <div
+            v-show="activeView !== 'projects' && activeView !== 'registries'"
+            class="project-bar"
+          >
+            <div>
+              <span class="eyebrow">{{ selectedFileName }}</span
+              ><strong
+                >Переезд {{ imported.scheme.crossing.referenceId }} ·
+                {{ imported.scheme.template.code.toUpperCase() }}</strong
+              ><span class="project-meta"
+                >Фронт {{ frontMetres ?? 'не указан' }} м · объектов
+                {{ imported.scheme.placements.length }} · редакция
+                {{ localRevision ?? 'не сохранена' }}</span
+              >
+            </div>
+            <details class="more-actions">
+              <summary>Действия с проектом</summary>
+              <div class="more-buttons">
+                <button type="button" :disabled="editorDirty || localBusy" @click="saveAsNew">
+                  Сохранить как новый черновик
+                </button>
+                <button type="button" :disabled="editorDirty || localBusy" @click="saveV4">
+                  Скачать JSON v4
+                </button>
+                <button
+                  v-if="imported.scheme.source.kind === 'legacy-html-v1'"
+                  type="button"
+                  @click="saveOriginal"
+                >
+                  Скачать исходный JSON
+                </button>
+                <button
+                  type="button"
+                  :disabled="editorDirty || localBusy || !history?.past.length"
+                  @click="stepBack"
+                >
+                  Отменить действие
+                </button>
+                <button
+                  type="button"
+                  :disabled="editorDirty || localBusy || !history?.future.length"
+                  @click="stepForward"
+                >
+                  Повторить действие
+                </button>
+              </div>
+            </details>
+          </div>
+          <p
+            v-show="activeView !== 'projects' && activeView !== 'registries' && editorDirty"
+            class="feedback pending"
+            role="status"
+          >
+            Есть неприменённый ввод. Вернитесь к изменённой форме и нажмите «Применить правки» или
+            «Отменить ввод» перед сохранением и печатью.
+          </p>
+
+          <section
+            v-show="activeView === 'source'"
+            class="view stage"
+            aria-label="Этап 1. Исходные данные"
+          >
+            <div class="view-heading">
+              <p class="eyebrow">Этап 1 из 4</p>
+              <h1>Исходные данные</h1>
+              <p>
+                Уточните место работ, направления и закрепите разрешённые сведения из локальной
+                карточки ПУ-66.
+              </p>
+            </div>
+            <details v-if="imported.warnings.length" class="opening-notes">
+              <summary>Сообщения при открытии · {{ imported.warnings.length }}</summary>
+              <ul>
+                <li v-for="warning in imported.warnings" :key="warning">{{ warning }}</li>
+              </ul>
+            </details>
+            <Pu66Linker
+              class="module"
+              :scheme="imported.scheme"
+              :locked="editorDirty || localBusy"
+              @apply="onPu66Linked"
+            />
+          </section>
+
+          <section
+            v-show="activeView === 'geometry'"
+            class="view stage"
+            aria-label="Этап 2. Схема движения"
+          >
+            <div class="view-heading">
+              <p class="eyebrow">Этап 2 из 4</p>
+              <h1>Схема движения</h1>
+              <p>
+                Размеры и параметры выбранного рисунка ОДМ. Изменение чисел не перемещает уже
+                поставленные знаки.
+              </p>
+            </div>
+            <div class="variant-summary">
+              <span>Вариант по проекту</span
+              ><strong>{{ imported.scheme.template.code.toUpperCase() }}</strong
+              ><span>Фронт {{ frontMetres ?? 'не указан' }} м</span>
+            </div>
+            <details class="reference">
+              <summary>Как выбран Б.33 или Б.34</summary>
+              <TemplateChoice />
+            </details>
+          </section>
+
+          <section
+            v-show="activeView === 'objects'"
+            class="view stage"
+            aria-label="Этап 3. Знаки и объекты"
+          >
+            <div class="view-heading">
+              <p class="eyebrow">Этап 3 из 4</p>
+              <h1>Знаки и объекты</h1>
+              <p>
+                Работайте с условным полем схемы. Свойства выделенного объекта и палитра находятся
+                ниже поля.
+              </p>
+            </div>
+            <SchemeWorkspace
+              :key="`workspace-${signCatalogVersion}`"
+              class="module"
+              :scheme="imported.scheme"
+              :selected-id="selectedPlacementId"
+              :locked="editorDirty || localBusy"
+              @apply="onProjectApplied"
+              @select="selectedPlacementId = $event"
+            />
+            <PlacementEditor
+              :key="`placements-${signCatalogVersion}`"
+              class="module"
+              :scheme="imported.scheme"
+              :locked="detailsDirty || localBusy"
+              :selected-placement-id="selectedPlacementId"
+              @apply="onProjectApplied"
+              @dirty="placementDirty = $event"
+              @select="selectedPlacementId = $event"
+            />
+          </section>
+
+          <section
+            v-show="activeView === 'review'"
+            class="view stage"
+            aria-label="Этап 4. Проверка и лист"
+          >
+            <div class="view-heading">
+              <p class="eyebrow">Этап 4 из 4</p>
+              <h1>Проверка и лист A4</h1>
+              <p>
+                Заполните реквизиты, просмотрите замечания и распечатайте условный черновик для
+                внутренней сверки.
+              </p>
+            </div>
+            <SchemeReview
+              class="module"
+              :scheme="imported.scheme"
+              :has-pending-input="editorDirty"
+              @navigate="navigateToFinding"
+            />
+          </section>
+
+          <SchemeDetailsEditor
+            v-show="activeView === 'source' || activeView === 'geometry' || activeView === 'review'"
+            class="module details-module"
+            :scheme="imported.scheme"
+            :mode="detailsMode"
+            :locked="placementDirty || localBusy"
+            @apply="onProjectApplied"
+            @dirty="detailsDirty = $event"
+          />
+          <SchemeDraftSheet
+            v-show="activeView === 'review'"
+            :key="`sheet-${signCatalogVersion}`"
+            class="module print-host"
+            :scheme="imported.scheme"
+            :has-pending-input="editorDirty"
+            :local-revision="localRevision"
+            :modified-since-local-save="modifiedSinceLocalSave"
+          />
+          <ProjectDataInspector
+            v-show="activeView === 'review'"
+            class="data-inspector"
+            :scheme="imported.scheme"
+          />
+
+          <nav
+            v-show="activeView !== 'projects' && activeView !== 'registries'"
+            class="stage-controls"
+            aria-label="Переход между этапами"
+          >
+            <button v-if="activeView === 'source'" type="button" @click="showView('projects')">
+              ← К проектам
+            </button>
+            <button v-if="activeView === 'geometry'" type="button" @click="showView('source')">
+              ← Исходные данные
+            </button>
+            <button v-if="activeView === 'objects'" type="button" @click="showView('geometry')">
+              ← Схема движения
+            </button>
+            <button v-if="activeView === 'review'" type="button" @click="showView('objects')">
+              ← Знаки и объекты
+            </button>
+            <button
+              v-if="activeView === 'source'"
+              type="button"
+              class="primary"
+              @click="showView('geometry')"
+            >
+              К схеме движения →
+            </button>
+            <button
+              v-if="activeView === 'geometry'"
+              type="button"
+              class="primary"
+              @click="showView('objects')"
+            >
+              К знакам и объектам →
+            </button>
+            <button
+              v-if="activeView === 'objects'"
+              type="button"
+              class="primary"
+              @click="showView('review')"
+            >
+              К проверке и листу →
+            </button>
+          </nav>
+        </template>
+      </div>
+
+      <aside class="preview" aria-label="Предпросмотр схемы">
+        <template v-if="imported">
+          <div class="preview-heading">
+            <strong>Лист схемы</strong
+            ><span class="variant-badge">{{ imported.scheme.template.code.toUpperCase() }}</span>
+          </div>
+          <SchemeDraftSheet
+            :key="`mini-${signCatalogVersion}`"
+            class="mini-sheet"
+            :scheme="imported.scheme"
+            :has-pending-input="editorDirty"
+            :local-revision="localRevision"
+            :modified-since-local-save="modifiedSinceLocalSave"
+            preview-only
+          />
+          <p class="preview-note">
+            Условный черновик обновляется после применения правок. Масштаб здесь уменьшен.
+          </p>
+          <button type="button" class="preview-open" @click="showView('review')">
+            Открыть лист A4 и печать →
+          </button>
+          <div class="preview-check">
+            <strong>Проверка заполнения</strong
+            ><span>{{
+              fillCount ? `Нужно уточнить: ${fillCount}` : 'Поля из списка заполнены'
+            }}</span
+            ><small>Нормативная проверка выполняется отдельно.</small>
+          </div>
+          <p v-if="imported.scheme.crossing.source === 'local-pu66'" class="private-note">
+            В проекте есть ограниченные сведения ПУ-66. Не публикуйте JSON и лист без разрешённой
+            передачи.
+          </p>
+        </template>
+        <div v-else class="preview-empty">
+          <span class="preview-mark">СОДД</span><strong>Начните с проекта</strong>
+          <p>
+            После открытия здесь появится уменьшенный лист схемы. Печатный A4 находится на четвёртом
+            этапе.
+          </p>
+        </div>
+      </aside>
     </div>
   </main>
 </template>
 
 <style scoped>
-.page {
+.app-shell {
   min-height: 100vh;
-  padding: clamp(1.5rem, 5vw, 4rem) 1.25rem;
-  background: #f3f6fa;
-  color: #192534;
+  background: #f3f6f4;
+  color: #20323a;
   font-family:
     system-ui,
     -apple-system,
     'Segoe UI',
     sans-serif;
 }
-
-.shell {
-  max-width: 68rem;
-  margin: 0 auto;
-}
-
-h1 {
-  margin: 0.4rem 0 1rem;
-  font-size: clamp(2rem, 4vw, 3.2rem);
-  line-height: 1.15;
-}
-
-h2 {
-  margin: 0 0 1rem;
-  font-size: 1.4rem;
-}
-
-h3 {
-  margin: 1.75rem 0 0.5rem;
-  font-size: 1rem;
-}
-
-.lead {
-  max-width: 45rem;
-  margin-bottom: 2rem;
-  font-size: 1.15rem;
-  line-height: 1.6;
-}
-
-.eyebrow {
-  margin: 0;
-  color: #175c9e;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.panel {
-  margin: 1rem 0;
-  padding: clamp(1.25rem, 4vw, 2rem);
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  min-height: 4.2rem;
+  padding: 0.7rem clamp(1rem, 2vw, 2rem);
   background: #fff;
-  border: 1px solid #d8e1eb;
-  border-radius: 0.8rem;
-  box-shadow: 0 3px 14px rgb(19 46 75 / 5%);
+  border-bottom: 1px solid #dce5e1;
 }
-
-.file-label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 600;
+.brand-line,
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
 }
-
-.sheet-shortcut {
+.brand {
+  font-size: 1.1rem;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+  color: #205e50;
+}
+.brand span {
+  color: #597168;
+  font-weight: 500;
+}
+.project-name {
+  color: #587069;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.top-actions {
+  justify-content: flex-end;
+}
+.save-state {
+  font-size: 0.78rem;
+  color: #50685f;
+}
+.save-state::before {
+  content: '';
   display: inline-block;
-  padding: 0.7rem 1rem;
-  border: 1px solid #185ca5;
-  border-radius: 0.45rem;
-  color: #185ca5;
-  font-weight: 600;
-  text-decoration: none;
+  width: 0.42rem;
+  height: 0.42rem;
+  margin-right: 0.4rem;
+  background: #5f9f78;
+  border-radius: 50%;
+  vertical-align: middle;
 }
-
-.sheet-shortcut:hover,
-.sheet-shortcut:focus-visible {
-  outline: 2px solid #185ca5;
+button {
+  padding: 0.65rem 0.9rem;
+  border: 1px solid #a7c1b6;
+  border-radius: 0.48rem;
+  background: #fff;
+  color: #205e50;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  background: #eaf3ee;
+}
+button:focus-visible {
+  outline: 3px solid #32856b;
   outline-offset: 2px;
 }
-
-input[type='file'] {
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.header-button {
+  border-color: transparent;
+  font-size: 0.88rem;
+}
+.header-button[aria-current='page'] {
+  background: #e7f1ea;
+}
+.top-save,
+button.primary {
+  background: #226c55;
+  border-color: #226c55;
+  color: #fff;
+}
+.top-save:hover:not(:disabled),
+button.primary:hover:not(:disabled) {
+  background: #185b47;
+}
+.app-layout {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr) 260px;
+  max-width: 1720px;
+  margin: auto;
+  min-height: calc(100vh - 4.2rem);
+}
+.sidebar {
+  border-right: 1px solid #dce5e1;
+  background: #eaf1ec;
+  padding: 1.35rem 0.75rem;
+}
+.sidebar-caption {
+  margin: 0.1rem 0.75rem 0.9rem;
+  color: #597168;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+.steps {
+  display: grid;
+  gap: 0.35rem;
+}
+.step {
+  display: flex;
+  width: 100%;
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.7rem 0.55rem;
+  border: 0;
+  background: transparent;
+  color: #293e3a;
+  text-align: left;
+}
+.step.selected,
+.sidebar-bottom button.selected {
+  background: #fff;
+  box-shadow: 0 2px 8px rgb(26 63 45 / 7%);
+}
+.step-number {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 50%;
+  background: #d7e2db;
+  color: #526c61;
+  font-size: 0.75rem;
+}
+.step.selected .step-number {
+  background: #226c55;
+  color: white;
+}
+.step strong {
   display: block;
+  font-size: 0.83rem;
+  line-height: 1.35;
+}
+.step small {
+  display: block;
+  margin-top: 0.15rem;
+  color: #687b70;
+  font-size: 0.7rem;
+  line-height: 1.3;
+}
+.sidebar-bottom {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid #d2dfd5;
+}
+.sidebar-bottom button {
+  display: block;
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: 0;
+  text-align: left;
+  background: transparent;
+  font-size: 0.82rem;
+}
+.content {
+  min-width: 0;
+  padding: 1.5rem clamp(0.9rem, 2vw, 2rem) 2.5rem;
+}
+.view-heading {
+  margin: 0 0 1.3rem;
+}
+.eyebrow {
+  display: block;
+  margin: 0 0 0.28rem;
+  color: #286b56;
+  font-size: 0.74rem;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+h1 {
+  margin: 0 0 0.45rem;
+  font-size: clamp(1.6rem, 2.3vw, 2.15rem);
+  letter-spacing: -0.035em;
+  line-height: 1.18;
+}
+h2 {
+  margin: 0 0 0.8rem;
+  font-size: 1.35rem;
+}
+.view-heading p:last-child,
+.hint {
+  color: #586d65;
+  line-height: 1.5;
+  font-size: 0.91rem;
+}
+.view-heading p:last-child {
+  max-width: 54rem;
+  margin: 0.3rem 0 0;
+}
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0.25rem 0 1rem;
+}
+.tabs button {
+  background: transparent;
+  border: 1px solid #cfdbd4;
+  font-size: 0.86rem;
+}
+.tabs button[aria-pressed='true'] {
+  background: #e1f0e5;
+  border-color: #7aae92;
+  color: #154e3d;
+}
+.module {
+  min-width: 0;
+  margin: 0 0 1rem;
+  padding: clamp(1rem, 2vw, 1.5rem);
+  background: #fff;
+  border: 1px solid #dce5e1;
+  border-radius: 0.7rem;
+  box-shadow: 0 2px 8px rgb(22 56 40 / 4%);
+}
+.module + .module {
+  margin-top: 1rem;
+}
+.file-label {
+  display: block;
+  margin-bottom: 0.55rem;
+  font-weight: 700;
+}
+input[type='file'] {
   max-width: 100%;
   font: inherit;
 }
-
-.hint {
-  color: #526273;
-  font-size: 0.9rem;
-  line-height: 1.5;
-}
-
 .error {
-  color: #a22030;
-  font-weight: 600;
+  color: #a01f31;
 }
-
-.result-heading {
+.feedback {
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.55rem;
+  font-size: 0.87rem;
+  line-height: 1.45;
+}
+.feedback.error {
+  background: #fff0f1;
+  border-left: 3px solid #bb3b46;
+}
+.feedback.notice {
+  background: #e8f5e9;
+  border-left: 3px solid #5c9d69;
+}
+.feedback.pending {
+  background: #fff6e6;
+  border-left: 3px solid #b48737;
+  color: #594119;
+}
+.project-bar {
   display: flex;
-  gap: 1rem;
-  align-items: flex-start;
   justify-content: space-between;
-  flex-wrap: wrap;
-}
-
-.badge {
-  padding: 0.35rem 0.65rem;
-  border-radius: 0.5rem;
-  background: #fff1da;
-  color: #69420b;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-dl {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  align-items: flex-start;
   gap: 1rem;
-  margin: 1.25rem 0;
+  margin-bottom: 1.2rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid #dce5e1;
+  border-radius: 0.7rem;
+  background: #fff;
 }
-
-dt {
-  color: #526273;
-  font-size: 0.85rem;
+.project-bar strong,
+.project-meta {
+  display: block;
 }
-
-dd {
-  margin: 0.3rem 0 0;
-  overflow-wrap: anywhere;
-  font-weight: 600;
+.project-bar strong {
+  font-size: 1rem;
+  margin: 0.2rem 0;
 }
-
-li {
-  margin-bottom: 0.4rem;
+.project-meta {
+  color: #61736b;
+  font-size: 0.78rem;
+}
+.more-actions {
+  flex: none;
+  position: relative;
+}
+.more-actions summary {
+  list-style: none;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #a7c1b6;
+  border-radius: 0.45rem;
+  color: #205e50;
+  font-weight: 650;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.more-actions summary::-webkit-details-marker {
+  display: none;
+}
+.more-actions[open] .more-buttons {
+  display: grid;
+  gap: 0.4rem;
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 5;
+  width: min(18rem, 75vw);
+  padding: 0.7rem;
+  background: #fff;
+  border: 1px solid #d0ddd5;
+  border-radius: 0.6rem;
+  box-shadow: 0 12px 26px rgb(26 55 39 / 16%);
+}
+.more-buttons button {
+  text-align: left;
+  font-size: 0.78rem;
+}
+.opening-notes,
+.reference {
+  padding: 0.8rem 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid #dce5e1;
+  border-radius: 0.6rem;
+  background: #fff;
+}
+.opening-notes summary,
+.reference summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: #245f50;
+}
+.opening-notes ul {
+  margin: 0.8rem 0 0;
+  padding-left: 1.3rem;
+  color: #4d645b;
+}
+.variant-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 1rem 1.2rem;
+  margin-bottom: 1rem;
+  background: #e3f1e8;
+  border-radius: 0.6rem;
+  color: #2a5945;
+}
+.variant-summary strong {
+  font-size: 1.4rem;
+}
+.details-module {
+  margin-top: 1rem;
+}
+.data-inspector {
+  display: block;
+  margin-top: 1rem;
+}
+.stage-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid #dce5e1;
+}
+.preview {
+  min-width: 0;
+  padding: 1.45rem 0.9rem;
+  border-left: 1px solid #dce5e1;
+  background: #e9f0eb;
+}
+.preview-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  font-size: 0.92rem;
+}
+.variant-badge {
+  padding: 0.25rem 0.5rem;
+  border-radius: 10rem;
+  background: #d7ebdf;
+  color: #23654b;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+.mini-sheet {
+  overflow: hidden;
+  border: 1px solid #ccd8d1;
+  box-shadow: 0 7px 20px rgb(23 56 41 / 13%);
+}
+.preview-note,
+.private-note {
+  color: #53685e;
+  font-size: 0.78rem;
   line-height: 1.5;
 }
-
-details {
-  margin-top: 1.5rem;
-}
-
-summary {
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.table-scroll {
-  overflow-x: auto;
-}
-
-table {
+.preview-open {
   width: 100%;
-  border-collapse: collapse;
-  text-align: left;
+  margin: 0.5rem 0 1rem;
+  text-align: center;
+  font-size: 0.77rem;
 }
-
-caption {
-  margin-bottom: 0.5rem;
-  color: #526273;
+.preview-check {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem 0;
+  border-top: 1px solid #cddcd1;
+  font-size: 0.82rem;
+}
+.preview-check span {
+  color: #285d48;
+}
+.preview-check small {
+  color: #617269;
+  line-height: 1.35;
+}
+.private-note {
+  padding: 0.7rem;
+  border-left: 3px solid #b78743;
+  background: #f9f2e3;
+}
+.preview-empty {
+  display: grid;
+  gap: 0.8rem;
+  align-content: start;
+  padding: 1.2rem 0.6rem;
+  color: #50685b;
+}
+.preview-empty strong {
+  color: #235848;
+}
+.preview-empty p {
+  margin: 0;
+  line-height: 1.5;
   font-size: 0.85rem;
-  text-align: left;
 }
-
-th,
-td {
-  padding: 0.75rem;
-  border-bottom: 1px solid #d8e1eb;
-  vertical-align: top;
+.preview-mark {
+  display: grid;
+  place-items: center;
+  width: 5rem;
+  height: 5rem;
+  border-radius: 1rem;
+  background: #d6e9dc;
+  color: #2a6551;
+  font-weight: 800;
 }
-
-th {
-  white-space: nowrap;
+@media (max-width: 1100px) {
+  .app-layout {
+    grid-template-columns: 175px minmax(0, 1fr);
+  }
+  .preview {
+    grid-column: 2;
+    border-left: 0;
+    border-top: 1px solid #dce5e1;
+    display: grid;
+    grid-template-columns: 230px minmax(0, 1fr);
+    gap: 0.6rem 1rem;
+    align-content: start;
+  }
+  .preview-heading {
+    grid-column: 1/-1;
+    margin: 0;
+  }
+  .mini-sheet {
+    grid-row: 2 / span 3;
+  }
+  .preview-empty {
+    grid-column: 1/-1;
+  }
 }
-
-small {
-  display: block;
-  margin-top: 0.25rem;
-  color: #526273;
+@media (max-width: 700px) {
+  .topbar {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .top-actions {
+    justify-content: flex-start;
+  }
+  .app-layout {
+    display: block;
+  }
+  .sidebar {
+    padding: 0.65rem;
+    border-right: 0;
+    border-bottom: 1px solid #dce5e1;
+  }
+  .sidebar-caption,
+  .step small {
+    display: none;
+  }
+  .steps {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .step {
+    width: auto;
+    padding: 0.45rem;
+    align-items: center;
+  }
+  .step strong {
+    font-size: 0.75rem;
+  }
+  .step-number {
+    width: 1.3rem;
+    height: 1.3rem;
+    font-size: 0.68rem;
+  }
+  .sidebar-bottom {
+    display: flex;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0.4rem 0 0;
+    border: 0;
+  }
+  .sidebar-bottom button {
+    width: auto;
+  }
+  .content {
+    padding: 1rem 0.7rem 1.8rem;
+  }
+  .project-bar {
+    flex-wrap: wrap;
+  }
+  .more-actions[open] .more-buttons {
+    left: 0;
+    right: auto;
+  }
+  .preview {
+    display: block;
+    padding: 1rem;
+  }
+  .mini-sheet {
+    max-width: 230px;
+  }
 }
-
-.actions {
-  display: flex;
-  gap: 0.7rem;
-  flex-wrap: wrap;
-  margin-top: 1.5rem;
-}
-
-button {
-  padding: 0.7rem 1rem;
-  border: 1px solid #185ca5;
-  border-radius: 0.45rem;
-  background: #fff;
-  color: #185ca5;
-  cursor: pointer;
-  font: inherit;
-  font-weight: 600;
-}
-
-button.primary {
-  background: #185ca5;
-  color: #fff;
-}
-
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-button:hover,
-button:focus-visible {
-  outline: 2px solid #185ca5;
-  outline-offset: 2px;
-}
-
 @page {
   size: A4 landscape;
   margin: 0;
 }
-
 @media print {
-  :global(html),
-  :global(body) {
-    margin: 0;
-    padding: 0;
+  :global(body *) {
+    visibility: hidden !important;
   }
-
-  .page {
-    padding: 0;
-    min-height: 0;
-    background: #fff;
+  .print-host,
+  .print-host :deep(*) {
+    visibility: visible !important;
   }
-
-  .shell {
-    max-width: none;
-    margin: 0;
-  }
-
-  .shell > :not(.print-host) {
-    display: none !important;
-  }
-
   .print-host {
-    display: block;
+    display: block !important;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 297mm;
+    height: 210mm;
     margin: 0;
     padding: 0;
     border: 0;
     border-radius: 0;
     box-shadow: none;
+  }
+  .app-shell {
+    min-height: 0;
+    background: white;
   }
 }
 </style>
