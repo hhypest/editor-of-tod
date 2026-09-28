@@ -244,14 +244,16 @@ describe('private import formats', () => {
       ])
       original.close()
       const old = new DatabaseSync(path)
-      old.exec('DROP TABLE pu66_verifications; PRAGMA user_version = 4;')
+      old.exec(
+        'DROP TABLE project_sources; DROP TABLE pu66_verifications; PRAGMA user_version = 4;',
+      )
       old.close()
       const migrated = new RegistryStore(path)
       expect(migrated.listPu66()).toMatchObject([{ referenceId: card.key, revision: 1 }])
       expect(migrated.listPu66()[0]?.verification).toBeNull()
       migrated.close()
       const current = new DatabaseSync(path)
-      expect(current.prepare('PRAGMA user_version').get()).toEqual({ user_version: 6 })
+      expect(current.prepare('PRAGMA user_version').get()).toEqual({ user_version: 7 })
       current.close()
     } finally {
       rmSync(directory, { recursive: true, force: true })
@@ -370,6 +372,7 @@ describe('private import formats', () => {
       store.close()
       const old = new DatabaseSync(path)
       old.exec(`
+        DROP TABLE project_sources;
         DROP TABLE pu66_verifications;
         DROP TABLE project_revisions;
         DROP TABLE project_drafts;
@@ -393,7 +396,7 @@ describe('private import formats', () => {
       migrated.close()
 
       const database = new DatabaseSync(path)
-      expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 6 })
+      expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 7 })
       expect(
         (database.prepare('PRAGMA table_info(signs)').all() as { name: string }[]).map(
           (column) => column.name,
