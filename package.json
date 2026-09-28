@@ -10,6 +10,7 @@
     "local": "node server/index.ts",
     "import:pu66": "node server/import-cli.ts pu66",
     "import:signs": "node server/import-cli.ts signs",
+    "samples:pu66": "node scripts/generate-pu66-samples.ts",
     "build": "run-p type-check build-only",
     "preview": "run-p dev:api preview:web",
     "preview:web": "vite preview",

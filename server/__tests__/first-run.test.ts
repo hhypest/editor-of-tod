@@ -1,0 +1,91 @@
+import { mkdtempSync, existsSync, readdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+import { zipSync } from 'fflate'
+import { PNG } from 'pngjs'
+import { createSampleWorkbook, sampleCards } from '../../scripts/generate-pu66-samples.ts'
+import { parsePu66 } from '../pu66.ts'
+import { RegistryStore } from '../store.ts'
+import { applyPu66Upload, previewPu66Upload } from '../pu66-web-import.ts'
+import { applySignUpload, previewSignUpload } from '../sign-web-import.ts'
+
+const directories: string[] = []
+afterEach(() => {
+  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
+})
+
+describe('first launch with synthetic source files', () => {
+  it('creates an empty local SQLite, imports four distinct PU-66 layouts and a local sign ZIP', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-first-run-'))
+    directories.push(directory)
+    const database = join(directory, 'private-data', 'registry.sqlite')
+    expect(existsSync(database)).toBe(false)
+
+    const store = new RegistryStore(database)
+    try {
+      expect(existsSync(database)).toBe(true)
+      expect(store.listPu66()).toHaveLength(0)
+      expect(store.listSigns()).toHaveLength(0)
+      expect(store.listNormative()).toHaveLength(4)
+
+      const files = await Promise.all(
+        sampleCards.map(async (sample) => {
+          const bytes = await createSampleWorkbook(sample)
+          const parsed = await parsePu66(bytes, sample.filename)
+          expect(parsed.card).toMatchObject({
+            kilometre: sample.kilometre,
+            picket: sample.picket,
+            roadName: sample.road,
+            section: sample.section,
+          })
+          expect(parsed.card.technicalRows.find((row) => row.item === '7')?.current).toBe(
+            sample.width,
+          )
+          expect(parsed.card.technicalRows.find((row) => row.item === '8')?.current).toBe(
+            sample.length,
+          )
+          expect(parsed.card.technicalRows.find((row) => row.item === '30')).toBeDefined()
+          return { name: sample.filename, data: bytes.toString('base64') }
+        }),
+      )
+      const pu66Plan = await previewPu66Upload(store, { files })
+      expect(pu66Plan).toMatchObject({ added: 4, updated: 0, unchanged: 0 })
+      expect(store.listPu66()).toHaveLength(0)
+      expect(
+        await applyPu66Upload(store, { files, expectedFingerprint: pu66Plan.fingerprint }),
+      ).toMatchObject({
+        added: 4,
+      })
+      expect(store.listPu66()).toHaveLength(4)
+      expect(store.listPu66().every((entry) => entry.verification === null)).toBe(true)
+
+      const image = new PNG({ width: 8, height: 8 })
+      image.data.fill(255)
+      const png = PNG.sync.write(image)
+      const archive = Buffer.from(
+        zipSync({ 'PNG с номером/1.25.png': png, 'PNG без номера/1.25.png': png }),
+      )
+      const signFiles = {
+        archive: { name: 'synthetic-signs.zip', data: archive.toString('base64') },
+        documentCode: 'УЧЕБНЫЙ ИСТОЧНИК',
+        edition: 'демо',
+        pdf: null,
+      }
+      const signPlan = previewSignUpload(store, signFiles)
+      expect(signPlan).toMatchObject({ added: 1, signCount: 1 })
+      await applySignUpload(store, { ...signFiles, expectedFingerprint: signPlan.fingerprint })
+      expect(store.listSigns()).toHaveLength(1)
+      expect(readdirSync(join(directory, 'private-data', 'backups'))).toHaveLength(2)
+    } finally {
+      store.close()
+    }
+    const reopened = new RegistryStore(database)
+    try {
+      expect(reopened.listPu66()).toHaveLength(4)
+      expect(reopened.listSigns()).toHaveLength(1)
+    } finally {
+      reopened.close()
+    }
+  })
+})
