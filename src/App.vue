@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef } from 'vue'
 import LocalRegistries from './components/LocalRegistries.vue'
 import ImportedData from './components/ImportedData.vue'
 import LocalProjects from './components/LocalProjects.vue'
@@ -22,6 +22,7 @@ import {
 import type { Scheme } from './domain/model'
 import { schemeSchema } from './domain/model'
 import { reviewScheme, type ReviewFinding } from './domain/review-scheme'
+import { rebuildTemplatePlacements, TemplateBuildError } from './domain/template-placements'
 import { getLocalProject, restoreLocalRevision, saveLocalProject } from './services/local-projects'
 import {
   recordEdit,
@@ -31,7 +32,7 @@ import {
   type EditHistory,
 } from './domain/edit-history'
 
-const imported = ref<ImportResult | null>(null)
+const imported = shallowRef<ImportResult | null>(null)
 const selectedFileName = ref('')
 const errorMessage = ref('')
 const loading = ref(false)
@@ -45,8 +46,10 @@ const localError = ref('')
 const localNotice = ref('')
 const projectsRefreshKey = ref(0)
 const signCatalogVersion = ref(0)
-const history = ref<EditHistory<Scheme> | null>(null)
+const history = shallowRef<EditHistory<Scheme> | null>(null)
 const selectedPlacementId = ref<number | null>(null)
+const templateMessage = ref('')
+const templateError = ref('')
 type View = 'projects' | 'source' | 'geometry' | 'objects' | 'review' | 'registries'
 const stages = ['source', 'geometry', 'objects', 'review'] as const
 const activeView = ref<View>('projects')
@@ -205,9 +208,9 @@ function downloadJson(content: string, suffix: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
 }
 
-function saveV4(): void {
+function saveV5(): void {
   if (imported.value && !editorDirty.value) {
-    downloadJson(exportSchemeJson(imported.value.scheme), 'v4')
+    downloadJson(exportSchemeJson(imported.value.scheme), 'v5')
     modifiedSinceDownload.value = false
   }
 }
@@ -226,7 +229,7 @@ function createProject(scheme: Scheme): void {
     return
   imported.value = {
     scheme,
-    format: 'scheme-v4',
+    format: 'scheme-v5',
     warnings: [
       'Идентификатор переезда введён вручную; карточка ПУ-66 не сверена.',
       'Вариант выбран по длине фронта работ, нормативная проверка и расстановка знаков не выполнены.',
@@ -309,7 +312,7 @@ async function saveAsNew(): Promise<void> {
 function openProjectRecord(scheme: Scheme, revision: number): void {
   imported.value = {
     scheme,
-    format: 'scheme-v4',
+    format: 'scheme-v5',
     warnings: ['Схема не прошла нормативную проверку.'],
   }
   history.value = startHistory(scheme)
@@ -383,6 +386,24 @@ function onProjectApplied(scheme: Scheme): void {
   placementDirty.value = false
   modifiedSinceDownload.value = true
   modifiedSinceLocalSave.value = true
+}
+
+function buildDraftTemplate(): void {
+  if (!imported.value || editorDirty.value || localBusy.value) return
+  templateMessage.value = ''
+  templateError.value = ''
+  try {
+    const rebuilt = rebuildTemplatePlacements(imported.value.scheme)
+    onProjectApplied(rebuilt)
+    selectedPlacementId.value = null
+    templateMessage.value =
+      'Черновая расстановка обновлена; ручные объекты сохранены. Сверьте каждый знак, место и расстояние.'
+  } catch (cause) {
+    templateError.value =
+      cause instanceof TemplateBuildError
+        ? cause.message
+        : 'Не удалось собрать черновой шаблон. Проверьте параметры проекта.'
+  }
 }
 
 function onPu66Linked(scheme: Scheme): void {
@@ -635,8 +656,8 @@ function stepForward(): void {
               @change="onFileSelected"
             />
             <p class="hint">
-              Поддерживаются v1 и schemaVersion 2, 3, 4 размером до 32 МБ. Открытие само по себе не
-              записывает файл в SQLite.
+              Поддерживаются v1 и schemaVersion 2, 3, 4, 5 размером до 32 МБ. Открытие само по себе
+              не записывает файл в SQLite.
             </p>
             <p v-if="loading" class="hint" role="status">Проверяем файл…</p>
             <p v-if="errorMessage" class="error" role="alert">{{ errorMessage }}</p>
@@ -703,8 +724,8 @@ function stepForward(): void {
                 <button type="button" :disabled="editorDirty || localBusy" @click="saveAsNew">
                   Сохранить как новый черновик
                 </button>
-                <button type="button" :disabled="editorDirty || localBusy" @click="saveV4">
-                  Скачать JSON v4
+                <button type="button" :disabled="editorDirty || localBusy" @click="saveV5">
+                  Скачать JSON v5
                 </button>
                 <button
                   v-if="imported.scheme.source.kind === 'legacy-html-v1'"
@@ -803,6 +824,24 @@ function stepForward(): void {
                 ниже поля.
               </p>
             </div>
+            <section class="module" aria-label="Черновая расстановка">
+              <h2>Черновая расстановка по Б.33/Б.34</h2>
+              <p>
+                Укажите местоположение и решение о регулировании на этапе 2. Расстановка по ОДМ
+                218.6.019-2016 (рис. Б.33/Б.34) использует условные координаты; проверьте условия
+                дороги и применимость каждого знака. Повторная сборка заменит только объекты
+                шаблона, ручные правки останутся.
+              </p>
+              <button
+                type="button"
+                :disabled="editorDirty || localBusy"
+                @click="buildDraftTemplate"
+              >
+                Собрать черновой шаблон
+              </button>
+              <p v-if="templateMessage" role="status">{{ templateMessage }}</p>
+              <p v-if="templateError" class="error" role="alert">{{ templateError }}</p>
+            </section>
             <SchemeWorkspace
               :key="`workspace-${signCatalogVersion}`"
               class="module"
@@ -1549,18 +1588,32 @@ input[type='file'] {
   margin: 0;
 }
 @media print {
-  :global(body *) {
-    visibility: hidden !important;
+  :global(html),
+  :global(body),
+  :global(#app) {
+    width: 297mm;
+    height: 210mm;
+    margin: 0;
+    padding: 0;
   }
-  .print-host,
-  .print-host :deep(*) {
-    visibility: visible !important;
+  .topbar,
+  .sidebar,
+  .preview,
+  .content > :not(.print-host) {
+    display: none !important;
+  }
+  .app-layout,
+  .content {
+    display: block;
+    width: 297mm;
+    height: 210mm;
+    min-height: 0;
+    max-width: none;
+    margin: 0;
+    padding: 0;
   }
   .print-host {
     display: block !important;
-    position: absolute;
-    top: 0;
-    left: 0;
     width: 297mm;
     height: 210mm;
     margin: 0;
@@ -1570,6 +1623,8 @@ input[type='file'] {
     box-shadow: none;
   }
   .app-shell {
+    width: 297mm;
+    height: 210mm;
     min-height: 0;
     background: white;
   }

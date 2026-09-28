@@ -7,6 +7,7 @@ import {
   type ProjectSummary,
 } from '../domain/local-projects'
 import type { Scheme } from '../domain/model'
+import { localJson } from './json-response'
 
 async function request(url: string, options?: RequestInit): Promise<unknown> {
   let response: Response
@@ -15,7 +16,7 @@ async function request(url: string, options?: RequestInit): Promise<unknown> {
   } catch {
     throw new Error('Локальная база недоступна. Запустите npm run dev или npm run local.')
   }
-  const body: unknown = await response.json()
+  const body = await localJson(response)
   if (!response.ok) {
     const message =
       typeof body === 'object' && body !== null && 'error' in body && typeof body.error === 'string'

@@ -157,6 +157,19 @@ async function printDraft(): Promise<void> {
     printError.value = `Объекты № ${escaped.join(', ')} не помещаются на рисунке. Измените их положение или подписи.`
     return
   }
+  const posts = [...page.querySelectorAll<HTMLElement>('.placed-object.sign-post')]
+  for (let first = 0; first < posts.length; first++) {
+    const left = posts[first]!
+    const a = left.getBoundingClientRect()
+    for (let second = first + 1; second < posts.length; second++) {
+      const right = posts[second]!
+      const b = right.getBoundingClientRect()
+      if (a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top) {
+        printError.value = `Стойки № ${left.dataset.objectId} и № ${right.dataset.objectId} перекрываются. Разведите их перед печатью.`
+        return
+      }
+    }
+  }
   const overflowing = [...page.querySelectorAll<HTMLElement>('[data-print-fit]')].some(
     (element) =>
       element.scrollHeight > element.clientHeight + 2 ||
@@ -262,8 +275,12 @@ async function printDraft(): Promise<void> {
                 <span class="road-arrow west">←</span><span class="road-arrow east">→</span>
                 <div class="road-centre" />
               </div>
-              <span class="direction left">{{ printableText(sheet.directions.left) }} ←</span>
-              <span class="direction right">{{ printableText(sheet.directions.right) }} →</span>
+              <span class="direction left" data-print-fit
+                >{{ printableText(sheet.directions.left) }} ←</span
+              >
+              <span class="direction right" data-print-fit
+                >{{ printableText(sheet.directions.right) }} →</span
+              >
               <div class="crossing-axis" :style="{ left: `${sheet.axisX}px` }" aria-hidden="true" />
               <span class="axis-label" :style="{ left: `${sheet.axisX}px` }">
                 {{ sheet.crossingFromPu66?.axisLabel || 'Ось переезда' }}
@@ -272,7 +289,10 @@ async function printDraft(): Promise<void> {
                 v-for="segment in sheet.dimensionChain"
                 :key="segment.part"
                 class="zone-segment"
-                :class="`segment-${segment.part}`"
+                :class="[
+                  `segment-${segment.part}`,
+                  { 'solid-front': segment.part === 'front' && sheet.frontStyle === 'solid' },
+                ]"
                 :style="{
                   left: `${segment.startX}px`,
                   width: `${segment.endX - segment.startX}px`,
@@ -314,7 +334,10 @@ async function printDraft(): Promise<void> {
                       <span v-else class="missing-sign">{{ code }}: нет PNG</span>
                     </span>
                   </div>
-                  <span class="object-caption">№ {{ item.id }} {{ item.distanceLabel }}</span>
+                  <span class="object-caption"
+                    ><span class="screen-only">№ {{ item.id }} · </span>{{ item.signIds.join(' · ')
+                    }}{{ item.distanceLabel ? ` · ${item.distanceLabel}` : '' }}</span
+                  >
                 </template>
                 <template v-else-if="item.elementKind === 'text'">
                   <span
@@ -571,7 +594,8 @@ h2 {
 .direction {
   position: absolute;
   top: 348px;
-  max-width: 210px;
+  max-width: 320px;
+  overflow-wrap: anywhere;
   font-size: 20px;
 }
 .direction.left {
@@ -616,6 +640,11 @@ h2 {
 .segment-front {
   border: 2px solid #4e4e4e;
   background: repeating-linear-gradient(45deg, #fff 0 11px, #84909a 11px 13px);
+}
+.segment-front.solid-front {
+  top: 440px;
+  height: 100px;
+  background: repeating-linear-gradient(45deg, #e6e6e6 0 7px, #64717a 7px 10px);
 }
 .dimension {
   position: absolute;

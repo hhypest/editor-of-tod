@@ -23,7 +23,7 @@ const options = {
 describe('native project creation', () => {
   it('starts B.34 with only entered measurements and supports editing and JSON roundtrip', () => {
     const scheme = createNewScheme(input, options)
-    expect(scheme.schemaVersion).toBe(4)
+    expect(scheme.schemaVersion).toBe(5)
     expect(scheme.crossing).toEqual({
       referenceId: 'TEST-NEW',
       source: 'entered-by-editor',
@@ -45,6 +45,8 @@ describe('native project creation', () => {
       d250: null,
       d150: null,
       d50: null,
+      n100: null,
+      n50: null,
     })
     expect(scheme.placements).toEqual([])
     expect(scheme.nextPlacementId).toBe(1)
@@ -59,7 +61,7 @@ describe('native project creation', () => {
     const withText = savePlacement(edited, placement)
     expect(importSchemeJson(exportSchemeJson(withText))).toMatchObject({
       scheme: withText,
-      format: 'scheme-v4',
+      format: 'scheme-v5',
     })
     expect(withText.source).toEqual({ kind: 'created-in-editor' })
     expect(scheme.parameters.signDistancesMetres.d50).toBeNull()

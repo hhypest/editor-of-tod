@@ -69,7 +69,7 @@ function applyDraft(): void {
     const updated = applySchemeDetails(props.scheme, draft.value)
     dirty.value = false
     error.value = ''
-    status.value = 'Правки применены к проекту. Сохраните черновик или скачайте копию v4.'
+    status.value = 'Правки применены к проекту. Сохраните черновик или скачайте копию v5.'
     emit('apply', updated)
     emit('dirty', false)
   } catch (cause) {
@@ -137,6 +137,20 @@ function applyDraft(): void {
               type="text"
               inputmode="decimal"
           /></label>
+          <label
+            >n100
+            <input
+              v-model="draft.parameters.signDistancesMetres.n100"
+              type="text"
+              inputmode="decimal"
+          /></label>
+          <label
+            >n50
+            <input
+              v-model="draft.parameters.signDistancesMetres.n50"
+              type="text"
+              inputmode="decimal"
+          /></label>
         </div>
         <h3>Ступени скорости, км/ч</h3>
         <div class="fields compact">
@@ -156,6 +170,62 @@ function applyDraft(): void {
         <label class="checkbox">
           <input v-model="draft.parameters.yellowTemporarySigns" type="checkbox" />
           Жёлтый фон временных знаков
+        </label>
+        <h3>Условия и решение составителя</h3>
+        <div class="fields compact">
+          <label
+            >Местоположение
+            <select v-model="draft.parameters.location">
+              <option value="auto">Не определено</option>
+              <option value="in">В населённом пункте</option>
+              <option value="out">Вне населённого пункта</option>
+            </select>
+          </label>
+          <label
+            >Типоразмер знаков
+            <select v-model="draft.parameters.signSize">
+              <option value="auto">Уточнить</option>
+              <option value="I">I</option>
+              <option value="II">II</option>
+              <option value="III">III</option>
+            </select>
+          </label>
+          <label
+            >Скорость в населённом пункте, км/ч
+            <input v-model="draft.parameters.settlementSpeedKmh" inputmode="decimal" type="text" />
+          </label>
+          <label
+            >Фронт
+            <select v-model="draft.parameters.frontStyle">
+              <option value="part">Частичный</option>
+              <option value="solid">Сплошной</option>
+            </select>
+          </label>
+          <label
+            >Регулирование Б.34
+            <select v-model="draft.parameters.regulation.mode">
+              <option value="auto">Решение не принято</option>
+              <option value="signs">Знаки приоритета</option>
+              <option value="one">Один регулировщик</option>
+              <option value="two">Два регулировщика</option>
+            </select>
+          </label>
+          <label
+            >Интенсивность, авт./ч (по данным составителя)
+            <input v-model="draft.parameters.regulation.hourly" type="text" />
+          </label>
+        </div>
+        <label class="checkbox"
+          ><input v-model="draft.parameters.frontFromPu66" type="checkbox" />
+          Фронт взят из ПУ-66 (проверьте размер на месте)
+        </label>
+        <label class="checkbox"
+          ><input v-model="draft.parameters.regulation.vis" type="checkbox" />
+          Видимость ограничена
+        </label>
+        <label class="checkbox"
+          ><input v-model="draft.parameters.regulation.straight" type="checkbox" />
+          Прямой участок дороги
         </label>
         <div v-for="code in zoneCodes" :key="code">
           <h3>Зона {{ code.toUpperCase() }}</h3>

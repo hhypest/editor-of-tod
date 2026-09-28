@@ -30,7 +30,7 @@ describe('first launch with synthetic source files', () => {
       expect(store.listNormative()).toHaveLength(4)
 
       const files = await Promise.all(
-        sampleCards.map(async (sample) => {
+        sampleCards.slice(0, 4).map(async (sample) => {
           const bytes = await createSampleWorkbook(sample)
           const parsed = await parsePu66(bytes, sample.filename)
           expect(parsed.card).toMatchObject({
@@ -87,5 +87,17 @@ describe('first launch with synthetic source files', () => {
     } finally {
       reopened.close()
     }
+  })
+
+  it('accepts a synthetic station crossing with no section and distinguishes its key', async () => {
+    const sample = sampleCards[4]!
+    const parsed = await parsePu66(await createSampleWorkbook(sample), sample.filename)
+    expect(parsed.card.section).toBe('')
+    expect(parsed.card.station).toBe(sample.station)
+    expect(parsed.card.key).toBe(`ст.${sample.station}:${sample.kilometre}:${sample.picket}`)
+    const ordinary = sampleCards[0]!
+    expect(
+      (await parsePu66(await createSampleWorkbook(ordinary), ordinary.filename)).card.key,
+    ).toBe('90001:12:3')
   })
 })

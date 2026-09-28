@@ -13,8 +13,9 @@ export function anchorCoordinates(scheme: Scheme): Record<Exclude<Anchor, 'abs'>
   if (!zone) throw new Error('Параметры выбранного варианта схемы не заполнены.')
   const isShortFront = scheme.template.code === 'b34'
   const length = zone.taperMetres * (isShortFront ? 1 : 2) + zone.bufferMetres + zone.workMetres
-  const unitsPerMetre = Math.min(9, 600 / length)
-  const start = 540
+  const signsMode = isShortFront && scheme.parameters.regulation.mode === 'signs'
+  const unitsPerMetre = Math.min(9, (signsMode ? 470 : 600) / length)
+  const start = signsMode ? 640 : 540
   const taperEnd = start + zone.taperMetres * unitsPerMetre
   const workStart = taperEnd + zone.bufferMetres * unitsPerMetre
   const workEnd = workStart + zone.workMetres * unitsPerMetre
@@ -34,7 +35,10 @@ export function placementCoordinates(
 ): { x: number; y: number } {
   const x =
     placement.position.offsetXSvg +
-    (placement.position.anchor === 'abs' ? 0 : anchors[placement.position.anchor])
+    (placement.position.anchor === 'abs' ? 0 : anchors[placement.position.anchor]) +
+    (placement.kind === 'element'
+      ? (placement.position.zoneFraction ?? 0) * (anchors.Z1 - anchors.Z0)
+      : 0)
   const y =
     placement.kind === 'sign-post'
       ? (placement.side === 'up' ? 353 : 567) + placement.position.offsetYSvg

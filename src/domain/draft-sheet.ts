@@ -50,6 +50,7 @@ export type DraftSheet = {
   speeds: number[]
   distances: Array<{ label: string; value: number | null }>
   yellowTemporarySigns: boolean
+  frontStyle: Scheme['parameters']['frontStyle']
   zoneStartX: number
   zoneEndX: number
   axisX: number
@@ -63,8 +64,10 @@ function renderDistanceLabel(
   distances: Scheme['parameters']['signDistancesMetres'],
 ): string | null {
   if (label === null) return null
-  return label.replace(/\{(d300|d250|d150|d50)\}/g, (marker, key: keyof typeof distances) => {
-    const value = distances[key]
+  return label.replace(/\{(\w+)\}/g, (marker, key: string) => {
+    const value = Object.prototype.hasOwnProperty.call(distances, key)
+      ? distances[key as keyof typeof distances]
+      : null
     return value === null ? marker : `${value} м`
   })
 }
@@ -128,11 +131,12 @@ export function projectDraftSheet(scheme: Scheme): DraftSheet {
     zoneLabels: { ...zone.labels },
     dimensionChain: figureDimensions(scheme),
     speeds: [...scheme.parameters.speedStagesKmh],
-    distances: (['d300', 'd250', 'd150', 'd50'] as const).map((label) => ({
+    distances: (['d300', 'd250', 'd150', 'd50', 'n100', 'n50'] as const).map((label) => ({
       label,
       value: scheme.parameters.signDistancesMetres[label],
     })),
     yellowTemporarySigns: scheme.parameters.yellowTemporarySigns,
+    frontStyle: scheme.parameters.frontStyle,
     zoneStartX: anchors.Z0,
     zoneEndX: anchors.Z1,
     axisX: anchors.AX,

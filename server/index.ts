@@ -31,7 +31,9 @@ import {
 
 const port = 4100
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
-const databasePath = fileURLToPath(new URL('../private-data/registry.sqlite', import.meta.url))
+const databasePath =
+  process.env.TOD_DATABASE_PATH ??
+  fileURLToPath(new URL('../private-data/registry.sqlite', import.meta.url))
 
 class RequestError extends Error {
   readonly status: number

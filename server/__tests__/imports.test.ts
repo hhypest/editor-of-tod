@@ -294,6 +294,7 @@ describe('private import formats', () => {
       expect(store.importSigns(first, source)).toMatchObject({ unchanged: 1 })
       expect(store.planSigns(first, updated)).toMatchObject({ updated: 1 })
       expect(store.importSigns(first, updated)).toMatchObject({ updated: 1 })
+      expect(store.latestSignCatalog()).toMatchObject({ edition: '2026' })
       expect(store.importSigns(second, updated)).toMatchObject({ added: 1, retired: 1 })
       expect(store.listSigns()).toEqual([{ code: '3.20', width: 30, height: 30 }])
       expect(store.getSignPng('1.25', false)).toBeNull()
@@ -310,9 +311,8 @@ describe('private import formats', () => {
           .all('1.25'),
       ).toEqual([
         { revision: 1, active: 1 },
-        { revision: 2, active: 1 },
-        { revision: 3, active: 0 },
-        { revision: 4, active: 1 },
+        { revision: 2, active: 0 },
+        { revision: 3, active: 1 },
       ])
       database.close()
     } finally {

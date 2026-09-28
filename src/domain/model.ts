@@ -45,6 +45,7 @@ const templateSchema = z.strictObject({
   sourceReference: z.literal('ОДМ 218.6.019-2016'),
   reviewStatus: z.literal('not-verified'),
 })
+const templateV5Schema = templateSchema.extend({ projectionVersion: z.literal('draft-1') })
 
 const position = z.strictObject({ anchor, offsetXSvg: finite })
 
@@ -71,6 +72,10 @@ const elementPlacementSchema = z.strictObject({
   bold: z.boolean(),
 })
 
+const elementPlacementV5Schema = elementPlacementSchema.extend({
+  position: position.extend({ ySvg: finite, zoneFraction: finite.optional() }),
+})
+
 const titleBlockSchema = z.strictObject({
   developer: z.strictObject({ organization: text, name: text, date: text }),
   work: z.strictObject({ organization: text, description: text, period: text }),
@@ -90,6 +95,37 @@ const parameterFields = {
   }),
   speedStagesKmh: z.tuple([finite.positive(), finite.positive(), finite.positive()]),
   yellowTemporarySigns: z.boolean(),
+}
+
+const signDistancesV5Schema = parameterFields.signDistancesMetres.extend({
+  n100: finite.nonnegative().nullable(),
+  n50: finite.nonnegative().nullable(),
+})
+
+const regulationSchema = z.strictObject({
+  mode: z.enum(['auto', 'signs', 'one', 'two']),
+  hourly: text,
+  k: finite,
+  vis: z.boolean(),
+  straight: z.boolean(),
+  last: text.nullable(),
+})
+
+export const defaultLegacyParameters = {
+  location: 'auto' as const,
+  signSize: 'auto' as const,
+  settlementSpeedKmh: 60,
+  lastSettlement: null,
+  frontStyle: 'part' as const,
+  frontFromPu66: false,
+  regulation: {
+    mode: 'auto' as const,
+    hourly: '',
+    k: 0,
+    vis: false,
+    straight: false,
+    last: null,
+  },
 }
 
 const legacySourceSchema = z.strictObject({
@@ -198,7 +234,7 @@ export const schemeV3Schema = z
   })
   .superRefine(checkModernScheme)
 
-export const schemeSchema = z
+export const schemeV4Schema = z
   .strictObject({
     ...sharedFields,
     schemaVersion: z.literal(4),
@@ -214,9 +250,38 @@ export const schemeSchema = z
   })
   .superRefine(checkModernScheme)
 
+export const schemeSchema = z
+  .strictObject({
+    ...sharedFields,
+    template: templateV5Schema,
+    placements: z
+      .array(z.discriminatedUnion('kind', [signPlacementSchema, elementPlacementV5Schema]))
+      .max(2_000),
+    schemaVersion: z.literal(5),
+    crossing: crossingSchema,
+    parameters: z.strictObject({
+      ...parameterFields,
+      signDistancesMetres: signDistancesV5Schema,
+      location: z.enum(['auto', 'in', 'out']),
+      signSize: z.enum(['auto', 'I', 'II', 'III']),
+      settlementSpeedKmh: finite.positive(),
+      lastSettlement: z.boolean().nullable(),
+      frontStyle: z.enum(['part', 'solid']),
+      frontFromPu66: z.boolean(),
+      regulation: regulationSchema,
+      workZones: z.strictObject({
+        b33: workZoneSchema.nullable(),
+        b34: workZoneSchema.nullable(),
+      }),
+    }),
+    source: z.union([legacySourceSchema, z.strictObject({ kind: z.literal('created-in-editor') })]),
+  })
+  .superRefine(checkModernScheme)
+
 export type Scheme = z.infer<typeof schemeSchema>
 export type SchemeV2 = z.infer<typeof schemeV2Schema>
 export type SchemeV3 = z.infer<typeof schemeV3Schema>
+export type SchemeV4 = z.infer<typeof schemeV4Schema>
 export type Crossing = z.infer<typeof crossingSchema>
 export type Template = z.infer<typeof templateSchema>
 export type SignPlacement = z.infer<typeof signPlacementSchema>
@@ -224,12 +289,26 @@ export type WorkZone = z.infer<typeof workZoneSchema>
 
 export function upgradeSchemeV2(value: unknown): Scheme {
   const previous = schemeV2Schema.parse(value)
-  return schemeSchema.parse({ ...previous, schemaVersion: 4 })
+  return upgradeSchemeV4({ ...previous, schemaVersion: 4 })
 }
 
 export function upgradeSchemeV3(value: unknown): Scheme {
   const previous = schemeV3Schema.parse(value)
-  return schemeSchema.parse({ ...previous, schemaVersion: 4 })
+  return upgradeSchemeV4({ ...previous, schemaVersion: 4 })
+}
+
+export function upgradeSchemeV4(value: unknown): Scheme {
+  const previous = schemeV4Schema.parse(value)
+  return schemeSchema.parse({
+    ...previous,
+    schemaVersion: 5,
+    template: { ...previous.template, projectionVersion: 'draft-1' },
+    parameters: {
+      ...previous.parameters,
+      signDistancesMetres: { ...previous.parameters.signDistancesMetres, n100: null, n50: null },
+      ...defaultLegacyParameters,
+    },
+  })
 }
 
 export function parseStoredScheme(value: unknown): Scheme {
@@ -238,6 +317,9 @@ export function parseStoredScheme(value: unknown): Scheme {
   }
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 3) {
     return upgradeSchemeV3(value)
+  }
+  if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 4) {
+    return upgradeSchemeV4(value)
   }
   return schemeSchema.parse(value)
 }
