@@ -149,6 +149,14 @@ describe('import of autonomous editor projects', () => {
     expect(second.scheme.id).toBe(id)
   })
 
+  it('opens v5 files saved before PNG revision pinning was introduced', () => {
+    const scheme = importSchemeJson(JSON.stringify(sourceFixture()), { id, now: importedAt }).scheme
+    const { signImages: _absentInEarlierV5, ...earlierV5 } = scheme
+    const reopened = importSchemeJson(JSON.stringify(earlierV5))
+    expect(reopened.scheme).toEqual(scheme)
+    expect(reopened.scheme.signImages).toEqual({ catalog: null, revisions: {} })
+  })
+
   it('accepts a saved v2 file and upgrades it without losing legacy fields or identity', () => {
     const migrated = importSchemeJson(JSON.stringify(sourceFixture()), {
       id,

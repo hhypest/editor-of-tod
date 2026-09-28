@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createNewScheme } from '../create-scheme'
 import { newSignDraft, savePlacement } from '../edit-placements'
 import { exportSchemeJson, importSchemeJson } from '../import'
-import { pinSignImages, usedSignCodes } from '../sign-images'
+import { clearPinsAfterSignChange, pinSignImages, usedSignCodes } from '../sign-images'
 
 function example() {
   const scheme = createNewScheme({
@@ -45,5 +45,20 @@ describe('project sign image pinning', () => {
         { code: '1.25', revision: 1 },
       ]),
     ).toThrow('2.6')
+  })
+
+  it('clears pinned revisions when the used set changes, preserving other edits', () => {
+    const scheme = example()
+    const pinned = pinSignImages(scheme, { id: 3, documentCode: 'TEST', edition: '2024' }, [
+      { code: '1.25', revision: 2 },
+      { code: '2.6', revision: 4 },
+    ])
+    const edited = { ...pinned, placements: pinned.placements.slice(1) }
+    const cleared = clearPinsAfterSignChange(pinned, edited)
+    expect(cleared.placements).toEqual([])
+    expect(cleared.signImages).toEqual({ catalog: null, revisions: {} })
+    expect(
+      clearPinsAfterSignChange(pinned, { ...pinned, createdAt: '2026-09-28T00:00:00Z' }).signImages,
+    ).toEqual(pinned.signImages)
   })
 })

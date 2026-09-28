@@ -13,6 +13,16 @@ export function usedSignCodes(scheme: Scheme): string[] {
   return [...new Set(codes)]
 }
 
+export function clearPinsAfterSignChange(previous: Scheme, edited: Scheme): Scheme {
+  if (!previous.signImages.catalog) return edited
+  const before = usedSignCodes(previous).sort()
+  const after = usedSignCodes(edited).sort()
+  if (before.length === after.length && before.every((code, index) => code === after[index])) {
+    return edited
+  }
+  return { ...edited, signImages: { catalog: null, revisions: {} } }
+}
+
 export function pinSignImages(
   scheme: Scheme,
   catalog: { id: number; documentCode: string; edition: string },

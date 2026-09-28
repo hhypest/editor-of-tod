@@ -254,12 +254,14 @@ export const schemeSchema = z
   .strictObject({
     ...sharedFields,
     template: templateV5Schema,
-    signImages: z.strictObject({
-      catalog: z
-        .strictObject({ documentCode: text, edition: text, id: z.number().int().positive() })
-        .nullable(),
-      revisions: z.record(z.string().min(1).max(120), z.number().int().positive()),
-    }),
+    signImages: z
+      .strictObject({
+        catalog: z
+          .strictObject({ documentCode: text, edition: text, id: z.number().int().positive() })
+          .nullable(),
+        revisions: z.record(z.string().min(1).max(120), z.number().int().positive()),
+      })
+      .default(() => ({ catalog: null, revisions: {} })),
     placements: z
       .array(z.discriminatedUnion('kind', [signPlacementSchema, elementPlacementV5Schema]))
       .max(2_000),

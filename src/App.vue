@@ -23,7 +23,7 @@ import type { Scheme } from './domain/model'
 import { schemeSchema } from './domain/model'
 import { reviewScheme, type ReviewFinding } from './domain/review-scheme'
 import { rebuildTemplatePlacements, TemplateBuildError } from './domain/template-placements'
-import { pinSignImages, usedSignCodes } from './domain/sign-images'
+import { clearPinsAfterSignChange, pinSignImages, usedSignCodes } from './domain/sign-images'
 import { getLocalProject, restoreLocalRevision, saveLocalProject } from './services/local-projects'
 import {
   recordEdit,
@@ -376,6 +376,7 @@ async function restoreLocal(
 
 function onProjectApplied(scheme: Scheme): void {
   if (!imported.value) return
+  scheme = clearPinsAfterSignChange(imported.value.scheme, scheme)
   history.value = recordEdit(history.value ?? startHistory(imported.value.scheme), scheme)
   imported.value = { ...imported.value, scheme }
   detailsDirty.value = false
@@ -1646,7 +1647,7 @@ input[type='file'] {
     display: block !important;
     width: 296mm;
     height: 209mm;
-    margin: 0;
+    margin: 0 !important;
     padding: 0;
     border: 0;
     border-radius: 0;

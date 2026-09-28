@@ -111,39 +111,7 @@ test('A4 print contains exactly one page', async ({ page }) => {
   })
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   await page.emulateMedia({ media: 'print' })
-  const layout = await page.evaluate(() => {
-    const selectors = [
-      'html',
-      'body',
-      '#app',
-      '.app-shell',
-      '.app-layout',
-      '.content',
-      '.print-host',
-      '.preview-scroll',
-      '.preview-space',
-      '.sheet-paper',
-      '.paper-header',
-      '.drawing-frame',
-      '.paper-footer',
-    ]
-    return selectors.map((selector) => {
-      const node = document.querySelector<HTMLElement>(selector)
-      const rect = node?.getBoundingClientRect()
-      return {
-        selector,
-        display: node ? getComputedStyle(node).display : '',
-        top: rect?.top,
-        bottom: rect?.bottom,
-        marginTop: node ? getComputedStyle(node).marginTop : '',
-        marginBottom: node ? getComputedStyle(node).marginBottom : '',
-        height: rect?.height,
-        width: rect?.width,
-        scrollHeight: node?.scrollHeight,
-      }
-    })
-  })
-  console.log('PRINT_LAYOUT', JSON.stringify(layout))
+  await expect(page.locator('.print-host')).toHaveCSS('margin-top', '0px')
   const pdf = await page.pdf({ printBackground: true, preferCSSPageSize: true })
   expect(pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).toHaveLength(1)
 })
