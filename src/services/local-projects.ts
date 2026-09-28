@@ -7,6 +7,13 @@ import {
   type ProjectSummary,
 } from '../domain/local-projects'
 import type { Scheme } from '../domain/model'
+import {
+  recoveryRecordSchema,
+  recoverySummarySchema,
+  type RecoveryRecord,
+  type RecoverySummary,
+  type RecoveryWrite,
+} from '../domain/recovery'
 import { localJson } from './json-response'
 
 async function request(url: string, options?: RequestInit): Promise<unknown> {
@@ -72,4 +79,33 @@ export async function restoreLocalRevision(
       body: JSON.stringify({ sourceRevision, expectedRevision }),
     }),
   )
+}
+
+export async function listRecoveryDrafts(): Promise<RecoverySummary[]> {
+  return recoverySummarySchema.array().parse(await request('/api/recovery'))
+}
+
+export async function getRecoveryDraft(sessionId: string): Promise<RecoveryRecord> {
+  return recoveryRecordSchema.parse(await request(`/api/recovery/${encodeURIComponent(sessionId)}`))
+}
+
+export async function saveRecoveryDraft(input: RecoveryWrite): Promise<RecoveryRecord> {
+  return recoveryRecordSchema.parse(
+    await request(`/api/recovery/${encodeURIComponent(input.sessionId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }),
+  )
+}
+
+export async function deleteRecoveryDraft(
+  sessionId: string,
+  expectedVersion: number,
+): Promise<void> {
+  await request(`/api/recovery/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expectedVersion }),
+  })
 }

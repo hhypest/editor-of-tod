@@ -18,11 +18,13 @@ const props = defineProps<{
   scheme: Scheme
   locked?: boolean
   selectedPlacementId: number | null
+  recovery?: { placement: PlacementDraft | null } | null
 }>()
 const emit = defineEmits<{
   apply: [scheme: Scheme]
   dirty: [value: boolean]
   select: [id: number | null]
+  draft: [value: PlacementDraft | null]
 }>()
 const selectedId = ref<number | null>(props.selectedPlacementId)
 const initialPlacement = props.scheme.placements.find(
@@ -75,6 +77,23 @@ watch(
     dirty.value = false
     emit('dirty', false)
   },
+)
+
+watch(
+  () => props.recovery,
+  (recovery) => {
+    if (!recovery?.placement) return
+    draft.value = structuredClone(recovery.placement)
+    selectedId.value = recovery.placement.id
+    dirty.value = true
+    emit('dirty', true)
+  },
+)
+
+watch(
+  [draft, dirty],
+  () => emit('draft', dirty.value && draft.value ? JSON.parse(JSON.stringify(draft.value)) : null),
+  { deep: true, flush: 'post' },
 )
 
 watch(

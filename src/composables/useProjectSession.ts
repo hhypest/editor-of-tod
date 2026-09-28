@@ -1,4 +1,4 @@
-import { computed, onMounted, onUnmounted, ref, shallowRef } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import {
   exportSchemeJson,
   importSchemeJson,
@@ -10,7 +10,18 @@ import type { Scheme } from '../domain/model'
 import { schemeSchema } from '../domain/model'
 import { rebuildTemplatePlacements, TemplateBuildError } from '../domain/template-placements'
 import { clearPinsAfterSignChange, pinSignImages, usedSignCodes } from '../domain/sign-images'
-import { getLocalProject, restoreLocalRevision, saveLocalProject } from '../services/local-projects'
+import {
+  deleteRecoveryDraft,
+  getLocalProject,
+  getRecoveryDraft,
+  listRecoveryDrafts,
+  restoreLocalRevision,
+  saveLocalProject,
+  saveRecoveryDraft,
+} from '../services/local-projects'
+import type { SchemeDetailsDraft } from '../domain/edit-details'
+import type { PlacementDraft } from '../domain/edit-placements'
+import type { RecoverySummary } from '../domain/recovery'
 import {
   recordEdit,
   redoEdit,
@@ -43,13 +54,136 @@ export function useProjectSession(onProjectOpened: () => void) {
   const hasUnsavedWork = computed(
     () => editorDirty.value || (modifiedSinceDownload.value && modifiedSinceLocalSave.value),
   )
+  const recoveryCopies = ref<RecoverySummary[]>([])
+  const recoveryStatus = ref<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle')
+  const recoverySeed = shallowRef<{
+    details: SchemeDetailsDraft | null
+    placement: PlacementDraft | null
+  } | null>(null)
+  const pendingDetails = shallowRef<SchemeDetailsDraft | null>(null)
+  const pendingPlacement = shallowRef<PlacementDraft | null>(null)
+  let recoverySessionId: string = crypto.randomUUID()
+  const activeRecoveryId = ref(recoverySessionId)
+  const recoveryVersions = new Map<string, number>()
+  let recoveryTimer: ReturnType<typeof setTimeout> | null = null
+  let recoveryChanges = 0
+  let recoveryQueue: Promise<void> = Promise.resolve()
 
-  function beforeUnload(event: BeforeUnloadEvent): void {
-    if (hasUnsavedWork.value) event.preventDefault()
+  async function refreshRecoveries(): Promise<void> {
+    try {
+      recoveryCopies.value = await listRecoveryDrafts()
+    } catch (cause) {
+      showLocalError(cause)
+    }
   }
 
-  onMounted(() => window.addEventListener('beforeunload', beforeUnload))
-  onUnmounted(() => window.removeEventListener('beforeunload', beforeUnload))
+  function cancelRecoveryTimer(): void {
+    if (recoveryTimer) clearTimeout(recoveryTimer)
+    recoveryTimer = null
+  }
+
+  function beginSession(sessionId: string = crypto.randomUUID(), version = 0): void {
+    cancelRecoveryTimer()
+    recoverySessionId = sessionId
+    activeRecoveryId.value = sessionId
+    recoveryVersions.set(sessionId, version)
+    recoverySeed.value = null
+    pendingDetails.value = null
+    pendingPlacement.value = null
+    recoveryStatus.value = 'idle'
+  }
+
+  async function clearRecovery(sessionId: string): Promise<void> {
+    const clear = recoveryQueue.then(async () => {
+      const version = recoveryVersions.get(sessionId) ?? 0
+      if (!version) return
+      await deleteRecoveryDraft(sessionId, version)
+      recoveryVersions.delete(sessionId)
+    })
+    recoveryQueue = clear.catch(() => undefined)
+    await clear
+    if (sessionId === recoverySessionId) recoveryStatus.value = 'idle'
+    await refreshRecoveries()
+  }
+
+  async function flushRecovery(): Promise<boolean> {
+    cancelRecoveryTimer()
+    if (!imported.value || !hasUnsavedWork.value) return true
+    const sessionId = recoverySessionId
+    const change = recoveryChanges
+    const snapshot = {
+      sessionId,
+      scheme: imported.value.scheme,
+      baseRevision: localRevision.value,
+      detailsDraft: pendingDetails.value,
+      placementDraft: pendingPlacement.value,
+      fileName: selectedFileName.value,
+    }
+    recoveryStatus.value = 'saving'
+    const write = recoveryQueue.then(async () => {
+      const record = await saveRecoveryDraft({
+        ...snapshot,
+        expectedVersion: recoveryVersions.get(sessionId) ?? 0,
+      })
+      recoveryVersions.set(sessionId, record.version)
+    })
+    recoveryQueue = write.catch(() => undefined)
+    try {
+      await write
+      if (sessionId === recoverySessionId) {
+        if (change === recoveryChanges) recoveryStatus.value = 'saved'
+        else scheduleRecovery()
+      }
+      await refreshRecoveries()
+      return true
+    } catch (cause) {
+      if (sessionId === recoverySessionId) {
+        recoveryStatus.value = 'error'
+        showLocalError(cause)
+      }
+      return false
+    }
+  }
+
+  function scheduleRecovery(): void {
+    recoveryChanges++
+    cancelRecoveryTimer()
+    if (!imported.value || !hasUnsavedWork.value) {
+      if ((recoveryVersions.get(recoverySessionId) ?? 0) > 0) {
+        void clearRecovery(recoverySessionId).catch(showLocalError)
+      } else recoveryStatus.value = 'idle'
+      return
+    }
+    recoveryStatus.value = 'pending'
+    recoveryTimer = setTimeout(() => void flushRecovery(), 800)
+  }
+
+  watch(
+    [
+      imported,
+      detailsDirty,
+      placementDirty,
+      pendingDetails,
+      pendingPlacement,
+      modifiedSinceDownload,
+      modifiedSinceLocalSave,
+      localRevision,
+    ],
+    scheduleRecovery,
+  )
+
+  function beforeUnload(event: BeforeUnloadEvent): void {
+    if (hasUnsavedWork.value && recoveryStatus.value !== 'saved') event.preventDefault()
+  }
+
+  onMounted(() => {
+    window.addEventListener('beforeunload', beforeUnload)
+    void refreshRecoveries()
+  })
+  onUnmounted(() => {
+    window.removeEventListener('beforeunload', beforeUnload)
+    cancelRecoveryTimer()
+  })
 
   async function onFileSelected(event: Event): Promise<void> {
     const input = event.target as HTMLInputElement
@@ -61,7 +195,9 @@ export function useProjectSession(onProjectOpened: () => void) {
       !window.confirm('Есть правки без сохранённой копии. Открыть другой проект?')
     )
       return
+    if (hasUnsavedWork.value && !(await flushRecovery())) return
 
+    beginSession()
     imported.value = null
     history.value = null
     selectedPlacementId.value = null
@@ -122,12 +258,14 @@ export function useProjectSession(onProjectOpened: () => void) {
     }
   }
 
-  function createProject(scheme: Scheme): void {
+  async function createProject(scheme: Scheme): Promise<void> {
     if (
       hasUnsavedWork.value &&
       !window.confirm('Есть правки без сохранённой копии. Создать другой проект?')
     )
       return
+    if (hasUnsavedWork.value && !(await flushRecovery())) return
+    beginSession()
     imported.value = {
       scheme,
       format: 'scheme-v5',
@@ -174,6 +312,7 @@ export function useProjectSession(onProjectOpened: () => void) {
       const saved = await saveLocalProject(schemeAtSave, localRevision.value ?? 0)
       localRevision.value = saved.revision
       if (imported.value.scheme === schemeAtSave) modifiedSinceLocalSave.value = false
+      if (imported.value.scheme === schemeAtSave) await clearRecovery(recoverySessionId)
       projectsRefreshKey.value++
       localNotice.value = `Черновик сохранён в SQLite: редакция № ${saved.revision}.`
     } catch (cause) {
@@ -189,12 +328,14 @@ export function useProjectSession(onProjectOpened: () => void) {
     localError.value = ''
     localNotice.value = ''
     try {
+      const previousSessionId = recoverySessionId
       const copy = schemeSchema.parse({
         ...imported.value.scheme,
         id: crypto.randomUUID(),
         createdAt: new Date().toISOString(),
       })
       const saved = await saveLocalProject(copy, 0)
+      beginSession()
       imported.value = { ...imported.value, scheme: saved.scheme }
       history.value = startHistory(saved.scheme)
       localRevision.value = saved.revision
@@ -204,6 +345,7 @@ export function useProjectSession(onProjectOpened: () => void) {
       projectsRefreshKey.value++
       localNotice.value =
         'Создан отдельный черновик с новым ID. Скачайте его JSON при необходимости.'
+      void clearRecovery(previousSessionId).catch(showLocalError)
     } catch (cause) {
       showLocalError(cause)
     } finally {
@@ -212,6 +354,7 @@ export function useProjectSession(onProjectOpened: () => void) {
   }
 
   function openProjectRecord(scheme: Scheme, revision: number): void {
+    beginSession()
     imported.value = {
       scheme,
       format: 'scheme-v5',
@@ -235,6 +378,7 @@ export function useProjectSession(onProjectOpened: () => void) {
       !window.confirm('Есть правки без сохранённой копии. Открыть черновик?')
     )
       return
+    if (hasUnsavedWork.value && !(await flushRecovery())) return
     localBusy.value = true
     localError.value = ''
     localNotice.value = ''
@@ -265,6 +409,7 @@ export function useProjectSession(onProjectOpened: () => void) {
       )
     )
       return
+    if (hasUnsavedWork.value && !(await flushRecovery())) return
     localBusy.value = true
     localError.value = ''
     localNotice.value = ''
@@ -372,6 +517,61 @@ export function useProjectSession(onProjectOpened: () => void) {
     modifiedSinceLocalSave.value = true
   }
 
+  async function openRecovery(sessionId: string): Promise<void> {
+    if (localBusy.value || loading.value) return
+    if (
+      hasUnsavedWork.value &&
+      !window.confirm('Есть правки без сохранённой копии. Открыть копию восстановления?')
+    )
+      return
+    if (hasUnsavedWork.value && !(await flushRecovery())) return
+    localBusy.value = true
+    localError.value = ''
+    try {
+      const record = await getRecoveryDraft(sessionId)
+      beginSession(record.sessionId, record.version)
+      imported.value = {
+        scheme: record.scheme,
+        format: 'scheme-v5',
+        warnings: ['Восстановлена рабочая копия; проверьте ввод и сохраните редакцию.'],
+      }
+      history.value = startHistory(record.scheme)
+      selectedPlacementId.value =
+        record.placementDraft?.id ?? record.scheme.placements[0]?.id ?? null
+      selectedFileName.value = record.fileName
+      localRevision.value = record.baseRevision
+      modifiedSinceDownload.value = true
+      modifiedSinceLocalSave.value = true
+      detailsDirty.value = false
+      placementDirty.value = false
+      onProjectOpened()
+      await nextTick()
+      pendingDetails.value = record.detailsDraft
+      pendingPlacement.value = record.placementDraft
+      recoverySeed.value = { details: record.detailsDraft, placement: record.placementDraft }
+      localNotice.value =
+        'Рабочая копия восстановлена. Примените ввод в форме и сохраните редакцию SQLite.'
+    } catch (cause) {
+      showLocalError(cause)
+    } finally {
+      localBusy.value = false
+    }
+  }
+
+  async function discardRecovery(sessionId: string, version: number): Promise<void> {
+    if (localBusy.value || sessionId === recoverySessionId) return
+    localBusy.value = true
+    localError.value = ''
+    try {
+      await deleteRecoveryDraft(sessionId, version)
+      await refreshRecoveries()
+    } catch (cause) {
+      showLocalError(cause)
+    } finally {
+      localBusy.value = false
+    }
+  }
+
   return {
     imported,
     selectedFileName,
@@ -393,6 +593,14 @@ export function useProjectSession(onProjectOpened: () => void) {
     signPinMessage,
     editorDirty,
     hasUnsavedWork,
+    recoveryCopies,
+    activeRecoveryId,
+    recoveryStatus,
+    recoverySeed,
+    pendingDetails,
+    pendingPlacement,
+    openRecovery,
+    discardRecovery,
     onFileSelected,
     saveV5,
     saveOriginal,

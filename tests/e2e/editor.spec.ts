@@ -29,6 +29,61 @@ test('new project: form edits apply, review opens, and console stays clean', asy
   expect(errors).toEqual([])
 })
 
+test('restores applied edits and unapplied fields after the window closes', async ({
+  page,
+  request,
+}) => {
+  await page.goto('/')
+  await page.getByLabel('Локальный идентификатор переезда').fill('TEST-RECOVERY')
+  await page.getByLabel('Фронт работ, м').fill('18')
+  await page.getByLabel('Отвод, м').fill('10')
+  await page.getByLabel('Буфер, м').fill('10')
+  await page.getByLabel('Первая').fill('70')
+  await page.getByLabel('Вторая').fill('50')
+  await page.getByLabel('Третья').fill('40')
+  await page.getByRole('button', { name: 'Создать проект' }).click()
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  await page.getByLabel('n100').fill('100')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await page.getByLabel('n50').fill('50')
+  await expect(page.locator('.save-state')).toContainText('копия восстановления записана')
+
+  const recovery = await (await request.get(`${api}/api/recovery`)).json()
+  const sessionId = recovery.find(
+    (item: { referenceId: string }) => item.referenceId === 'TEST-RECOVERY',
+  )?.sessionId
+  expect(sessionId).toBeTruthy()
+  expect(
+    (await (await request.get(`${api}/api/projects`)).json()).some(
+      (item: { referenceId: string }) => item.referenceId === 'TEST-RECOVERY',
+    ),
+  ).toBe(false)
+
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Копии восстановления' })).toBeVisible()
+  await page.getByRole('button', { name: 'Восстановить' }).last().click()
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  await expect(page.getByLabel('n100')).toHaveValue('100')
+  await expect(page.getByLabel('n50')).toHaveValue('50')
+  await expect(page.locator('.save-state')).toContainText('Неприменённый ввод')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await page.getByRole('button', { name: 'Сохранить локально' }).click()
+  await expect(page.locator('.save-state')).toHaveText('Черновик сохранён')
+  expect(
+    (await (await request.get(`${api}/api/recovery`)).json()).some(
+      (item: { sessionId: string }) => item.sessionId === sessionId,
+    ),
+  ).toBe(false)
+  const saved = (await (await request.get(`${api}/api/projects`)).json()).find(
+    (item: { referenceId: string }) => item.referenceId === 'TEST-RECOVERY',
+  )
+  expect(saved.revision).toBe(1)
+  expect(
+    (await (await request.get(`${api}/api/projects/${saved.id}`)).json()).scheme.parameters
+      .signDistancesMetres,
+  ).toMatchObject({ n100: 100, n50: 50 })
+})
+
 test('newer v1 JSON retains the zone fraction and resolves settlement markers', async ({
   page,
 }) => {

@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { zipSync } from 'fflate'
 import { PNG } from 'pngjs'
 import { importSchemeJson } from '../../src/domain/import'
+import { createSchemeDetailsDraft } from '../../src/domain/edit-details'
 import { projectRecordSchema, projectSummarySchema } from '../../src/domain/local-projects'
 import { createRegistryServer } from '../index'
 import { extractPu66Cells } from '../pu66'
@@ -30,6 +31,56 @@ afterEach(async () => {
 })
 
 describe('local API', () => {
+  it('keeps recovery snapshots local, validates pending fields, and does not create revisions', async () => {
+    const store = new RegistryStore(':memory:')
+    stores.push(store)
+    const server = createRegistryServer(store, 0)
+    servers.push(server)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Server address missing')
+    const base = `http://127.0.0.1:${address.port}`
+    const scheme = importSchemeJson(fixture).scheme
+    const sessionId = crypto.randomUUID()
+    const url = `${base}/api/recovery/${sessionId}`
+    const input = {
+      sessionId,
+      scheme,
+      baseRevision: null,
+      detailsDraft: createSchemeDetailsDraft(scheme),
+      placementDraft: null,
+      fileName: 'учебный.json',
+      expectedVersion: 0,
+    }
+    const write = (body: unknown, origin = true) =>
+      fetch(url, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(origin ? { Origin: 'http://127.0.0.1:5173' } : {}),
+        },
+        body: JSON.stringify(body),
+      })
+    expect((await write(input, false)).status).toBe(403)
+    expect((await write({ ...input, detailsDraft: { invalid: true } })).status).toBe(400)
+    expect((await write({ ...input, sessionId: crypto.randomUUID() })).status).toBe(400)
+    expect((await write(input)).status).toBe(200)
+    expect((await write(input)).status).toBe(409)
+    expect(await (await fetch(url)).json()).toMatchObject({ detailsDraft: input.detailsDraft })
+    expect(await (await fetch(`${base}/api/recovery`)).json()).toMatchObject([{ sessionId }])
+    expect(store.listProjects()).toEqual([])
+    expect(store.listProjectRevisions(scheme.id)).toEqual([])
+    const deleteCopy = (expectedVersion: number) =>
+      fetch(url, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:5173' },
+        body: JSON.stringify({ expectedVersion }),
+      })
+    expect((await deleteCopy(2)).status).toBe(409)
+    expect((await deleteCopy(1)).status).toBe(200)
+    expect((await fetch(url)).status).toBe(404)
+  })
+
   it('returns only versioned scheme fields from a synthetic PU-66 card', async () => {
     const values = new Map<string, string | number>([
       ['A5', 'Карточка № 99'],
