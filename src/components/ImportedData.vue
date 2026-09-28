@@ -24,7 +24,7 @@ import {
 } from '../services/local-signs'
 
 const props = defineProps<{ referencedSignIds: string[]; locked: boolean }>()
-const emit = defineEmits<{ signsUpdated: [] }>()
+const emit = defineEmits<{ signsUpdated: []; pu66Updated: [] }>()
 type Sign = { code: string; width: number; height: number }
 type Crossing = {
   referenceId: string
@@ -205,6 +205,7 @@ async function applyImport(): Promise<void> {
     importFiles.value = []
     if (importInput.value) importInput.value.value = ''
     await load()
+    emit('pu66Updated')
     notice.value = `ПУ-66: добавлено ${result.added}, обновлено ${result.updated}. Резервная копия: private-data/backups/${result.backup}. Импорт не подтверждает сверку.`
   } catch (cause) {
     importPlan.value = null
@@ -275,7 +276,7 @@ onMounted(load)
     <button type="button" :disabled="busy || importBusy" @click="load">Обновить каталоги</button>
 
     <div class="verification-form">
-      <h3>Импорт ПУ-66 из Excel</h3>
+      <h3 id="pu66-import">Импорт ПУ-66 из Excel</h3>
       <p>
         Выберите до {{ MAX_WEB_PU66_FILES }} разрешённых файлов XLSX размером до 4 МБ каждый.
         Сначала просмотрите план, затем подтвердите запись. Книги отправляются только локальному
@@ -380,7 +381,7 @@ onMounted(load)
 
     <h3>Каталог дорожных знаков</h3>
     <div class="verification-form">
-      <h4>Импорт PNG знаков из локального архива</h4>
+      <h4 id="sign-import">Импорт PNG знаков из локального архива</h4>
       <p>
         Архив содержит пары «с номером» и «без номера». Укажите редакцию ГОСТ, с которой сверяли
         архив; PDF можно приложить для записи его SHA-256. Приложение не извлекает изображения из

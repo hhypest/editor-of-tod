@@ -53,6 +53,8 @@ const activeView = ref<View>('projects')
 const projectTab = ref<'new' | 'file' | 'local'>('new')
 const registryTab = ref<'imports' | 'entries'>('imports')
 const registriesVisited = ref(false)
+const setupStatus = ref<{ cards: number; signs: number } | null>(null)
+const setupError = ref('')
 const editorDirty = computed(() => detailsDirty.value || placementDirty.value)
 const hasUnsavedWork = computed(
   () => editorDirty.value || (modifiedSinceDownload.value && modifiedSinceLocalSave.value),
@@ -62,8 +64,43 @@ function beforeUnload(event: BeforeUnloadEvent): void {
   if (hasUnsavedWork.value) event.preventDefault()
 }
 
-onMounted(() => window.addEventListener('beforeunload', beforeUnload))
+onMounted(() => {
+  window.addEventListener('beforeunload', beforeUnload)
+  void refreshSetupStatus()
+})
 onUnmounted(() => window.removeEventListener('beforeunload', beforeUnload))
+
+async function refreshSetupStatus(): Promise<void> {
+  try {
+    const [cardsResponse, signsResponse] = await Promise.all([
+      fetch('/api/pu66'),
+      fetch('/api/signs'),
+    ])
+    if (!cardsResponse.ok || !signsResponse.ok) throw new Error('Локальный API недоступен.')
+    const [cards, signs]: [unknown, unknown] = await Promise.all([
+      cardsResponse.json(),
+      signsResponse.json(),
+    ])
+    if (!Array.isArray(cards) || !Array.isArray(signs)) throw new Error('Реестры недоступны.')
+    setupStatus.value = { cards: cards.length, signs: signs.length }
+    setupError.value = ''
+  } catch {
+    setupStatus.value = null
+    setupError.value = 'Не удалось открыть локальные реестры. Проверьте, что npm run dev запущен.'
+  }
+}
+
+async function openSetupImport(target: 'sign-import' | 'pu66-import'): Promise<void> {
+  registryTab.value = 'imports'
+  showView('registries')
+  await nextTick()
+  document.getElementById(target)?.scrollIntoView({ block: 'start' })
+}
+
+function onSignsUpdated(): void {
+  signCatalogVersion.value++
+  void refreshSetupStatus()
+}
 
 const fillCount = computed(() =>
   imported.value
@@ -509,6 +546,49 @@ function stepForward(): void {
               Создайте новую схему, откройте сохранённую редакцию или загрузите прежний JSON-проект.
             </p>
           </div>
+          <section
+            v-if="setupStatus && (!setupStatus.signs || !setupStatus.cards)"
+            class="setup-guide module"
+            aria-labelledby="setup-heading"
+          >
+            <p class="eyebrow">Первый запуск · локальная SQLite готова</p>
+            <h2 id="setup-heading">Наполните реестры на этом компьютере</h2>
+            <p>
+              Локальная база находится в private-data/registry.sqlite. Добавьте недостающие реестры
+              из своего ZIP со знаками и книг ПУ-66. Файлы выбираются с этого компьютера; после
+              просмотра изменений подтвердите запись.
+            </p>
+            <ol class="setup-steps">
+              <li>
+                <strong
+                  >Знаки:
+                  {{ setupStatus.signs ? `${setupStatus.signs} в базе` : 'пока нет' }}</strong
+                >
+                <p>Укажите архив PNG и редакцию ГОСТ.</p>
+                <button type="button" @click="openSetupImport('sign-import')">
+                  {{ setupStatus.signs ? 'Открыть каталог' : 'Импортировать ZIP знаков' }}
+                </button>
+              </li>
+              <li>
+                <strong
+                  >ПУ-66:
+                  {{ setupStatus.cards ? `${setupStatus.cards} в базе` : 'пока нет' }}</strong
+                >
+                <p>
+                  Выберите до четырёх XLSX; для пробы можно создать вымышленные книги командой npm
+                  run samples:pu66.
+                </p>
+                <button type="button" @click="openSetupImport('pu66-import')">
+                  {{ setupStatus.cards ? 'Открыть карточки' : 'Импортировать ПУ-66' }}
+                </button>
+              </li>
+            </ol>
+            <p class="hint">
+              Импорт не отмечает ежегодную сверку ПУ-66; её регистрирует линейное подразделение
+              после фактической проверки.
+            </p>
+          </section>
+          <p v-if="setupError" class="feedback error" role="alert">{{ setupError }}</p>
           <div class="tabs" role="group" aria-label="Способ открытия проекта">
             <button type="button" :aria-pressed="projectTab === 'new'" @click="projectTab = 'new'">
               Новый проект
@@ -595,7 +675,8 @@ function stepForward(): void {
             class="module"
             :referenced-sign-ids="referencedSignIds"
             :locked="editorDirty"
-            @signs-updated="signCatalogVersion++"
+            @signs-updated="onSignsUpdated"
+            @pu66-updated="refreshSetupStatus"
           />
           <LocalRegistries v-show="registryTab === 'entries'" class="module" />
         </section>
@@ -1119,6 +1200,37 @@ h2 {
 }
 .module + .module {
   margin-top: 1rem;
+}
+.setup-guide {
+  border-color: #a7c9b5;
+  background: #f8fcf8;
+}
+.setup-guide h2 {
+  margin-bottom: 0.5rem;
+}
+.setup-guide > p {
+  line-height: 1.5;
+}
+.setup-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0.8rem;
+  padding: 0;
+  list-style: none;
+}
+.setup-steps li {
+  padding: 1rem;
+  border: 1px solid #d3e3d8;
+  border-radius: 0.6rem;
+  background: #fff;
+}
+.setup-steps strong {
+  display: block;
+}
+.setup-steps p {
+  color: #586d65;
+  font-size: 0.88rem;
+  line-height: 1.5;
 }
 .file-label {
   display: block;
