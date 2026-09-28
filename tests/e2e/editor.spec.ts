@@ -95,8 +95,10 @@ test('imports synthetic station PU-66 and a generated PNG ZIP through the local 
   })
   expect(signApply.ok()).toBe(true)
   await page.goto('/')
-  await expect(page.getByText('Знаки: 1 в базе')).toBeVisible()
-  await expect(page.getByText('ПУ-66: 1 в базе')).toBeVisible()
+  await page.getByRole('button', { name: 'Реестры' }).click()
+  await expect(page.getByRole('heading', { name: 'Локальные реестры' })).toBeVisible()
+  expect((await (await request.get(`${api}/api/signs`)).json()).length).toBe(1)
+  expect((await (await request.get(`${api}/api/pu66`)).json()).length).toBe(1)
 })
 
 test('A4 print contains exactly one page', async ({ page }) => {

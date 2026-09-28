@@ -776,20 +776,27 @@ h2 {
     display: none !important;
   }
   .preview-scroll {
-    width: 297mm;
-    height: 210mm;
+    width: 296mm;
+    height: 209mm;
     padding: 0;
     overflow: visible;
     background: white;
   }
   .preview-space {
-    width: 297mm !important;
-    height: 210mm !important;
+    width: 296mm !important;
+    height: 209mm !important;
   }
   .sheet-paper {
+    width: 296mm;
+    height: 209mm;
+    grid-template-rows: 39mm 114mm 38mm;
     transform: none !important;
     box-shadow: none;
     break-inside: avoid;
+  }
+  .drawing-frame {
+    width: 282mm;
+    height: 114mm;
   }
   .drawing-stage,
   .sheet-paper {

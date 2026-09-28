@@ -1591,8 +1591,8 @@ input[type='file'] {
   :global(html),
   :global(body),
   :global(#app) {
-    width: 297mm;
-    height: 210mm;
+    width: 296mm;
+    height: 209mm;
     margin: 0;
     padding: 0;
   }
@@ -1605,8 +1605,8 @@ input[type='file'] {
   .app-layout,
   .content {
     display: block;
-    width: 297mm;
-    height: 210mm;
+    width: 296mm;
+    height: 209mm;
     min-height: 0;
     max-width: none;
     margin: 0;
@@ -1614,8 +1614,8 @@ input[type='file'] {
   }
   .print-host {
     display: block !important;
-    width: 297mm;
-    height: 210mm;
+    width: 296mm;
+    height: 209mm;
     margin: 0;
     padding: 0;
     border: 0;
@@ -1623,8 +1623,8 @@ input[type='file'] {
     box-shadow: none;
   }
   .app-shell {
-    width: 297mm;
-    height: 210mm;
+    width: 296mm;
+    height: 209mm;
     min-height: 0;
     background: white;
   }
