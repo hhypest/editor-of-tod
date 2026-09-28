@@ -123,6 +123,9 @@ test('A4 print contains exactly one page', async ({ page }) => {
       '.preview-scroll',
       '.preview-space',
       '.sheet-paper',
+      '.paper-header',
+      '.drawing-frame',
+      '.paper-footer',
     ]
     return selectors.map((selector) => {
       const node = document.querySelector<HTMLElement>(selector)
@@ -130,6 +133,10 @@ test('A4 print contains exactly one page', async ({ page }) => {
       return {
         selector,
         display: node ? getComputedStyle(node).display : '',
+        top: rect?.top,
+        bottom: rect?.bottom,
+        marginTop: node ? getComputedStyle(node).marginTop : '',
+        marginBottom: node ? getComputedStyle(node).marginBottom : '',
         height: rect?.height,
         width: rect?.width,
         scrollHeight: node?.scrollHeight,
