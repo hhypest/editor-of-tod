@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -144,6 +145,58 @@ describe('local SQLite registries', () => {
     }
   })
 
+  it('stores one copy of an imported source across projects and new revisions', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-project-source-'))
+    directories.push(directory)
+    const path = join(directory, 'registry.sqlite')
+    const scheme = importSchemeJson(fixture).scheme
+    const other = { ...scheme, id: randomUUID() }
+    const store = new RegistryStore(path)
+    try {
+      store.saveProject(scheme, 0)
+      store.saveProject(
+        { ...scheme, parameters: { ...scheme.parameters, locationText: 'Правка' } },
+        1,
+      )
+      store.saveProject(other, 0)
+      expect(store.getProjectRevision(scheme.id, 1)?.scheme).toEqual(scheme)
+      expect(store.getProject(other.id)?.scheme).toEqual(other)
+      expect(store.restoreProject(scheme.id, 1, 2)?.scheme).toEqual(scheme)
+    } finally {
+      store.close()
+    }
+    const raw = new DatabaseSync(path)
+    try {
+      const sources = raw.prepare('SELECT sha256, original_json FROM project_sources').all() as {
+        sha256: string
+        original_json: string
+      }[]
+      expect(sources).toHaveLength(1)
+      expect(sources[0]?.original_json).toBe(fixture)
+      const rows = raw.prepare('SELECT scheme_json FROM project_revisions').all() as {
+        scheme_json: string
+      }[]
+      expect(rows).toHaveLength(4)
+      for (const row of rows) {
+        const source = JSON.parse(row.scheme_json).source
+        expect(source).toEqual({
+          kind: 'legacy-html-v1',
+          importedAt: scheme.source.kind === 'legacy-html-v1' ? scheme.source.importedAt : '',
+          originalJsonSha256: sources[0]?.sha256,
+        })
+        expect(row.scheme_json).not.toContain(fixture)
+      }
+    } finally {
+      raw.close()
+    }
+    const reopened = new RegistryStore(path)
+    try {
+      expect(reopened.getProject(scheme.id)?.scheme.source).toMatchObject({ originalJson: fixture })
+    } finally {
+      reopened.close()
+    }
+  })
+
   it('reopens native B.34 projects without inventing inactive B.33 measurements', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-native-'))
     directories.push(directory)
@@ -283,6 +336,53 @@ describe('local SQLite registries', () => {
     }
   })
 
+  it('opens v6 project history without rewriting old snapshots during the v7 upgrade', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-v6-project-'))
+    directories.push(directory)
+    const path = join(directory, 'registry.sqlite')
+    const scheme = importSchemeJson(fixture).scheme
+    const initialized = new RegistryStore(path)
+    initialized.close()
+    const raw = new DatabaseSync(path)
+    const oldPayload = JSON.stringify(scheme)
+    raw.exec('DROP TABLE project_sources; PRAGMA user_version = 6;')
+    raw
+      .prepare('INSERT INTO project_drafts VALUES (?, 1, ?, ?, ?, ?, ?)')
+      .run(
+        scheme.id,
+        oldPayload,
+        scheme.crossing.referenceId,
+        scheme.parameters.locationText,
+        scheme.template.code,
+        '2026-09-26T12:00:00Z',
+      )
+    raw
+      .prepare('INSERT INTO project_revisions VALUES (?, 1, ?, ?)')
+      .run(scheme.id, oldPayload, '2026-09-26T12:00:00Z')
+    raw.close()
+
+    const upgraded = new RegistryStore(path)
+    try {
+      expect(upgraded.getProjectRevision(scheme.id, 1)?.scheme).toEqual(scheme)
+      const changed = { ...scheme, parameters: { ...scheme.parameters, locationText: 'Правка' } }
+      expect(upgraded.saveProject(changed, 1).revision).toBe(2)
+      expect(upgraded.getProjectRevision(scheme.id, 1)?.scheme).toEqual(scheme)
+    } finally {
+      upgraded.close()
+    }
+    const check = new DatabaseSync(path)
+    try {
+      expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 7 })
+      const rows = check
+        .prepare('SELECT scheme_json FROM project_revisions ORDER BY revision')
+        .all() as { scheme_json: string }[]
+      expect(rows[0]?.scheme_json).toBe(oldPayload)
+      expect(JSON.parse(rows[1]!.scheme_json).source).toHaveProperty('originalJsonSha256')
+    } finally {
+      check.close()
+    }
+  })
+
   it('rolls back a failing migration and allows reopening the SQLite file', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-broken-migration-'))
     directories.push(directory)
@@ -313,7 +413,7 @@ describe('local SQLite registries', () => {
     current.close()
     const old = new DatabaseSync(path)
     old.exec(
-      'DROP TABLE pu66_verifications; DROP TABLE project_revisions; DROP TABLE project_drafts; PRAGMA user_version = 3;',
+      'DROP TABLE project_sources; DROP TABLE pu66_verifications; DROP TABLE project_revisions; DROP TABLE project_drafts; PRAGMA user_version = 3;',
     )
     old.close()
 
@@ -326,7 +426,7 @@ describe('local SQLite registries', () => {
       migrated.close()
     }
     const database = new DatabaseSync(path)
-    expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 6 })
+    expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 7 })
     database.close()
   })
 })

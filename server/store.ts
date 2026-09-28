@@ -1,5 +1,5 @@
 import { closeSync, constants, existsSync, mkdirSync, openSync, chmodSync, rmSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { parseStoredScheme, schemeSchema, type Scheme } from '../src/domain/model.ts'
@@ -151,7 +151,8 @@ export class RegistryStore {
         version !== 3 &&
         version !== 4 &&
         version !== 5 &&
-        version !== 6
+        version !== 6 &&
+        version !== 7
       ) {
         this.db.close()
         throw new Error(`Неизвестная версия локальной базы: ${version}. Файл не изменён.`)
@@ -320,6 +321,17 @@ export class RegistryStore {
         COMMIT;
       `)
       }
+      if (version < 7) {
+        this.db.exec(`
+        BEGIN;
+        CREATE TABLE project_sources (
+          sha256 TEXT PRIMARY KEY,
+          original_json TEXT NOT NULL
+        );
+        PRAGMA user_version = 7;
+        COMMIT;
+      `)
+      }
       if (this.listNormative().length === 0) {
         for (const entry of initialNormativeEntries) this.saveNormative(entry, 0)
       }
@@ -412,13 +424,51 @@ export class RegistryStore {
       .all() as ProjectSummary[]
   }
 
+  /** The JSON export stays self-contained; only SQLite snapshots use a content reference. */
+  private parseProject(payload: string): Scheme {
+    const stored = JSON.parse(payload) as {
+      source?: { kind?: string; originalJsonSha256?: unknown }
+    }
+    if (stored.source?.kind !== 'legacy-html-v1' || !('originalJsonSha256' in stored.source)) {
+      return parseStoredScheme(stored)
+    }
+    const sha256 = stored.source.originalJsonSha256
+    if (typeof sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(sha256)) {
+      throw new Error('Повреждена ссылка на исходный JSON проекта в локальной базе.')
+    }
+    const row = this.db
+      .prepare('SELECT original_json FROM project_sources WHERE sha256 = ?')
+      .get(sha256) as { original_json: string } | undefined
+    if (!row || createHash('sha256').update(row.original_json, 'utf8').digest('hex') !== sha256) {
+      throw new Error('Исходный JSON проекта отсутствует или повреждён в локальной базе.')
+    }
+    const { originalJsonSha256: _hash, ...source } = stored.source
+    void _hash
+    return parseStoredScheme({
+      ...stored,
+      source: { ...source, originalJson: row.original_json },
+    })
+  }
+
+  private storeProjectSource(scheme: Scheme): string {
+    if (scheme.source.kind !== 'legacy-html-v1') return JSON.stringify(scheme)
+    const { originalJson, ...source } = scheme.source
+    const sha256 = createHash('sha256').update(originalJson, 'utf8').digest('hex')
+    this.db
+      .prepare(
+        'INSERT INTO project_sources (sha256, original_json) VALUES (?, ?) ON CONFLICT(sha256) DO NOTHING',
+      )
+      .run(sha256, originalJson)
+    return JSON.stringify({ ...scheme, source: { ...source, originalJsonSha256: sha256 } })
+  }
+
   getProject(id: string): ProjectRecord | null {
     const row = this.db
       .prepare('SELECT revision, scheme_json, updated_at FROM project_drafts WHERE id = ?')
       .get(id) as (Pick<StoredRow, 'revision' | 'updated_at'> & { scheme_json: string }) | undefined
     return row
       ? {
-          scheme: parseStoredScheme(JSON.parse(row.scheme_json)),
+          scheme: this.parseProject(row.scheme_json),
           revision: row.revision,
           updatedAt: row.updated_at,
         }
@@ -443,7 +493,7 @@ export class RegistryStore {
       (Pick<StoredRow, 'revision' | 'updated_at'> & { scheme_json: string }) | undefined
     return row
       ? {
-          scheme: parseStoredScheme(JSON.parse(row.scheme_json)),
+          scheme: this.parseProject(row.scheme_json),
           revision: row.revision,
           updatedAt: row.updated_at,
         }
@@ -464,13 +514,14 @@ export class RegistryStore {
       if (
         !forceRevision &&
         previous &&
-        JSON.stringify(parseStoredScheme(JSON.parse(previous.scheme_json))) === payload
+        JSON.stringify(this.parseProject(previous.scheme_json)) === payload
       ) {
         this.db.exec('COMMIT')
         return { scheme: checked, revision: previous.revision, updatedAt: previous.updated_at }
       }
       const revision = expectedRevision + 1
       const updatedAt = this.now()
+      const storedPayload = this.storeProjectSource(checked)
       this.db
         .prepare(
           `INSERT INTO project_drafts
@@ -484,7 +535,7 @@ export class RegistryStore {
         .run(
           checked.id,
           revision,
-          payload,
+          storedPayload,
           checked.crossing.referenceId,
           checked.parameters.locationText,
           checked.template.code,
@@ -494,7 +545,7 @@ export class RegistryStore {
         .prepare(
           'INSERT INTO project_revisions (id, revision, scheme_json, updated_at) VALUES (?, ?, ?, ?)',
         )
-        .run(checked.id, revision, payload, updatedAt)
+        .run(checked.id, revision, storedPayload, updatedAt)
       this.db.exec('COMMIT')
       return { scheme: checked, revision, updatedAt }
     } catch (error) {
