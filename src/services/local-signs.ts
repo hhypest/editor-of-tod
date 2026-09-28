@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { localJson } from './json-response'
 
 export const MAX_WEB_SIGN_ARCHIVE_BYTES = 32 * 1024 * 1024
 export const MAX_WEB_SIGN_PDF_BYTES = 10 * 1024 * 1024
@@ -72,7 +73,7 @@ async function request(path: string, body: unknown) {
   } catch {
     throw new Error('Локальный реестр недоступен. Запустите npm run dev или npm run local.')
   }
-  const result: unknown = await response.json()
+  const result = await localJson(response)
   if (!response.ok) {
     throw new Error(
       result && typeof result === 'object' && 'error' in result && typeof result.error === 'string'
@@ -112,5 +113,5 @@ export async function applySignFiles(
 export async function getSignCatalog(): Promise<SignCatalog | null> {
   const response = await fetch('/api/signs/catalog')
   if (!response.ok) throw new Error('Не удалось прочитать источник каталога.')
-  return catalogSchema.nullable().parse(await response.json())
+  return catalogSchema.nullable().parse(await localJson(response))
 }

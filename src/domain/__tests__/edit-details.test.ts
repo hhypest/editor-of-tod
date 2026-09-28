@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { reactive } from 'vue'
 import fixture from '../../../tests/fixtures/manual-v1.json?raw'
 import { applySchemeDetails, createSchemeDetailsDraft, SchemeEditError } from '../edit-details'
 import { exportSchemeJson, importSchemeJson } from '../import'
@@ -9,6 +10,14 @@ const source = importSchemeJson(fixture, {
 }).scheme
 
 describe('editing imported project details', () => {
+  it('opens and applies a Vue reactive project and form without cloning a Proxy', () => {
+    const reactiveScheme = reactive(source)
+    const draft = reactive(createSchemeDetailsDraft(reactiveScheme))
+    draft.titleBlock.developer.name = 'Новый составитель'
+    const updated = applySchemeDetails(reactiveScheme, draft)
+    expect(updated.titleBlock.developer.name).toBe('Новый составитель')
+    expect(source.titleBlock.developer.name).not.toBe('Новый составитель')
+  })
   it('applies text and decimal fields without changing the original, placements or identity', () => {
     const draft = createSchemeDetailsDraft(source)
     draft.parameters.locationText = 'Новый учебный участок'

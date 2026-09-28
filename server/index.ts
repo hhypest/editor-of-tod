@@ -31,7 +31,9 @@ import {
 
 const port = 4100
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
-const databasePath = fileURLToPath(new URL('../private-data/registry.sqlite', import.meta.url))
+const databasePath =
+  process.env.TOD_DATABASE_PATH ??
+  fileURLToPath(new URL('../private-data/registry.sqlite', import.meta.url))
 
 class RequestError extends Error {
   readonly status: number
@@ -226,11 +228,14 @@ export function createRegistryServer(store: RegistryStore, listenPort = port) {
         if (format && format !== 'png')
           throw new RequestError(400, 'Изображения знаков доступны только в PNG.')
         const numbered = params.get('numbered') === '1'
-        const asset = store.getSignPng(code, numbered)
+        const rev = params.get('rev')
+        if (rev !== null && (!/^[1-9]\d*$/.test(rev) || !Number.isSafeInteger(Number(rev))))
+          throw new RequestError(400, 'Неверная редакция изображения знака.')
+        const asset = store.getSignPng(code, numbered, rev === null ? undefined : Number(rev))
         if (!asset) throw new RequestError(404, 'Изображение знака не найдено.')
         res.writeHead(200, {
           'Content-Type': 'image/png',
-          'Cache-Control': 'no-store',
+          'Cache-Control': rev === null ? 'no-store' : 'private, max-age=31536000, immutable',
           'X-Content-Type-Options': 'nosniff',
           'Cross-Origin-Resource-Policy': 'same-origin',
           'Content-Security-Policy': "default-src 'none'; sandbox",

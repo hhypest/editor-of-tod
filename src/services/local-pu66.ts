@@ -5,6 +5,7 @@ import {
   type Pu66Verification,
   type Pu66VerificationWrite,
 } from '../domain/pu66-review'
+import { localJson } from './json-response'
 
 const verificationSchema = z.object({
   cardRevision: z.number().int().positive(),
@@ -84,14 +85,14 @@ async function request(url: string, options?: RequestInit): Promise<unknown> {
     throw new Error('Локальный реестр недоступен. Запустите npm run dev или npm run local.')
   }
   if (!response.ok) {
-    const body: unknown = await response.json()
+    const body = await localJson(response)
     const message =
       typeof body === 'object' && body !== null && 'error' in body && typeof body.error === 'string'
         ? body.error
         : `Ошибка локального реестра (${response.status}).`
     throw new Error(message)
   }
-  return response.json()
+  return localJson(response)
 }
 
 export async function listPu66Cards(): Promise<Pu66ListEntry[]> {

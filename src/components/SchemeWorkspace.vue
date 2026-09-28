@@ -49,7 +49,10 @@ onMounted(async () => {
     const response = await fetch('/api/signs')
     if (!response.ok) throw new Error('catalog unavailable')
     const signs = (await response.json()) as { code: string }[]
-    catalog.value = new Set(signs.map((sign) => sign.code))
+    catalog.value = new Set([
+      ...signs.map((sign) => sign.code),
+      ...Object.keys(props.scheme.signImages.revisions),
+    ])
   } catch {
     catalogUnavailable.value = true
   }
@@ -137,7 +140,7 @@ function nameFor(placement: Placement): string {
         <h2 id="workspace-title">Рабочая область объектов</h2>
         <p class="hint">
           Условные координаты проекта: перетащите объект или выделите его и нажмите стрелку (Shift +
-          стрелка — 10 единиц). Изменение попадёт в историю и сохранится после скачивания копии v4.
+          стрелка — 10 единиц). Изменение попадёт в историю и сохранится после скачивания копии v5.
         </p>
       </div>
       <label for="workspace-zoom">
@@ -243,7 +246,7 @@ function nameFor(placement: Placement): string {
               <span v-for="(code, index) in placement.signIds" :key="index" class="sign">
                 <img
                   v-if="catalog.has(code)"
-                  :src="`/api/signs/${encodeURIComponent(code)}/image`"
+                  :src="`/api/signs/${encodeURIComponent(code)}/image${scheme.signImages.revisions[code] ? `?rev=${scheme.signImages.revisions[code]}` : ''}`"
                   alt=""
                   draggable="false"
                 />
@@ -269,6 +272,7 @@ function nameFor(placement: Placement): string {
                 :width="placement.sizeSvg.width"
                 :height="placement.sizeSvg.height"
                 :known-signs="catalog"
+                :revisions="scheme.signImages.revisions"
               />
               <small class="object-id">№ {{ placement.id }}</small>
             </template>

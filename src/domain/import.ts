@@ -4,8 +4,11 @@ import {
   schemeSchema,
   schemeV2Schema,
   schemeV3Schema,
+  schemeV4Schema,
+  upgradeSchemeV4,
   upgradeSchemeV2,
   upgradeSchemeV3,
+  defaultLegacyParameters,
   type Scheme,
   type WorkZone,
 } from './model'
@@ -26,7 +29,7 @@ export class SchemeImportError extends Error {
 
 export interface ImportResult {
   scheme: Scheme
-  format: 'legacy-v1' | 'scheme-v2' | 'scheme-v3' | 'scheme-v4'
+  format: 'legacy-v1' | 'scheme-v2' | 'scheme-v3' | 'scheme-v4' | 'scheme-v5'
   warnings: string[]
 }
 
@@ -66,6 +69,82 @@ function distanceMetres(value: string | number, field: string, warnings: string[
   return Number(source)
 }
 
+function warnUnknownLegacyFields(legacy: LegacyV1, warnings: string[]): void {
+  function check(value: object, path: string, fields: string[]): void {
+    const expected = new Set(fields)
+    for (const key of Object.keys(value)) {
+      if (!expected.has(key)) {
+        warnings.push(`Неизвестное поле ${path}${key} сохранено только в исходном JSON v1.`)
+      }
+    }
+  }
+  check(legacy, '', ['v', 'params', 'head', 'objects', 'nid'])
+  check(legacy.params, 'params.', [
+    'key',
+    'variant',
+    'peregon',
+    'dirL',
+    'dirR',
+    'd300',
+    'd250',
+    'd150',
+    'd50',
+    'n100',
+    'n50',
+    's1',
+    's2',
+    's3',
+    'yellow',
+    'len',
+    'reg',
+    'loc',
+    'size',
+    'vIn',
+    'locLast',
+    'zPu',
+    'front',
+  ])
+  check(legacy.head, 'head.', [
+    'dev_org',
+    'dev_fio',
+    'dev_date',
+    'org',
+    'work',
+    'term',
+    'resp1',
+    'resp2',
+    'ap_pos',
+    'ap_org',
+    'ap_fio',
+    'ag_pos',
+    'ag_fio',
+    'year',
+  ])
+  check(legacy.params.len, 'params.len.', ['b33', 'b34'])
+  for (const code of ['b33', 'b34'] as const) {
+    check(legacy.params.len[code], `params.len.${code}.`, [
+      'taper',
+      'buffer',
+      'zone',
+      'lTaper',
+      'lBuffer',
+      'lZone',
+    ])
+  }
+  if (legacy.params.reg) {
+    check(legacy.params.reg, 'params.reg.', ['mode', 'hourly', 'k', 'vis', 'straight', 'last'])
+  }
+  for (const [index, object] of legacy.objects.entries()) {
+    check(
+      object,
+      `objects.${index}.`,
+      object.t === 'post'
+        ? ['t', 'id', 'signs', 'anchor', 'dx', 'dy', 'side', 'stand', 'dist', 'auto']
+        : ['t', 'id', 'e', 'anchor', 'dx', 'y', 'w', 'h', 'text', 'size', 'bold', 'auto', 'fz'],
+    )
+  }
+}
+
 function migrateLegacy(
   legacy: LegacyV1,
   originalJson: string,
@@ -76,6 +155,7 @@ function migrateLegacy(
     'Сведения о переезде не сверены с актуальной карточкой ПУ-66.',
     'Шаблон и номера знаков перенесены как данные; нормативная проверка не выполняется, изображения доступны только из локального каталога PNG.',
   ]
+  warnUnknownLegacyFields(legacy, warnings)
   const seen = new Set<number>()
   for (const [index, object] of legacy.objects.entries()) {
     if (seen.has(object.id)) {
@@ -105,7 +185,7 @@ function migrateLegacy(
 
   const { params, head } = legacy
   const candidate = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     id,
     createdAt: now,
     crossing: { referenceId: params.key, source: 'legacy-pu66', snapshot: null },
@@ -113,7 +193,9 @@ function migrateLegacy(
       code: params.variant,
       sourceReference: 'ОДМ 218.6.019-2016',
       reviewStatus: 'not-verified',
+      projectionVersion: 'draft-1',
     },
+    signImages: { catalog: null, revisions: {} },
     parameters: {
       locationText: params.peregon,
       directions: { left: params.dirL, right: params.dirR },
@@ -122,7 +204,16 @@ function migrateLegacy(
         d250: distanceMetres(params.d250, 'd250', warnings),
         d150: distanceMetres(params.d150, 'd150', warnings),
         d50: distanceMetres(params.d50, 'd50', warnings),
+        n100: params.n100 === undefined ? null : distanceMetres(params.n100, 'n100', warnings),
+        n50: params.n50 === undefined ? null : distanceMetres(params.n50, 'n50', warnings),
       },
+      location: params.loc ?? defaultLegacyParameters.location,
+      signSize: params.size ?? defaultLegacyParameters.signSize,
+      settlementSpeedKmh: params.vIn ?? defaultLegacyParameters.settlementSpeedKmh,
+      lastSettlement: params.locLast ?? defaultLegacyParameters.lastSettlement,
+      frontStyle: params.front ?? defaultLegacyParameters.frontStyle,
+      frontFromPu66: params.zPu ?? defaultLegacyParameters.frontFromPu66,
+      regulation: params.reg ?? defaultLegacyParameters.regulation,
       speedStagesKmh: [params.s1, params.s2, params.s3],
       yellowTemporarySigns: params.yellow,
       workZones: { b33: mapWorkZone(params.len.b33), b34: mapWorkZone(params.len.b34) },
@@ -151,7 +242,12 @@ function migrateLegacy(
             id: object.id,
             generatedByTemplate: object.auto === 1,
             elementKind: object.e,
-            position: { anchor: object.anchor, offsetXSvg: object.dx, ySvg: object.y },
+            position: {
+              anchor: object.anchor,
+              offsetXSvg: object.dx,
+              ySvg: object.y,
+              ...(object.fz === undefined ? {} : { zoneFraction: object.fz }),
+            },
             sizeSvg: { width: object.w, height: object.h },
             text: object.text ?? null,
             fontSizeSvg: object.size ?? null,
@@ -207,11 +303,21 @@ export function importSchemeJson(
   }
 
   if ('schemaVersion' in value && value.schemaVersion === 4) {
+    const parsed = schemeV4Schema.safeParse(value)
+    if (!parsed.success) invalidIssue(parsed.error.issues)
+    return {
+      scheme: upgradeSchemeV4(parsed.data),
+      format: 'scheme-v4',
+      warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
+    }
+  }
+
+  if ('schemaVersion' in value && value.schemaVersion === 5) {
     const parsed = schemeSchema.safeParse(value)
     if (!parsed.success) invalidIssue(parsed.error.issues)
     return {
       scheme: parsed.data,
-      format: 'scheme-v4',
+      format: 'scheme-v5',
       warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
     }
   }
@@ -232,7 +338,7 @@ export function importSchemeJson(
 
   throw new SchemeImportError(
     'unsupported-version',
-    'Версия проекта не поддерживается. Поддерживаются v: 1 и schemaVersion: 2, 3 или 4.',
+    'Версия проекта не поддерживается. Поддерживаются v: 1 и schemaVersion: 2, 3, 4 или 5.',
   )
 }
 

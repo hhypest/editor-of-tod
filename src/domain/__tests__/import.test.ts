@@ -7,6 +7,7 @@ import {
   SchemeImportError,
 } from '../import'
 import { schemeV2Schema, schemeV3Schema } from '../model'
+import { oldSnapshot } from '../../../tests/fixtures/old-version'
 
 const importedAt = '2026-09-26T12:00:00.000Z'
 const id = '55740b36-080a-4cbe-9476-e71ffb1ab47f'
@@ -116,6 +117,8 @@ describe('import of autonomous editor projects', () => {
       d250: 250.5,
       d150: 150,
       d50: null,
+      n100: null,
+      n50: null,
     })
     expect(result.scheme.parameters.workZones.b34?.workMetres).toBe(30)
     expect(result.scheme.placements[0]).toMatchObject({
@@ -137,13 +140,21 @@ describe('import of autonomous editor projects', () => {
     expect(result.warnings.join(' ')).toContain('d50')
   })
 
-  it('exports and re-imports v4 without creating another identity or losing the source', () => {
+  it('exports and re-imports v5 without creating another identity or losing the source', () => {
     const first = importSchemeJson(JSON.stringify(sourceFixture()), { id, now: importedAt })
     const second = importSchemeJson(exportSchemeJson(first.scheme))
 
-    expect(second.format).toBe('scheme-v4')
+    expect(second.format).toBe('scheme-v5')
     expect(second.scheme).toEqual(first.scheme)
     expect(second.scheme.id).toBe(id)
+  })
+
+  it('opens v5 files saved before PNG revision pinning was introduced', () => {
+    const scheme = importSchemeJson(JSON.stringify(sourceFixture()), { id, now: importedAt }).scheme
+    const { signImages: _absentInEarlierV5, ...earlierV5 } = scheme
+    const reopened = importSchemeJson(JSON.stringify(earlierV5))
+    expect(reopened.scheme).toEqual(scheme)
+    expect(reopened.scheme.signImages).toEqual({ catalog: null, revisions: {} })
   })
 
   it('accepts a saved v2 file and upgrades it without losing legacy fields or identity', () => {
@@ -151,26 +162,26 @@ describe('import of autonomous editor projects', () => {
       id,
       now: importedAt,
     }).scheme
-    const v2 = schemeV2Schema.parse({ ...migrated, schemaVersion: 2 })
+    const v2 = schemeV2Schema.parse(oldSnapshot(migrated, 2))
     const reopened = importSchemeJson(JSON.stringify(v2))
     expect(reopened.format).toBe('scheme-v2')
     expect(reopened.scheme).toEqual(migrated)
     expect(reopened.scheme.source).toMatchObject({
       originalJson: migrated.source.kind === 'legacy-html-v1' ? migrated.source.originalJson : '',
     })
-    expect(JSON.parse(exportSchemeJson(reopened.scheme)).schemaVersion).toBe(4)
+    expect(JSON.parse(exportSchemeJson(reopened.scheme)).schemaVersion).toBe(5)
   })
 
-  it('opens the previous v3 format and writes the same data in v4', () => {
+  it('opens the previous v3 format and writes the same data in v5', () => {
     const migrated = importSchemeJson(JSON.stringify(sourceFixture()), {
       id,
       now: importedAt,
     }).scheme
-    const v3 = schemeV3Schema.parse({ ...migrated, schemaVersion: 3 })
+    const v3 = schemeV3Schema.parse(oldSnapshot(migrated, 3))
     const reopened = importSchemeJson(JSON.stringify(v3))
     expect(reopened.format).toBe('scheme-v3')
     expect(reopened.scheme).toEqual(migrated)
-    expect(JSON.parse(exportSchemeJson(reopened.scheme)).schemaVersion).toBe(4)
+    expect(JSON.parse(exportSchemeJson(reopened.scheme)).schemaVersion).toBe(5)
   })
 
   it('keeps unknown old fields in the original snapshot', () => {

@@ -65,6 +65,21 @@ export const sampleCards = [
     cars: 80,
     trains: 6,
   },
+  {
+    filename: 'PU66-DEMO-STATION-105.xlsx',
+    cardRow: 5,
+    number: 905,
+    section: '',
+    station: 'Условная станция Озёрная',
+    kilometre: 53,
+    picket: 2,
+    road: 'Учебный станционный проезд',
+    roadKilometre: 0,
+    width: 5.5,
+    length: 9,
+    cars: 45,
+    trains: 4,
+  },
 ] as const
 
 export type SampleCard = (typeof sampleCards)[number]
@@ -170,18 +185,15 @@ export async function createSampleWorkbook(card: SampleCard): Promise<Buffer> {
 /** Existing generated workbooks are left intact, preserving their SHA and import revision. */
 export async function generateSamples(directory: string): Promise<string[]> {
   await mkdir(directory, { recursive: true })
+  const paths: string[] = []
   for (const card of sampleCards) {
     const path = join(directory, card.filename)
     try {
       await access(path)
-      throw new Error(`Файл ${path} уже существует. Удалите его вручную перед повторным созданием.`)
+      continue
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
-  }
-  const paths: string[] = []
-  for (const card of sampleCards) {
-    const path = join(directory, card.filename)
     await writeFile(path, await createSampleWorkbook(card), { flag: 'wx', mode: 0o600 })
     paths.push(path)
   }

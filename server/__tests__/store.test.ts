@@ -8,6 +8,7 @@ import { importSchemeJson } from '../../src/domain/import'
 import { schemeV2Schema, schemeV3Schema } from '../../src/domain/model'
 import { normativeDraftSchema, type CrossingDraft } from '../../src/domain/registry'
 import { RegistryStore, RevisionConflict } from '../store'
+import { oldSnapshot } from '../../tests/fixtures/old-version'
 
 const directories: string[] = []
 const fixture = readFileSync(
@@ -179,7 +180,7 @@ describe('local SQLite registries', () => {
     directories.push(directory)
     const path = join(directory, 'registry.sqlite')
     const scheme = importSchemeJson(fixture).scheme
-    const previous = schemeV2Schema.parse({ ...scheme, schemaVersion: 2 })
+    const previous = schemeV2Schema.parse(oldSnapshot(scheme, 2))
     const initialized = new RegistryStore(path)
     initialized.close()
     const raw = new DatabaseSync(path)
@@ -223,7 +224,7 @@ describe('local SQLite registries', () => {
         .prepare('SELECT revision, scheme_json FROM project_revisions ORDER BY revision')
         .all() as { revision: number; scheme_json: string }[]
       expect(records.map((record) => JSON.parse(record.scheme_json).schemaVersion)).toEqual([
-        2, 4, 4,
+        2, 5, 5,
       ])
       expect(JSON.parse(records[0]!.scheme_json)).toEqual(previous)
     } finally {
@@ -246,7 +247,7 @@ describe('local SQLite registries', () => {
       speedStagesKmh: ['70', '50', '40'],
       yellowTemporarySigns: false,
     })
-    const old = schemeV3Schema.parse({ ...scheme, schemaVersion: 3 })
+    const old = schemeV3Schema.parse(oldSnapshot(scheme, 3))
     const initialized = new RegistryStore(path)
     initialized.close()
     const raw = new DatabaseSync(path)
@@ -279,6 +280,27 @@ describe('local SQLite registries', () => {
       expect(JSON.parse(row.scheme_json)).toEqual(old)
     } finally {
       check.close()
+    }
+  })
+
+  it('rolls back a failing migration and allows reopening the SQLite file', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-broken-migration-'))
+    directories.push(directory)
+    const path = join(directory, 'registry.sqlite')
+    const raw = new DatabaseSync(path)
+    raw.exec('PRAGMA user_version = 5')
+    raw.close()
+    expect(() => new RegistryStore(path)).toThrow()
+    const reopened = new DatabaseSync(path)
+    try {
+      expect(reopened.prepare('PRAGMA user_version').get()).toEqual({ user_version: 5 })
+      expect(
+        reopened
+          .prepare("SELECT name FROM sqlite_master WHERE name = 'sign_catalog_batches'")
+          .get(),
+      ).toBeUndefined()
+    } finally {
+      reopened.close()
     }
   })
 

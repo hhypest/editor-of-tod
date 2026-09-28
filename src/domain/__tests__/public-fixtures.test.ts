@@ -3,6 +3,7 @@ import b34Source from '../../../tests/fixtures/legacy-b34-manual.json?raw'
 import b33Source from '../../../tests/fixtures/manual-v1.json?raw'
 import reviewB33 from '../../../tests/fixtures/review-b33-v4.json?raw'
 import reviewB34 from '../../../tests/fixtures/review-b34-v4.json?raw'
+import currentV1 from '../../../tests/fixtures/legacy-v1-new-fields.json?raw'
 import { projectDraftSheet } from '../draft-sheet'
 import { exportSchemeJson, importSchemeJson } from '../import'
 
@@ -91,5 +92,29 @@ describe('public examples for manual migration checks', () => {
       expect(scheme.crossing.source).toBe('entered-by-editor')
       expect(importSchemeJson(exportSchemeJson(scheme)).scheme).toEqual(scheme)
     }
+  })
+
+  it('preserves modern v1 settings, zone fractions, settlement distances and warns about unknown keys', () => {
+    const imported = importSchemeJson(currentV1, { id, now })
+    const scheme = imported.scheme
+    expect(scheme.schemaVersion).toBe(5)
+    expect(scheme.parameters).toMatchObject({
+      location: 'in',
+      signSize: 'II',
+      settlementSpeedKmh: 60,
+      lastSettlement: false,
+      frontStyle: 'solid',
+      frontFromPu66: true,
+      regulation: { mode: 'two', hourly: '180', vis: true, straight: false },
+      signDistancesMetres: { n100: 100, n50: 50 },
+    })
+    expect(scheme.placements[2]).toMatchObject({ position: { zoneFraction: 0.5 } })
+    expect(imported.warnings.join(' ')).toContain('params.futureChoice')
+    const sheet = projectDraftSheet(scheme)
+    expect(sheet.frontStyle).toBe('solid')
+    const element = sheet.placements[2]!
+    expect(element.kind).toBe('element')
+    expect(element.x).toBeCloseTo(sheet.zoneEndX - 25 + (sheet.zoneEndX - sheet.zoneStartX) / 2)
+    expect(importSchemeJson(exportSchemeJson(scheme)).scheme).toEqual(scheme)
   })
 })

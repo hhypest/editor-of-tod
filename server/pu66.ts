@@ -77,7 +77,9 @@ export function extractPu66Cells(cell: CellReader): Pu66Card {
   const kilometre = number(cell(`A${cardRow + 4}`), 'километр')
   const picket = number(cell(`D${cardRow + 4}`), 'пикет')
   const section = text(cell(`H${cardRow + 4}`))
-  if (!section) throw new Error('ПУ-66: не указан участок железной дороги.')
+  const station = text(cell(`D${cardRow + 5}`))
+  if (!section && !station) throw new Error('ПУ-66: не указаны ни участок, ни станция.')
+  const scope = section ? (section.match(/\((\d+)\)/)?.[1] ?? section) : `ст.${station}`
 
   const technicalRows: Pu66TechnicalRow[] = []
   let item = ''
@@ -100,13 +102,13 @@ export function extractPu66Cells(cell: CellReader): Pu66Card {
   }
 
   return {
-    key: `${section.match(/\((\d+)\)/)?.[1] ?? section}:${kilometre}:${picket}`,
+    key: `${scope}:${kilometre}:${picket}`,
     cardNumber,
     category: text(cell(`F${cardRow + 1}`)),
     division: text(cell(`A${cardRow + 2}`)),
     railway: text(cell(`F${cardRow + 2}`)),
     section,
-    station: text(cell(`D${cardRow + 5}`)),
+    station,
     kilometre,
     picket,
     crossingOwner: text(cell(`F${cardRow + 7}`)),

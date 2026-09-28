@@ -140,23 +140,24 @@ export class RegistryStore {
       if (process.platform !== 'win32') chmodSync(path, 0o600)
     }
     this.db = new DatabaseSync(path, { allowExtension: false, defensive: true, timeout: 3_000 })
-    this.db.exec('PRAGMA foreign_keys = ON')
-    const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
-      .user_version
-    if (
-      version !== 0 &&
-      version !== 1 &&
-      version !== 2 &&
-      version !== 3 &&
-      version !== 4 &&
-      version !== 5 &&
-      version !== 6
-    ) {
-      this.db.close()
-      throw new Error(`Неизвестная версия локальной базы: ${version}. Файл не изменён.`)
-    }
-    if (version === 0) {
-      this.db.exec(`
+    try {
+      this.db.exec('PRAGMA foreign_keys = ON')
+      const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
+        .user_version
+      if (
+        version !== 0 &&
+        version !== 1 &&
+        version !== 2 &&
+        version !== 3 &&
+        version !== 4 &&
+        version !== 5 &&
+        version !== 6
+      ) {
+        this.db.close()
+        throw new Error(`Неизвестная версия локальной базы: ${version}. Файл не изменён.`)
+      }
+      if (version === 0) {
+        this.db.exec(`
         BEGIN;
         CREATE TABLE crossings (
           key TEXT PRIMARY KEY,
@@ -181,9 +182,9 @@ export class RegistryStore {
         PRAGMA user_version = 1;
         COMMIT;
       `)
-    }
-    if (version < 2) {
-      this.db.exec(`
+      }
+      if (version < 2) {
+        this.db.exec(`
         BEGIN;
         CREATE TABLE pu66_sources (
           sha256 TEXT PRIMARY KEY,
@@ -220,27 +221,27 @@ export class RegistryStore {
         PRAGMA user_version = 3;
         COMMIT;
       `)
-    }
-    if (version === 2) {
-      // A failed VACUUM can be retried on the next launch without losing the PNGs.
-      const columns = this.db.prepare('PRAGMA table_info(signs)').all() as { name: string }[]
-      if (columns.some((column) => column.name === 'plain_svg')) {
-        this.db.exec('PRAGMA secure_delete = ON')
-        this.db.exec('BEGIN IMMEDIATE')
-        try {
-          this.db.exec('ALTER TABLE signs DROP COLUMN plain_svg')
-          this.db.exec('COMMIT')
-        } catch (error) {
-          this.db.exec('ROLLBACK')
-          throw error
-        }
       }
-      // Rebuild the file so removed vector data is not left in unused SQLite pages.
-      this.db.exec('VACUUM')
-      this.db.exec('PRAGMA user_version = 3')
-    }
-    if (version < 4) {
-      this.db.exec(`
+      if (version === 2) {
+        // A failed VACUUM can be retried on the next launch without losing the PNGs.
+        const columns = this.db.prepare('PRAGMA table_info(signs)').all() as { name: string }[]
+        if (columns.some((column) => column.name === 'plain_svg')) {
+          this.db.exec('PRAGMA secure_delete = ON')
+          this.db.exec('BEGIN IMMEDIATE')
+          try {
+            this.db.exec('ALTER TABLE signs DROP COLUMN plain_svg')
+            this.db.exec('COMMIT')
+          } catch (error) {
+            this.db.exec('ROLLBACK')
+            throw error
+          }
+        }
+        // Rebuild the file so removed vector data is not left in unused SQLite pages.
+        this.db.exec('VACUUM')
+        this.db.exec('PRAGMA user_version = 3')
+      }
+      if (version < 4) {
+        this.db.exec(`
         BEGIN;
         CREATE TABLE project_drafts (
           id TEXT PRIMARY KEY,
@@ -262,9 +263,9 @@ export class RegistryStore {
         PRAGMA user_version = 4;
         COMMIT;
       `)
-    }
-    if (version < 5) {
-      this.db.exec(`
+      }
+      if (version < 5) {
+        this.db.exec(`
         BEGIN;
         CREATE TABLE pu66_verifications (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -279,9 +280,9 @@ export class RegistryStore {
         PRAGMA user_version = 5;
         COMMIT;
       `)
-    }
-    if (version < 6) {
-      this.db.exec(`
+      }
+      if (version < 6) {
+        this.db.exec(`
         BEGIN;
         CREATE TABLE IF NOT EXISTS sign_catalog_batches (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -318,9 +319,19 @@ export class RegistryStore {
         PRAGMA user_version = 6;
         COMMIT;
       `)
-    }
-    if (this.listNormative().length === 0) {
-      for (const entry of initialNormativeEntries) this.saveNormative(entry, 0)
+      }
+      if (this.listNormative().length === 0) {
+        for (const entry of initialNormativeEntries) this.saveNormative(entry, 0)
+      }
+    } catch (error) {
+      // A failed multi-statement migration can leave a transaction open.
+      try {
+        this.db.exec('ROLLBACK')
+      } catch {
+        // No transaction was active.
+      }
+      this.db.close()
+      throw error
     }
   }
 
@@ -772,15 +783,6 @@ export class RegistryStore {
   ): SignCatalogPlan {
     const result = this.planSigns(entries, source)
     if (result.added + result.updated + result.retired === 0) return result
-    const previousCatalog = this.latestSignCatalog()
-    const unchangedSource =
-      previousCatalog === null
-        ? source.documentCode === unspecifiedSignSource.documentCode &&
-          source.edition === unspecifiedSignSource.edition &&
-          source.pdfSha256 === null
-        : previousCatalog.documentCode === source.documentCode &&
-          previousCatalog.edition === source.edition &&
-          previousCatalog.pdfSha256 === source.pdfSha256
     this.db.exec('BEGIN IMMEDIATE')
     try {
       const batch = this.db
@@ -799,6 +801,9 @@ export class RegistryStore {
         ) as { id: number }
       const existing = this.db.prepare(
         'SELECT numbered_sha256, plain_sha256, revision FROM signs WHERE code = ?',
+      )
+      const lastActivity = this.db.prepare(
+        'SELECT active FROM sign_revisions WHERE code = ? ORDER BY revision DESC LIMIT 1',
       )
       const save = this.db.prepare(
         `INSERT INTO signs (code, numbered_png, plain_png, numbered_sha256, plain_sha256,
@@ -826,12 +831,8 @@ export class RegistryStore {
         const samePng =
           previous?.numbered_sha256 === entry.numberedSha256 &&
           previous.plain_sha256 === entry.plainSha256
-        const wasActive = this.db
-          .prepare(
-            'SELECT active FROM sign_revisions WHERE code = ? ORDER BY revision DESC LIMIT 1',
-          )
-          .get(entry.code) as { active: number } | undefined
-        if (samePng && unchangedSource && wasActive?.active === 1) {
+        const wasActive = lastActivity.get(entry.code) as { active: number } | undefined
+        if (samePng && wasActive?.active === 1) {
           activate.run(entry.code, batch.id)
           continue
         }
@@ -879,11 +880,7 @@ export class RegistryStore {
       }>
       const bump = this.db.prepare('UPDATE signs SET revision = ?, updated_at = ? WHERE code = ?')
       for (const old of retired) {
-        const previous = this.db
-          .prepare(
-            'SELECT active FROM sign_revisions WHERE code = ? ORDER BY revision DESC LIMIT 1',
-          )
-          .get(old.code) as { active: number } | undefined
+        const previous = lastActivity.get(old.code) as { active: number } | undefined
         if (previous?.active === 0) continue
         const updatedAt = this.now()
         bump.run(old.revision + 1, updatedAt, old.code)
@@ -908,28 +905,38 @@ export class RegistryStore {
     }
   }
 
-  listSigns(query = '', limit = 100): Array<{ code: string; width: number; height: number }> {
+  listSigns(
+    query = '',
+    limit = 100,
+  ): Array<{ code: string; width: number; height: number; revision: number }> {
     const rows = this.db
       .prepare(
-        "SELECT s.code, s.width, s.height FROM signs s JOIN sign_active a ON a.code = s.code WHERE s.code LIKE ? ESCAPE '\\' ORDER BY s.code LIMIT ?",
+        "SELECT s.code, s.width, s.height, s.revision FROM signs s JOIN sign_active a ON a.code = s.code WHERE s.code LIKE ? ESCAPE '\\' ORDER BY s.code LIMIT ?",
       )
       .all(`%${query.replace(/[\\%_]/g, '\\$&')}%`, limit) as Array<{
       code: string
       width: number
       height: number
+      revision: number
     }>
     return rows.map((row) => ({
       code: row.code,
       width: row.width,
       height: row.height,
+      revision: row.revision,
     }))
   }
 
-  getSignPng(code: string, numbered: boolean): Uint8Array | null {
+  getSignPng(code: string, numbered: boolean, revision?: number): Uint8Array | null {
     const column = numbered ? 'numbered_png' : 'plain_png'
     const row = this.db
-      .prepare(`SELECT ${column} AS asset FROM signs JOIN sign_active USING (code) WHERE code = ?`)
-      .get(code) as { asset: Uint8Array } | undefined
+      .prepare(
+        revision === undefined
+          ? `SELECT ${column} AS asset FROM signs JOIN sign_active USING (code) WHERE code = ?`
+          : `SELECT ${column} AS asset FROM sign_revisions WHERE code = ? AND revision = ? AND active = 1`,
+      )
+      .get(...(revision === undefined ? [code] : [code, revision])) as
+      { asset: Uint8Array } | undefined
     return row?.asset ?? null
   }
 

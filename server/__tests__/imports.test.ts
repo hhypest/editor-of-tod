@@ -268,7 +268,7 @@ describe('private import formats', () => {
     try {
       expect(store.importSigns(entries)).toMatchObject({ added: 1 })
       expect(store.importSigns(parseSignArchive(source))).toMatchObject({ unchanged: 1 })
-      expect(store.listSigns()).toEqual([{ code: '1.1_ж', width: 30, height: 30 }])
+      expect(store.listSigns()).toEqual([{ code: '1.1_ж', width: 30, height: 30, revision: 1 }])
       expect(Buffer.from(store.getSignPng('1.1_ж', true) as Uint8Array)).toEqual(
         entries[0]?.numberedPng,
       )
@@ -294,11 +294,15 @@ describe('private import formats', () => {
       expect(store.importSigns(first, source)).toMatchObject({ unchanged: 1 })
       expect(store.planSigns(first, updated)).toMatchObject({ updated: 1 })
       expect(store.importSigns(first, updated)).toMatchObject({ updated: 1 })
+      expect(store.latestSignCatalog()).toMatchObject({ edition: '2026' })
       expect(store.importSigns(second, updated)).toMatchObject({ added: 1, retired: 1 })
-      expect(store.listSigns()).toEqual([{ code: '3.20', width: 30, height: 30 }])
+      expect(store.listSigns()).toEqual([{ code: '3.20', width: 30, height: 30, revision: 1 }])
       expect(store.getSignPng('1.25', false)).toBeNull()
       expect(store.importSigns(first, updated)).toMatchObject({ added: 1, retired: 1 })
       expect(Buffer.from(store.getSignPng('1.25', false) as Uint8Array)).toEqual(first[0]?.plainPng)
+      expect(Buffer.from(store.getSignPng('1.25', false, 1) as Uint8Array)).toEqual(
+        first[0]?.plainPng,
+      )
       store.close()
       const database = new DatabaseSync(path)
       expect(database.prepare('SELECT COUNT(*) AS total FROM sign_catalog_batches').get()).toEqual({
@@ -310,9 +314,8 @@ describe('private import formats', () => {
           .all('1.25'),
       ).toEqual([
         { revision: 1, active: 1 },
-        { revision: 2, active: 1 },
-        { revision: 3, active: 0 },
-        { revision: 4, active: 1 },
+        { revision: 2, active: 0 },
+        { revision: 3, active: 1 },
       ])
       database.close()
     } finally {
@@ -377,7 +380,9 @@ describe('private import formats', () => {
       old.close()
 
       const migrated = new RegistryStore(path)
-      expect(migrated.listSigns()).toEqual([{ code: entry.code, width: 30, height: 30 }])
+      expect(migrated.listSigns()).toEqual([
+        { code: entry.code, width: 30, height: 30, revision: 1 },
+      ])
       expect(Buffer.from(migrated.getSignPng(entry.code, true) as Uint8Array)).toEqual(
         entry.numberedPng,
       )

@@ -11,9 +11,16 @@ export type SchemeDetailsDraft = {
   parameters: {
     locationText: string
     directions: Scheme['parameters']['directions']
-    signDistancesMetres: Record<'d300' | 'd250' | 'd150' | 'd50', string>
+    signDistancesMetres: Record<keyof Scheme['parameters']['signDistancesMetres'], string>
     speedStagesKmh: [string, string, string]
     yellowTemporarySigns: boolean
+    location: Scheme['parameters']['location']
+    signSize: Scheme['parameters']['signSize']
+    settlementSpeedKmh: string
+    lastSettlement: Scheme['parameters']['lastSettlement']
+    frontStyle: Scheme['parameters']['frontStyle']
+    frontFromPu66: boolean
+    regulation: Scheme['parameters']['regulation']
     workZones: { b33: WorkZoneDraft | null; b34: WorkZoneDraft | null }
   }
   titleBlock: Scheme['titleBlock']
@@ -35,6 +42,16 @@ function zoneDraft(zone: WorkZone): WorkZoneDraft {
   }
 }
 
+function cloneTitleBlock(title: Scheme['titleBlock']): Scheme['titleBlock'] {
+  return {
+    developer: { ...title.developer },
+    work: { ...title.work },
+    responsible: [title.responsible[0], title.responsible[1]],
+    approver: { ...title.approver },
+    agreement: { ...title.agreement },
+  }
+}
+
 export function createSchemeDetailsDraft(scheme: Scheme): SchemeDetailsDraft {
   const { parameters } = scheme
   return {
@@ -46,7 +63,16 @@ export function createSchemeDetailsDraft(scheme: Scheme): SchemeDetailsDraft {
         d250: parameters.signDistancesMetres.d250?.toString() ?? '',
         d150: parameters.signDistancesMetres.d150?.toString() ?? '',
         d50: parameters.signDistancesMetres.d50?.toString() ?? '',
+        n100: parameters.signDistancesMetres.n100?.toString() ?? '',
+        n50: parameters.signDistancesMetres.n50?.toString() ?? '',
       },
+      location: parameters.location,
+      signSize: parameters.signSize,
+      settlementSpeedKmh: String(parameters.settlementSpeedKmh),
+      lastSettlement: parameters.lastSettlement,
+      frontStyle: parameters.frontStyle,
+      frontFromPu66: parameters.frontFromPu66,
+      regulation: { ...parameters.regulation },
       speedStagesKmh: [
         String(parameters.speedStagesKmh[0]),
         String(parameters.speedStagesKmh[1]),
@@ -58,7 +84,7 @@ export function createSchemeDetailsDraft(scheme: Scheme): SchemeDetailsDraft {
         b34: parameters.workZones.b34 ? zoneDraft(parameters.workZones.b34) : null,
       },
     },
-    titleBlock: structuredClone(scheme.titleBlock),
+    titleBlock: cloneTitleBlock(scheme.titleBlock),
   }
 }
 
@@ -108,7 +134,19 @@ export function applySchemeDetails(scheme: Scheme, draft: SchemeDetailsDraft): S
         d250: metres(parameters.signDistancesMetres.d250, 'd250', true),
         d150: metres(parameters.signDistancesMetres.d150, 'd150', true),
         d50: metres(parameters.signDistancesMetres.d50, 'd50', true),
+        n100: metres(parameters.signDistancesMetres.n100, 'n100', true),
+        n50: metres(parameters.signDistancesMetres.n50, 'n50', true),
       },
+      location: parameters.location,
+      signSize: parameters.signSize,
+      settlementSpeedKmh: requiredMetres(
+        parameters.settlementSpeedKmh,
+        'скорость в населённом пункте',
+      ),
+      lastSettlement: parameters.lastSettlement,
+      frontStyle: parameters.frontStyle,
+      frontFromPu66: parameters.frontFromPu66,
+      regulation: { ...parameters.regulation },
       speedStagesKmh: [
         requiredMetres(parameters.speedStagesKmh[0], 'первая ступень скорости'),
         requiredMetres(parameters.speedStagesKmh[1], 'вторая ступень скорости'),
@@ -120,7 +158,7 @@ export function applySchemeDetails(scheme: Scheme, draft: SchemeDetailsDraft): S
         b34: parseZone(parameters.workZones.b34, 'Б.34'),
       },
     },
-    titleBlock: structuredClone(draft.titleBlock),
+    titleBlock: cloneTitleBlock(draft.titleBlock),
   }
   const checked = schemeSchema.safeParse(candidate)
   if (!checked.success) {

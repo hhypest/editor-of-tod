@@ -9,7 +9,7 @@ export type ReviewFinding = {
   target: '#details-title' | '#placements-title' | '#pu66-link-title' | '#imported-title'
 }
 
-const distanceNames = ['d300', 'd250', 'd150', 'd50'] as const
+const distanceNames = ['d300', 'd250', 'd150', 'd50', 'n100', 'n50'] as const
 
 function isBlank(value: string): boolean {
   return value.trim().length === 0
