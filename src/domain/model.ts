@@ -254,6 +254,12 @@ export const schemeSchema = z
   .strictObject({
     ...sharedFields,
     template: templateV5Schema,
+    signImages: z.strictObject({
+      catalog: z
+        .strictObject({ documentCode: text, edition: text, id: z.number().int().positive() })
+        .nullable(),
+      revisions: z.record(z.string().min(1).max(120), z.number().int().positive()),
+    }),
     placements: z
       .array(z.discriminatedUnion('kind', [signPlacementSchema, elementPlacementV5Schema]))
       .max(2_000),
@@ -303,6 +309,7 @@ export function upgradeSchemeV4(value: unknown): Scheme {
     ...previous,
     schemaVersion: 5,
     template: { ...previous.template, projectionVersion: 'draft-1' },
+    signImages: { catalog: null, revisions: {} },
     parameters: {
       ...previous.parameters,
       signDistancesMetres: { ...previous.parameters.signDistancesMetres, n100: null, n50: null },

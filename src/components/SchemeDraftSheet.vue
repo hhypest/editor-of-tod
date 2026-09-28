@@ -69,12 +69,16 @@ async function loadSigns(): Promise<void> {
     ])
     if (!response.ok || !sourceResponse.ok) throw new Error('Каталог недоступен')
     const list = (await response.json()) as Array<{ code: string }>
-    catalogSource.value = (await sourceResponse.json()) as {
+    const currentCatalog = (await sourceResponse.json()) as {
       documentCode: string
       edition: string
     } | null
     if (!Array.isArray(list)) throw new Error('Неверный ответ каталога')
-    knownSigns.value = new Set(list.map((sign) => sign.code))
+    knownSigns.value = new Set([
+      ...list.map((sign) => sign.code),
+      ...Object.keys(props.scheme.signImages.revisions),
+    ])
+    catalogSource.value = props.scheme.signImages.catalog ?? currentCatalog
     catalogState.value = list.length === 2_000 ? 'partial' : 'ready'
   } catch {
     knownSigns.value = new Set()
@@ -86,7 +90,8 @@ async function loadSigns(): Promise<void> {
 onMounted(loadSigns)
 
 function imageUrl(code: string): string {
-  return `/api/signs/${encodeURIComponent(code)}/image`
+  const revision = props.scheme.signImages.revisions[code]
+  return `/api/signs/${encodeURIComponent(code)}/image${revision ? `?rev=${revision}` : ''}`
 }
 
 function imageFailed(code: string): void {
@@ -353,6 +358,7 @@ async function printDraft(): Promise<void> {
                     :width="item.width"
                     :height="item.height"
                     :known-signs="knownSigns"
+                    :revisions="scheme.signImages.revisions"
                   />
                   <small class="symbol-id">№ {{ item.id }}</small>
                 </template>
@@ -368,6 +374,7 @@ async function printDraft(): Promise<void> {
                   :width="kind === 'car' ? 50 : 24"
                   :height="30"
                   :known-signs="knownSigns"
+                  :revisions="scheme.signImages.revisions"
                 />
                 <span>{{ symbolLabels[kind] }}</span>
               </div>

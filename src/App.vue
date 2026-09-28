@@ -23,6 +23,7 @@ import type { Scheme } from './domain/model'
 import { schemeSchema } from './domain/model'
 import { reviewScheme, type ReviewFinding } from './domain/review-scheme'
 import { rebuildTemplatePlacements, TemplateBuildError } from './domain/template-placements'
+import { pinSignImages, usedSignCodes } from './domain/sign-images'
 import { getLocalProject, restoreLocalRevision, saveLocalProject } from './services/local-projects'
 import {
   recordEdit,
@@ -50,6 +51,7 @@ const history = shallowRef<EditHistory<Scheme> | null>(null)
 const selectedPlacementId = ref<number | null>(null)
 const templateMessage = ref('')
 const templateError = ref('')
+const signPinMessage = ref('')
 type View = 'projects' | 'source' | 'geometry' | 'objects' | 'review' | 'registries'
 const stages = ['source', 'geometry', 'objects', 'review'] as const
 const activeView = ref<View>('projects')
@@ -118,13 +120,7 @@ const frontMetres = computed(
     imported.value?.scheme.parameters.workZones[imported.value.scheme.template.code]?.workMetres,
 )
 const referencedSignIds = computed(() =>
-  Array.from(
-    new Set(
-      imported.value?.scheme.placements.flatMap((placement) =>
-        placement.kind === 'sign-post' ? placement.signIds : [],
-      ) ?? [],
-    ),
-  ),
+  imported.value ? usedSignCodes(imported.value.scheme) : [],
 )
 
 function showView(view: View): void {
@@ -403,6 +399,36 @@ function buildDraftTemplate(): void {
       cause instanceof TemplateBuildError
         ? cause.message
         : 'Не удалось собрать черновой шаблон. Проверьте параметры проекта.'
+  }
+}
+
+async function pinCurrentSigns(): Promise<void> {
+  if (!imported.value || editorDirty.value || localBusy.value) return
+  const schemeAtStart = imported.value.scheme
+  signPinMessage.value = ''
+  try {
+    const [signResponse, catalogResponse] = await Promise.all([
+      fetch('/api/signs'),
+      fetch('/api/signs/catalog'),
+    ])
+    if (!signResponse.ok || !catalogResponse.ok)
+      throw new Error('Локальный каталог PNG недоступен.')
+    const signs = (await signResponse.json()) as Array<{ code: string; revision: number }>
+    const catalog = (await catalogResponse.json()) as {
+      id: number
+      documentCode: string
+      edition: string
+    } | null
+    if (!Array.isArray(signs) || !catalog || catalog.edition === 'не указана') {
+      throw new Error('Укажите редакцию ГОСТ при импорте каталога знаков.')
+    }
+    if (imported.value?.scheme !== schemeAtStart)
+      throw new Error('Проект изменился; повторите закрепление.')
+    const pinned = pinSignImages(schemeAtStart, catalog, signs)
+    onProjectApplied(pinned)
+    signPinMessage.value = `Закреплены редакции ${usedSignCodes(pinned).length} кодов PNG. Сохраните проект.`
+  } catch (cause) {
+    signPinMessage.value = cause instanceof Error ? cause.message : 'Не удалось закрепить PNG.'
   }
 }
 
@@ -839,6 +865,10 @@ function stepForward(): void {
               >
                 Собрать черновой шаблон
               </button>
+              <button type="button" :disabled="editorDirty || localBusy" @click="pinCurrentSigns">
+                Закрепить редакции PNG
+              </button>
+              <p v-if="signPinMessage" role="status">{{ signPinMessage }}</p>
               <p v-if="templateMessage" role="status">{{ templateMessage }}</p>
               <p v-if="templateError" class="error" role="alert">{{ templateError }}</p>
             </section>

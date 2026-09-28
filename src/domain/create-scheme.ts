@@ -66,6 +66,7 @@ export function createNewScheme(
       reviewStatus: 'not-verified',
       projectionVersion: 'draft-1',
     },
+    signImages: { catalog: null, revisions: {} },
     parameters: {
       locationText: input.locationText.trim(),
       directions: { left: input.directionLeft.trim(), right: input.directionRight.trim() },

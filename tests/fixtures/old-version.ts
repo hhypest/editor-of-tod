@@ -3,8 +3,10 @@ import type { Scheme } from '../../src/domain/model'
 /** Reconstruct the shape of old saved snapshots for migration tests. */
 export function oldSnapshot(scheme: Scheme, schemaVersion: 2 | 3 | 4) {
   const parameters = scheme.parameters
+  const { signImages: _signImages, ...oldBase } = scheme
+  void _signImages
   return {
-    ...scheme,
+    ...oldBase,
     schemaVersion,
     template: {
       code: scheme.template.code,

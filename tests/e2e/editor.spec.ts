@@ -95,7 +95,7 @@ test('imports synthetic station PU-66 and a generated PNG ZIP through the local 
   })
   expect(signApply.ok()).toBe(true)
   await page.goto('/')
-  await page.getByRole('button', { name: 'Реестры' }).click()
+  await page.getByRole('button', { name: 'Реестры', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Локальные реестры' })).toBeVisible()
   expect((await (await request.get(`${api}/api/signs`)).json()).length).toBe(1)
   expect((await (await request.get(`${api}/api/pu66`)).json()).length).toBe(1)
@@ -110,6 +110,33 @@ test('A4 print contains exactly one page', async ({ page }) => {
     buffer: readFileSync('tests/fixtures/legacy-v1-new-fields.json'),
   })
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  await page.emulateMedia({ media: 'print' })
+  const layout = await page.evaluate(() => {
+    const selectors = [
+      'html',
+      'body',
+      '#app',
+      '.app-shell',
+      '.app-layout',
+      '.content',
+      '.print-host',
+      '.preview-scroll',
+      '.preview-space',
+      '.sheet-paper',
+    ]
+    return selectors.map((selector) => {
+      const node = document.querySelector<HTMLElement>(selector)
+      const rect = node?.getBoundingClientRect()
+      return {
+        selector,
+        display: node ? getComputedStyle(node).display : '',
+        height: rect?.height,
+        width: rect?.width,
+        scrollHeight: node?.scrollHeight,
+      }
+    })
+  })
+  console.log('PRINT_LAYOUT', JSON.stringify(layout))
   const pdf = await page.pdf({ printBackground: true, preferCSSPageSize: true })
   expect(pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).toHaveLength(1)
 })

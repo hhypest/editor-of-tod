@@ -195,6 +195,7 @@ function migrateLegacy(
       reviewStatus: 'not-verified',
       projectionVersion: 'draft-1',
     },
+    signImages: { catalog: null, revisions: {} },
     parameters: {
       locationText: params.peregon,
       directions: { left: params.dirL, right: params.dirR },

@@ -1,10 +1,16 @@
 <script setup lang="ts">
-defineProps<{
+const props = defineProps<{
   kind: 'reg' | 'cone' | 'car' | 'complex' | 'pit'
   width: number
   height: number
   knownSigns: Set<string>
+  revisions?: Record<string, number>
 }>()
+
+function signUrl(code: string): string {
+  const revision = props.revisions?.[code]
+  return `/api/signs/${encodeURIComponent(code)}/image${revision ? `?rev=${revision}` : ''}`
+}
 </script>
 
 <template>
@@ -32,12 +38,7 @@ defineProps<{
       <span class="beacon" /><span class="body" /><span class="cab" /><span class="window" />
       <span class="wheel left" /><span class="wheel right" />
       <span class="mandatory">
-        <img
-          v-if="knownSigns.has('4.2.2')"
-          :src="'/api/signs/4.2.2/image'"
-          alt=""
-          data-sign-code="4.2.2"
-        />
+        <img v-if="knownSigns.has('4.2.2')" :src="signUrl('4.2.2')" alt="" data-sign-code="4.2.2" />
         <span v-else class="missing">?</span>
       </span>
     </template>
@@ -46,19 +47,9 @@ defineProps<{
     </template>
     <template v-else-if="kind === 'complex'">
       <span class="sign-board">
-        <img
-          v-if="knownSigns.has('1.25')"
-          :src="'/api/signs/1.25/image'"
-          alt=""
-          data-sign-code="1.25"
-        />
+        <img v-if="knownSigns.has('1.25')" :src="signUrl('1.25')" alt="" data-sign-code="1.25" />
         <span v-else class="missing">?</span>
-        <img
-          v-if="knownSigns.has('4.2.2')"
-          :src="'/api/signs/4.2.2/image'"
-          alt=""
-          data-sign-code="4.2.2"
-        />
+        <img v-if="knownSigns.has('4.2.2')" :src="signUrl('4.2.2')" alt="" data-sign-code="4.2.2" />
         <span v-else class="missing">?</span>
       </span>
       <span class="sign-stand" />

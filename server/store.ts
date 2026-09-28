@@ -905,28 +905,38 @@ export class RegistryStore {
     }
   }
 
-  listSigns(query = '', limit = 100): Array<{ code: string; width: number; height: number }> {
+  listSigns(
+    query = '',
+    limit = 100,
+  ): Array<{ code: string; width: number; height: number; revision: number }> {
     const rows = this.db
       .prepare(
-        "SELECT s.code, s.width, s.height FROM signs s JOIN sign_active a ON a.code = s.code WHERE s.code LIKE ? ESCAPE '\\' ORDER BY s.code LIMIT ?",
+        "SELECT s.code, s.width, s.height, s.revision FROM signs s JOIN sign_active a ON a.code = s.code WHERE s.code LIKE ? ESCAPE '\\' ORDER BY s.code LIMIT ?",
       )
       .all(`%${query.replace(/[\\%_]/g, '\\$&')}%`, limit) as Array<{
       code: string
       width: number
       height: number
+      revision: number
     }>
     return rows.map((row) => ({
       code: row.code,
       width: row.width,
       height: row.height,
+      revision: row.revision,
     }))
   }
 
-  getSignPng(code: string, numbered: boolean): Uint8Array | null {
+  getSignPng(code: string, numbered: boolean, revision?: number): Uint8Array | null {
     const column = numbered ? 'numbered_png' : 'plain_png'
     const row = this.db
-      .prepare(`SELECT ${column} AS asset FROM signs JOIN sign_active USING (code) WHERE code = ?`)
-      .get(code) as { asset: Uint8Array } | undefined
+      .prepare(
+        revision === undefined
+          ? `SELECT ${column} AS asset FROM signs JOIN sign_active USING (code) WHERE code = ?`
+          : `SELECT ${column} AS asset FROM sign_revisions WHERE code = ? AND revision = ? AND active = 1`,
+      )
+      .get(...(revision === undefined ? [code] : [code, revision])) as
+      { asset: Uint8Array } | undefined
     return row?.asset ?? null
   }
 

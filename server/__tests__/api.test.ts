@@ -181,7 +181,12 @@ describe('local API', () => {
       (await post('apply', { ...body, expectedFingerprint: preview.fingerprint })).status,
     ).toBe(200)
     expect(await (await fetch(`${base}/catalog`)).json()).toMatchObject({ edition: '2024' })
-    expect(await (await fetch(base)).json()).toEqual([{ code: '1.25', width: 8, height: 8 }])
+    expect(await (await fetch(base)).json()).toEqual([
+      { code: '1.25', width: 8, height: 8, revision: 1 },
+    ])
+    const pinned = await fetch(`${base}/1.25/image?rev=1`)
+    expect(pinned.status).toBe(200)
+    expect(pinned.headers.get('cache-control')).toContain('immutable')
   })
 
   it('accepts a same-origin write and rejects missing origin, invalid input, and stale revisions', async () => {
