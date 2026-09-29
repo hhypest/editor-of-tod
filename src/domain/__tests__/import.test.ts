@@ -252,3 +252,31 @@ describe('import of autonomous editor projects', () => {
     )
   })
 })
+
+describe('legacy v1 regulation', () => {
+  const withRegulation = (reg: Record<string, unknown>) =>
+    JSON.stringify({ ...legacy, params: { ...legacy.params, variant: 'b34', reg } })
+  const base = { mode: 'signs', hourly: '120', k: 0.1, straight: true, last: null }
+
+  it('turns «visibility ensured» into the inverted «visibility restricted» flag', () => {
+    const ensured = importSchemeJson(withRegulation({ ...base, vis: true }), {
+      id,
+      now: importedAt,
+    })
+    expect(ensured.scheme.parameters.regulation).toMatchObject({ vis: false, mode: 'signs' })
+    const restricted = importSchemeJson(withRegulation({ ...base, vis: false }), {
+      id,
+      now: importedAt,
+    })
+    expect(restricted.scheme.parameters.regulation.vis).toBe(true)
+  })
+
+  it('reports an unknown regulation key instead of rejecting the file', () => {
+    const result = importSchemeJson(withRegulation({ ...base, vis: true, extra: 1 }), {
+      id,
+      now: importedAt,
+    })
+    expect(result.scheme.parameters.regulation).not.toHaveProperty('extra')
+    expect(result.warnings.join('\n')).toContain('params.reg.extra')
+  })
+})

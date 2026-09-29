@@ -102,7 +102,11 @@ export function extractPu66Cells(cell: CellReader): Pu66Card {
   }
 
   return {
-    key: `${scope}:${kilometre}:${picket}`,
+    // На станции у разных переездов бывает одинаковая привязка «км:пк», поэтому для станционных
+    // карточек в ключ входит номер карточки; ключ участка остаётся прежним.
+    key: section
+      ? `${scope}:${kilometre}:${picket}`
+      : `${scope}:${kilometre}:${picket}:к${cardNumber}`,
     cardNumber,
     category: text(cell(`F${cardRow + 1}`)),
     division: text(cell(`A${cardRow + 2}`)),

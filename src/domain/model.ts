@@ -49,10 +49,17 @@ const templateV5Schema = templateSchema.extend({ projectionVersion: z.literal('d
 
 const position = z.strictObject({ anchor, offsetXSvg: finite })
 
+/** Место объекта в черновом шаблоне: сохраняется при ручной правке, чтобы пересборка не дублировала его. */
+const templateSlot = z
+  .string()
+  .regex(/^[A-Za-z0-9:._-]{1,40}$/)
+  .optional()
+
 const signPlacementSchema = z.strictObject({
   kind: z.literal('sign-post'),
   id: z.number().int().positive(),
   generatedByTemplate: z.boolean(),
+  templateSlot,
   position: position.extend({ offsetYSvg: finite }),
   side: z.enum(['up', 'down']),
   stand: z.enum(['left', 'right']),
@@ -64,6 +71,7 @@ const elementPlacementSchema = z.strictObject({
   kind: z.literal('element'),
   id: z.number().int().positive(),
   generatedByTemplate: z.boolean(),
+  templateSlot,
   elementKind: z.enum(['reg', 'cone', 'car', 'complex', 'pit', 'text']),
   position: position.extend({ ySvg: finite }),
   sizeSvg: z.strictObject({ width: finite.nonnegative(), height: finite.nonnegative() }),

@@ -94,7 +94,15 @@ describe('first launch with synthetic source files', () => {
     const parsed = await parsePu66(await createSampleWorkbook(sample), sample.filename)
     expect(parsed.card.section).toBe('')
     expect(parsed.card.station).toBe(sample.station)
-    expect(parsed.card.key).toBe(`ст.${sample.station}:${sample.kilometre}:${sample.picket}`)
+    expect(parsed.card.key).toBe(
+      `ст.${sample.station}:${sample.kilometre}:${sample.picket}:к${sample.number}`,
+    )
+    // Другая карточка той же станции с той же привязкой «км:пк» получает собственный ключ.
+    const twin = await parsePu66(
+      await createSampleWorkbook({ ...sample, number: 906 }),
+      sample.filename,
+    )
+    expect(twin.card.key).not.toBe(parsed.card.key)
     const ordinary = sampleCards[0]!
     expect(
       (await parsePu66(await createSampleWorkbook(ordinary), ordinary.filename)).card.key,

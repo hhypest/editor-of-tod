@@ -333,8 +333,8 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
                   {{ setupStatus.cards ? `${setupStatus.cards} в базе` : 'пока нет' }}</strong
                 >
                 <p>
-                  Выберите до четырёх XLSX; для пробы можно создать вымышленные книги командой npm
-                  run samples:pu66.
+                  Выберите сразу все XLSX (до 100 книг); для пробы можно создать вымышленные книги
+                  командой npm run samples:pu66.
                 </p>
                 <button type="button" @click="openSetupImport('pu66-import')">
                   {{ setupStatus.cards ? 'Открыть карточки' : 'Импортировать ПУ-66' }}

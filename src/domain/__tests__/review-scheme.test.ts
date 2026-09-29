@@ -5,6 +5,7 @@ import { newSignDraft, savePlacement } from '../edit-placements'
 import { linkPu66Card } from '../link-pu66'
 import { reviewScheme } from '../review-scheme'
 import legacyB34 from '../../../tests/fixtures/legacy-b34-manual.json?raw'
+import legacyNewFields from '../../../tests/fixtures/legacy-v1-new-fields.json?raw'
 import { importSchemeJson } from '../import'
 
 function newProject(frontMetres = '18') {
@@ -124,5 +125,22 @@ describe('live draft review', () => {
     const findings = reviewScheme(atBoundary)
     expect(findings.some((finding) => finding.id === 'variant-front')).toBe(true)
     expect(findings.some((finding) => finding.id === 'figure-dimensions')).toBe(false)
+  })
+
+  it('flags a legacy project whose visibility flag was copied without inversion', () => {
+    const newer = JSON.parse(legacyNewFields) as { params: { reg: { vis: boolean } } }
+    const imported = importSchemeJson(legacyNewFields).scheme
+    expect(reviewScheme(imported).some((finding) => finding.id === 'legacy-visibility')).toBe(false)
+    // Так выглядел проект, импортированный до исправления: флаг скопирован без перевода смысла.
+    const copied = {
+      ...imported,
+      parameters: {
+        ...imported.parameters,
+        regulation: { ...imported.parameters.regulation, vis: newer.params.reg.vis },
+      },
+    }
+    const finding = reviewScheme(copied).find((item) => item.id === 'legacy-visibility')
+    expect(finding).toMatchObject({ kind: 'verify', target: '#details-title' })
+    expect(finding?.detail).toContain('обеспеченная')
   })
 })

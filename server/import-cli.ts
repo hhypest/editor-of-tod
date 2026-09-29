@@ -5,7 +5,9 @@ import { parsePu66 } from './pu66.ts'
 import { parseSignArchive } from './signs.ts'
 import { RegistryStore } from './store.ts'
 
-const databasePath = fileURLToPath(new URL('../private-data/registry.sqlite', import.meta.url))
+const databasePath =
+  process.env.TOD_DATABASE_PATH ??
+  fileURLToPath(new URL('../private-data/registry.sqlite', import.meta.url))
 
 export async function runImport(args: string[], store: RegistryStore): Promise<string> {
   const [kind, ...rest] = args

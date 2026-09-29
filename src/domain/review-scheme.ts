@@ -19,6 +19,19 @@ function missingFields(fields: ReadonlyArray<readonly [string, string]>): string
   return fields.filter(([, value]) => isBlank(value)).map(([label]) => label)
 }
 
+let visibilityCache: { json: string; value: boolean | null } | null = null
+
+/** `params.reg.vis` исходного v1 JSON («видимость обеспечена») или null, если его нет. */
+function legacyVisibilityEnsured(scheme: Scheme): boolean | null {
+  if (scheme.source.kind !== 'legacy-html-v1') return null
+  const json = scheme.source.originalJson
+  if (visibilityCache?.json !== json) {
+    const match = /"reg"\s*:\s*\{[^{}]*?"vis"\s*:\s*(true|false)/.exec(json)
+    visibilityCache = { json, value: match ? match[1] === 'true' : null }
+  }
+  return visibilityCache.value
+}
+
 /** A live checklist of data entry and manual review, never a normative compliance decision. */
 export function reviewScheme(scheme: Scheme): ReviewFinding[] {
   const findings: ReviewFinding[] = []
@@ -183,6 +196,17 @@ export function reviewScheme(scheme: Scheme): ReviewFinding[] {
       title: 'Условия движения для Б.34',
       detail: `На листе размещено регулировщиков: ${regulators}. Подпись к рисунку Б.34 указывает на регулировщика при интенсивности более 250 авт./ч в двух направлениях или ограниченной видимости. Оцените условия на месте и зафиксируйте решение составителя.`,
       target: '#placements-title',
+    })
+  }
+
+  const legacyVisibility = legacyVisibilityEnsured(scheme)
+  if (legacyVisibility !== null && parameters.regulation.vis === legacyVisibility) {
+    findings.push({
+      id: 'legacy-visibility',
+      kind: 'verify',
+      title: 'Видимость на участке',
+      detail: `В исходном файле HTML-прототипа видимость встречного автомобиля отмечена как ${legacyVisibility ? 'обеспеченная' : 'необеспеченная'}, а в проекте флаг «Видимость ограничена» ${parameters.regulation.vis ? 'установлен' : 'снят'}. Проекты, импортированные до исправления, получили обратное значение. Проверьте флаг на этапе 2 до выбора регулирования.`,
+      target: '#details-title',
     })
   }
 

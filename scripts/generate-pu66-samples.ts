@@ -82,7 +82,14 @@ export const sampleCards = [
   },
 ] as const
 
-export type SampleCard = (typeof sampleCards)[number]
+type SampleLiteral = (typeof sampleCards)[number]
+export type SampleCard = {
+  [K in keyof SampleLiteral]: SampleLiteral[K] extends string
+    ? string
+    : SampleLiteral[K] extends number
+      ? number
+      : SampleLiteral[K]
+}
 
 // Relative to the table heading. The gaps represent subrows in the observed form.
 const technicalRows = [

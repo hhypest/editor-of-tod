@@ -105,7 +105,7 @@ describe('public examples for manual migration checks', () => {
       lastSettlement: false,
       frontStyle: 'solid',
       frontFromPu66: true,
-      regulation: { mode: 'two', hourly: '180', vis: true, straight: false },
+      regulation: { mode: 'two', hourly: '180', vis: false, straight: false },
       signDistancesMetres: { n100: 100, n50: 50 },
     })
     expect(scheme.placements[2]).toMatchObject({ position: { zoneFraction: 0.5 } })
