@@ -200,4 +200,16 @@ describe('vector A4 sheet', () => {
     expect(item!.extent[1]).toBeLessThan(0)
     expect(objectsOutside(drawing)).toEqual([item!.id])
   })
+
+  it('omits the draft mark and service lines on a release sheet only', () => {
+    const sheet = projectDraftSheet(scheme())
+    const draft = texts(drawSheet(sheet, options).nodes).join(' ')
+    const release = texts(drawSheet(sheet, { ...options, release: true }).nodes).join(' ')
+    for (const service of ['ЧЕРНОВИК', 'Проект не сохранён', 'учебный каталог', 'Схема по рис.'])
+      expect(draft).toContain(service)
+    for (const service of ['ЧЕРНОВИК', 'Проект не сохранён', 'учебный каталог', 'Схема по рис.'])
+      expect(release).not.toContain(service)
+    expect(release).toContain('Утверждаю:')
+    expect(release).toContain('Условные обозначения:')
+  })
 })

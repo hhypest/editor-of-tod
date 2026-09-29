@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, useId } from 'vue'
+import { computed, nextTick, onMounted, ref, useId, watch } from 'vue'
 import type { Scheme } from '../domain/model'
 import { projectDraftSheet } from '../domain/draft-sheet'
 import {
@@ -11,6 +11,7 @@ import {
   SHEET_WIDTH,
   type SignSize,
 } from '../domain/sheet-drawing'
+import { downloadBlob, sheetFileName, sheetToPng } from '../services/sheet-png'
 import SheetNodes from './SheetNodes.vue'
 
 const props = defineProps<{
@@ -29,6 +30,15 @@ const brokenImages = ref<Set<string>>(new Set())
 const catalogState = ref<'loading' | 'ready' | 'partial' | 'unavailable'>('loading')
 const catalogSource = ref<{ documentCode: string; edition: string } | null>(null)
 const printError = ref('')
+/** Составитель подтвердил проверку листа; сбрасывается при любом изменении проекта. */
+const releaseConfirmed = ref(false)
+const exporting = ref(false)
+watch(
+  () => props.scheme,
+  () => {
+    releaseConfirmed.value = false
+  },
+)
 
 const revisionLabel = computed(() =>
   props.localRevision === null
@@ -37,30 +47,62 @@ const revisionLabel = computed(() =>
       ? `Проект изменён после редакции № ${props.localRevision}.`
       : `Редакция проекта № ${props.localRevision}.`,
 )
-const drawing = computed(() =>
-  drawSheet(sheet.value, {
-    signSizes: signSizes.value,
-    catalogLabel: catalogSource.value
-      ? `Знаки: PNG локального архива · ${catalogSource.value.documentCode}, редакция ${catalogSource.value.edition}.`
-      : 'Знаки: редакция каталога не указана.',
-    revisionLabel: revisionLabel.value,
-  }),
-)
+const drawingOptions = computed(() => ({
+  signSizes: signSizes.value,
+  catalogLabel: catalogSource.value
+    ? `Знаки: PNG локального архива · ${catalogSource.value.documentCode}, редакция ${catalogSource.value.edition}.`
+    : 'Знаки: редакция каталога не указана.',
+  revisionLabel: revisionLabel.value,
+}))
+/** Черновая раскладка: по ней выполняются все проверки (выпуск отличается только подписями). */
+const draftDrawing = computed(() => drawSheet(sheet.value, drawingOptions.value))
 /** Знаки без PNG, которые нельзя нарисовать программно: печать с ними недопустима. */
 const missingSigns = computed(() =>
-  drawing.value.signCodes.filter(
+  draftDrawing.value.signCodes.filter(
     (code) =>
       (!signSizes.value.has(code) || brokenImages.value.has(code)) && !drawableWithoutImage(code),
   ),
 )
 /** Знаки, нарисованные программно вместо отсутствующего PNG. */
 const drawnSigns = computed(() =>
-  drawing.value.signCodes.filter(
+  draftDrawing.value.signCodes.filter(
     (code) =>
       (!signSizes.value.has(code) || brokenImages.value.has(code)) && drawableWithoutImage(code),
   ),
 )
-const outsideIds = computed(() => objectsOutside(drawing.value))
+const outsideIds = computed(() => objectsOutside(draftDrawing.value))
+/** Причины, по которым лист нельзя печатать или выгружать; проверяются и при Ctrl+P. */
+const blockers = computed(() => {
+  const list: string[] = []
+  if (props.hasPendingInput) list.push('Сначала примените или отмените изменения в форме.')
+  if (catalogState.value === 'loading') list.push('Каталог знаков ещё загружается.')
+  else if (catalogState.value !== 'ready')
+    list.push('Для печати нужен полный доступ к локальному каталогу PNG знаков.')
+  else if (!catalogSource.value || catalogSource.value.edition === 'не указана')
+    list.push('Для печати укажите редакцию ГОСТ при импорте локального архива PNG.')
+  if (missingSigns.value.length)
+    list.push(
+      `В локальном архиве отсутствуют PNG: ${missingSigns.value.join(', ')}. Обновите архив или исправьте объекты.`,
+    )
+  if (outsideIds.value.length)
+    list.push(
+      `Объекты № ${outsideIds.value.join(', ')} выходят за пределы листа. Исправьте их положение.`,
+    )
+  const overlap = overlappingPosts(draftDrawing.value)[0]
+  if (overlap) list.push(`Стойки № ${overlap[0]} и № ${overlap[1]} перекрываются. Разведите их.`)
+  if (draftDrawing.value.overflow.length)
+    list.push(
+      `Текст не помещается на листе: ${draftDrawing.value.overflow.join(', ')}. Сократите реквизиты.`,
+    )
+  return list
+})
+/** Выпускной лист только после подтверждения и без блокирующих замечаний. */
+const release = computed(() => releaseConfirmed.value && !blockers.value.length)
+const drawing = computed(() =>
+  release.value
+    ? drawSheet(sheet.value, { ...drawingOptions.value, release: true })
+    : draftDrawing.value,
+)
 const previewSize = computed(() => ({
   width: `${1122.52 * zoom.value}px`,
   height: `${793.7 * zoom.value}px`,
@@ -125,38 +167,16 @@ function imageFailed(code: string): void {
   brokenImages.value = new Set([...brokenImages.value, code])
 }
 
-async function printDraft(): Promise<void> {
+/** PNG знаков загружаются заранее: лист не должен уйти в печать или файл с пустыми местами. */
+async function prepareSheet(): Promise<boolean> {
   printError.value = ''
-  if (props.hasPendingInput || catalogState.value === 'loading') return
-  if (catalogState.value !== 'ready') {
-    printError.value = 'Для печати нужен полный доступ к локальному каталогу PNG знаков.'
-    return
-  }
-  if (!catalogSource.value || catalogSource.value.edition === 'не указана') {
-    printError.value = 'Для печати укажите редакцию ГОСТ при импорте локального архива PNG.'
-    return
-  }
-  if (missingSigns.value.length) {
-    printError.value = `В локальном архиве отсутствуют PNG: ${missingSigns.value.join(', ')}. Обновите архив или исправьте объекты.`
-    return
-  }
-  if (outsideIds.value.length) {
-    printError.value = `Объекты № ${outsideIds.value.join(', ')} выходят за пределы листа. Исправьте их положение перед печатью.`
-    return
-  }
-  const overlap = overlappingPosts(drawing.value)[0]
-  if (overlap) {
-    printError.value = `Стойки № ${overlap[0]} и № ${overlap[1]} перекрываются. Разведите их перед печатью.`
-    return
-  }
-  if (drawing.value.overflow.length) {
-    printError.value = `Текст не помещается на листе: ${drawing.value.overflow.join(', ')}. Сократите реквизиты.`
-    return
+  if (blockers.value.length) {
+    printError.value = blockers.value[0]!
+    return false
   }
   const schemeAtStart = props.scheme
   await nextTick()
-  if (!paper.value) return
-  // PNG знаков загружаются заранее: печать не должна начаться с пустыми местами на листе.
+  if (!paper.value) return false
   const images = [...paper.value.querySelectorAll<SVGImageElement>('image[data-sign-code]')]
   await Promise.all(
     images.map(async (image) => {
@@ -172,13 +192,42 @@ async function printDraft(): Promise<void> {
   await nextTick()
   if (missingSigns.value.length) {
     printError.value = `Не удалось загрузить PNG: ${missingSigns.value.join(', ')}.`
-    return
+    return false
   }
   if (props.scheme !== schemeAtStart || props.hasPendingInput) {
-    printError.value = 'Проект изменился во время подготовки печати. Проверьте лист и повторите.'
-    return
+    printError.value = 'Проект изменился во время подготовки. Проверьте лист и повторите.'
+    return false
   }
-  window.print()
+  return true
+}
+
+async function printDraft(): Promise<void> {
+  if (await prepareSheet()) window.print()
+}
+
+function fileName(extension: string): string {
+  return sheetFileName(
+    [
+      'Схема',
+      sheet.value.template.toUpperCase().replace('B', 'Б'),
+      sheet.value.crossingFromPu66?.location || sheet.value.referenceId,
+      release.value ? '' : 'черновик',
+    ],
+    extension,
+  )
+}
+
+async function exportPng(): Promise<void> {
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    if (!(await prepareSheet()) || !paper.value) return
+    downloadBlob(await sheetToPng(paper.value, SHEET_WIDTH, SHEET_HEIGHT), fileName('png'))
+  } catch (cause) {
+    printError.value = cause instanceof Error ? cause.message : 'Не удалось сформировать PNG.'
+  } finally {
+    exporting.value = false
+  }
 }
 </script>
 
@@ -189,7 +238,7 @@ async function printDraft(): Promise<void> {
     :aria-hidden="previewOnly ? true : undefined"
   >
     <div v-if="!previewOnly" class="screen-only">
-      <h2 id="sheet-title">Черновой лист A4</h2>
+      <h2 id="sheet-title">{{ release ? 'Выпускной лист A4' : 'Черновой лист A4' }}</h2>
       <p class="hint">
         Лист показывает применённые данные проекта и условные координаты объектов. Он не строит
         нормативную расстановку и не предназначен для передачи на согласование. Для проверки
@@ -215,9 +264,32 @@ async function printDraft(): Promise<void> {
           :disabled="hasPendingInput || catalogState === 'loading'"
           @click="printDraft"
         >
-          Печать черновика A4
+          {{ release ? 'Печать листа A4' : 'Печать черновика A4' }}
+        </button>
+        <button
+          type="button"
+          :disabled="hasPendingInput || catalogState === 'loading' || exporting"
+          @click="exportPng"
+        >
+          {{ exporting ? 'Формируется PNG…' : 'Скачать PNG' }}
         </button>
       </div>
+      <fieldset class="release">
+        <legend>Выпуск листа</legend>
+        <label class="checkbox">
+          <input v-model="releaseConfirmed" type="checkbox" :disabled="Boolean(blockers.length)" />
+          Я проверил лист: знаки, расстояния, реквизиты и применимость схемы к условиям работ
+        </label>
+        <p class="hint">
+          {{
+            blockers.length
+              ? 'Выпуск недоступен, пока есть замечания ниже.'
+              : release
+                ? 'Выпускной лист: без отметки «черновик» и служебных строк. Любое изменение проекта возвращает черновик.'
+                : 'После отметки лист печатается и выгружается без отметки «черновик». Отметка не сохраняется в проекте и не заменяет согласование.'
+          }}
+        </p>
+      </fieldset>
       <p v-if="hasPendingInput" class="hint" role="status">
         Сначала примените или отмените изменения в форме.
       </p>
@@ -242,7 +314,15 @@ async function printDraft(): Promise<void> {
       <p v-if="printError" class="error" role="alert">{{ printError }}</p>
     </div>
 
-    <div class="preview-scroll screen-preview" aria-label="Просмотр чернового листа A4">
+    <div v-if="!previewOnly && blockers.length" class="print-blocked-note">
+      <strong>Печать остановлена.</strong>
+      <p v-for="reason in blockers" :key="reason">{{ reason }}</p>
+    </div>
+    <div
+      class="preview-scroll screen-preview"
+      :class="{ blocked: blockers.length }"
+      aria-label="Просмотр листа A4"
+    >
       <div class="preview-space" :style="previewSize">
         <svg
           ref="paper"
@@ -404,8 +484,35 @@ h2 {
 .sheet-paper :deep(text) {
   white-space: pre;
 }
+.release {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid #c6d3e0;
+  border-radius: 0.45rem;
+}
+.release legend {
+  font-weight: 600;
+}
+.release .checkbox {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+.print-blocked-note {
+  display: none;
+}
 @media print {
   .screen-only {
+    display: none !important;
+  }
+  /* Ctrl+P в обход кнопки: вместо листа с ошибками печатается причина остановки. */
+  .print-blocked-note {
+    display: block;
+    font:
+      14pt/1.4 Arial,
+      sans-serif;
+  }
+  .preview-scroll.blocked {
     display: none !important;
   }
   .preview-scroll {
