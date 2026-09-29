@@ -49,6 +49,17 @@ test('review findings move focus to the first empty field', async ({ page }) => 
     .getByRole('link', { name: 'Перейти' })
     .click()
   await expect(page.locator('[data-field="titleBlock.approver.position"]')).toBeFocused()
+
+  // Незавершённая правка объекта блокирует форму: переход объясняет причину и ведёт к правке.
+  await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
+  await page.getByRole('button', { name: 'Добавить надпись' }).click()
+  await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  await page
+    .locator('li', { hasText: 'Место работ и направления' })
+    .getByRole('link', { name: 'Перейти' })
+    .click()
+  await expect(page.getByRole('status').filter({ hasText: 'правка объекта' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Знаки и объекты', level: 1 })).toBeVisible()
 })
 
 test('restores applied edits and unapplied fields after the window closes', async ({

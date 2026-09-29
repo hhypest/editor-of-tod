@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import LocalRegistries from './components/LocalRegistries.vue'
 import ImportedData from './components/ImportedData.vue'
 import LocalProjects from './components/LocalProjects.vue'
@@ -138,7 +138,14 @@ function showView(view: View): void {
   activeView.value = view
 }
 
+/** Пояснение, почему «Перейти» не смог поставить курсор в поле. */
+const findingNotice = ref('')
+watch(placementDirty, (dirty) => {
+  if (!dirty) findingNotice.value = ''
+})
+
 async function navigateToFinding(finding: ReviewFinding): Promise<void> {
+  findingNotice.value = ''
   let view: View = 'review'
   if (finding.target === '#pu66-link-title' || finding.id === 'place') view = 'source'
   else if (finding.target === '#placements-title') view = 'objects'
@@ -157,7 +164,18 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
         (element) => element.offsetParent !== null,
       )
     : undefined
-  if (field) {
+  if (field?.matches(':disabled')) {
+    // Форма заблокирована незавершённой правкой объекта или записью в базу: курсор не встанет.
+    if (placementDirty.value) {
+      showView('objects')
+      await nextTick()
+      document.getElementById('placements-title')?.scrollIntoView({ block: 'start' })
+      findingNotice.value = `«${finding.title}»: поле станет доступно после того, как правка объекта будет применена или отменена. Завершите её и снова нажмите «Перейти».`
+    } else {
+      field.scrollIntoView({ block: 'center' })
+      findingNotice.value = `«${finding.title}»: поле временно недоступно, пока идёт запись. Повторите переход через несколько секунд.`
+    }
+  } else if (field) {
     field.scrollIntoView({ block: 'center' })
     field.focus({ preventScroll: true })
   } else {
@@ -277,6 +295,10 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
       <div class="content">
         <p v-if="localError" class="feedback error" role="alert">{{ localError }}</p>
         <p v-if="localNotice" class="feedback notice" role="status">{{ localNotice }}</p>
+        <p v-if="findingNotice" class="feedback notice" role="status">
+          {{ findingNotice }}
+          <button type="button" @click="findingNotice = ''">Скрыть</button>
+        </p>
 
         <section v-show="activeView === 'projects'" class="view" aria-labelledby="projects-heading">
           <div class="view-heading">
