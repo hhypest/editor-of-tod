@@ -45,7 +45,10 @@ const templateSchema = z.strictObject({
   sourceReference: z.literal('ОДМ 218.6.019-2016'),
   reviewStatus: z.literal('not-verified'),
 })
-const templateV5Schema = templateSchema.extend({ projectionVersion: z.literal('draft-1') })
+/** Версия условной раскладки шаблона: draft-2 — состав стоек по рисункам Б.33/Б.34. */
+const templateV5Schema = templateSchema.extend({
+  projectionVersion: z.enum(['draft-1', 'draft-2']),
+})
 
 const position = z.strictObject({ anchor, offsetXSvg: finite })
 
