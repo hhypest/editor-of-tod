@@ -31,11 +31,19 @@ import {
   AmbiguousPu66Key,
 } from './store.ts'
 
-const port = 4100
-const dist = fileURLToPath(new URL('../dist/', import.meta.url))
-const databasePath =
-  process.env.TOD_DATABASE_PATH ??
-  fileURLToPath(new URL('../private-data/registry.sqlite', import.meta.url))
+export const DEFAULT_PORT = 4100
+const port = DEFAULT_PORT
+
+/** Источник файлов собранного интерфейса: папка `dist/` или ресурсы исполняемого файла. */
+export type StaticFiles = (filename: string) => Promise<Buffer>
+
+export function directoryFiles(directory: string): StaticFiles {
+  return (filename) => readFile(join(directory, filename))
+}
+
+function defaultStaticFiles(): StaticFiles {
+  return directoryFiles(fileURLToPath(new URL('../dist/', import.meta.url)))
+}
 
 class RequestError extends Error {
   readonly status: number
@@ -108,7 +116,11 @@ function projectId(encoded: string): string {
   return id
 }
 
-async function serveBuiltApp(pathname: string, res: ServerResponse): Promise<void> {
+async function serveBuiltApp(
+  pathname: string,
+  res: ServerResponse,
+  staticFiles: StaticFiles,
+): Promise<void> {
   const filename =
     pathname === '/' || pathname === '/index.html'
       ? 'index.html'
@@ -117,7 +129,7 @@ async function serveBuiltApp(pathname: string, res: ServerResponse): Promise<voi
         : null
   if (!filename) throw new RequestError(404, 'Страница не найдена.')
   try {
-    const body = await readFile(join(dist, filename))
+    const body = await staticFiles(filename)
     const type = {
       '.html': 'text/html',
       '.js': 'text/javascript',
@@ -137,7 +149,11 @@ async function serveBuiltApp(pathname: string, res: ServerResponse): Promise<voi
   }
 }
 
-export function createRegistryServer(store: RegistryStore, listenPort = port) {
+export function createRegistryServer(
+  store: RegistryStore,
+  listenPort = port,
+  staticFiles: StaticFiles = defaultStaticFiles(),
+) {
   const server = createServer(async (req, res) => {
     try {
       const address = server.address()
@@ -286,7 +302,7 @@ export function createRegistryServer(store: RegistryStore, listenPort = port) {
       } else if (req.method === 'POST' && pathname === '/api/backup') {
         json(res, 201, { filename: await store.createBackup() })
       } else if (req.method === 'GET' && !pathname.startsWith('/api/')) {
-        await serveBuiltApp(pathname, res)
+        await serveBuiltApp(pathname, res, staticFiles)
       } else {
         throw new RequestError(404, 'Адрес не найден.')
       }
@@ -312,6 +328,9 @@ export function createRegistryServer(store: RegistryStore, listenPort = port) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   process.umask(0o077)
+  const databasePath =
+    process.env.TOD_DATABASE_PATH ??
+    fileURLToPath(new URL('../private-data/registry.sqlite', import.meta.url))
   const store = new RegistryStore(databasePath)
   const server = createRegistryServer(store)
   server.listen(port, '127.0.0.1', () => {
