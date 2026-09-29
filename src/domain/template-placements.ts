@@ -1,4 +1,5 @@
 import { schemeSchema, type Scheme } from './model'
+import { parseHourly } from './regulation-advice'
 
 type Placement = Scheme['placements'][number]
 
@@ -49,9 +50,8 @@ function checkConditions(scheme: Scheme): void {
     )
   }
   if (regulation.mode === 'signs') {
-    const input = regulation.hourly.trim().replace(',', '.')
-    const hourly = /^\d+(?:\.\d+)?$/.test(input) ? Number(input) : Number.NaN
-    if (!Number.isFinite(hourly) || hourly >= 250 || regulation.vis) {
+    const hourly = parseHourly(regulation.hourly)
+    if (hourly === null || hourly >= 250 || regulation.vis) {
       throw new TemplateBuildError(
         'Для варианта со знаками 2.6/2.7 укажите интенсивность менее 250 авт./ч и подтвердите достаточную видимость (ОДМ, п. 5.4.4).',
       )
