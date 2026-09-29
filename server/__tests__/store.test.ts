@@ -429,7 +429,7 @@ describe('local SQLite registries', () => {
     }
     const check = new DatabaseSync(path)
     try {
-      expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 9 })
+      expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 10 })
       const rows = check
         .prepare('SELECT scheme_json FROM project_revisions ORDER BY revision')
         .all() as { scheme_json: string }[]
@@ -483,7 +483,7 @@ describe('local SQLite registries', () => {
       migrated.close()
     }
     const database = new DatabaseSync(path)
-    expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 9 })
+    expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 10 })
     database.close()
   })
 })

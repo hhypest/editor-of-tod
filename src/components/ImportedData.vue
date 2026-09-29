@@ -21,9 +21,22 @@ import {
   previewSignFiles,
   type SignCatalog,
   type SignImportPlan,
+  type SignSourceInput,
 } from '../services/local-signs'
+import { listDocuments } from '../services/local-documents'
+import {
+  catalogEditionStatus,
+  documentLabel,
+  documentStatuses,
+  type DocumentRecord,
+} from '../domain/normative-documents'
 
-const props = defineProps<{ referencedSignIds: string[]; locked: boolean }>()
+const props = defineProps<{
+  referencedSignIds: string[]
+  locked: boolean
+  /** Меняется при правке библиотеки документов или каталога в другом разделе. */
+  refreshKey?: number
+}>()
 const emit = defineEmits<{ signsUpdated: []; pu66Updated: [] }>()
 type Sign = { code: string; width: number; height: number }
 type Crossing = {
@@ -51,6 +64,25 @@ const importPlan = ref<Pu66ImportPlan | null>(null)
 const importBusy = ref(false)
 const signArchive = ref<File | null>(null)
 const signPdf = ref<File | null>(null)
+/** Документ библиотеки, с которым сверен архив; пусто — код и редакция вводятся вручную. */
+const signDocumentId = ref<number | ''>('')
+const documents = ref<DocumentRecord[]>([])
+const today = localCalendarDate(new Date())
+/** Основные документы для знаков: действующая редакция первой. */
+const signDocuments = computed(() => {
+  const statuses = documentStatuses(documents.value, today)
+  return documents.value
+    .filter((document) => document.amendsId === null)
+    .map((document) => ({ document, status: statuses.get(document.id)?.kind ?? 'undated' }))
+    .sort(
+      (a, b) =>
+        Number(b.status === 'current') - Number(a.status === 'current') ||
+        Number(b.document.kind === 'signs') - Number(a.document.kind === 'signs'),
+    )
+})
+const catalogStatus = computed(() =>
+  catalogEditionStatus(signCatalog.value, documents.value, today),
+)
 const signDocumentCode = ref('ГОСТ Р 52290-2024')
 const signEdition = ref('2024')
 const signPlan = ref<SignImportPlan | null>(null)
@@ -98,11 +130,19 @@ async function load(): Promise<void> {
   busy.value = true
   error.value = ''
   try {
-    const [cardsResponse, signsResponse, catalog] = await Promise.all([
+    const [cardsResponse, signsResponse, catalog, library] = await Promise.all([
       fetch('/api/pu66'),
       fetch('/api/signs'),
       getSignCatalog(),
+      listDocuments(),
     ])
+    documents.value = library
+    if (signDocumentId.value === '') {
+      const current = signDocuments.value.find(
+        (item) => item.status === 'current' && item.document.kind === 'signs',
+      )
+      if (current) signDocumentId.value = current.document.id
+    }
     if (!cardsResponse.ok || !signsResponse.ok)
       throw new Error('Не удалось прочитать локальный каталог.')
     crossings.value = (await cardsResponse.json()) as Crossing[]
@@ -124,6 +164,12 @@ function changeSignFiles(event: Event, kind: 'zip' | 'pdf'): void {
   signNotice.value = ''
 }
 
+function signSource(): SignSourceInput {
+  return signDocumentId.value === ''
+    ? { documentCode: signDocumentCode.value, edition: signEdition.value, pdf: signPdf.value }
+    : { documentId: signDocumentId.value }
+}
+
 async function previewSigns(): Promise<void> {
   if (!signArchive.value || props.locked) return
   signBusy.value = true
@@ -131,12 +177,7 @@ async function previewSigns(): Promise<void> {
   signNotice.value = ''
   signPlan.value = null
   try {
-    signPlan.value = await previewSignFiles(
-      signArchive.value,
-      signPdf.value,
-      signDocumentCode.value,
-      signEdition.value,
-    )
+    signPlan.value = await previewSignFiles(signArchive.value, signSource())
   } catch (cause) {
     signError.value = cause instanceof Error ? cause.message : 'Не удалось проверить архив.'
   } finally {
@@ -149,13 +190,7 @@ async function applySigns(): Promise<void> {
   signBusy.value = true
   signError.value = ''
   try {
-    const result = await applySignFiles(
-      signArchive.value,
-      signPdf.value,
-      signDocumentCode.value,
-      signEdition.value,
-      signPlan.value.fingerprint,
-    )
+    const result = await applySignFiles(signArchive.value, signSource(), signPlan.value.fingerprint)
     signPlan.value = null
     signArchive.value = null
     signPdf.value = null
@@ -163,7 +198,7 @@ async function applySigns(): Promise<void> {
     if (signPdfInput.value) signPdfInput.value.value = ''
     await load()
     emit('signsUpdated')
-    signNotice.value = `Знаки: новых ${result.added}, обновлено ${result.updated}, исключено из текущего набора ${result.retired}. ${result.backup ? `Копия SQLite: private-data/backups/${result.backup}.` : 'Изменений нет.'}`
+    signNotice.value = `Знаки: новых ${result.added}, изменено изображений ${result.changedCodes.length}, сменилась только редакция источника у ${result.relabelled}, исключено из текущего набора ${result.retired}. ${result.backup ? `Копия SQLite: private-data/backups/${result.backup}.` : 'Изменений нет.'}`
   } catch (cause) {
     signPlan.value = null
     signError.value = `${cause instanceof Error ? cause.message : 'Не удалось записать каталог.'} Повторите просмотр перед записью.`
@@ -255,6 +290,10 @@ async function loadVerificationHistory(key: string): Promise<void> {
 }
 
 watch(verificationKey, loadVerificationHistory)
+watch(
+  () => props.refreshKey,
+  () => void load(),
+)
 
 function imageUrl(sign: Sign): string {
   return `/api/signs/${encodeURIComponent(sign.code)}/image`
@@ -392,21 +431,46 @@ onMounted(load)
       </p>
       <p v-if="locked" role="status">Сначала примените или отмените правки открытого проекта.</p>
       <label
-        >Документ
-        <input
-          v-model="signDocumentCode"
-          maxlength="120"
-          :disabled="signBusy || locked"
-          @input="signPlan = null"
-      /></label>
-      <label
-        >Редакция
-        <input
-          v-model="signEdition"
-          maxlength="120"
-          :disabled="signBusy || locked"
-          @input="signPlan = null"
-      /></label>
+        >Документ из библиотеки
+        <select v-model="signDocumentId" :disabled="signBusy || locked" @change="signPlan = null">
+          <option value="">Не выбран — указать код и редакцию вручную</option>
+          <option v-for="item in signDocuments" :key="item.document.id" :value="item.document.id">
+            {{ documentLabel(item.document)
+            }}{{ item.document.title ? ` — ${item.document.title}` : ''
+            }}{{
+              item.status === 'current'
+                ? ' (действует)'
+                : item.status === 'superseded'
+                  ? ' (заменён)'
+                  : item.status === 'future'
+                    ? ' (ещё не введён)'
+                    : ''
+            }}
+          </option>
+        </select>
+      </label>
+      <p v-if="!signDocuments.length" class="hint">
+        PDF стандарта можно прикрепить в «Реестры» → «Нормативные документы»: тогда код, редакция и
+        хеш PDF берутся из библиотеки, а приложение подскажет, когда каталог знаков устарел.
+      </p>
+      <template v-if="signDocumentId === ''">
+        <label
+          >Документ
+          <input
+            v-model="signDocumentCode"
+            maxlength="120"
+            :disabled="signBusy || locked"
+            @input="signPlan = null"
+        /></label>
+        <label
+          >Редакция
+          <input
+            v-model="signEdition"
+            maxlength="120"
+            :disabled="signBusy || locked"
+            @input="signPlan = null"
+        /></label>
+      </template>
       <label>
         ZIP знаков (до {{ MAX_WEB_SIGN_ARCHIVE_BYTES / 1024 / 1024 }} МБ)
         <input
@@ -417,7 +481,7 @@ onMounted(load)
           @change="changeSignFiles($event, 'zip')"
         />
       </label>
-      <label>
+      <label v-if="signDocumentId === ''">
         PDF ГОСТ для хеша (необязательно, до {{ MAX_WEB_SIGN_PDF_BYTES / 1024 / 1024 }} МБ)
         <input
           ref="signPdfInput"
@@ -435,8 +499,9 @@ onMounted(load)
       <p v-if="signNotice" role="status">{{ signNotice }}</p>
       <div v-if="signPlan" class="import-plan">
         <p>
-          В архиве {{ signPlan.signCount }} знаков: новых {{ signPlan.added }}, обновлений
-          {{ signPlan.updated }}, неизменных {{ signPlan.unchanged }}, исключается из текущего
+          В архиве {{ signPlan.signCount }} знаков: новых {{ signPlan.added }}, с изменённым
+          изображением {{ signPlan.changedCodes.length }}, сменится только редакция источника
+          {{ signPlan.relabelled }}, без изменений {{ signPlan.unchanged }}, исключается из текущего
           набора {{ signPlan.retired }}. Источник: {{ signPlan.source.documentCode }}, редакция
           {{ signPlan.source.edition
           }}{{
@@ -445,6 +510,33 @@ onMounted(load)
               : ', PDF не выбран'
           }}.
         </p>
+        <details v-if="signPlan.addedCodes.length">
+          <summary>Новые знаки · {{ signPlan.addedCodes.length }}</summary>
+          <p class="codes">{{ signPlan.addedCodes.join(', ') }}</p>
+        </details>
+        <details v-if="signPlan.retiredCodes.length" open>
+          <summary>Исключаются из текущего набора · {{ signPlan.retiredCodes.length }}</summary>
+          <p class="codes">{{ signPlan.retiredCodes.join(', ') }}</p>
+          <p class="hint">
+            Проекты с закреплёнными редакциями продолжат показывать прежние PNG из истории; новые
+            стойки эти коды не получат.
+          </p>
+        </details>
+        <details v-if="signPlan.changedCodes.length" open>
+          <summary>Изменённые изображения · {{ signPlan.changedCodes.length }}</summary>
+          <ul class="sign-compare">
+            <li v-for="item in signPlan.changedPreviews" :key="item.code">
+              <strong>{{ item.code }}</strong>
+              <img :src="`/api/signs/${encodeURIComponent(item.code)}/image`" alt="Сейчас" />
+              <span aria-hidden="true">→</span>
+              <img :src="item.image" alt="В новом архиве" />
+            </li>
+          </ul>
+          <p v-if="signPlan.changedCodes.length > signPlan.changedPreviews.length" class="hint">
+            Показаны первые {{ signPlan.changedPreviews.length }}; остальные:
+            {{ signPlan.changedCodes.slice(signPlan.changedPreviews.length).join(', ') }}.
+          </p>
+        </details>
         <button
           type="button"
           :disabled="
@@ -459,6 +551,11 @@ onMounted(load)
     <p v-if="signCatalog">
       Текущий набор: {{ signCatalog.documentCode }}, редакция {{ signCatalog.edition }},
       {{ signCatalog.signCount }} знаков; импорт {{ signCatalog.importedAt }}.
+    </p>
+    <p v-if="catalogStatus.kind === 'outdated'" class="error" role="status">
+      В библиотеке действует {{ documentLabel(catalogStatus.document) }}, а каталог знаков загружен
+      по редакции {{ catalogStatus.catalogEdition }}. Загрузите архив знаков новой редакции и
+      перезакрепите знаки в проектах после проверки.
     </p>
     <p v-else-if="signs.length">Для прежнего импорта редакция источника не указана.</p>
     <p>Найдено {{ signs.length }} знаков. Поиск показывает первые 48 совпадений.</p>
@@ -492,6 +589,10 @@ onMounted(load)
 }
 h2 {
   margin-top: 0;
+}
+.hint {
+  color: #526273;
+  line-height: 1.5;
 }
 .error {
   color: #a22030;
@@ -537,6 +638,30 @@ input[type='search'] {
 .verification-form p {
   flex-basis: 100%;
   margin: 0;
+}
+.codes {
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+.sign-compare {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+.sign-compare li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.sign-compare img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border: 1px solid #d8e1eb;
+  background: #fff;
 }
 .import-plan {
   flex-basis: 100%;

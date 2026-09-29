@@ -270,7 +270,7 @@ describe('private import formats', () => {
       expect(migrated.listPu66()[0]?.verification).toBeNull()
       migrated.close()
       const current = new DatabaseSync(path)
-      expect(current.prepare('PRAGMA user_version').get()).toEqual({ user_version: 9 })
+      expect(current.prepare('PRAGMA user_version').get()).toEqual({ user_version: 10 })
       current.close()
     } finally {
       rmSync(directory, { recursive: true, force: true })
@@ -413,7 +413,7 @@ describe('private import formats', () => {
       migrated.close()
 
       const database = new DatabaseSync(path)
-      expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 9 })
+      expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 10 })
       expect(
         (database.prepare('PRAGMA table_info(signs)').all() as { name: string }[]).map(
           (column) => column.name,
@@ -485,7 +485,7 @@ describe('private import formats', () => {
         reopened.close()
       }
       const check = new DatabaseSync(path)
-      expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 9 })
+      expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 10 })
       expect(check.prepare('PRAGMA foreign_key_check').all()).toEqual([])
       check.close()
     } finally {

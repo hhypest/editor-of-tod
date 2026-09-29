@@ -12,6 +12,13 @@ import {
   type SignSize,
 } from '../domain/sheet-drawing'
 import { downloadBlob, sheetFileName, sheetToPng } from '../services/sheet-png'
+import { listDocuments } from '../services/local-documents'
+import {
+  catalogEditionStatus,
+  documentLabel,
+  type DocumentRecord,
+} from '../domain/normative-documents'
+import { localCalendarDate } from '../domain/pu66-review'
 import SheetNodes from './SheetNodes.vue'
 
 const props = defineProps<{
@@ -30,6 +37,11 @@ const brokenImages = ref<Set<string>>(new Set())
 const catalogState = ref<'loading' | 'ready' | 'partial' | 'unavailable'>('loading')
 const catalogSource = ref<{ documentCode: string; edition: string } | null>(null)
 const printError = ref('')
+const documents = ref<DocumentRecord[]>([])
+/** Редакция знаков проекта (закреплённая или текущего каталога) против действующей в библиотеке. */
+const editionStatus = computed(() =>
+  catalogEditionStatus(catalogSource.value, documents.value, localCalendarDate(new Date())),
+)
 /** Составитель подтвердил проверку листа; сбрасывается при любом изменении проекта. */
 const releaseConfirmed = ref(false)
 const exporting = ref(false)
@@ -110,6 +122,10 @@ const previewSize = computed(() => ({
 
 async function loadSigns(): Promise<void> {
   catalogState.value = 'loading'
+  // Библиотека документов необязательна: без неё лист работает как раньше.
+  listDocuments()
+    .then((list) => (documents.value = list))
+    .catch(() => (documents.value = []))
   brokenImages.value = new Set()
   try {
     const [response, sourceResponse] = await Promise.all([
@@ -320,6 +336,16 @@ async function exportPng(): Promise<void> {
       </p>
       <p v-if="catalogState === 'ready' && drawnSigns.length" class="hint" role="status">
         Нарисованы без PNG: {{ drawnSigns.join(', ') }}. Проверьте их вид или добавьте PNG в архив.
+      </p>
+      <p v-if="editionStatus.kind === 'outdated'" class="error" role="status">
+        Знаки {{ scheme.signImages.catalog ? 'проекта закреплены' : 'каталога загружены' }} по
+        редакции {{ editionStatus.catalogEdition }}, а в библиотеке действует
+        {{ documentLabel(editionStatus.document) }}.
+        {{
+          scheme.signImages.catalog
+            ? 'После загрузки архива новой редакции проверьте знаки и закрепите редакции PNG заново на этапе «Знаки и объекты».'
+            : 'Загрузите архив знаков новой редакции в «Реестры» → «Импорт Excel и знаков».'
+        }}
       </p>
       <p v-if="outsideIds.length" class="hint">
         За пределами листа: № {{ outsideIds.join(', ') }}. Их положение нужно исправить перед

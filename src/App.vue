@@ -4,6 +4,7 @@ import LocalRegistries from './components/LocalRegistries.vue'
 import ImportedData from './components/ImportedData.vue'
 import LocalProjects from './components/LocalProjects.vue'
 import NewScheme from './components/NewScheme.vue'
+import NormativeDocuments from './components/NormativeDocuments.vue'
 import PlacementEditor from './components/PlacementEditor.vue'
 import Pu66Linker from './components/Pu66Linker.vue'
 import SchemeDraftSheet from './components/SchemeDraftSheet.vue'
@@ -20,7 +21,7 @@ type View = 'projects' | 'source' | 'geometry' | 'objects' | 'review' | 'registr
 const stages = ['source', 'geometry', 'objects', 'review'] as const
 const activeView = ref<View>('projects')
 const projectTab = ref<'new' | 'file' | 'local'>('new')
-const registryTab = ref<'imports' | 'entries'>('imports')
+const registryTab = ref<'imports' | 'documents' | 'entries'>('imports')
 const registriesVisited = ref(false)
 const setupStatus = ref<{ cards: number; signs: number } | null>(null)
 const setupError = ref('')
@@ -443,7 +444,10 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
           <div class="view-heading">
             <p class="eyebrow">Отдельный раздел</p>
             <h1 id="registries-heading">Локальные реестры</h1>
-            <p>Карточки ПУ-66 и каталог знаков остаются в базе на этом компьютере.</p>
+            <p>
+              Карточки ПУ-66, каталог знаков и нормативные документы остаются в базе на этом
+              компьютере.
+            </p>
           </div>
           <div class="tabs" role="group" aria-label="Раздел реестров">
             <button
@@ -452,6 +456,13 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
               @click="registryTab = 'imports'"
             >
               Импорт Excel и знаков
+            </button>
+            <button
+              type="button"
+              :aria-pressed="registryTab === 'documents'"
+              @click="registryTab = 'documents'"
+            >
+              Нормативные документы
             </button>
             <button
               type="button"
@@ -466,8 +477,15 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
             class="module"
             :referenced-sign-ids="referencedSignIds"
             :locked="editorDirty"
+            :refresh-key="signCatalogVersion"
             @signs-updated="onSignsUpdated"
             @pu66-updated="refreshSetupStatus"
+          />
+          <NormativeDocuments
+            v-if="registryTab === 'documents'"
+            class="module"
+            :locked="editorDirty"
+            @changed="onSignsUpdated"
           />
           <LocalRegistries v-show="registryTab === 'entries'" class="module" />
         </section>
