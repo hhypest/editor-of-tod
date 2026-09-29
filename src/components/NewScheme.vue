@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   createNewScheme,
   createSchemeFromPu66,
@@ -12,7 +12,7 @@ import { selectTemplateByWorkFront } from '../domain/registry'
 import { getPu66SchemeRecord, listPu66Cards, type Pu66ListEntry } from '../services/local-pu66'
 import Pu66CardPicker from './Pu66CardPicker.vue'
 
-defineProps<{ locked?: boolean }>()
+const props = defineProps<{ locked?: boolean; active?: boolean }>()
 const emit = defineEmits<{ create: [scheme: Scheme] }>()
 const input = reactive<NewSchemeInput>({
   referenceId: '',
@@ -31,6 +31,18 @@ const registryNote = ref('')
 const cardKey = ref('')
 const card = ref<Pu66SchemeRecord | null>(null)
 const busy = ref(false)
+/**
+ * Номер попытки создания. Он меняется, если после нажатия «Создать проект» форма скрыта,
+ * открывается другой проект (родитель блокирует форму) или меняется выбранная карточка:
+ * тогда ответ реестра, пришедший позже, уже не создаёт проект.
+ */
+let attempt = 0
+watch(
+  () => [props.locked, props.active, cardKey.value] as const,
+  ([locked, active], previous) => {
+    if (locked || active === false || previous?.[2] !== cardKey.value) attempt++
+  },
+)
 const choice = computed(() => {
   const value = input.frontMetres.trim().replace(',', '.')
   if (!/^\d+(?:\.\d+)?$/.test(value)) return null
@@ -75,6 +87,7 @@ function forgetCard(): void {
 
 async function create(): Promise<void> {
   error.value = ''
+  const current = ++attempt
   busy.value = true
   try {
     const selected = card.value
@@ -85,6 +98,11 @@ async function create(): Promise<void> {
     createNewScheme({ ...input, referenceId: selected.referenceId })
     // Карточку перечитываем перед созданием: запись могла обновиться после просмотра.
     const latest = await getPu66SchemeRecord(selected.referenceId)
+    if (current !== attempt || props.locked) {
+      error.value =
+        'Создание проекта отменено: за время чтения карточки открыт другой раздел или проект.'
+      return
+    }
     if (latest.revision !== selected.revision || latest.updatedAt !== selected.updatedAt) {
       card.value = latest
       error.value = `Карточка обновлена до редакции № ${latest.revision}. Проверьте данные и создайте проект ещё раз.`
