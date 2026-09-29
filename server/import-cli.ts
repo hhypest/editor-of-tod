@@ -1,6 +1,6 @@
 import { readFile, stat } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { basename } from 'node:path'
+import { basename, join } from 'node:path'
 import { parsePu66 } from './pu66.ts'
 import { parseSignArchive } from './signs.ts'
 import { RegistryStore } from './store.ts'
@@ -41,7 +41,7 @@ export async function runImport(args: string[], store: RegistryStore): Promise<s
     if (planned.added + planned.updated === 0) return 'ПУ-66: данные уже загружены, изменений нет.'
     const backup = await store.createBackup()
     const result = store.importPu66(entries)
-    return `ПУ-66: добавлено ${result.added}, обновлено ${result.updated}, без изменений ${result.unchanged}. Резервная копия: private-data/backups/${backup}.`
+    return `ПУ-66: добавлено ${result.added}, обновлено ${result.updated}, без изменений ${result.unchanged}. Резервная копия: ${join(store.backupDirectory, backup)}.`
   }
   const entries = parseSignArchive(buffers[0]!)
   const planned = store.planSigns(entries)
@@ -51,7 +51,7 @@ export async function runImport(args: string[], store: RegistryStore): Promise<s
     return 'Знаки: данные уже загружены, изменений нет.'
   const backup = await store.createBackup()
   const result = store.importSigns(entries)
-  return `Знаки: добавлено ${result.added}, обновлено ${result.updated}, исключено ${result.retired}, без изменений ${result.unchanged}. Резервная копия: private-data/backups/${backup}.`
+  return `Знаки: добавлено ${result.added}, обновлено ${result.updated}, исключено ${result.retired}, без изменений ${result.unchanged}. Резервная копия: ${join(store.backupDirectory, backup)}.`
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

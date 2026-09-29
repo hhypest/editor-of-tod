@@ -1245,9 +1245,14 @@ export class RegistryStore {
     }))
   }
 
+  /** Каталог резервных копий: `backups/` рядом с файлом базы, в том числе заданным `TOD_DATABASE_PATH`. */
+  get backupDirectory(): string {
+    return join(dirname(this.path), 'backups')
+  }
+
   async createBackup(): Promise<string> {
     if (this.path === ':memory:') throw new Error('Нельзя сохранить резервную копию базы в памяти.')
-    const directory = join(dirname(this.path), 'backups')
+    const directory = this.backupDirectory
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     const filename = `registry-${this.now().replaceAll(':', '-').replaceAll('.', '-')}-${randomUUID().slice(0, 8)}.sqlite`
     const path = join(directory, filename)
