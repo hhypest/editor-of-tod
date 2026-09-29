@@ -193,6 +193,7 @@ export function localCardSummary(card: Pu66Card) {
   return {
     ...schemeFields(card),
     section: card.section,
+    station: card.station,
     crossingRoadLengthMetres: length,
     carCountPerDay: card.carCountPerDay,
   }

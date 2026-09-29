@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { createNewScheme, SchemeCreationError, type NewSchemeInput } from '../create-scheme'
+import {
+  createNewScheme,
+  createSchemeFromPu66,
+  SchemeCreationError,
+  type NewSchemeInput,
+} from '../create-scheme'
 import { applySchemeDetails, createSchemeDetailsDraft } from '../edit-details'
 import { newTextDraft, savePlacement } from '../edit-placements'
 import { exportSchemeJson, importSchemeJson } from '../import'
@@ -93,5 +98,41 @@ describe('native project creation', () => {
   ])('rejects missing or invalid measurements', (bad, field) => {
     expect(() => createNewScheme(bad, options)).toThrow(SchemeCreationError)
     expect(() => createNewScheme(bad, options)).toThrow(field)
+  })
+})
+
+describe('project created from a local PU-66 card', () => {
+  const card = {
+    referenceId: '90002:24:7',
+    location: '24 км 7 пк',
+    axisLabel: '24 км 7 пк',
+    roadName: 'Учебная дорога Б',
+    crossingWidthMetres: 6.5,
+    revision: 3,
+    updatedAt: '2026-09-28T10:00:00.000Z',
+  }
+
+  it('takes the key from the card and pins only the whitelisted snapshot', () => {
+    const scheme = createSchemeFromPu66({ ...input, referenceId: 'ввод вручную' }, card, options)
+    expect(scheme.crossing).toEqual({
+      referenceId: '90002:24:7',
+      source: 'local-pu66',
+      snapshot: {
+        location: '24 км 7 пк',
+        axisLabel: '24 км 7 пк',
+        roadName: 'Учебная дорога Б',
+        crossingWidthMetres: 6.5,
+        revision: 3,
+        updatedAt: '2026-09-28T10:00:00.000Z',
+      },
+    })
+    expect(scheme.parameters.locationText).toBe(input.locationText)
+    expect(exportSchemeJson(scheme)).not.toContain('ввод вручную')
+  })
+
+  it('still validates the measurements typed by the author', () => {
+    expect(() => createSchemeFromPu66({ ...input, frontMetres: '' }, card, options)).toThrow(
+      SchemeCreationError,
+    )
   })
 })

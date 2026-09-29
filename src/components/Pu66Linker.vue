@@ -5,6 +5,7 @@ import type { Scheme } from '../domain/model'
 import type { Pu66SchemeRecord } from '../domain/pu66-snapshot'
 import { annualPu66ReviewStatus, localCalendarDate } from '../domain/pu66-review'
 import { getPu66SchemeRecord, listPu66Cards, type Pu66ListEntry } from '../services/local-pu66'
+import Pu66CardPicker from './Pu66CardPicker.vue'
 
 const props = defineProps<{ scheme: Scheme; locked?: boolean }>()
 const emit = defineEmits<{ apply: [scheme: Scheme] }>()
@@ -127,15 +128,13 @@ onMounted(load)
       <template v-else>· карточка не закреплена</template>
     </p>
     <div class="controls">
-      <label for="pu66-choice">
-        Локальная карточка
-        <select id="pu66-choice" v-model="key" :disabled="busy || locked" @change="choose">
-          <option value="">Выберите запись</option>
-          <option v-for="card in cards" :key="card.referenceId" :value="card.referenceId">
-            {{ card.referenceId }} · {{ card.location }} · редакция № {{ card.revision }}
-          </option>
-        </select>
-      </label>
+      <Pu66CardPicker
+        v-model="key"
+        id-prefix="pu66-link"
+        :cards="cards"
+        :disabled="busy || locked"
+        @choose="choose"
+      />
       <button type="button" :disabled="busy || locked" @click="load">Обновить список</button>
     </div>
     <p v-if="!cards.length && !busy" class="hint">Импортированных карточек пока нет.</p>
@@ -225,18 +224,6 @@ onMounted(load)
   align-items: end;
   flex-wrap: wrap;
   margin: 1rem 0;
-}
-label {
-  font-weight: 600;
-}
-select {
-  display: block;
-  max-width: 100%;
-  padding: 0.6rem;
-  margin-top: 0.3rem;
-  border: 1px solid #93a5b8;
-  border-radius: 0.35rem;
-  font: inherit;
 }
 button {
   padding: 0.7rem 1rem;
