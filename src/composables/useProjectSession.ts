@@ -453,13 +453,20 @@ export function useProjectSession(onProjectOpened: () => void) {
     templateMessage.value = ''
     templateError.value = ''
     try {
-      const { scheme: rebuilt, keptSlots } = rebuildTemplatePlacements(imported.value.scheme)
+      const {
+        scheme: rebuilt,
+        keptSlots,
+        staleSlots,
+      } = rebuildTemplatePlacements(imported.value.scheme)
       onProjectApplied(rebuilt)
       selectedPlacementId.value = null
       templateMessage.value =
         'Черновая расстановка обновлена; ручные объекты сохранены. Сверьте каждый знак, место и расстояние.' +
         (keptSlots
           ? ` Объектов шаблона, изменённых вручную и оставленных без замены: ${keptSlots}; проверьте, соответствуют ли они новым параметрам.`
+          : '') +
+        (staleSlots
+          ? ` Вручную изменённых объектов прежней версии шаблона: ${staleSlots}. Новая раскладка их не заменяет — удалите лишние, если они повторяют новые стойки.`
           : '')
     } catch (cause) {
       templateError.value =

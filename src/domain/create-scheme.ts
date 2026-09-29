@@ -66,7 +66,7 @@ export function createNewScheme(
       code,
       sourceReference: 'ОДМ 218.6.019-2016',
       reviewStatus: 'not-verified',
-      projectionVersion: 'draft-1',
+      projectionVersion: 'draft-2',
     },
     signImages: { catalog: null, revisions: {} },
     parameters: {

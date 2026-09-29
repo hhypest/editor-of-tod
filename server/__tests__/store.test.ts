@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createNewScheme } from '../../src/domain/create-scheme'
 import { importSchemeJson } from '../../src/domain/import'
 import { createSchemeDetailsDraft } from '../../src/domain/edit-details'
-import { schemeV2Schema, schemeV3Schema } from '../../src/domain/model'
+import { schemeSchema, schemeV2Schema, schemeV3Schema } from '../../src/domain/model'
 import { normativeDraftSchema, type CrossingDraft } from '../../src/domain/registry'
 import { RegistryStore, RevisionConflict } from '../store'
 import { oldSnapshot } from '../../tests/fixtures/old-version'
@@ -311,10 +311,12 @@ describe('local SQLite registries', () => {
     raw.close()
 
     const store = new RegistryStore(path)
+    // Старые версии получают прежнюю версию условной раскладки шаблона.
+    const upgraded = { ...scheme, template: { ...scheme.template, projectionVersion: 'draft-1' } }
     try {
-      expect(store.getProject(scheme.id)?.scheme).toEqual(scheme)
-      expect(store.getProjectRevision(scheme.id, 1)?.scheme).toEqual(scheme)
-      expect(store.saveProject(scheme, 1).revision).toBe(1)
+      expect(store.getProject(scheme.id)?.scheme).toEqual(upgraded)
+      expect(store.getProjectRevision(scheme.id, 1)?.scheme).toEqual(upgraded)
+      expect(store.saveProject(schemeSchema.parse(upgraded), 1).revision).toBe(1)
       const edited = {
         ...scheme,
         parameters: { ...scheme.parameters, locationText: 'Новая редакция' },
@@ -371,10 +373,12 @@ describe('local SQLite registries', () => {
     raw.close()
 
     const store = new RegistryStore(path)
+    // Старые версии получают прежнюю версию условной раскладки шаблона.
+    const upgraded = { ...scheme, template: { ...scheme.template, projectionVersion: 'draft-1' } }
     try {
-      expect(store.getProject(scheme.id)?.scheme).toEqual(scheme)
-      expect(store.getProjectRevision(scheme.id, 1)?.scheme).toEqual(scheme)
-      expect(store.saveProject(scheme, 1).revision).toBe(1)
+      expect(store.getProject(scheme.id)?.scheme).toEqual(upgraded)
+      expect(store.getProjectRevision(scheme.id, 1)?.scheme).toEqual(upgraded)
+      expect(store.saveProject(schemeSchema.parse(upgraded), 1).revision).toBe(1)
     } finally {
       store.close()
     }
