@@ -14,6 +14,10 @@ type SheetPost = {
   y: number
   signIds: string[]
   distanceLabel: string | null
+  side: 'up' | 'down'
+  stand: 'left' | 'right'
+  /** Вертикальный сдвиг стойки относительно своей стороны дороги. */
+  dy: number
 }
 
 type SheetElement = {
@@ -54,6 +58,11 @@ export type DraftSheet = {
   zoneStartX: number
   zoneEndX: number
   axisX: number
+  anchors: ReturnType<typeof anchorCoordinates>
+  regulationMode: Scheme['parameters']['regulation']['mode']
+  settlement: Scheme['parameters']['location']
+  signSize: Scheme['parameters']['signSize']
+  titleBlock: Scheme['titleBlock']
   titleRows: Array<{ label: string; value: string }>
   placements: Array<SheetPost | SheetElement>
   outsideIds: number[]
@@ -90,6 +99,9 @@ export function projectDraftSheet(scheme: Scheme): DraftSheet {
           placement.distanceLabel,
           scheme.parameters.signDistancesMetres,
         ),
+        side: placement.side,
+        stand: placement.stand,
+        dy: placement.position.offsetYSvg,
       }
     }
     return {
@@ -140,6 +152,11 @@ export function projectDraftSheet(scheme: Scheme): DraftSheet {
     zoneStartX: anchors.Z0,
     zoneEndX: anchors.Z1,
     axisX: anchors.AX,
+    anchors,
+    regulationMode: scheme.parameters.regulation.mode,
+    settlement: scheme.parameters.location,
+    signSize: scheme.parameters.signSize,
+    titleBlock: JSON.parse(JSON.stringify(scheme.titleBlock)) as Scheme['titleBlock'],
     placements,
     titleRows: [
       {

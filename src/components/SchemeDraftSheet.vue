@@ -1,8 +1,17 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, useId } from 'vue'
 import type { Scheme } from '../domain/model'
 import { projectDraftSheet } from '../domain/draft-sheet'
-import RoadworkSymbol from './RoadworkSymbol.vue'
+import {
+  drawableWithoutImage,
+  drawSheet,
+  objectsOutside,
+  overlappingPosts,
+  SHEET_HEIGHT,
+  SHEET_WIDTH,
+  type SignSize,
+} from '../domain/sheet-drawing'
+import SheetNodes from './SheetNodes.vue'
 
 const props = defineProps<{
   scheme: Scheme
@@ -12,48 +21,46 @@ const props = defineProps<{
   previewOnly?: boolean
 }>()
 const sheet = computed(() => projectDraftSheet(props.scheme))
-const requiredSigns = computed(() => {
-  const codes = sheet.value.placements.flatMap((item) =>
-    item.kind === 'sign-post'
-      ? item.signIds
-      : item.elementKind === 'car'
-        ? ['4.2.2']
-        : item.elementKind === 'complex'
-          ? ['1.25', '4.2.2']
-          : [],
-  )
-  return [...new Set(codes)]
-})
-const missingSigns = computed(() =>
-  requiredSigns.value.filter((code) => !knownSigns.value.has(code) || brokenImages.value.has(code)),
-)
-const usedSymbols = computed(
-  () =>
-    [
-      ...new Set(
-        sheet.value.placements
-          .filter((item) => item.kind === 'element' && item.elementKind !== 'text')
-          .map((item) => (item.kind === 'element' ? item.elementKind : 'pit')),
-      ),
-    ] as Array<'reg' | 'cone' | 'car' | 'complex' | 'pit'>,
-)
-const symbolLabels = {
-  reg: 'Регулировщик с жезлом',
-  cone: 'Дорожный конус',
-  car: 'Машина прикрытия',
-  complex: 'Переносной комплекс знаков',
-  pit: 'Место работ',
-}
-function titleRow(label: string): string {
-  return sheet.value.titleRows.find((row) => row.label === label)?.value ?? ''
-}
-const paper = ref<HTMLElement | null>(null)
+const paper = ref<SVGSVGElement | null>(null)
+const prefix = `sheet-${useId()}`
 const zoom = ref(props.previewOnly ? 0.19 : 0.75)
-const knownSigns = ref<Set<string>>(new Set())
+const signSizes = ref<Map<string, SignSize>>(new Map())
 const brokenImages = ref<Set<string>>(new Set())
 const catalogState = ref<'loading' | 'ready' | 'partial' | 'unavailable'>('loading')
 const catalogSource = ref<{ documentCode: string; edition: string } | null>(null)
 const printError = ref('')
+
+const revisionLabel = computed(() =>
+  props.localRevision === null
+    ? 'Проект не сохранён в SQLite.'
+    : props.modifiedSinceLocalSave
+      ? `Проект изменён после редакции № ${props.localRevision}.`
+      : `Редакция проекта № ${props.localRevision}.`,
+)
+const drawing = computed(() =>
+  drawSheet(sheet.value, {
+    signSizes: signSizes.value,
+    catalogLabel: catalogSource.value
+      ? `Знаки: PNG локального архива · ${catalogSource.value.documentCode}, редакция ${catalogSource.value.edition}.`
+      : 'Знаки: редакция каталога не указана.',
+    revisionLabel: revisionLabel.value,
+  }),
+)
+/** Знаки без PNG, которые нельзя нарисовать программно: печать с ними недопустима. */
+const missingSigns = computed(() =>
+  drawing.value.signCodes.filter(
+    (code) =>
+      (!signSizes.value.has(code) || brokenImages.value.has(code)) && !drawableWithoutImage(code),
+  ),
+)
+/** Знаки, нарисованные программно вместо отсутствующего PNG. */
+const drawnSigns = computed(() =>
+  drawing.value.signCodes.filter(
+    (code) =>
+      (!signSizes.value.has(code) || brokenImages.value.has(code)) && drawableWithoutImage(code),
+  ),
+)
+const outsideIds = computed(() => objectsOutside(drawing.value))
 const previewSize = computed(() => ({
   width: `${1122.52 * zoom.value}px`,
   height: `${793.7 * zoom.value}px`,
@@ -68,20 +75,23 @@ async function loadSigns(): Promise<void> {
       fetch('/api/signs/catalog'),
     ])
     if (!response.ok || !sourceResponse.ok) throw new Error('Каталог недоступен')
-    const list = (await response.json()) as Array<{ code: string }>
+    const list = (await response.json()) as Array<{ code: string; width: number; height: number }>
     const currentCatalog = (await sourceResponse.json()) as {
       documentCode: string
       edition: string
     } | null
     if (!Array.isArray(list)) throw new Error('Неверный ответ каталога')
-    knownSigns.value = new Set([
-      ...list.map((sign) => sign.code),
-      ...Object.keys(props.scheme.signImages.revisions),
-    ])
+    const sizes = new Map(
+      list.map((sign) => [sign.code, { width: sign.width, height: sign.height }]),
+    )
+    // Закреплённые в проекте редакции доступны из истории, даже если код исключён из архива.
+    for (const code of Object.keys(props.scheme.signImages.revisions))
+      if (!sizes.has(code)) sizes.set(code, { width: 1, height: 1 })
+    signSizes.value = sizes
     catalogSource.value = props.scheme.signImages.catalog ?? currentCatalog
     catalogState.value = list.length === 2_000 ? 'partial' : 'ready'
   } catch {
-    knownSigns.value = new Set()
+    signSizes.value = new Map()
     catalogSource.value = null
     catalogState.value = 'unavailable'
   }
@@ -89,17 +99,14 @@ async function loadSigns(): Promise<void> {
 
 onMounted(loadSigns)
 
-function imageUrl(code: string): string {
+function signUrl(code: string): string | null {
+  if (!signSizes.value.has(code) || brokenImages.value.has(code)) return null
   const revision = props.scheme.signImages.revisions[code]
   return `/api/signs/${encodeURIComponent(code)}/image${revision ? `?rev=${revision}` : ''}`
 }
 
 function imageFailed(code: string): void {
   brokenImages.value = new Set([...brokenImages.value, code])
-}
-
-function printableText(value: string): string {
-  return value.trim() || 'не указано'
 }
 
 async function printDraft(): Promise<void> {
@@ -117,72 +124,42 @@ async function printDraft(): Promise<void> {
     printError.value = `В локальном архиве отсутствуют PNG: ${missingSigns.value.join(', ')}. Обновите архив или исправьте объекты.`
     return
   }
-  const schemeAtStart = props.scheme
-  if (sheet.value.outsideIds.length) {
-    printError.value = `Объекты № ${sheet.value.outsideIds.join(', ')} выходят за пределы рисунка. Исправьте их положение перед печатью.`
+  if (outsideIds.value.length) {
+    printError.value = `Объекты № ${outsideIds.value.join(', ')} выходят за пределы листа. Исправьте их положение перед печатью.`
     return
   }
+  const overlap = overlappingPosts(drawing.value)[0]
+  if (overlap) {
+    printError.value = `Стойки № ${overlap[0]} и № ${overlap[1]} перекрываются. Разведите их перед печатью.`
+    return
+  }
+  if (drawing.value.overflow.length) {
+    printError.value = `Текст не помещается на листе: ${drawing.value.overflow.join(', ')}. Сократите реквизиты.`
+    return
+  }
+  const schemeAtStart = props.scheme
+  await nextTick()
+  if (!paper.value) return
+  // PNG знаков загружаются заранее: печать не должна начаться с пустыми местами на листе.
+  const images = [...paper.value.querySelectorAll<SVGImageElement>('image[data-sign-code]')]
+  await Promise.all(
+    images.map(async (image) => {
+      const probe = new Image()
+      probe.src = image.href.baseVal
+      try {
+        await probe.decode()
+      } catch {
+        imageFailed(image.dataset.signCode ?? '')
+      }
+    }),
+  )
   await nextTick()
   if (missingSigns.value.length) {
     printError.value = `Не удалось загрузить PNG: ${missingSigns.value.join(', ')}.`
     return
   }
-  if (!paper.value) return
-  const page = paper.value
-  const images = [...page.querySelectorAll<HTMLImageElement>('img[data-sign-code]')]
-  await Promise.all(
-    images.map(async (img) => {
-      try {
-        await img.decode()
-      } catch {
-        imageFailed(img.dataset.signCode ?? '')
-      }
-    }),
-  )
-  await nextTick()
   if (props.scheme !== schemeAtStart || props.hasPendingInput) {
     printError.value = 'Проект изменился во время подготовки печати. Проверьте лист и повторите.'
-    return
-  }
-  const frame = page.querySelector<HTMLElement>('.drawing-frame')
-  const frameBounds = frame?.getBoundingClientRect()
-  const escaped = [...page.querySelectorAll<HTMLElement>('[data-object-id]')]
-    .filter((object) => {
-      if (!frameBounds) return true
-      const bounds = object.getBoundingClientRect()
-      return (
-        bounds.left < frameBounds.left - 1 ||
-        bounds.top < frameBounds.top - 1 ||
-        bounds.right > frameBounds.right + 1 ||
-        bounds.bottom > frameBounds.bottom + 1
-      )
-    })
-    .map((object) => object.dataset.objectId)
-  if (escaped.length) {
-    printError.value = `Объекты № ${escaped.join(', ')} не помещаются на рисунке. Измените их положение или подписи.`
-    return
-  }
-  const posts = [...page.querySelectorAll<HTMLElement>('.placed-object.sign-post')]
-  for (let first = 0; first < posts.length; first++) {
-    const left = posts[first]!
-    const a = left.getBoundingClientRect()
-    for (let second = first + 1; second < posts.length; second++) {
-      const right = posts[second]!
-      const b = right.getBoundingClientRect()
-      if (a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top) {
-        printError.value = `Стойки № ${left.dataset.objectId} и № ${right.dataset.objectId} перекрываются. Разведите их перед печатью.`
-        return
-      }
-    }
-  }
-  const overflowing = [...page.querySelectorAll<HTMLElement>('[data-print-fit]')].some(
-    (element) =>
-      element.scrollHeight > element.clientHeight + 2 ||
-      element.scrollWidth > element.clientWidth + 2,
-  )
-  if (overflowing) {
-    printError.value =
-      'Текст не помещается на черновом листе. Сократите реквизиты и проверьте просмотр.'
     return
   }
   window.print()
@@ -210,6 +187,7 @@ async function printDraft(): Promise<void> {
             <option :value="0.75">75%</option>
             <option :value="0.9">90%</option>
             <option :value="1">100%</option>
+            <option :value="1.25">125%</option>
           </select>
         </label>
         <button type="button" :disabled="catalogState === 'loading'" @click="loadSigns">
@@ -238,186 +216,105 @@ async function printDraft(): Promise<void> {
         Нет PNG в локальном архиве: {{ missingSigns.join(', ') }}. Печать заблокирована до
         исправления.
       </p>
-      <p v-if="sheet.outsideIds.length" class="hint">
-        За пределами рисунка: № {{ sheet.outsideIds.join(', ') }}. Их положение нужно исправить
-        перед печатью.
+      <p v-if="catalogState === 'ready' && drawnSigns.length" class="hint" role="status">
+        Нарисованы без PNG: {{ drawnSigns.join(', ') }}. Проверьте их вид или добавьте PNG в архив.
+      </p>
+      <p v-if="outsideIds.length" class="hint">
+        За пределами листа: № {{ outsideIds.join(', ') }}. Их положение нужно исправить перед
+        печатью.
       </p>
       <p v-if="printError" class="error" role="alert">{{ printError }}</p>
     </div>
 
     <div class="preview-scroll screen-preview" aria-label="Просмотр чернового листа A4">
       <div class="preview-space" :style="previewSize">
-        <div ref="paper" class="sheet-paper" :style="{ transform: `scale(${zoom})` }">
-          <header class="paper-header" data-print-fit>
-            <div class="paper-signatures">
-              <strong>Разработано</strong>
-              <span>{{ printableText(titleRow('Разработчик')) }}</span>
-              <span>{{ printableText(titleRow('Дата разработки')) }}</span>
-            </div>
-            <div class="paper-heading">
-              <h3>Организация движения и ограждение зоны дорожных работ</h3>
-              <strong
-                >Железнодорожный переезд {{ sheet.referenceId }} · схема
-                {{ sheet.template.toUpperCase() }}</strong
-              >
-              <span>Фронт {{ sheet.front }} м · {{ printableText(titleRow('Работы')) }}</span>
-              <span
-                >{{ printableText(sheet.location) }} · {{ printableText(titleRow('Период')) }}</span
-              >
-              <span>Ответственные: {{ printableText(titleRow('Ответственные')) }}</span>
-            </div>
-            <div class="paper-signatures right">
-              <strong>Утверждает владелец дороги</strong>
-              <span>{{ printableText(titleRow('Владелец дороги')) }}</span>
-              <strong>Согласовывает Госавтоинспекция</strong>
-              <span>{{ printableText(titleRow('Госавтоинспекция')) }}</span>
-            </div>
-          </header>
-          <div class="draft-watermark">ЧЕРНОВИК · ДЛЯ ВНУТРЕННЕЙ СВЕРКИ</div>
-          <div class="drawing-frame">
-            <div class="drawing-stage">
-              <div class="road" aria-hidden="true">
-                <span class="road-arrow west">←</span><span class="road-arrow east">→</span>
-                <div class="road-centre" />
-              </div>
-              <span class="direction left" data-print-fit
-                >{{ printableText(sheet.directions.left) }} ←</span
-              >
-              <span class="direction right" data-print-fit
-                >{{ printableText(sheet.directions.right) }} →</span
-              >
-              <div class="crossing-axis" :style="{ left: `${sheet.axisX}px` }" aria-hidden="true" />
-              <span class="axis-label" :style="{ left: `${sheet.axisX}px` }">
-                {{ sheet.crossingFromPu66?.axisLabel || 'Ось переезда' }}
-              </span>
-              <div
-                v-for="segment in sheet.dimensionChain"
-                :key="segment.part"
-                class="zone-segment"
-                :class="[
-                  `segment-${segment.part}`,
-                  { 'solid-front': segment.part === 'front' && sheet.frontStyle === 'solid' },
-                ]"
-                :style="{
-                  left: `${segment.startX}px`,
-                  width: `${segment.endX - segment.startX}px`,
-                }"
-                aria-hidden="true"
+        <svg
+          ref="paper"
+          class="sheet-paper"
+          xmlns="http://www.w3.org/2000/svg"
+          :viewBox="`0 0 ${SHEET_WIDTH} ${SHEET_HEIGHT}`"
+          :style="previewSize"
+          font-family="Arial, Helvetica, sans-serif"
+          role="img"
+          aria-label="Черновой лист схемы"
+        >
+          <defs>
+            <pattern
+              :id="`${prefix}-hatch`"
+              width="9"
+              height="9"
+              patternUnits="userSpaceOnUse"
+              patternTransform="rotate(-45)"
+            >
+              <rect width="9" height="9" fill="#fff" />
+              <line x1="0" y1="0" x2="0" y2="9" stroke="#222" stroke-width="1.3" />
+            </pattern>
+            <marker
+              :id="`${prefix}-arrow`"
+              viewBox="0 0 10 10"
+              refX="10"
+              refY="5"
+              markerWidth="9"
+              markerHeight="6"
+              orient="auto-start-reverse"
+              markerUnits="userSpaceOnUse"
+            >
+              <path d="M0,0 L10,5 L0,10 z" fill="#000" />
+            </marker>
+            <symbol :id="`${prefix}-cone`" viewBox="0 0 30 34">
+              <path d="M11 2 L19 2 L27 28 L3 28 Z" fill="#e4032e" />
+              <path d="M9.2 11 L20.8 11 L22.6 17 L7.4 17 Z" fill="#fff" />
+              <rect x="1" y="28" width="28" height="5" fill="#333" />
+            </symbol>
+            <symbol :id="`${prefix}-reg`" viewBox="0 0 60 80">
+              <circle cx="24" cy="10" r="7" fill="#222" />
+              <path
+                d="M14 20 Q24 16 34 20 L36 50 L12 50 Z"
+                fill="#ff7a00"
+                stroke="#222"
+                stroke-width="1.5"
               />
-              <div
-                v-for="part in sheet.dimensionChain"
-                :key="`dimension-${part.part}`"
-                class="dimension"
-                :style="{ left: `${part.startX}px`, width: `${part.endX - part.startX}px` }"
-              >
-                <span>{{ part.enteredMetres }} м</span>
-              </div>
-              <div
-                v-for="item in sheet.placements"
-                :key="item.id"
-                class="placed-object"
-                :class="
-                  item.kind === 'sign-post'
-                    ? 'sign-post'
-                    : item.elementKind === 'text'
-                      ? 'text-element'
-                      : 'symbol-element'
-                "
-                :style="{ left: `${item.x}px`, top: `${item.y}px` }"
-                :data-object-id="item.id"
-              >
-                <template v-if="item.kind === 'sign-post'">
-                  <div class="post-signs">
-                    <span v-for="(code, index) in item.signIds" :key="index" class="sign-face">
-                      <img
-                        v-if="knownSigns.has(code) && !brokenImages.has(code)"
-                        :src="imageUrl(code)"
-                        :alt="`Знак ${code}`"
-                        :data-sign-code="code"
-                        @error="imageFailed(code)"
-                      />
-                      <span v-else class="missing-sign">{{ code }}: нет PNG</span>
-                    </span>
-                  </div>
-                  <span class="object-caption"
-                    ><span class="screen-only">№ {{ item.id }} · </span>{{ item.signIds.join(' · ')
-                    }}{{ item.distanceLabel ? ` · ${item.distanceLabel}` : '' }}</span
-                  >
-                </template>
-                <template v-else-if="item.elementKind === 'text'">
-                  <span
-                    class="free-text"
-                    :style="{ fontSize: `${item.fontSize}px`, fontWeight: item.bold ? 700 : 400 }"
-                  >
-                    {{ item.text }}
-                  </span>
-                </template>
-                <template v-else>
-                  <RoadworkSymbol
-                    :kind="item.elementKind"
-                    :width="item.width"
-                    :height="item.height"
-                    :known-signs="knownSigns"
-                    :revisions="scheme.signImages.revisions"
-                  />
-                  <small class="symbol-id">№ {{ item.id }}</small>
-                </template>
-              </div>
-            </div>
-          </div>
-          <footer class="paper-footer" data-print-fit>
-            <div class="legend">
-              <h4>Условные обозначения</h4>
-              <div v-for="kind in usedSymbols" :key="kind">
-                <RoadworkSymbol
-                  :kind="kind"
-                  :width="kind === 'car' ? 50 : 24"
-                  :height="30"
-                  :known-signs="knownSigns"
-                  :revisions="scheme.signImages.revisions"
-                />
-                <span>{{ symbolLabels[kind] }}</span>
-              </div>
-              <p v-if="!usedSymbols.length">
-                Условные обозначения добавляются составителем в редакторе.
-              </p>
-              <p>
-                Знаки на стойках: PNG локального архива ·
-                {{
-                  catalogSource
-                    ? `${catalogSource.documentCode}, редакция ${catalogSource.edition}`
-                    : 'редакция не указана'
-                }}.
-              </p>
-            </div>
-            <div class="sheet-notes">
-              <h4>Параметры и примечания</h4>
-              <p>
-                Проезжая часть:
-                {{ printableText(sheet.crossingFromPu66?.carriagewayWidthMetres || '') }} м; дорога:
-                {{ printableText(sheet.crossingFromPu66?.roadName || '') }}.
-              </p>
-              <p>
-                Размеры: отвод {{ sheet.taper }} м, буфер {{ sheet.buffer }} м, фронт
-                {{ sheet.front }} м. Скорости: {{ sheet.speeds.join(' / ') }} км/ч.
-              </p>
-              <p>
-                Размерная цепочка на рисунке условна. Сверьте длины, расстановку, режим движения и
-                актуальный источник.
-              </p>
-              <p>
-                Проект {{ sheet.id }} ·
-                {{
-                  localRevision === null
-                    ? 'не сохранён в SQLite'
-                    : modifiedSinceLocalSave
-                      ? `изменён после редакции № ${localRevision}`
-                      : `редакция № ${localRevision}`
-                }}. Нормативная применимость не подтверждена.
-              </p>
-            </div>
-          </footer>
-        </div>
+              <rect x="15" y="30" width="18" height="3" fill="#e6e6e6" />
+              <rect x="15" y="38" width="18" height="3" fill="#e6e6e6" />
+              <path d="M14 50 L12 76 L19 76 L23 54 L27 76 L34 76 L34 50 Z" fill="#222" />
+              <path d="M34 24 L48 32" stroke="#222" stroke-width="4" stroke-linecap="round" />
+              <circle cx="54" cy="35" r="5.5" fill="#e30613" stroke="#fff" stroke-width="1.5" />
+              <path d="M14 24 L8 44" stroke="#222" stroke-width="4" stroke-linecap="round" />
+            </symbol>
+            <symbol :id="`${prefix}-truck`" viewBox="0 0 120 50">
+              <rect
+                x="4"
+                y="10"
+                width="72"
+                height="28"
+                fill="#f28c00"
+                stroke="#222"
+                stroke-width="2"
+              />
+              <rect
+                x="76"
+                y="16"
+                width="30"
+                height="22"
+                rx="3"
+                fill="#f28c00"
+                stroke="#222"
+                stroke-width="2"
+              />
+              <rect x="84" y="20" width="16" height="9" fill="#bfe0f5" stroke="#222" />
+              <rect x="30" y="4" width="14" height="6" fill="#ffd200" stroke="#222" />
+              <circle cx="22" cy="40" r="7" fill="#222" />
+              <circle cx="90" cy="40" r="7" fill="#222" />
+            </symbol>
+          </defs>
+          <rect :width="SHEET_WIDTH" :height="SHEET_HEIGHT" fill="#fff" />
+          <SheetNodes
+            :nodes="drawing.nodes"
+            :sign-url="signUrl"
+            :prefix="prefix"
+            @image-error="imageFailed"
+          />
+        </svg>
       </div>
     </div>
   </section>
@@ -484,331 +381,37 @@ h2 {
   position: relative;
 }
 .sheet-paper {
-  width: 297mm;
-  height: 210mm;
-  box-sizing: border-box;
-  padding: 7mm;
-  display: grid;
-  grid-template-rows: 39mm 115mm 38mm;
-  gap: 2mm;
-  overflow: hidden;
-  position: relative;
-  transform-origin: top left;
+  display: block;
   background: white;
-  color: #182533;
-  font:
-    8pt/1.25 Arial,
-    sans-serif;
   box-shadow: 0 3px 12px #8e9eae;
 }
-.paper-header {
-  display: grid;
-  grid-template-columns: 1fr 2.6fr 1fr;
-  gap: 3mm;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-}
-.paper-signatures {
-  display: flex;
-  flex-direction: column;
-  gap: 1mm;
-  padding-top: 2mm;
-}
-.paper-signatures strong {
-  font-size: 8pt;
-}
-.paper-signatures.right {
-  padding-top: 0;
-}
-.paper-heading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1mm;
-  text-align: center;
-}
-.paper-heading h3 {
-  font-size: 11pt;
-  line-height: 1.16;
-  margin: 0 0 1mm;
-}
-.paper-heading strong {
-  font-size: 8pt;
-}
-.draft-watermark {
-  position: absolute;
-  top: 37mm;
-  left: 79mm;
-  right: 79mm;
-  z-index: 3;
-  padding: 0.5mm;
-  background: white;
-  color: #9b2934;
-  font-size: 7pt;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-align: center;
-}
-.drawing-frame {
-  box-sizing: border-box;
-  width: 283mm;
-  height: 115mm;
-  overflow: hidden;
-  position: relative;
-}
-.drawing-stage {
-  position: relative;
-  left: 25px;
-  width: 1680px;
-  height: 720px;
-  transform: scale(0.6);
-  transform-origin: top left;
-  background: white;
-}
-.road {
-  position: absolute;
-  top: 410px;
-  left: 48px;
-  width: 1584px;
-  height: 112px;
-  background: #bbb;
-  border-top: 15px solid #e6e6e6;
-  border-bottom: 15px solid #e6e6e6;
-  box-sizing: border-box;
-}
-.road-centre {
-  position: absolute;
-  top: 48%;
-  width: 100%;
-  border-top: 3px dashed white;
-}
-.road-arrow {
-  position: absolute;
-  z-index: 1;
-  color: white;
-  font:
-    bold 64px/1 Arial,
-    sans-serif;
-}
-.road-arrow.west {
-  top: 0;
-  left: 45px;
-}
-.road-arrow.east {
-  bottom: 0;
-  right: 45px;
-}
-.direction {
-  position: absolute;
-  top: 348px;
-  max-width: 320px;
-  overflow-wrap: anywhere;
-  font-size: 20px;
-}
-.direction.left {
-  left: 48px;
-}
-.direction.right {
-  right: 48px;
-  top: 545px;
-  text-align: right;
-}
-.crossing-axis {
-  position: absolute;
-  z-index: 1;
-  top: 228px;
-  width: 6px;
-  height: 380px;
-  margin-left: -3px;
-  background: #202020;
-}
-.axis-label {
-  position: absolute;
-  top: 230px;
-  max-width: 160px;
-  font-size: 17px;
-  transform: rotate(-90deg) translateX(-100%);
-  transform-origin: left top;
-}
-.zone-segment {
-  position: absolute;
-  top: 470px;
-  height: 38px;
-  box-sizing: border-box;
-  border-top: 2px dashed #9c3232;
-  background: repeating-linear-gradient(45deg, #ececec 0 8px, #fff 8px 18px);
-  opacity: 0.65;
-  pointer-events: none;
-}
-.segment-buffer {
-  border-color: #4a677b;
-  background: #ecf3f6;
-}
-.segment-front {
-  border: 2px solid #4e4e4e;
-  background: repeating-linear-gradient(45deg, #fff 0 11px, #84909a 11px 13px);
-}
-.segment-front.solid-front {
-  top: 440px;
-  height: 100px;
-  background: repeating-linear-gradient(45deg, #e6e6e6 0 7px, #64717a 7px 10px);
-}
-.dimension {
-  position: absolute;
-  top: 666px;
-  height: 24px;
-  box-sizing: border-box;
-  border-top: 2px solid #222;
-  text-align: center;
-}
-.dimension::before,
-.dimension::after {
-  content: '';
-  position: absolute;
-  bottom: 8px;
-  width: 1px;
-  height: 146px;
-  background: #303030;
-}
-.dimension::before {
-  left: 0;
-}
-.dimension::after {
-  right: 0;
-}
-.dimension span {
-  display: inline-block;
-  position: relative;
-  top: -25px;
-  background: white;
-  padding: 0 6px;
-  font-size: 21px;
-}
-.placed-object {
-  position: absolute;
-  z-index: 2;
-  max-width: 340px;
-  overflow-wrap: anywhere;
-}
-.sign-post {
-  transform: translateY(-50%);
-}
-.post-signs {
-  display: flex;
-  max-width: 330px;
-  gap: 5px;
-  align-items: center;
-}
-.sign-face {
-  display: inline-grid;
-  place-items: center;
-  min-width: 51px;
-  height: 62px;
-  background: white;
-}
-.sign-face img {
-  max-width: 70px;
-  max-height: 62px;
-  object-fit: contain;
-}
-.missing-sign {
-  padding: 2px;
-  background: #fff;
-  color: #9b2934;
-  font-size: 13px;
-}
-.object-caption {
-  display: block;
-  font-size: 14px;
-  text-align: center;
-}
-.symbol-element {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.symbol-id {
-  position: absolute;
-  top: -17px;
-  left: 0;
-  font-size: 12px;
-  background: #fff;
-}
-.free-text {
-  white-space: pre-wrap;
-}
-.paper-footer {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 7mm;
-  min-height: 0;
-  overflow: hidden;
-  padding-top: 2mm;
-  border-top: 1px solid #777;
-  overflow-wrap: anywhere;
-  font-size: 7pt;
-}
-.paper-footer h4 {
-  margin: 0 0 1mm;
-  font-size: 9pt;
-  text-decoration: underline;
-}
-.paper-footer p {
-  margin: 1mm 0;
-}
-.legend > div {
-  display: flex;
-  align-items: center;
-  gap: 2mm;
-  min-height: 7mm;
-}
-.legend {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  align-content: start;
-  gap: 0 2mm;
-}
-.legend h4,
-.legend p {
-  grid-column: 1 / -1;
-}
-.legend > div span:last-child {
-  font-size: 6pt;
-}
-.sheet-notes p:last-child {
-  color: #9b2934;
+.sheet-paper :deep(text) {
+  white-space: pre;
 }
 @media print {
   .screen-only {
     display: none !important;
   }
   .preview-scroll {
-    width: 296mm;
-    height: 209mm;
+    width: 297mm;
+    height: 210mm;
     padding: 0;
-    overflow: visible;
+    overflow: hidden;
     background: white;
   }
-  .preview-space {
-    width: 296mm !important;
+  .preview-space,
+  .sheet-paper {
+    width: 297mm !important;
     height: 209mm !important;
   }
   .sheet-paper {
-    width: 296mm;
-    height: 209mm;
-    grid-template-rows: 39mm 114mm 38mm;
-    transform: none !important;
     box-shadow: none;
     break-inside: avoid;
-  }
-  .drawing-frame {
-    width: 282mm;
-    height: 114mm;
-  }
-  .drawing-stage,
-  .sheet-paper {
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
+  }
+  .sheet-paper :deep(.draft-mark) {
+    display: inline;
   }
 }
 </style>
