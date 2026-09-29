@@ -312,9 +312,17 @@ export function useProjectSession(onProjectOpened: () => void) {
       const saved = await saveLocalProject(schemeAtSave, localRevision.value ?? 0)
       localRevision.value = saved.revision
       if (imported.value.scheme === schemeAtSave) modifiedSinceLocalSave.value = false
-      if (imported.value.scheme === schemeAtSave) await clearRecovery(recoverySessionId)
       projectsRefreshKey.value++
       localNotice.value = `Черновик сохранён в SQLite: редакция № ${saved.revision}.`
+      if (imported.value.scheme === schemeAtSave) {
+        // Редакция уже записана: сбой удаления копии восстановления не должен выглядеть как сбой сохранения.
+        try {
+          await clearRecovery(recoverySessionId)
+        } catch {
+          localNotice.value +=
+            ' Копию восстановления удалить не удалось — её можно удалить в разделе «Проекты».'
+        }
+      }
     } catch (cause) {
       showLocalError(cause)
     } finally {
@@ -441,11 +449,14 @@ export function useProjectSession(onProjectOpened: () => void) {
     templateMessage.value = ''
     templateError.value = ''
     try {
-      const rebuilt = rebuildTemplatePlacements(imported.value.scheme)
+      const { scheme: rebuilt, keptSlots } = rebuildTemplatePlacements(imported.value.scheme)
       onProjectApplied(rebuilt)
       selectedPlacementId.value = null
       templateMessage.value =
-        'Черновая расстановка обновлена; ручные объекты сохранены. Сверьте каждый знак, место и расстояние.'
+        'Черновая расстановка обновлена; ручные объекты сохранены. Сверьте каждый знак, место и расстояние.' +
+        (keptSlots
+          ? ` Объектов шаблона, изменённых вручную и оставленных без замены: ${keptSlots}; проверьте, соответствуют ли они новым параметрам.`
+          : '')
     } catch (cause) {
       templateError.value =
         cause instanceof TemplateBuildError

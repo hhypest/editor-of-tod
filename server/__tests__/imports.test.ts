@@ -253,7 +253,7 @@ describe('private import formats', () => {
       expect(migrated.listPu66()[0]?.verification).toBeNull()
       migrated.close()
       const current = new DatabaseSync(path)
-      expect(current.prepare('PRAGMA user_version').get()).toEqual({ user_version: 8 })
+      expect(current.prepare('PRAGMA user_version').get()).toEqual({ user_version: 9 })
       current.close()
     } finally {
       rmSync(directory, { recursive: true, force: true })
@@ -396,7 +396,7 @@ describe('private import formats', () => {
       migrated.close()
 
       const database = new DatabaseSync(path)
-      expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 8 })
+      expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 9 })
       expect(
         (database.prepare('PRAGMA table_info(signs)').all() as { name: string }[]).map(
           (column) => column.name,
@@ -407,6 +407,84 @@ describe('private import formats', () => {
       })
       database.close()
       expect(readFileSync(path).includes(Buffer.from(marker))).toBe(false)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('splits station cards that shared a key before version 9 and keeps their review history', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-station-keys-'))
+    const path = join(directory, 'registry.sqlite')
+    try {
+      const store = new RegistryStore(path, () => '2026-09-27T12:00:00.000Z')
+      const stationCard = (cardNumber: string, key: string) => ({
+        ...sampleCard(5),
+        section: '',
+        station: 'Учебная',
+        cardNumber,
+        key,
+      })
+      const entry = (card: ReturnType<typeof stationCard>, text: string): Pu66Import => {
+        const source = Buffer.from(text)
+        return {
+          card,
+          source,
+          sha256: createHash('sha256').update(source).digest('hex'),
+          filename: `${text}.xlsx`,
+        }
+      }
+      // Так ключи выглядели до версии 9: вторая карточка перезаписала первую.
+      store.importPu66([entry(stationCard('11', 'ст.Учебная:0:1'), 'first')])
+      store.recordPu66Verification('ст.Учебная:0:1', {
+        expectedRevision: 1,
+        verifiedAt: '2026-01-30',
+        verifiedBy: 'Учебное подразделение',
+      })
+      expect(
+        store.importPu66([entry(stationCard('12', 'ст.Учебная:0:1'), 'second')]),
+      ).toMatchObject({
+        updated: 1,
+      })
+      store.importPu66([entry(stationCard('21', 'ст.Учебная:0:2'), 'single')])
+      store.close()
+      const database = new DatabaseSync(path)
+      database.exec('DROP TABLE pu66_key_aliases; PRAGMA user_version = 8;')
+      database.close()
+
+      const reopened = new RegistryStore(path)
+      try {
+        const keys = reopened
+          .listPu66()
+          .map((card) => card.referenceId)
+          .sort()
+        expect(keys).toEqual(['ст.Учебная:0:1:к11', 'ст.Учебная:0:1:к12', 'ст.Учебная:0:2:к21'])
+        expect(reopened.listPu66Verifications('ст.Учебная:0:1:к11')).toMatchObject([
+          { cardRevision: 1, verifiedAt: '2026-01-30' },
+        ])
+        expect(reopened.listPu66Verifications('ст.Учебная:0:1:к12')).toEqual([])
+        expect(reopened.getPu66Scheme('ст.Учебная:0:2')).toMatchObject({ revision: 1 })
+        expect(() => reopened.getPu66Scheme('ст.Учебная:0:1')).toThrow('несколько карточек')
+      } finally {
+        reopened.close()
+      }
+      const check = new DatabaseSync(path)
+      expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 9 })
+      expect(check.prepare('PRAGMA foreign_key_check').all()).toEqual([])
+      check.close()
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('reports an unknown database version without replacing the message', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-future-version-'))
+    const path = join(directory, 'registry.sqlite')
+    try {
+      new RegistryStore(path).close()
+      const database = new DatabaseSync(path)
+      database.exec('PRAGMA user_version = 99')
+      database.close()
+      expect(() => new RegistryStore(path)).toThrow('Неизвестная версия локальной базы: 99')
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }

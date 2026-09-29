@@ -175,6 +175,26 @@ function placementFromDraft(draft: PlacementDraft, id: number): Placement {
   }
 }
 
+/** Форма не показывает место в шаблоне и долю положения в зоне — переносим их из прежнего объекта. */
+function keepTemplateContext(placement: Placement, existing: Placement | undefined): Placement {
+  if (!existing) return placement
+  const withSlot = existing.templateSlot
+    ? { ...placement, templateSlot: existing.templateSlot }
+    : placement
+  if (
+    withSlot.kind === 'element' &&
+    existing.kind === 'element' &&
+    existing.position.zoneFraction !== undefined &&
+    existing.position.anchor === withSlot.position.anchor
+  ) {
+    return {
+      ...withSlot,
+      position: { ...withSlot.position, zoneFraction: existing.position.zoneFraction },
+    }
+  }
+  return withSlot
+}
+
 function checked(candidate: Scheme): Scheme {
   const result = schemeSchema.safeParse(candidate)
   if (!result.success) {
@@ -199,7 +219,7 @@ export function savePlacement(scheme: Scheme, draft: PlacementDraft): Scheme {
     throw new PlacementEditError('Тип существующего элемента менять нельзя.')
   }
   const id = draft.id ?? scheme.nextPlacementId
-  const placement = placementFromDraft(draft, id)
+  const placement = keepTemplateContext(placementFromDraft(draft, id), existing)
   return checked({
     ...scheme,
     placements:

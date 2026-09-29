@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createNewScheme } from '../create-scheme'
-import { newTextDraft, savePlacement } from '../edit-placements'
+import { createPlacementDraft, newTextDraft, savePlacement } from '../edit-placements'
+import { movePlacement } from '../placement-workspace'
 import { schemeSchema, type Scheme } from '../model'
 import {
   buildTemplatePlacements,
@@ -64,7 +65,7 @@ describe('preliminary B.33/B.34 layout', () => {
             item.distanceLabel === (location === 'in' ? '{n100}' : '{d300}'),
         ),
       ).toBe(true)
-      expect(rebuildTemplatePlacements(scheme).placements).toEqual(placements)
+      expect(rebuildTemplatePlacements(scheme).scheme.placements).toEqual(placements)
     },
   )
 
@@ -74,8 +75,8 @@ describe('preliminary B.33/B.34 layout', () => {
     if (manual.kind !== 'element') throw new Error('Expected text')
     manual.text = 'Ручная пометка'
     const withManual = savePlacement(scheme, manual)
-    const first = rebuildTemplatePlacements(withManual)
-    const second = rebuildTemplatePlacements(first)
+    const first = rebuildTemplatePlacements(withManual).scheme
+    const second = rebuildTemplatePlacements(first).scheme
     expect(second.placements[0]).toEqual(withManual.placements[0])
     expect(second.placements.filter((item) => !item.generatedByTemplate)).toHaveLength(1)
     expect(second.placements.length).toBe(first.placements.length)
@@ -109,5 +110,46 @@ describe('preliminary B.33/B.34 layout', () => {
       parameters: { ...scheme.parameters, location: 'auto' },
     })
     expect(() => buildTemplatePlacements(noLocation)).toThrow('населённом пункте')
+  })
+
+  it('does not duplicate a template object that was moved or edited by hand', () => {
+    const built = rebuildTemplatePlacements(example(40, 'out', 'two')).scheme
+    const post = built.placements.find((item) => item.kind === 'sign-post')!
+    const moved = movePlacement(built, post.id, 5, 0)
+    const again = rebuildTemplatePlacements(moved)
+    expect(again.keptSlots).toBe(1)
+    expect(again.scheme.placements).toHaveLength(built.placements.length)
+    const withSlot = again.scheme.placements.filter(
+      (item) => item.templateSlot === post.templateSlot,
+    )
+    expect(withSlot).toHaveLength(1)
+    expect(withSlot[0]).toMatchObject({ id: post.id, generatedByTemplate: false })
+
+    const cone = built.placements.find(
+      (item) => item.kind === 'element' && item.position.zoneFraction === 0.33,
+    )!
+    const edited = savePlacement(built, createPlacementDraft(cone))
+    const editedCone = edited.placements.find((item) => item.id === cone.id)!
+    expect(editedCone).toMatchObject({
+      templateSlot: cone.templateSlot,
+      generatedByTemplate: false,
+    })
+    expect(rebuildTemplatePlacements(edited).scheme.placements).toHaveLength(
+      built.placements.length,
+    )
+  })
+
+  it('requires an entered hourly intensity for 2.6/2.7', () => {
+    const scheme = example(18, 'out', 'signs')
+    for (const hourly of ['', '  ', 'нет', '-5']) {
+      const candidate = schemeSchema.parse({
+        ...scheme,
+        parameters: {
+          ...scheme.parameters,
+          regulation: { ...scheme.parameters.regulation, hourly },
+        },
+      })
+      expect(() => buildTemplatePlacements(candidate)).toThrow('интенсивность менее 250')
+    }
   })
 })

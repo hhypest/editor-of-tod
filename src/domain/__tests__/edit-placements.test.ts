@@ -118,3 +118,24 @@ describe('editing saved placements', () => {
     expect(original.placements).toHaveLength(4)
   })
 })
+
+describe('form edits keep the zone position', () => {
+  it('keeps zoneFraction of an imported element saved without changes', async () => {
+    const { default: newer } = await import('../../../tests/fixtures/legacy-v1-new-fields.json?raw')
+    const scheme = importSchemeJson(newer, {
+      id: '55740b36-080a-4cbe-9476-e71ffb1ab47f',
+      now: '2026-09-26T12:00:00.000Z',
+    }).scheme
+    const element = scheme.placements.find(
+      (item) => item.kind === 'element' && item.position.zoneFraction !== undefined,
+    )!
+    const saved = savePlacement(scheme, createPlacementDraft(element))
+    const after = saved.placements.find((item) => item.id === element.id)!
+    expect(after.position).toEqual(element.position)
+
+    const draft = createPlacementDraft(element)
+    draft.anchor = 'abs'
+    const moved = savePlacement(scheme, draft).placements.find((item) => item.id === element.id)!
+    expect(moved.position).not.toHaveProperty('zoneFraction')
+  })
+})

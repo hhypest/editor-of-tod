@@ -145,6 +145,22 @@ function warnUnknownLegacyFields(legacy: LegacyV1, warnings: string[]): void {
   }
 }
 
+/**
+ * В HTML-прототипе флаг `vis` означает «видимость встречного автомобиля обеспечена», а в проекте
+ * v5 — «видимость ограничена» (подпись формы и проверки шаблона). Поля копируются явно: лишние
+ * ключи v1 уже попали в предупреждения и не должны ронять импорт.
+ */
+export function legacyRegulation(reg: NonNullable<LegacyV1['params']['reg']>) {
+  return {
+    mode: reg.mode,
+    hourly: reg.hourly,
+    k: reg.k,
+    vis: !reg.vis,
+    straight: reg.straight,
+    last: reg.last,
+  }
+}
+
 function migrateLegacy(
   legacy: LegacyV1,
   originalJson: string,
@@ -213,7 +229,7 @@ function migrateLegacy(
       lastSettlement: params.locLast ?? defaultLegacyParameters.lastSettlement,
       frontStyle: params.front ?? defaultLegacyParameters.frontStyle,
       frontFromPu66: params.zPu ?? defaultLegacyParameters.frontFromPu66,
-      regulation: params.reg ?? defaultLegacyParameters.regulation,
+      regulation: params.reg ? legacyRegulation(params.reg) : defaultLegacyParameters.regulation,
       speedStagesKmh: [params.s1, params.s2, params.s3],
       yellowTemporarySigns: params.yellow,
       workZones: { b33: mapWorkZone(params.len.b33), b34: mapWorkZone(params.len.b34) },

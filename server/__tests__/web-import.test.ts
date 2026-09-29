@@ -53,7 +53,7 @@ async function readPlan(response: Response): Promise<{ fingerprint: string }> {
 }
 
 describe('browser PU-66 import', () => {
-  it('imports four distinct books as one batch and rejects a fifth', async () => {
+  it('imports several books as one batch with one backup and rejects more than 100', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-web-batch-'))
     directories.push(directory)
     const store = new RegistryStore(join(directory, 'registry.sqlite'))
@@ -76,16 +76,20 @@ describe('browser PU-66 import', () => {
         headers: { 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:5173' },
         body: JSON.stringify(payload),
       })
-    expect((await post('preview', { files })).status).toBe(400)
-    const selected = files.slice(0, 4)
+    const tooMany = Array.from({ length: 101 }, (_, index) => ({
+      ...files[0]!,
+      name: `X-${index}.xlsx`,
+    }))
+    expect((await post('preview', { files: tooMany })).status).toBe(400)
+    const selected = files
     const preview = await readPlan(await post('preview', { files: selected }))
-    expect(preview).toMatchObject({ added: 4, updated: 0, unchanged: 0 })
+    expect(preview).toMatchObject({ added: 5, updated: 0, unchanged: 0 })
     const result = await post('apply', {
       files: selected,
       expectedFingerprint: preview.fingerprint,
     })
     expect(result.status).toBe(200)
-    expect(store.listPu66()).toHaveLength(4)
+    expect(store.listPu66()).toHaveLength(5)
     expect(readdirSync(join(directory, 'backups'))).toHaveLength(1)
   })
 

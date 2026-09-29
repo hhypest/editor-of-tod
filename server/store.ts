@@ -66,6 +66,17 @@ export class ProjectTooLarge extends Error {
   }
 }
 
+export class AmbiguousPu66Key extends Error {
+  constructor() {
+    super(
+      'Ключ станционной карточки ПУ-66 устарел: на станции несколько карточек с этой привязкой. Привяжите проект к карточке заново.',
+    )
+  }
+}
+
+/** Станционный ключ до версии 9 («ст.<станция>:<км>:<пк>») не содержал номера карточки. */
+const legacyStationKey = /^ст\.[^:]*:[^:]+:[^:]+$/
+
 export class InvalidPu66Verification extends Error {
   constructor() {
     super('Дата сверки ПУ-66 не может быть в будущем.')
@@ -159,9 +170,9 @@ export class RegistryStore {
         version !== 5 &&
         version !== 6 &&
         version !== 7 &&
-        version !== 8
+        version !== 8 &&
+        version !== 9
       ) {
-        this.db.close()
         throw new Error(`Неизвестная версия локальной базы: ${version}. Файл не изменён.`)
       }
       if (version === 0) {
@@ -357,6 +368,7 @@ export class RegistryStore {
         COMMIT;
       `)
       }
+      if (version < 9) this.migrateStationPu66Keys()
       if (this.listNormative().length === 0) {
         for (const entry of initialNormativeEntries) this.saveNormative(entry, 0)
       }
@@ -701,6 +713,86 @@ export class RegistryStore {
     }
   }
 
+  /**
+   * v9: станционные карточки получают номер карточки в ключе. Ранее разные карточки одной станции
+   * с одинаковой привязкой «км:пк» сливались в одну запись; их редакции разделяются обратно,
+   * а старый ключ сохраняется как псевдоним (NULL — если за ним стояло несколько карточек).
+   */
+  private migrateStationPu66Keys(): void {
+    this.db.exec('BEGIN')
+    this.db.exec(
+      'CREATE TABLE IF NOT EXISTS pu66_key_aliases (old_key TEXT PRIMARY KEY, new_key TEXT)',
+    )
+    const rows = this.db
+      .prepare(
+        `SELECT key, revision, payload_json, source_sha256, updated_at
+         FROM pu66_revisions ORDER BY key, revision`,
+      )
+      .all() as Array<{
+      key: string
+      revision: number
+      payload_json: string
+      source_sha256: string
+      updated_at: string
+    }>
+    const byOldKey = new Map<string, typeof rows>()
+    for (const row of rows) {
+      if (!legacyStationKey.test(row.key)) continue
+      byOldKey.set(row.key, [...(byOldKey.get(row.key) ?? []), row])
+    }
+    const insertRevision = this.db.prepare(
+      `INSERT INTO pu66_revisions (key, revision, payload_json, source_sha256, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    const moveVerifications = this.db.prepare(
+      'UPDATE pu66_verifications SET key = ?, card_revision = ? WHERE key = ? AND card_revision = ?',
+    )
+    const deleteRevision = this.db.prepare(
+      'DELETE FROM pu66_revisions WHERE key = ? AND revision = ?',
+    )
+    const insertCard = this.db.prepare(
+      `INSERT INTO pu66_cards (key, revision, payload_json, source_sha256, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    const alias = this.db.prepare(
+      'INSERT OR REPLACE INTO pu66_key_aliases (old_key, new_key) VALUES (?, ?)',
+    )
+    this.db.exec('PRAGMA defer_foreign_keys = ON')
+    for (const [oldKey, history] of byOldKey) {
+      const next = new Map<string, number>()
+      const latest = new Map<string, (typeof rows)[number] & { newRevision: number }>()
+      for (const row of history) {
+        const card = JSON.parse(row.payload_json) as Pu66Card
+        const newKey = `${oldKey}:к${card.cardNumber}`
+        const newRevision = (next.get(newKey) ?? 0) + 1
+        next.set(newKey, newRevision)
+        const payload = JSON.stringify({ ...card, key: newKey })
+        insertRevision.run(newKey, newRevision, payload, row.source_sha256, row.updated_at)
+        moveVerifications.run(newKey, newRevision, oldKey, row.revision)
+        deleteRevision.run(oldKey, row.revision)
+        latest.set(newKey, { ...row, payload_json: payload, newRevision })
+      }
+      this.db.prepare('DELETE FROM pu66_cards WHERE key = ?').run(oldKey)
+      for (const [newKey, row] of latest) {
+        insertCard.run(newKey, row.newRevision, row.payload_json, row.source_sha256, row.updated_at)
+      }
+      alias.run(oldKey, latest.size === 1 ? [...latest.keys()][0]! : null)
+    }
+    this.db.exec('PRAGMA user_version = 9')
+    this.db.exec('COMMIT')
+  }
+
+  /** Текущий ключ карточки; для старых станционных ключей — по таблице псевдонимов. */
+  private resolvePu66Key(key: string): string | null {
+    if (this.db.prepare('SELECT 1 FROM pu66_cards WHERE key = ?').get(key)) return key
+    const alias = this.db
+      .prepare('SELECT new_key FROM pu66_key_aliases WHERE old_key = ?')
+      .get(key) as { new_key: string | null } | undefined
+    if (!alias) return null
+    if (alias.new_key === null) throw new AmbiguousPu66Key()
+    return alias.new_key
+  }
+
   planPu66(entries: Pu66Import[]): { added: number; updated: number; unchanged: number } {
     const result = { added: 0, updated: 0, unchanged: 0 }
     for (const entry of this.inspectPu66(entries)) {
@@ -826,8 +918,13 @@ export class RegistryStore {
     }))
   }
 
-  recordPu66Verification(key: string, input: Pu66VerificationWrite): Pu66Verification | null {
+  recordPu66Verification(
+    requestedKey: string,
+    input: Pu66VerificationWrite,
+  ): Pu66Verification | null {
     const { expectedRevision, verifiedAt, verifiedBy } = pu66VerificationWriteSchema.parse(input)
+    const key = this.resolvePu66Key(requestedKey)
+    if (!key) return null
     const now = this.now()
     if (verifiedAt > localCalendarDate(new Date(now))) throw new InvalidPu66Verification()
     this.db.exec('BEGIN IMMEDIATE')
@@ -853,9 +950,9 @@ export class RegistryStore {
     }
   }
 
-  listPu66Verifications(key: string): Pu66Verification[] | null {
-    const current = this.db.prepare('SELECT 1 FROM pu66_cards WHERE key = ?').get(key)
-    if (!current) return null
+  listPu66Verifications(requestedKey: string): Pu66Verification[] | null {
+    const key = this.resolvePu66Key(requestedKey)
+    if (!key) return null
     const rows = this.db
       .prepare(
         `SELECT card_revision, verified_at, verified_by, recorded_at
@@ -876,8 +973,10 @@ export class RegistryStore {
   }
 
   getPu66Scheme(
-    key: string,
+    requestedKey: string,
   ): (ReturnType<typeof schemeFields> & { revision: number; updatedAt: string }) | null {
+    const key = this.resolvePu66Key(requestedKey)
+    if (!key) return null
     const row = this.db
       .prepare('SELECT payload_json, revision, updated_at FROM pu66_cards WHERE key = ?')
       .get(key) as { payload_json: string; revision: number; updated_at: string } | undefined

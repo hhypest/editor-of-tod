@@ -4,8 +4,9 @@ import { parsePu66, type Pu66Import } from './pu66.ts'
 import { RegistryStore, RevisionConflict } from './store.ts'
 
 const MAX_WORKBOOK_BYTES = 4 * 1024 * 1024
-const MAX_FILES = 4
-export const PU66_UPLOAD_REQUEST_BYTES = 24 * 1024 * 1024
+const MAX_FILES = 100
+const MAX_TOTAL_BYTES = 40 * 1024 * 1024
+export const PU66_UPLOAD_REQUEST_BYTES = 56 * 1024 * 1024
 
 const fileSchema = z.strictObject({
   name: z
@@ -33,6 +34,7 @@ export class InvalidPu66Upload extends Error {
 
 async function parseFiles(files: z.infer<typeof filesSchema>): Promise<Pu66Import[]> {
   const entries: Pu66Import[] = []
+  let total = 0
   for (const [index, file] of files.entries()) {
     if (file.data.length > Math.ceil(MAX_WORKBOOK_BYTES / 3) * 4) {
       throw new InvalidPu66Upload('Каждая книга ПУ-66 должна быть не больше 4 МБ.', 413)
@@ -40,6 +42,10 @@ async function parseFiles(files: z.infer<typeof filesSchema>): Promise<Pu66Impor
     const source = Buffer.from(file.data, 'base64')
     if (source.length > MAX_WORKBOOK_BYTES) {
       throw new InvalidPu66Upload('Каждая книга ПУ-66 должна быть не больше 4 МБ.', 413)
+    }
+    total += source.length
+    if (total > MAX_TOTAL_BYTES) {
+      throw new InvalidPu66Upload('Пакет книг ПУ-66 больше 40 МБ: разделите его.', 413)
     }
     if (source.toString('base64') !== file.data) {
       throw new InvalidPu66Upload(`Книга № ${index + 1}: неверные данные файла.`)

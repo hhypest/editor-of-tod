@@ -36,8 +36,9 @@ function checkConditions(scheme: Scheme): void {
     )
   }
   if (regulation.mode === 'signs') {
-    const hourly = Number(regulation.hourly.trim().replace(',', '.'))
-    if (!Number.isFinite(hourly) || hourly < 0 || hourly >= 250 || regulation.vis) {
+    const input = regulation.hourly.trim().replace(',', '.')
+    const hourly = /^\d+(?:\.\d+)?$/.test(input) ? Number(input) : Number.NaN
+    if (!Number.isFinite(hourly) || hourly >= 250 || regulation.vis) {
       throw new TemplateBuildError(
         'Для варианта со знаками 2.6/2.7 укажите интенсивность менее 250 авт./ч и подтвердите достаточную видимость (ОДМ, п. 5.4.4).',
       )
@@ -80,6 +81,7 @@ export function buildTemplatePlacements(scheme: Scheme): Placement[] {
     kind: 'sign-post',
     id: id++,
     generatedByTemplate: true,
+    templateSlot: `post:${side}:${index}`,
     position: { anchor: 'abs', offsetXSvg: x, offsetYSvg: 0 },
     side,
     stand: side === 'up' ? 'left' : 'right',
@@ -96,11 +98,13 @@ export function buildTemplatePlacements(scheme: Scheme): Placement[] {
     offsetXSvg: number,
     ySvg: number,
     zoneFraction?: number,
+    slot = `${kind}:${anchor}:${zoneFraction ?? offsetXSvg}`,
   ): void {
     placements.push({
       kind: 'element',
       id: id++,
       generatedByTemplate: true,
+      templateSlot: slot,
       elementKind: kind,
       position: {
         anchor,
@@ -135,12 +139,25 @@ export function buildTemplatePlacements(scheme: Scheme): Placement[] {
   return placements
 }
 
-export function rebuildTemplatePlacements(scheme: Scheme): Scheme {
+/**
+ * Заменяет объекты шаблона новой сборкой. Объект шаблона, который составитель сдвинул или изменил,
+ * считается ручным и сохраняет своё место (`templateSlot`), поэтому это место не заполняется повторно.
+ */
+export function rebuildTemplatePlacements(scheme: Scheme): { scheme: Scheme; keptSlots: number } {
   const manual = scheme.placements.filter((placement) => !placement.generatedByTemplate)
-  const generated = buildTemplatePlacements({ ...scheme, placements: manual })
-  return schemeSchema.parse({
-    ...scheme,
-    placements: [...manual, ...generated],
-    nextPlacementId: Math.max(...generated.map((placement) => placement.id)) + 1,
-  })
+  const taken = new Set(manual.flatMap((placement) => placement.templateSlot ?? []))
+  const generated = buildTemplatePlacements({ ...scheme, placements: manual }).filter(
+    (placement) => !placement.templateSlot || !taken.has(placement.templateSlot),
+  )
+  return {
+    scheme: schemeSchema.parse({
+      ...scheme,
+      placements: [...manual, ...generated],
+      nextPlacementId: Math.max(
+        scheme.nextPlacementId,
+        ...generated.map((placement) => placement.id + 1),
+      ),
+    }),
+    keptSlots: taken.size,
+  }
 }

@@ -23,8 +23,10 @@ const pu66ListEntrySchema = z.object({
 })
 export type Pu66ListEntry = z.infer<typeof pu66ListEntrySchema>
 
-export const MAX_WEB_PU66_FILES = 4
+export const MAX_WEB_PU66_FILES = 100
 export const MAX_WEB_PU66_FILE_BYTES = 4 * 1024 * 1024
+/** Сумма книг одного пакета; с base64 запрос остаётся в пределах лимита локального API. */
+export const MAX_WEB_PU66_TOTAL_BYTES = 40 * 1024 * 1024
 
 const importPlanSchema = z.strictObject({
   added: z.number().int().nonnegative(),
@@ -73,6 +75,9 @@ async function uploadPayload(files: File[]): Promise<Array<{ name: string; data:
     throw new Error(`Выберите от 1 до ${MAX_WEB_PU66_FILES} файлов ПУ-66.`)
   if (files.some((file) => !/\.xlsx$/i.test(file.name) || file.size > MAX_WEB_PU66_FILE_BYTES)) {
     throw new Error('Выберите книги XLSX размером не больше 4 МБ каждая.')
+  }
+  if (files.reduce((sum, file) => sum + file.size, 0) > MAX_WEB_PU66_TOTAL_BYTES) {
+    throw new Error('Пакет больше 40 МБ: разделите книги на несколько импортов.')
   }
   return Promise.all(files.map(async (file) => ({ name: file.name, data: await readBase64(file) })))
 }

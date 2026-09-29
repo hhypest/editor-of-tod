@@ -28,6 +28,7 @@ import {
   ProjectTooLarge,
   RegistryStore,
   RevisionConflict,
+  AmbiguousPu66Key,
 } from './store.ts'
 
 const port = 4100
@@ -291,7 +292,8 @@ export function createRegistryServer(store: RegistryStore, listenPort = port) {
       }
     } catch (error) {
       if (error instanceof RequestError) json(res, error.status, { error: error.message })
-      else if (error instanceof RevisionConflict) json(res, 409, { error: error.message })
+      else if (error instanceof RevisionConflict || error instanceof AmbiguousPu66Key)
+        json(res, 409, { error: error.message })
       else if (error instanceof InvalidPu66Verification) json(res, 400, { error: error.message })
       else if (error instanceof InvalidPu66Upload) json(res, error.status, { error: error.message })
       else if (error instanceof InvalidSignUpload) json(res, error.status, { error: error.message })
@@ -314,7 +316,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const server = createRegistryServer(store)
   server.listen(port, '127.0.0.1', () => {
     console.log(`Локальный редактор: http://127.0.0.1:${port}/`)
-    console.log('Реестр хранится в private-data/registry.sqlite')
+    console.log(`Реестр хранится в ${databasePath}`)
   })
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, () => server.close(() => store.close()))
