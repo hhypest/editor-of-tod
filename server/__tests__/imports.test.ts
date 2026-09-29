@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { createNewScheme } from '../../src/domain/create-scheme'
 import { linkPu66Card } from '../../src/domain/link-pu66'
 import { annualPu66ReviewStatus } from '../../src/domain/pu66-review'
+import { runImport } from '../import-cli'
 import { extractPu66Cells, schemeFields, type Pu66Import } from '../pu66'
 import { parseSignArchive } from '../signs'
 import { RegistryStore } from '../store'
@@ -58,6 +59,22 @@ function signZip(code = '1.1_ж', color = 210) {
 }
 
 describe('private import formats', () => {
+  it('reports the backup beside a database set by TOD_DATABASE_PATH', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-cli-backup-'))
+    try {
+      const store = new RegistryStore(join(directory, 'custom', 'registry.sqlite'))
+      const archive = join(directory, 'signs.zip')
+      writeFileSync(archive, signZip())
+      const message = await runImport(['signs', '--apply', archive], store)
+      store.close()
+      const backup = /Резервная копия: (.+)\.$/.exec(message)?.[1]
+      expect(backup?.startsWith(join(directory, 'custom', 'backups'))).toBe(true)
+      expect(existsSync(backup!)).toBe(true)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
   it('uses the latest actual review date after a historical entry is backfilled', () => {
     const store = new RegistryStore(':memory:', () => '2027-02-01T12:00:00.000Z')
     try {
