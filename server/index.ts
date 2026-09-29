@@ -24,11 +24,19 @@ import {
   SIGN_UPLOAD_REQUEST_BYTES,
 } from './sign-web-import.ts'
 import {
+  applyDocumentUpload,
+  DOCUMENT_UPLOAD_REQUEST_BYTES,
+  InvalidDocumentUpload,
+  previewDocumentUpload,
+} from './document-web-import.ts'
+import { documentMetaSchema } from '../src/domain/normative-documents.ts'
+import {
   InvalidPu66Verification,
   ProjectTooLarge,
   RegistryStore,
   RevisionConflict,
   AmbiguousPu66Key,
+  DocumentInUse,
 } from './store.ts'
 
 export const DEFAULT_PORT = 4100
@@ -165,6 +173,7 @@ export function createRegistryServer(
       const revisionPath = /^\/api\/projects\/([^/]+)\/revisions\/(\d+)$/.exec(pathname)
       const restorePath = /^\/api\/projects\/([^/]+)\/restore$/.exec(pathname)
       const recoveryPath = /^\/api\/recovery\/([^/]+)$/.exec(pathname)
+      const documentPath = /^\/api\/documents\/(\d+)(\/pdf)?$/.exec(pathname)
       if (req.method === 'GET' && pathname === '/api/status') {
         json(res, 200, { ready: true })
       } else if (req.method === 'GET' && pathname === '/api/crossings') {
@@ -244,6 +253,41 @@ export function createRegistryServer(
         json(res, 200, previewSignUpload(store, await readJson(req, SIGN_UPLOAD_REQUEST_BYTES)))
       } else if (req.method === 'POST' && pathname === '/api/signs/import/apply') {
         json(res, 200, await applySignUpload(store, await readJson(req, SIGN_UPLOAD_REQUEST_BYTES)))
+      } else if (req.method === 'GET' && pathname === '/api/documents') {
+        json(res, 200, store.listDocuments())
+      } else if (req.method === 'POST' && pathname === '/api/documents/preview') {
+        json(
+          res,
+          200,
+          previewDocumentUpload(store, await readJson(req, DOCUMENT_UPLOAD_REQUEST_BYTES)),
+        )
+      } else if (req.method === 'POST' && pathname === '/api/documents/apply') {
+        json(
+          res,
+          201,
+          await applyDocumentUpload(store, await readJson(req, DOCUMENT_UPLOAD_REQUEST_BYTES)),
+        )
+      } else if (documentPath) {
+        const id = Number(documentPath[1])
+        if (!Number.isSafeInteger(id)) throw new RequestError(400, 'Неверный номер документа.')
+        if (req.method === 'GET' && documentPath[2] === '/pdf') {
+          const file = store.getDocumentPdf(id)
+          if (!file) throw new RequestError(404, 'Документ не найден.')
+          res.writeHead(200, {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
+            'X-Content-Type-Options': 'nosniff',
+            'Cache-Control': 'no-store',
+          })
+          res.end(Buffer.from(file.pdf))
+        } else if (req.method === 'PUT' && !documentPath[2]) {
+          const updated = store.updateDocument(id, documentMetaSchema.parse(await readJson(req)))
+          if (!updated) throw new RequestError(404, 'Документ не найден.')
+          json(res, 200, updated)
+        } else if (req.method === 'DELETE' && !documentPath[2]) {
+          if (!store.deleteDocument(id)) throw new RequestError(404, 'Документ не найден.')
+          json(res, 200, { deleted: id })
+        } else throw new RequestError(405, 'Метод не поддерживается.')
       } else if (req.method === 'GET' && /^\/api\/signs\/[^/]+\/image$/.test(pathname)) {
         const code = decodeKey(pathname.slice('/api/signs/'.length, -'/image'.length))
         if (!/^[0-9][0-9A-Za-z._-]*ж?$/.test(code))
@@ -313,6 +357,9 @@ export function createRegistryServer(
       else if (error instanceof InvalidPu66Verification) json(res, 400, { error: error.message })
       else if (error instanceof InvalidPu66Upload) json(res, error.status, { error: error.message })
       else if (error instanceof InvalidSignUpload) json(res, error.status, { error: error.message })
+      else if (error instanceof InvalidDocumentUpload)
+        json(res, error.status, { error: error.message })
+      else if (error instanceof DocumentInUse) json(res, 409, { error: error.message })
       else if (error instanceof ProjectTooLarge) json(res, 413, { error: error.message })
       else if (error instanceof ZodError) {
         const issue = error.issues[0]

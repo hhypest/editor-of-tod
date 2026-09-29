@@ -9,7 +9,17 @@ const counts = {
   updated: z.number().int().nonnegative(),
   unchanged: z.number().int().nonnegative(),
   retired: z.number().int().nonnegative(),
+  relabelled: z.number().int().nonnegative(),
+  addedCodes: z.array(z.string()),
+  changedCodes: z.array(z.string()),
+  retiredCodes: z.array(z.string()),
 }
+const sourceSchema = z.strictObject({
+  documentCode: z.string(),
+  edition: z.string(),
+  pdfSha256: z.string().nullable(),
+  documentId: z.number().int().positive().nullable().optional(),
+})
 const catalogSchema = z.strictObject({
   id: z.number().int().positive(),
   documentCode: z.string(),
@@ -18,19 +28,20 @@ const catalogSchema = z.strictObject({
   zipSha256: z.string(),
   signCount: z.number().int().nonnegative(),
   importedAt: z.string(),
+  documentId: z.number().int().positive().nullable(),
 })
 const planSchema = z.strictObject({
   ...counts,
   signCount: z.number().int().nonnegative(),
-  source: z.strictObject({
-    documentCode: z.string(),
-    edition: z.string(),
-    pdfSha256: z.string().nullable(),
-  }),
+  source: sourceSchema,
   fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+  /** Новые изображения изменённых знаков для сравнения с текущими. */
+  changedPreviews: z.array(z.strictObject({ code: z.string(), image: z.string() })),
 })
 const resultSchema = z.strictObject({
   ...counts,
+  signCount: z.number().int().nonnegative(),
+  source: sourceSchema,
   backup: z.string().nullable(),
   catalog: catalogSchema.nullable(),
 })
@@ -46,7 +57,14 @@ async function base64(file: File): Promise<string> {
   return btoa(text)
 }
 
-async function payload(zip: File, pdf: File | null, documentCode: string, edition: string) {
+/** Источник архива: документ библиотеки или код и редакция, введённые вручную. */
+export type SignSourceInput =
+  { documentId: number } | { documentCode: string; edition: string; pdf: File | null }
+
+async function payload(zip: File, source: SignSourceInput) {
+  const pdf = 'pdf' in source ? source.pdf : null
+  const documentCode = 'documentCode' in source ? source.documentCode : 'из библиотеки'
+  const edition = 'edition' in source ? source.edition : 'из библиотеки'
   if (!/\.zip$/i.test(zip.name) || zip.size > MAX_WEB_SIGN_ARCHIVE_BYTES) {
     throw new Error('Выберите ZIP знаков размером не больше 32 МБ.')
   }
@@ -59,6 +77,7 @@ async function payload(zip: File, pdf: File | null, documentCode: string, editio
     pdf: pdf ? { name: pdf.name, data: await base64(pdf) } : null,
     documentCode: documentCode.trim(),
     edition: edition.trim(),
+    documentId: 'documentId' in source ? source.documentId : null,
   }
 }
 
@@ -86,25 +105,15 @@ async function request(path: string, body: unknown) {
 
 export async function previewSignFiles(
   zip: File,
-  pdf: File | null,
-  documentCode: string,
-  edition: string,
+  source: SignSourceInput,
 ): Promise<SignImportPlan> {
-  return planSchema.parse(
-    await request('/api/signs/import/preview', await payload(zip, pdf, documentCode, edition)),
-  )
+  return planSchema.parse(await request('/api/signs/import/preview', await payload(zip, source)))
 }
 
-export async function applySignFiles(
-  zip: File,
-  pdf: File | null,
-  documentCode: string,
-  edition: string,
-  fingerprint: string,
-) {
+export async function applySignFiles(zip: File, source: SignSourceInput, fingerprint: string) {
   return resultSchema.parse(
     await request('/api/signs/import/apply', {
-      ...(await payload(zip, pdf, documentCode, edition)),
+      ...(await payload(zip, source)),
       expectedFingerprint: fingerprint,
     }),
   )

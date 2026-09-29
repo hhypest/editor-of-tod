@@ -2,9 +2,11 @@ import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { parseSignArchive } from './signs.ts'
 import { RegistryStore, RevisionConflict, type SignCatalogSource } from './store.ts'
+import { normalizeDocumentCode } from '../src/domain/normative-documents.ts'
 
 const MAX_ZIP_BYTES = 32 * 1024 * 1024
 const MAX_PDF_BYTES = 10 * 1024 * 1024
+const MAX_CHANGED_PREVIEWS = 120
 export const SIGN_UPLOAD_REQUEST_BYTES = 60 * 1024 * 1024
 
 const requestSchema = z.strictObject({
@@ -18,6 +20,8 @@ const requestSchema = z.strictObject({
   }),
   documentCode: z.string().trim().min(3).max(120),
   edition: z.string().trim().min(1).max(120),
+  /** Документ локальной библиотеки: код, редакция и хеш PDF берутся из него. */
+  documentId: z.number().int().positive().nullable().optional(),
   pdf: z
     .strictObject({
       name: z
@@ -52,7 +56,7 @@ function decode(data: string, maxBytes: number, label: string): Buffer {
   return bytes
 }
 
-function parse(body: z.infer<typeof requestSchema>) {
+function parse(store: RegistryStore, body: z.infer<typeof requestSchema>) {
   const archive = decode(body.archive.data, MAX_ZIP_BYTES, 'Архив знаков')
   const pdf = body.pdf ? decode(body.pdf.data, MAX_PDF_BYTES, 'PDF ГОСТ') : null
   if (pdf && !pdf.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
@@ -66,10 +70,23 @@ function parse(body: z.infer<typeof requestSchema>) {
       cause instanceof Error ? cause.message : 'Не удалось прочитать архив знаков.',
     )
   }
-  const source: SignCatalogSource = {
+  let source: SignCatalogSource = {
     documentCode: body.documentCode,
     edition: body.edition,
     pdfSha256: pdf ? createHash('sha256').update(pdf).digest('hex') : null,
+    documentId: null,
+  }
+  if (body.documentId) {
+    const document = store.getDocument(body.documentId)
+    if (!document) throw new InvalidSignUpload('Выбранный документ не найден в библиотеке.')
+    if (document.amendsId !== null)
+      throw new InvalidSignUpload('Выберите основной документ, а не изменение к нему.')
+    source = {
+      documentCode: normalizeDocumentCode(document.code),
+      edition: document.edition,
+      pdfSha256: document.sha256,
+      documentId: document.id,
+    }
   }
   return { entries, source }
 }
@@ -88,24 +105,59 @@ function plan(store: RegistryStore, parsed: ReturnType<typeof parse>) {
       }),
     )
     .digest('hex')
-  return { ...counts, fingerprint, signCount: parsed.entries.length, source: parsed.source }
+  // Новые изображения изменённых знаков для сравнения со старыми в предварительном просмотре.
+  const changed = new Set(counts.changedCodes.slice(0, MAX_CHANGED_PREVIEWS))
+  const changedPreviews = parsed.entries
+    .filter((entry) => changed.has(entry.code))
+    .map((entry) => ({
+      code: entry.code,
+      image: `data:image/png;base64,${Buffer.from(entry.plainPng).toString('base64')}`,
+    }))
+  return {
+    ...counts,
+    fingerprint,
+    signCount: parsed.entries.length,
+    source: parsed.source,
+    changedPreviews,
+  }
+}
+
+/** Итог записи: те же сведения, что в просмотре, без изображений и отпечатка плана. */
+function withoutPreview(preview: ReturnType<typeof plan>) {
+  return {
+    added: preview.added,
+    updated: preview.updated,
+    unchanged: preview.unchanged,
+    retired: preview.retired,
+    relabelled: preview.relabelled,
+    addedCodes: preview.addedCodes,
+    changedCodes: preview.changedCodes,
+    retiredCodes: preview.retiredCodes,
+    signCount: preview.signCount,
+    source: preview.source,
+  }
 }
 
 export function previewSignUpload(store: RegistryStore, body: unknown) {
-  const parsed = parse(requestSchema.parse(body))
+  const parsed = parse(store, requestSchema.parse(body))
   return plan(store, parsed)
 }
 
 export async function applySignUpload(store: RegistryStore, body: unknown) {
   const { expectedFingerprint, ...request } = applySchema.parse(body)
-  const parsed = parse(request)
+  const parsed = parse(store, request)
   const preview = plan(store, parsed)
   if (preview.fingerprint !== expectedFingerprint) throw new RevisionConflict()
   if (preview.added + preview.updated + preview.retired === 0) {
-    return { ...preview, backup: null, catalog: store.latestSignCatalog() }
+    return { ...withoutPreview(preview), backup: null, catalog: store.latestSignCatalog() }
   }
   const backup = await store.createBackup()
   if (plan(store, parsed).fingerprint !== expectedFingerprint) throw new RevisionConflict()
   const counts = store.importSigns(parsed.entries, parsed.source)
-  return { ...counts, backup, catalog: store.latestSignCatalog() }
+  return {
+    ...withoutPreview(preview),
+    ...counts,
+    backup,
+    catalog: store.latestSignCatalog(),
+  }
 }

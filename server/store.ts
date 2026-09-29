@@ -31,18 +31,38 @@ import {
 } from '../src/domain/pu66-review.ts'
 import { type Pu66Card, type Pu66Import, localCardSummary, schemeFields } from './pu66.ts'
 import { type SignImport } from './signs.ts'
+import {
+  documentMetaSchema,
+  type DocumentMeta,
+  type DocumentRecord,
+} from '../src/domain/normative-documents.ts'
 
 export type SignCatalogSource = {
   documentCode: string
   edition: string
   pdfSha256: string | null
+  /** Документ локальной библиотеки, если архив сверен с прикреплённым PDF. */
+  documentId?: number | null
 }
 
 export type SignCatalogPlan = {
   added: number
+  /** Изменённые изображения и знаки, у которых сменился только источник. */
   updated: number
   unchanged: number
   retired: number
+  /** Из `updated`: изображение то же, изменилась только редакция источника. */
+  relabelled: number
+  addedCodes: string[]
+  changedCodes: string[]
+  retiredCodes: string[]
+}
+
+export class DocumentInUse extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'DocumentInUse'
+  }
 }
 
 const unspecifiedSignSource: SignCatalogSource = {
@@ -171,7 +191,8 @@ export class RegistryStore {
         version !== 6 &&
         version !== 7 &&
         version !== 8 &&
-        version !== 9
+        version !== 9 &&
+        version !== 10
       ) {
         throw new Error(`Неизвестная версия локальной базы: ${version}. Файл не изменён.`)
       }
@@ -369,6 +390,36 @@ export class RegistryStore {
       `)
       }
       if (version < 9) this.migrateStationPu66Keys()
+      if (version < 10) {
+        this.db.exec(`
+        BEGIN;
+        CREATE TABLE IF NOT EXISTS normative_documents (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          code TEXT NOT NULL,
+          edition TEXT NOT NULL,
+          title TEXT NOT NULL,
+          kind TEXT NOT NULL CHECK (kind IN ('signs', 'rules', 'methodology', 'other')),
+          effective_from TEXT NOT NULL,
+          amends_id INTEGER REFERENCES normative_documents(id),
+          note TEXT NOT NULL,
+          actual_checked_at TEXT NOT NULL,
+          filename TEXT NOT NULL,
+          pdf BLOB NOT NULL,
+          sha256 TEXT NOT NULL UNIQUE,
+          size_bytes INTEGER NOT NULL,
+          added_at TEXT NOT NULL
+        );
+        COMMIT;
+      `)
+        const columns = this.db.prepare('PRAGMA table_info(sign_catalog_batches)').all() as Array<{
+          name: string
+        }>
+        if (!columns.some((column) => column.name === 'document_id'))
+          this.db.exec(
+            'ALTER TABLE sign_catalog_batches ADD COLUMN document_id INTEGER REFERENCES normative_documents(id)',
+          )
+        this.db.exec('PRAGMA user_version = 10')
+      }
       if (this.listNormative().length === 0) {
         for (const entry of initialNormativeEntries) this.saveNormative(entry, 0)
       }
@@ -997,11 +1048,12 @@ export class RegistryStore {
     zipSha256: string
     signCount: number
     importedAt: string
+    documentId: number | null
   } | null {
     const row = this.db
       .prepare(
-        `SELECT id, document_code, edition, pdf_sha256, zip_sha256, sign_count, imported_at
-                FROM sign_catalog_batches ORDER BY id DESC LIMIT 1`,
+        `SELECT id, document_code, edition, pdf_sha256, zip_sha256, sign_count, imported_at,
+                document_id FROM sign_catalog_batches ORDER BY id DESC LIMIT 1`,
       )
       .get() as
       | {
@@ -1012,6 +1064,7 @@ export class RegistryStore {
           zip_sha256: string
           sign_count: number
           imported_at: string
+          document_id: number | null
         }
       | undefined
     return row
@@ -1023,6 +1076,7 @@ export class RegistryStore {
           zipSha256: row.zip_sha256,
           signCount: row.sign_count,
           importedAt: row.imported_at,
+          documentId: row.document_id,
         }
       : null
   }
@@ -1032,7 +1086,16 @@ export class RegistryStore {
     source: SignCatalogSource = unspecifiedSignSource,
   ): SignCatalogPlan {
     const seen = new Set<string>()
-    const result = { added: 0, updated: 0, unchanged: 0, retired: 0 }
+    const result: SignCatalogPlan = {
+      added: 0,
+      updated: 0,
+      unchanged: 0,
+      retired: 0,
+      relabelled: 0,
+      addedCodes: [],
+      changedCodes: [],
+      retiredCodes: [],
+    }
     const latest = this.latestSignCatalog()
     const sameSource =
       latest === null
@@ -1051,17 +1114,22 @@ export class RegistryStore {
       seen.add(entry.code)
       const previous = existing.get(entry.code) as
         { numbered_sha256: string; plain_sha256: string; active: string | null } | undefined
-      if (!previous || !previous.active) result.added++
-      else if (
-        previous.numbered_sha256 === entry.numberedSha256 &&
-        previous.plain_sha256 === entry.plainSha256 &&
-        sameSource
-      )
-        result.unchanged++
-      else result.updated++
+      const samePng =
+        previous?.numbered_sha256 === entry.numberedSha256 &&
+        previous.plain_sha256 === entry.plainSha256
+      if (!previous || !previous.active) {
+        result.added++
+        result.addedCodes.push(entry.code)
+      } else if (samePng && sameSource) result.unchanged++
+      else {
+        result.updated++
+        if (samePng) result.relabelled++
+        else result.changedCodes.push(entry.code)
+      }
     }
     const active = this.db.prepare('SELECT code FROM sign_active').all() as { code: string }[]
-    result.retired = active.filter(({ code }) => !seen.has(code)).length
+    result.retiredCodes = active.filter(({ code }) => !seen.has(code)).map(({ code }) => code)
+    result.retired = result.retiredCodes.length
     return result
   }
 
@@ -1076,8 +1144,8 @@ export class RegistryStore {
       const batch = this.db
         .prepare(
           `INSERT INTO sign_catalog_batches
-          (document_code, edition, pdf_sha256, zip_sha256, sign_count, imported_at)
-          VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
+          (document_code, edition, pdf_sha256, zip_sha256, sign_count, imported_at, document_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
         )
         .get(
           source.documentCode,
@@ -1086,6 +1154,7 @@ export class RegistryStore {
           entries[0]?.zipSha256 ?? '',
           entries.length,
           this.now(),
+          source.documentId ?? null,
         ) as { id: number }
       const existing = this.db.prepare(
         'SELECT numbered_sha256, plain_sha256, revision FROM signs WHERE code = ?',
@@ -1248,6 +1317,143 @@ export class RegistryStore {
   /** Каталог резервных копий: `backups/` рядом с файлом базы, в том числе заданным `TOD_DATABASE_PATH`. */
   get backupDirectory(): string {
     return join(dirname(this.path), 'backups')
+  }
+
+  private documentRow(row: Record<string, unknown>): DocumentRecord {
+    return {
+      id: Number(row.id),
+      code: String(row.code),
+      edition: String(row.edition),
+      title: String(row.title),
+      kind: row.kind as DocumentRecord['kind'],
+      effectiveFrom: String(row.effective_from),
+      amendsId: row.amends_id === null ? null : Number(row.amends_id),
+      note: String(row.note),
+      actualCheckedAt: String(row.actual_checked_at),
+      filename: String(row.filename),
+      sha256: String(row.sha256),
+      sizeBytes: Number(row.size_bytes),
+      addedAt: String(row.added_at),
+    }
+  }
+
+  /** Библиотека нормативных документов без содержимого PDF. */
+  listDocuments(): DocumentRecord[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT id, code, edition, title, kind, effective_from, amends_id, note,
+                  actual_checked_at, filename, sha256, size_bytes, added_at
+             FROM normative_documents ORDER BY code, effective_from, id`,
+        )
+        .all() as Record<string, unknown>[]
+    ).map((row) => this.documentRow(row))
+  }
+
+  getDocument(id: number): DocumentRecord | null {
+    return this.listDocuments().find((document) => document.id === id) ?? null
+  }
+
+  getDocumentPdf(id: number): { filename: string; pdf: Uint8Array } | null {
+    const row = this.db
+      .prepare('SELECT filename, pdf FROM normative_documents WHERE id = ?')
+      .get(id) as { filename: string; pdf: Uint8Array } | undefined
+    return row ?? null
+  }
+
+  findDocumentBySha(sha256: string): DocumentRecord | null {
+    return this.listDocuments().find((document) => document.sha256 === sha256) ?? null
+  }
+
+  private checkAmends(meta: DocumentMeta, selfId: number | null): void {
+    if (meta.amendsId === null) return
+    if (meta.amendsId === selfId) throw new DocumentInUse('Документ не может изменять сам себя.')
+    const base = this.getDocument(meta.amendsId)
+    if (!base) throw new DocumentInUse('Изменяемый документ не найден в библиотеке.')
+    if (base.amendsId !== null)
+      throw new DocumentInUse(
+        'Изменение прикрепляется к основному документу, а не к другому изменению.',
+      )
+    if (selfId !== null) {
+      const dependants = this.listDocuments().filter((item) => item.amendsId === selfId)
+      if (dependants.length)
+        throw new DocumentInUse(
+          'К этому документу прикреплены изменения: он не может сам быть изменением.',
+        )
+    }
+  }
+
+  addDocument(
+    input: DocumentMeta,
+    filename: string,
+    pdf: Uint8Array,
+    sha256: string,
+  ): DocumentRecord {
+    const meta = documentMetaSchema.parse(input)
+    if (this.findDocumentBySha(sha256)) throw new DocumentInUse('Этот PDF уже есть в библиотеке.')
+    this.checkAmends(meta, null)
+    const row = this.db
+      .prepare(
+        `INSERT INTO normative_documents
+          (code, edition, title, kind, effective_from, amends_id, note, actual_checked_at,
+           filename, pdf, sha256, size_bytes, added_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+      )
+      .get(
+        meta.code,
+        meta.edition,
+        meta.title,
+        meta.kind,
+        meta.effectiveFrom,
+        meta.amendsId,
+        meta.note,
+        meta.actualCheckedAt,
+        filename,
+        pdf,
+        sha256,
+        pdf.byteLength,
+        this.now(),
+      ) as { id: number }
+    return this.getDocument(row.id)!
+  }
+
+  updateDocument(id: number, input: DocumentMeta): DocumentRecord | null {
+    const meta = documentMetaSchema.parse(input)
+    if (!this.getDocument(id)) return null
+    this.checkAmends(meta, id)
+    this.db
+      .prepare(
+        `UPDATE normative_documents SET code = ?, edition = ?, title = ?, kind = ?,
+           effective_from = ?, amends_id = ?, note = ?, actual_checked_at = ? WHERE id = ?`,
+      )
+      .run(
+        meta.code,
+        meta.edition,
+        meta.title,
+        meta.kind,
+        meta.effectiveFrom,
+        meta.amendsId,
+        meta.note,
+        meta.actualCheckedAt,
+        id,
+      )
+    return this.getDocument(id)
+  }
+
+  /** Удаление допустимо, только если на документ не ссылаются каталог знаков и изменения. */
+  deleteDocument(id: number): boolean {
+    if (!this.getDocument(id)) return false
+    const batches = this.db
+      .prepare('SELECT COUNT(*) AS count FROM sign_catalog_batches WHERE document_id = ?')
+      .get(id) as { count: number }
+    if (batches.count)
+      throw new DocumentInUse(
+        'С этим документом сверен импорт каталога знаков: запись нужна для истории и не удаляется.',
+      )
+    if (this.listDocuments().some((document) => document.amendsId === id))
+      throw new DocumentInUse('Сначала удалите изменения, прикреплённые к этому документу.')
+    this.db.prepare('DELETE FROM normative_documents WHERE id = ?').run(id)
+    return true
   }
 
   async createBackup(): Promise<string> {

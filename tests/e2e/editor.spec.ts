@@ -315,6 +315,65 @@ test('release sheet drops the draft mark and downloads a PNG', async ({ page }) 
   expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([3528, 2495])
 })
 
+test('attaches standards, switches the sign catalog to a new edition and flags the old one', async ({
+  page,
+}) => {
+  const pdf = (text: string) => Buffer.from(`%PDF-1.4\n${text}`)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Реестры', exact: true }).click()
+  await page.getByRole('button', { name: 'Нормативные документы' }).click()
+  const library = page.locator('.library')
+  const addEdition = async (filename: string, text: string, effective: string) => {
+    await library
+      .locator('input[type="file"]')
+      .setInputFiles({ name: filename, mimeType: 'application/pdf', buffer: pdf(text) })
+    await library.getByLabel('Дата введения в действие').fill(effective)
+    await library.getByRole('button', { name: 'Проверить документ' }).click()
+  }
+  await addEdition('GOST-R-99290-2024.pdf', 'edition 2024', '2024-06-01')
+  await expect(library.getByLabel('Обозначение', { exact: true })).toHaveValue('ГОСТ Р 99290')
+  await expect(library.getByLabel('Редакция', { exact: true })).toHaveValue('2024')
+  await expect(library).toContainText('Станет действующей редакцией этого документа.')
+  await library.getByRole('button', { name: /Добавить в библиотеку/ }).click()
+  await expect(library).toContainText('ГОСТ Р 99290-2024 добавлен в библиотеку')
+  await expect(library.locator('.status-current')).toContainText('Редакция 2024')
+
+  // Каталог знаков по редакции 2024 из библиотеки.
+  await page.getByRole('button', { name: 'Импорт Excel и знаков' }).click()
+  const source = page.getByLabel('Документ из библиотеки')
+  const option = await source
+    .locator('option', { hasText: 'ГОСТ Р 99290-2024' })
+    .getAttribute('value')
+  await source.selectOption(option!)
+  const image = new PNG({ width: 8, height: 8 })
+  image.data.fill(120)
+  const png = PNG.sync.write(image)
+  await page.locator('input[type="file"][accept=".zip"]').setInputFiles({
+    name: 'signs.zip',
+    mimeType: 'application/zip',
+    buffer: Buffer.from(zipSync({ 'PNG с номером/1.25.png': png, 'PNG без номера/1.25.png': png })),
+  })
+  await page.getByRole('button', { name: 'Просмотреть изменения знаков' }).click()
+  await expect(page.getByText('Изменённые изображения')).toBeVisible()
+  await page.getByRole('button', { name: 'Подтвердить каталог и создать копию SQLite' }).click()
+  await expect(page.getByText(/Текущий набор: ГОСТ Р 99290, редакция 2024/)).toBeVisible()
+
+  // Новая редакция уже введена: прежняя заменена, каталог знаков устарел.
+  await page.getByRole('button', { name: 'Нормативные документы' }).click()
+  await addEdition('GOST-R-99290-2026.pdf', 'edition 2026', '2026-01-01')
+  await expect(library).toContainText('Станет действующей редакцией вместо ГОСТ Р 99290-2024')
+  await library.getByRole('button', { name: /Добавить в библиотеку/ }).click()
+  await expect(library.locator('.status-superseded')).toContainText('заменён редакцией 2026')
+  await expect(library.locator('.warning').first()).toContainText(
+    'Каталог знаков загружен по редакции 2024, а действует ГОСТ Р 99290-2026',
+  )
+  const [popup] = await Promise.all([
+    page.waitForEvent('popup'),
+    library.locator('.status-current').getByRole('link', { name: 'Открыть PDF' }).click(),
+  ])
+  await popup.close()
+})
+
 test('A4 print contains exactly one page', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Открыть JSON' }).click()
