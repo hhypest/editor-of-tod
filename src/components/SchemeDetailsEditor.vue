@@ -111,12 +111,26 @@ function applyDraft(): void {
       <fieldset v-if="!mode || mode === 'source'" :disabled="locked">
         <legend>Место работ</legend>
         <div class="fields">
-          <label>Участок <input v-model="draft.parameters.locationText" type="text" /></label>
           <label
-            >Направление слева <input v-model="draft.parameters.directions.left" type="text"
+            >Участок
+            <input
+              v-model="draft.parameters.locationText"
+              data-field="parameters.locationText"
+              type="text"
           /></label>
           <label
-            >Направление справа <input v-model="draft.parameters.directions.right" type="text"
+            >Направление слева
+            <input
+              v-model="draft.parameters.directions.left"
+              data-field="parameters.directions.left"
+              type="text"
+          /></label>
+          <label
+            >Направление справа
+            <input
+              v-model="draft.parameters.directions.right"
+              data-field="parameters.directions.right"
+              type="text"
           /></label>
         </div>
       </fieldset>
@@ -135,6 +149,7 @@ function applyDraft(): void {
             >d300
             <input
               v-model="draft.parameters.signDistancesMetres.d300"
+              data-field="parameters.signDistancesMetres.d300"
               type="text"
               inputmode="decimal"
           /></label>
@@ -142,6 +157,7 @@ function applyDraft(): void {
             >d250
             <input
               v-model="draft.parameters.signDistancesMetres.d250"
+              data-field="parameters.signDistancesMetres.d250"
               type="text"
               inputmode="decimal"
           /></label>
@@ -149,6 +165,7 @@ function applyDraft(): void {
             >d150
             <input
               v-model="draft.parameters.signDistancesMetres.d150"
+              data-field="parameters.signDistancesMetres.d150"
               type="text"
               inputmode="decimal"
           /></label>
@@ -156,6 +173,7 @@ function applyDraft(): void {
             >d50
             <input
               v-model="draft.parameters.signDistancesMetres.d50"
+              data-field="parameters.signDistancesMetres.d50"
               type="text"
               inputmode="decimal"
           /></label>
@@ -163,6 +181,7 @@ function applyDraft(): void {
             >n100
             <input
               v-model="draft.parameters.signDistancesMetres.n100"
+              data-field="parameters.signDistancesMetres.n100"
               type="text"
               inputmode="decimal"
           /></label>
@@ -170,6 +189,7 @@ function applyDraft(): void {
             >n50
             <input
               v-model="draft.parameters.signDistancesMetres.n50"
+              data-field="parameters.signDistancesMetres.n50"
               type="text"
               inputmode="decimal"
           /></label>
@@ -302,44 +322,112 @@ function applyDraft(): void {
         <h3>Разработчик</h3>
         <div class="fields">
           <label
-            >Организация <input v-model="draft.titleBlock.developer.organization" type="text"
+            >Организация
+            <input
+              v-model="draft.titleBlock.developer.organization"
+              data-field="titleBlock.developer.organization"
+              type="text"
           /></label>
-          <label>ФИО <input v-model="draft.titleBlock.developer.name" type="text" /></label>
-          <label>Дата <input v-model="draft.titleBlock.developer.date" type="text" /></label>
+          <label
+            >ФИО
+            <input
+              v-model="draft.titleBlock.developer.name"
+              data-field="titleBlock.developer.name"
+              type="text"
+          /></label>
+          <label
+            >Дата
+            <input
+              v-model="draft.titleBlock.developer.date"
+              data-field="titleBlock.developer.date"
+              type="text"
+          /></label>
         </div>
         <h3>Работы</h3>
         <div class="fields">
           <label
-            >Организация <input v-model="draft.titleBlock.work.organization" type="text"
+            >Организация
+            <input
+              v-model="draft.titleBlock.work.organization"
+              data-field="titleBlock.work.organization"
+              type="text"
           /></label>
-          <label>Описание <input v-model="draft.titleBlock.work.description" type="text" /></label>
-          <label>Период <input v-model="draft.titleBlock.work.period" type="text" /></label>
           <label
-            >Ответственный 1 <input v-model="draft.titleBlock.responsible[0]" type="text"
+            >Описание
+            <input
+              v-model="draft.titleBlock.work.description"
+              data-field="titleBlock.work.description"
+              type="text"
           /></label>
           <label
-            >Ответственный 2 <input v-model="draft.titleBlock.responsible[1]" type="text"
+            >Период
+            <input
+              v-model="draft.titleBlock.work.period"
+              data-field="titleBlock.work.period"
+              type="text"
+          /></label>
+          <label
+            >Ответственный 1
+            <input
+              v-model="draft.titleBlock.responsible[0]"
+              data-field="titleBlock.responsible.0"
+              type="text"
+          /></label>
+          <label
+            >Ответственный 2
+            <input
+              v-model="draft.titleBlock.responsible[1]"
+              data-field="titleBlock.responsible.1"
+              type="text"
           /></label>
         </div>
         <h3>Утверждает владелец автомобильной дороги</h3>
         <div class="fields">
           <label
-            >Должность <input v-model="draft.titleBlock.approver.position" type="text"
+            >Должность
+            <input
+              v-model="draft.titleBlock.approver.position"
+              data-field="titleBlock.approver.position"
+              type="text"
           /></label>
           <label
             >Владелец дороги / организация
-            <input v-model="draft.titleBlock.approver.organization" type="text"
+            <input
+              v-model="draft.titleBlock.approver.organization"
+              data-field="titleBlock.approver.organization"
+              type="text"
           /></label>
-          <label>ФИО <input v-model="draft.titleBlock.approver.name" type="text" /></label>
+          <label
+            >ФИО
+            <input
+              v-model="draft.titleBlock.approver.name"
+              data-field="titleBlock.approver.name"
+              type="text"
+          /></label>
         </div>
         <h3>Согласовывает Госавтоинспекция</h3>
         <div class="fields">
           <label
             >Должность и подразделение
-            <input v-model="draft.titleBlock.agreement.position" type="text"
+            <input
+              v-model="draft.titleBlock.agreement.position"
+              data-field="titleBlock.agreement.position"
+              type="text"
           /></label>
-          <label>ФИО <input v-model="draft.titleBlock.agreement.name" type="text" /></label>
-          <label>Год <input v-model="draft.titleBlock.agreement.year" type="text" /></label>
+          <label
+            >ФИО
+            <input
+              v-model="draft.titleBlock.agreement.name"
+              data-field="titleBlock.agreement.name"
+              type="text"
+          /></label>
+          <label
+            >Год
+            <input
+              v-model="draft.titleBlock.agreement.year"
+              data-field="titleBlock.agreement.year"
+              type="text"
+          /></label>
         </div>
       </fieldset>
 

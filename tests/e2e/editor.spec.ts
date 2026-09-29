@@ -29,6 +29,39 @@ test('new project: form edits apply, review opens, and console stays clean', asy
   expect(errors).toEqual([])
 })
 
+test('review findings move focus to the first empty field', async ({ page }) => {
+  await page.goto('/')
+  await page.getByLabel('Локальный идентификатор переезда').fill('TEST-FOCUS')
+  await page.getByLabel('Фронт работ, м').fill('18')
+  await page.getByLabel('Отвод, м').fill('10')
+  await page.getByLabel('Буфер, м').fill('10')
+  await page.getByLabel('Первая').fill('70')
+  await page.getByLabel('Вторая').fill('50')
+  await page.getByLabel('Третья').fill('40')
+  await page.getByRole('button', { name: 'Создать проект' }).click()
+  await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  const findings = page.locator('li', { hasText: 'Место работ и направления' })
+  await findings.getByRole('link', { name: 'Перейти' }).click()
+  await expect(page.locator('[data-field="parameters.locationText"]')).toBeFocused()
+  await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  await page
+    .locator('li', { hasText: 'Утверждение владельцем дороги' })
+    .getByRole('link', { name: 'Перейти' })
+    .click()
+  await expect(page.locator('[data-field="titleBlock.approver.position"]')).toBeFocused()
+
+  // Незавершённая правка объекта блокирует форму: переход объясняет причину и ведёт к правке.
+  await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
+  await page.getByRole('button', { name: 'Добавить надпись' }).click()
+  await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  await page
+    .locator('li', { hasText: 'Место работ и направления' })
+    .getByRole('link', { name: 'Перейти' })
+    .click()
+  await expect(page.getByRole('status').filter({ hasText: 'правка объекта' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Знаки и объекты', level: 1 })).toBeVisible()
+})
+
 test('restores applied edits and unapplied fields after the window closes', async ({
   page,
   request,

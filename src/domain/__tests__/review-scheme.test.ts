@@ -7,6 +7,7 @@ import { reviewScheme } from '../review-scheme'
 import legacyB34 from '../../../tests/fixtures/legacy-b34-manual.json?raw'
 import legacyNewFields from '../../../tests/fixtures/legacy-v1-new-fields.json?raw'
 import { importSchemeJson } from '../import'
+import detailsEditor from '../../components/SchemeDetailsEditor.vue?raw'
 
 function newProject(frontMetres = '18') {
   return createNewScheme(
@@ -47,6 +48,53 @@ describe('live draft review', () => {
       'ФИО, дата',
     )
     expect(reviewScheme(initial).some((finding) => finding.id === 'place')).toBe(true)
+  })
+
+  it('points each fill finding at the first empty form field', () => {
+    const initial = newProject()
+    const field = (scheme: typeof initial, id: string) =>
+      reviewScheme(scheme).find((finding) => finding.id === id)?.field
+    expect(field(initial, 'place')).toBe('parameters.locationText')
+    expect(field(initial, 'responsible')).toBe('titleBlock.responsible.0')
+    const draft = createSchemeDetailsDraft(initial)
+    draft.parameters.locationText = 'Учебный участок'
+    draft.titleBlock.developer.organization = 'Учебная организация'
+    const edited = applySchemeDetails(initial, draft)
+    expect(field(edited, 'place')).toBe('parameters.directions.left')
+    expect(field(edited, 'developer')).toBe('titleBlock.developer.name')
+    const post = newSignDraft()
+    if (post.kind !== 'sign-post') throw new Error('Expected sign draft')
+    post.signCodes = '1.25'
+    post.distanceLabel = '{d150}'
+    expect(field(savePlacement(initial, post), 'distance-d150')).toBe(
+      'parameters.signDistancesMetres.d150',
+    )
+  })
+
+  it('has a form input for every field a finding can point at', () => {
+    const post = newSignDraft()
+    if (post.kind !== 'sign-post') throw new Error('Expected sign draft')
+    post.signCodes = '1.25'
+    post.distanceLabel = '{d300} {d250} {d150} {d50} {n100} {n50}'
+    const paths = new Set<string>()
+    const empty = savePlacement(newProject(), post)
+    for (const finding of reviewScheme(empty)) if (finding.field) paths.add(finding.field)
+    // Заполняем поля по одному, чтобы каждое по очереди стало «первым незаполненным».
+    let draft = createSchemeDetailsDraft(empty)
+    for (let step = 0; step < 20; step++) {
+      const findings = reviewScheme(applySchemeDetails(empty, draft)).filter((f) => f.field)
+      if (!findings.length) break
+      for (const finding of findings) {
+        paths.add(finding.field!)
+        const keys = finding.field!.split('.')
+        let target: Record<string, unknown> = draft as unknown as Record<string, unknown>
+        for (const key of keys.slice(0, -1)) target = target[key] as Record<string, unknown>
+        target[keys.at(-1)!] = keys[1] === 'signDistancesMetres' ? '100' : 'Учебное значение'
+      }
+      draft = { ...draft }
+    }
+    expect(paths.size).toBeGreaterThan(15)
+    for (const path of paths) expect(detailsEditor).toContain(`data-field="${path}"`)
   })
 
   it('flags only missing distances referenced by sign posts and removes them when entered', () => {
