@@ -31,6 +31,7 @@ function example(
     parameters: {
       ...base.parameters,
       location,
+      signDistancesMetres: { d300: 300, d250: 250, d150: 150, d50: 50, n100: 100, n50: 50 },
       regulation: { ...base.parameters.regulation, mode, hourly: '180', straight: true },
     },
   })
@@ -203,5 +204,46 @@ describe('preliminary B.33/B.34 layout', () => {
       ),
     })
     expect(rebuildTemplatePlacements(legacy)).toMatchObject({ keptSlots: 0, staleSlots: 1 })
+  })
+
+  it('takes the 8.1.1 plate distance only from the entered value', () => {
+    const scheme = example(18, 'out', 'signs')
+    const plate = (d150: number | null) =>
+      buildTemplatePlacements(
+        schemeSchema.parse({
+          ...scheme,
+          parameters: {
+            ...scheme.parameters,
+            signDistancesMetres: { ...scheme.parameters.signDistancesMetres, d150 },
+          },
+        }),
+      )
+        .flatMap((item) => (item.kind === 'sign-post' ? item.signIds : []))
+        .find((code) => code.startsWith('8.1.1'))
+    expect(plate(150)).toBe('8.1.1_150')
+    expect(plate(175)).toBe('8.1.1_175')
+    expect(plate(300)).toBe('8.1.1')
+    expect(() => plate(null)).toThrow('укажите расстояние d150')
+    expect(() => plate(150.5)).toThrow('целым числом')
+  })
+
+  it('keeps a hand-edited post in its meaning when the layout switches to a settlement', () => {
+    const outside = rebuildTemplatePlacements(example(18, 'out', 'two')).scheme
+    const start = outside.placements.find((item) => item.templateSlot === 'post2:L:start')!
+    const moved = movePlacement(outside, start.id, 12, 0)
+    const inside = schemeSchema.parse({
+      ...moved,
+      parameters: { ...moved.parameters, location: 'in' },
+    })
+    const rebuilt = rebuildTemplatePlacements(inside)
+    const posts = rebuilt.scheme.placements.filter((item) => item.kind === 'sign-post')
+    expect(posts).toHaveLength(8)
+    expect(posts.filter((item) => item.templateSlot === 'post2:L:start')).toEqual([
+      expect.objectContaining({ id: start.id, generatedByTemplate: false }),
+    ])
+    expect(posts.some((item) => item.templateSlot === 'post2:R:start')).toBe(true)
+    expect(rebuilt).toMatchObject({ keptSlots: 1, staleSlots: 0 })
+    const slots = posts.map((item) => item.templateSlot)
+    expect(new Set(slots).size).toBe(slots.length)
   })
 })

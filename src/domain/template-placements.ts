@@ -69,14 +69,21 @@ function checkConditions(scheme: Scheme): void {
   }
 }
 
-/** Табличка 8.1.1 с ближайшим типовым расстоянием: у знака 2.6 перед сужением. */
-function distancePlate(metres: number | null): string {
-  const steps = [50, 100, 150, 200, 250, 300, 500]
-  const value = metres ?? 150
-  const nearest = steps.reduce((best, step) =>
-    Math.abs(step - value) < Math.abs(best - value) ? step : best,
-  )
-  return nearest === 300 ? '8.1.1' : `8.1.1_${nearest}`
+/**
+ * Табличка 8.1.1 у знака 2.6 перед сужением: расстояние берётся только из введённого значения,
+ * без подстановки и округления. В архиве табличка «300 м» хранится как «8.1.1», остальные —
+ * «8.1.1_N»; отсутствующая в архиве табличка рисуется на листе программно.
+ */
+function distancePlate(metres: number | null, marker: string): string {
+  if (metres === null)
+    throw new TemplateBuildError(
+      `На этапе 2 укажите расстояние ${marker}: по нему подписывается табличка 8.1.1 у знака 2.6.`,
+    )
+  if (!Number.isInteger(metres) || metres <= 0)
+    throw new TemplateBuildError(
+      `Расстояние ${marker} для таблички 8.1.1 укажите целым числом метров.`,
+    )
+  return metres === 300 ? '8.1.1' : `8.1.1_${metres}`
 }
 
 /** Промежуточные ступени скорости в населённом пункте: шаг не более 20 км/ч до скорости в зоне. */
@@ -104,8 +111,11 @@ export function buildTemplatePlacements(scheme: Scheme): Placement[] {
   const priority = shortFront && parameters.regulation.mode === 'signs'
   const yellow = (code: string): string => (parameters.yellowTemporarySigns ? `${code}_ж` : code)
   // В архиве знак 3.24 со значением 50 хранится как «3.24», остальные — «3.24_N».
-  const speed = (kmh: number): string =>
-    yellow(Number.isInteger(kmh) && kmh !== 50 ? `3.24_${kmh}` : '3.24')
+  const speed = (kmh: number): string => {
+    if (!Number.isInteger(kmh))
+      throw new TemplateBuildError('Скорости для знаков 3.24 укажите целыми числами км/ч.')
+    return yellow(kmh === 50 ? '3.24' : `3.24_${kmh}`)
+  }
   const [first, second, zone] = parameters.speedStagesKmh
   const entry = priority ? [yellow('2.6'), '8.2.1', '1.25'] : ['8.2.1', '1.25']
   const exit = priority ? ['1.25', '8.2.1', '2.7'] : ['1.25', '8.2.1']
@@ -113,8 +123,12 @@ export function buildTemplatePlacements(scheme: Scheme): Placement[] {
 
   let id = Math.max(scheme.nextPlacementId, 1 + Math.max(0, ...scheme.placements.map((p) => p.id)))
   const placements: Placement[] = []
-  let slot = 0
+  /**
+   * Места стоек называются по смыслу, а не по порядку: при переходе между раскладками
+   * (вне/в населённом пункте, знаки/регулировщики) ручная правка заменяет только ту же стойку.
+   */
   const post = (
+    slot: `${'L' | 'R'}:${'warning' | 'speed1' | 'narrowing' | 'zone-speed' | 'start' | 'end'}`,
     signIds: string[],
     anchor: 'L0' | 'E',
     offsetXSvg: number,
@@ -126,7 +140,7 @@ export function buildTemplatePlacements(scheme: Scheme): Placement[] {
       kind: 'sign-post',
       id: id++,
       generatedByTemplate: true,
-      templateSlot: `post2:${slot++}`,
+      templateSlot: `post2:${slot}`,
       position: { anchor, offsetXSvg, offsetYSvg: 0 },
       side,
       stand,
@@ -139,11 +153,12 @@ export function buildTemplatePlacements(scheme: Scheme): Placement[] {
     const { before, after } =
       draftTemplateProfile.offsets.outside[priority ? 'priority' : 'regular']
     // Подход слева (нижняя полоса): 300 → 250 → 150 → 50 → 0 м.
-    post(['1.25'], 'L0', before[0], 'down', 'left', '{d300}')
-    post([speed(first), yellow('3.20')], 'L0', before[1], 'down', 'left', '{d250}')
+    post('L:warning', ['1.25'], 'L0', before[0], 'down', 'left', '{d300}')
+    post('L:speed1', [speed(first), yellow('3.20')], 'L0', before[1], 'down', 'left', '{d250}')
     post(
+      'L:narrowing',
       priority
-        ? [speed(second), yellow('1.20.2'), yellow('2.6'), distancePlate(distances.d150)]
+        ? [speed(second), yellow('1.20.2'), yellow('2.6'), distancePlate(distances.d150, 'd150')]
         : [speed(second), yellow('1.20.2')],
       'L0',
       before[2],
@@ -151,28 +166,29 @@ export function buildTemplatePlacements(scheme: Scheme): Placement[] {
       'left',
       '{d150}',
     )
-    post([speed(zone)], 'L0', before[3], 'down', 'left', '{d50}')
-    post(entry, 'L0', -2, 'down', 'right', '0')
-    post([yellow('3.20'), '3.31'], 'L0', before[1], 'up', 'left', null)
+    post('L:zone-speed', [speed(zone)], 'L0', before[3], 'down', 'left', '{d50}')
+    post('L:start', entry, 'L0', -2, 'down', 'right', '0')
+    post('L:end', [yellow('3.20'), '3.31'], 'L0', before[1], 'up', 'left', null)
     // Подход справа (верхняя полоса): 0 → 50 → 150 → 250 → 300 м.
-    post(exit, 'E', 2, 'up', 'left', '0')
-    post([speed(zone)], 'E', after[0], 'up', 'right', '{d50}')
-    post([yellow('1.20.3'), speed(second)], 'E', after[1], 'up', 'right', '{d150}')
-    post([yellow('3.20'), speed(first)], 'E', after[2], 'up', 'right', '{d250}')
-    post(['1.25'], 'E', after[3], 'up', 'right', '{d300}')
-    post(['3.31', yellow('3.20')], 'E', after[2], 'down', 'right', null)
+    post('R:start', exit, 'E', 2, 'up', 'left', '0')
+    post('R:zone-speed', [speed(zone)], 'E', after[0], 'up', 'right', '{d50}')
+    post('R:narrowing', [yellow('1.20.3'), speed(second)], 'E', after[1], 'up', 'right', '{d150}')
+    post('R:speed1', [yellow('3.20'), speed(first)], 'E', after[2], 'up', 'right', '{d250}')
+    post('R:warning', ['1.25'], 'E', after[3], 'up', 'right', '{d300}')
+    post('R:end', ['3.31', yellow('3.20')], 'E', after[2], 'down', 'right', null)
   } else {
     const layout = draftTemplateProfile.offsets.settlement[priority ? 'priority' : 'regular']
     const steps = settlementSteps(parameters.settlementSpeedKmh, zone).map(speed)
-    post(['1.25', ...steps], 'L0', layout.far, 'down', 'left', '{n100}')
+    post('L:warning', ['1.25', ...steps], 'L0', layout.far, 'down', 'left', '{n100}')
     post(
+      'L:narrowing',
       priority
         ? [
             speed(zone),
             yellow('3.20'),
             yellow('1.20.2'),
             yellow('2.6'),
-            distancePlate(distances.n50),
+            distancePlate(distances.n50, 'n50'),
           ]
         : [speed(zone), yellow('3.20'), yellow('1.20.2')],
       'L0',
@@ -181,10 +197,11 @@ export function buildTemplatePlacements(scheme: Scheme): Placement[] {
       'left',
       '{n50}',
     )
-    post(entry, 'L0', -2, 'down', 'right', '0')
-    post([yellow('3.20'), '3.31'], 'L0', layout.near, 'up', 'left', null)
-    post(exit, 'E', 2, 'up', 'left', '0')
+    post('L:start', entry, 'L0', -2, 'down', 'right', '0')
+    post('L:end', [yellow('3.20'), '3.31'], 'L0', layout.near, 'up', 'left', null)
+    post('R:start', exit, 'E', 2, 'up', 'left', '0')
     post(
+      'R:narrowing',
       [yellow('1.20.3'), yellow('3.20'), speed(zone)],
       'E',
       layout.afterNear,
@@ -192,8 +209,16 @@ export function buildTemplatePlacements(scheme: Scheme): Placement[] {
       'right',
       '{n50}',
     )
-    post([...[...steps].reverse(), '1.25'], 'E', layout.afterFar, 'up', 'right', '{n100}')
-    post(['3.31', yellow('3.20')], 'E', layout.afterNear, 'down', 'right', null)
+    post(
+      'R:warning',
+      [...[...steps].reverse(), '1.25'],
+      'E',
+      layout.afterFar,
+      'up',
+      'right',
+      '{n100}',
+    )
+    post('R:end', ['3.31', yellow('3.20')], 'E', layout.afterNear, 'down', 'right', null)
   }
 
   const element = (
