@@ -25,7 +25,7 @@ test('new project: form edits apply, review opens, and console stays clean', asy
   await page.getByRole('button', { name: 'Применить правки' }).click()
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   await expect(page.getByRole('heading', { name: 'Реквизиты листа и согласования' })).toBeVisible()
-  await expect(page.locator('.print-host')).toContainText('18 м')
+  await expect(page.locator('.print-host .dimension-label').nth(2)).toHaveText('18')
   expect(errors).toEqual([])
 })
 
