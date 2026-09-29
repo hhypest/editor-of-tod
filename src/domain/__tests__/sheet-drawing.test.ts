@@ -200,4 +200,18 @@ describe('vector A4 sheet', () => {
     expect(item!.extent[1]).toBeLessThan(0)
     expect(objectsOutside(drawing)).toEqual([item!.id])
   })
+
+  it('omits the draft mark and service lines on a release sheet only', () => {
+    const sheet = projectDraftSheet(scheme())
+    const draft = texts(drawSheet(sheet, options).nodes).join(' ')
+    const release = texts(drawSheet(sheet, { ...options, release: true }).nodes).join(' ')
+    for (const service of ['ЧЕРНОВИК', 'Проект не сохранён', 'учебный каталог'])
+      expect(draft).toContain(service)
+    for (const service of ['ЧЕРНОВИК', 'Проект не сохранён', 'учебный каталог'])
+      expect(release).not.toContain(service)
+    // Нормативный источник остаётся на выпускном листе.
+    expect(release).toContain('ОДМ 218.6.019-2016, приложение Б, рис. Б.34')
+    expect(release).toContain('Утверждаю:')
+    expect(release).toContain('Условные обозначения:')
+  })
 })

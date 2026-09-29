@@ -263,6 +263,32 @@ test('leaving the form while the card is re-read cancels project creation', asyn
   await expect(page.getByText(/локальная редакция № 1/)).toHaveCount(0)
 })
 
+test('release sheet drops the draft mark and downloads a PNG', async ({ page }) => {
+  await page.goto('/')
+  await page.getByLabel('Локальный идентификатор переезда').fill('TEST-RELEASE')
+  await page.getByLabel('Фронт работ, м').fill('18')
+  await page.getByLabel('Отвод, м').fill('10')
+  await page.getByLabel('Буфер, м').fill('10')
+  await page.getByLabel('Первая').fill('70')
+  await page.getByLabel('Вторая').fill('50')
+  await page.getByLabel('Третья').fill('40')
+  await page.getByRole('button', { name: 'Создать проект' }).click()
+  await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  const host = page.locator('.print-host')
+  await expect(host.locator('.draft-mark')).toHaveCount(1)
+  await host.getByLabel(/Я проверил лист/).check()
+  await expect(host.getByRole('heading', { name: 'Выпускной лист A4' })).toBeVisible()
+  await expect(host.locator('.draft-mark')).toHaveCount(0)
+  const download = page.waitForEvent('download')
+  await host.getByRole('button', { name: 'Скачать PNG' }).click()
+  const file = await download
+  // Имя файла с кириллицей проверяется модульным тестом: Chromium в контейнере без русской
+  // локали отдаёт его как «download».
+  const bytes = readFileSync((await file.path())!)
+  expect(bytes.subarray(1, 4).toString('latin1')).toBe('PNG')
+  expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([3528, 2495])
+})
+
 test('A4 print contains exactly one page', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Открыть JSON' }).click()

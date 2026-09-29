@@ -95,6 +95,11 @@ export type SheetOptions = {
   catalogLabel: string
   /** Состояние сохранения проекта для служебной строки листа. */
   revisionLabel: string
+  /**
+   * Выпускной лист: без отметки «черновик» и служебных строк. Включается только после явной
+   * проверки составителем; расстановка при этом не становится нормативно подтверждённой.
+   */
+  release?: boolean
 }
 
 /** Приблизительная ширина строки Arial: достаточно для переноса без измерения в браузере. */
@@ -536,17 +541,18 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
       overflow,
     ),
   )
-  nodes.push({
-    t: 'text',
-    x: SHEET_WIDTH / 2,
-    y: 268,
-    text: 'ЧЕРНОВИК · ДЛЯ ВНУТРЕННЕЙ СВЕРКИ',
-    size: 13,
-    bold: true,
-    anchor: 'middle',
-    fill: '#9b2934',
-    cls: 'draft-mark',
-  })
+  if (!options.release)
+    nodes.push({
+      t: 'text',
+      x: SHEET_WIDTH / 2,
+      y: 268,
+      text: 'ЧЕРНОВИК · ДЛЯ ВНУТРЕННЕЙ СВЕРКИ',
+      size: 13,
+      bold: true,
+      anchor: 'middle',
+      fill: '#9b2934',
+      cls: 'draft-mark',
+    })
 
   // Проезжая часть: обочины, полосы, разметка и направления движения.
   nodes.push(
@@ -811,47 +817,51 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
     }
     nodes.push({ t: 'text', x: 170, y: y + 24, text: `- ${text}`, size: 15 })
   })
-  nodes.push({
-    t: 'text',
-    x: 20,
-    y: SHEET_HEIGHT - 46,
-    text: options.catalogLabel,
-    size: 11,
-    italic: true,
-    fill: '#777',
-  })
+  if (!options.release)
+    nodes.push({
+      t: 'text',
+      x: 20,
+      y: SHEET_HEIGHT - 46,
+      text: options.catalogLabel,
+      size: 11,
+      italic: true,
+      fill: '#777',
+    })
 
   // Примечания.
   const noteLines = notes(sheet)
   const noteSize = noteLines.length > 8 ? 13.5 : 14.5
-  nodes.push(
-    ...textBlock(
-      [
-        { text: 'Примечание:', size: 17, bold: true, underline: true },
-        ...noteLines.map((text) => ({ text, size: noteSize, gap: 3 })),
-      ],
-      900,
-      780,
-      760,
-      1150,
-      'start',
-      'Примечание',
-      overflow,
-    ),
-  )
-  nodes.push(
-    {
-      t: 'text',
-      x: 20,
-      y: SHEET_HEIGHT - 30,
-      text: shortFront
-        ? 'Схема по рис. Б.34 ОДМ 218.6.019-2016: рабочая зона длиной менее 30 м, пропуск встречных направлений по одной полосе.'
-        : 'Схема по рис. Б.33 ОДМ 218.6.019-2016: рабочая зона длиной 30 м и более, пропуск встречных направлений по одной полосе с помощью регулировщиков.',
-      size: 11,
-      italic: true,
-      fill: '#777',
-    },
-    {
+  if (noteLines.length || !options.release)
+    nodes.push(
+      ...textBlock(
+        [
+          { text: 'Примечание:', size: 17, bold: true, underline: true },
+          ...noteLines.map((text) => ({ text, size: noteSize, gap: 3 })),
+        ],
+        900,
+        780,
+        760,
+        1150,
+        'start',
+        'Примечание',
+        overflow,
+      ),
+    )
+  // Нормативный источник схемы печатается и на выпускном листе: лист должен быть проверяемым.
+  nodes.push({
+    t: 'text',
+    x: 20,
+    y: SHEET_HEIGHT - 30,
+    text: shortFront
+      ? 'Схема по ОДМ 218.6.019-2016, приложение Б, рис. Б.34: рабочая зона длиной менее 30 м, пропуск встречных направлений по одной полосе.'
+      : 'Схема по ОДМ 218.6.019-2016, приложение Б, рис. Б.33: рабочая зона длиной 30 м и более, пропуск встречных направлений по одной полосе с помощью регулировщиков.',
+    size: 11,
+    italic: true,
+    fill: '#555',
+    cls: 'source-line',
+  })
+  if (!options.release)
+    nodes.push({
       t: 'text',
       x: 20,
       y: SHEET_HEIGHT - 14,
@@ -859,8 +869,7 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
       size: 11,
       italic: true,
       fill: '#9b2934',
-    },
-  )
+    })
 
   return { nodes, objectBoxes, signCodes: [...codes], overflow }
 }
