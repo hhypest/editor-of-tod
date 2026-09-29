@@ -62,7 +62,7 @@ test('review findings move focus to the first empty field', async ({ page }) => 
   await expect(page.getByRole('heading', { name: 'Знаки и объекты', level: 1 })).toBeVisible()
 })
 
-test('B.34 regulation advice explains itself and is applied only by the author', async ({
+test('unverified B.34 regulation hint explains the prototype rules but cannot be applied', async ({
   page,
 }) => {
   await page.goto('/')
@@ -78,14 +78,14 @@ test('B.34 regulation advice explains itself and is applied only by the author',
   const advice = page.locator('.advice')
   await expect(advice).toContainText('нет данных')
   await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('180')
+  await expect(advice.getByRole('heading')).toContainText('не проверены')
   await expect(advice.getByRole('heading')).toContainText('знаки приоритета 2.6/2.7')
+  await expect(advice.getByRole('button')).toHaveCount(0)
   await expect(page.getByLabel('Регулирование Б.34')).toHaveValue('auto')
-  await advice.getByRole('button', { name: /Выбрать: знаки приоритета/ }).click()
-  await expect(page.getByLabel('Регулирование Б.34')).toHaveValue('signs')
   await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('300')
   await page.getByLabel('Прямой участок дороги').check()
   await expect(advice.getByRole('heading')).toContainText('один регулировщик')
-  await expect(advice).toContainText('не ближе 15 м')
+  await expect(advice).toContainText('значение не проверено')
 })
 
 test('restores applied edits and unapplied fields after the window closes', async ({

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { adviseRegulation, parseHourly, type RegulationInput } from '../regulation-advice'
+import {
+  adviseRegulation,
+  parseHourly,
+  REGULATION_PROFILE,
+  type RegulationInput,
+} from '../regulation-advice'
 
 const base: RegulationInput = {
   hourly: '180',
@@ -67,5 +72,13 @@ describe('B.34 regulation advice', () => {
     expect(parseHourly('12,5')).toBe(12.5)
     expect(parseHourly('1e3')).toBeNull()
     expect(parseHourly('')).toBeNull()
+  })
+
+  it('stays unverified until the profile is checked and recorded', () => {
+    expect(REGULATION_PROFILE).toMatchObject({ status: 'unverified', verifiedAt: null })
+    expect(adviseRegulation(base).verified).toBe(false)
+    expect(adviseRegulation({ ...base, hourly: '300' }).reasons.join(' ')).toContain(
+      'значение не проверено',
+    )
   })
 })

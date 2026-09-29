@@ -86,7 +86,7 @@ const advice = computed(() => {
 })
 
 function applyAdvice(): void {
-  if (props.locked || !advice.value.mode) return
+  if (props.locked || !advice.value.mode || !advice.value.verified) return
   draft.value.parameters.regulation.mode = advice.value.mode
   markDirty()
 }
@@ -296,17 +296,24 @@ function applyDraft(): void {
         <section
           v-if="scheme.template.code === 'b34'"
           class="advice"
+          :class="{ unverified: !advice.verified }"
           aria-labelledby="regulation-advice-title"
           aria-live="polite"
         >
           <h3 id="regulation-advice-title">
-            Рекомендация по ОДМ 218.6.019-2016:
+            {{
+              advice.verified
+                ? 'Рекомендация по ОДМ 218.6.019-2016'
+                : 'Подсказка по правилам прототипа (не проверены)'
+            }}:
             {{ advice.mode ? regulationModeLabels[advice.mode] : 'нет данных' }}
           </h3>
           <p v-for="reason in advice.reasons" :key="reason">{{ reason }}</p>
           <p v-for="warning in advice.warnings" :key="warning" class="warning">{{ warning }}</p>
           <button
-            v-if="advice.mode && advice.mode !== draft.parameters.regulation.mode"
+            v-if="
+              advice.verified && advice.mode && advice.mode !== draft.parameters.regulation.mode
+            "
             type="button"
             :disabled="locked"
             @click="applyAdvice"
@@ -314,8 +321,11 @@ function applyDraft(): void {
             Выбрать: {{ regulationModeLabels[advice.mode] }}
           </button>
           <p class="hint">
-            Рекомендация считается по введённым данным и ничего не выбирает сама. Пороги и пункты
-            требуют предметной сверки; решение и его обоснование остаются за составителем.
+            {{
+              advice.verified
+                ? 'Рекомендация считается по введённым данным и ничего не выбирает сама; решение и его обоснование остаются за составителем.'
+                : 'Пороги 250/500 авт./ч, условия и расстояния взяты из локального редактора и ещё не проверены специалистом (docs/standards.md). Подсказка только объясняет расчёт прототипа: способ пропуска выберите сами в поле «Регулирование Б.34».'
+            }}
           </p>
         </section>
         <div v-for="code in zoneCodes" :key="code">
@@ -503,6 +513,10 @@ function applyDraft(): void {
 .advice p {
   margin: 0.3rem 0;
   line-height: 1.45;
+}
+.advice.unverified {
+  border-left-color: #8a7a2f;
+  background: #f7f4e8;
 }
 .advice .warning {
   color: #8a3b12;

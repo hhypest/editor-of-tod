@@ -1,9 +1,26 @@
 /**
- * Объяснимая рекомендация способа пропуска транспорта для схемы Б.34 (ОДМ 218.6.019-2016).
- * Это подсказка составителю: она ничего не выбирает сама, а пункты и пороги требуют
- * предметной сверки с действующей редакцией ОДМ (docs/standards.md).
+ * Объяснимая подсказка способа пропуска транспорта для схемы Б.34 по правилам локального
+ * редактора со ссылками на ОДМ 218.6.019-2016. Пороги, условия и таблица 5 ещё не прошли
+ * предметную проверку (docs/standards.md, «Профиль способа пропуска Б.34»), поэтому подсказка
+ * не применяется из интерфейса, пока профиль не отмечен проверенным.
  */
 export type RegulationMode = 'signs' | 'one' | 'two'
+
+/**
+ * Статус профиля правил. Меняется только PR с записью проверки в docs/standards.md:
+ * дата, ответственный специалист, редакция ОДМ и проверенные значения.
+ */
+export const REGULATION_PROFILE: {
+  readonly id: string
+  readonly status: 'unverified' | 'verified'
+  readonly verifiedAt: string | null
+  readonly verifiedBy: string | null
+} = {
+  id: 'b34-regulation-prototype-1',
+  status: 'unverified',
+  verifiedAt: null,
+  verifiedBy: null,
+}
 
 export type RegulationInput = {
   /** Часовая интенсивность в двух направлениях, как её ввёл составитель (фактический подсчёт). */
@@ -26,9 +43,11 @@ export type RegulationAdvice = {
   warnings: string[]
   /** Расстояние от регулировщика до места работ по табл. 5 ОДМ, м; null — скорость вне таблицы. */
   regulatorDistanceMetres: number | null
+  /** Профиль правил проверен специалистом: только тогда подсказку можно применять из интерфейса. */
+  verified: boolean
 }
 
-/** ОДМ 218.6.019-2016, таблица 5: скорость в зоне, км/ч → расстояние регулировщика, м (сверить). */
+/** Значения локального редактора со ссылкой на табл. 5 ОДМ 218.6.019-2016; не проверены. */
 export const REGULATOR_DISTANCE_BY_SPEED: Readonly<Record<number, number>> = {
   30: 10,
   40: 15,
@@ -105,11 +124,18 @@ export function adviseRegulation(input: RegulationInput): RegulationAdvice {
   if (mode && mode !== 'signs')
     reasons.push(
       regulatorDistanceMetres === null
-        ? 'Расстояние от регулировщика до места работ по таблице 5 ОДМ для введённой скорости не определено — уточните по документу.'
-        : `Регулировщик — не ближе ${regulatorDistanceMetres} м до места работ при скорости ${input.zoneSpeedKmh} км/ч (ОДМ, табл. 5; значение сверить с документом).`,
+        ? 'Расстояние от регулировщика до места работ для введённой скорости в правилах прототипа не задано — уточните по табл. 5 ОДМ.'
+        : `В правилах прототипа регулировщик — не ближе ${regulatorDistanceMetres} м до места работ при скорости ${input.zoneSpeedKmh} км/ч (ссылка на табл. 5 ОДМ; значение не проверено).`,
     )
 
-  return { mode, hourly, reasons, warnings, regulatorDistanceMetres }
+  return {
+    mode,
+    hourly,
+    reasons,
+    warnings,
+    regulatorDistanceMetres,
+    verified: REGULATION_PROFILE.status === 'verified',
+  }
 }
 
 export const regulationModeLabels: Record<RegulationMode, string> = {
