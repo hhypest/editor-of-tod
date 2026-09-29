@@ -156,6 +156,80 @@ test('imports synthetic station PU-66 and a generated PNG ZIP through the local 
   expect((await (await request.get(`${api}/api/pu66`)).json()).length).toBe(1)
 })
 
+test('creates a project from a PU-66 card found by kilometre and picket', async ({
+  request,
+  page,
+}) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  const files = await Promise.all(
+    [sampleCards[0]!, sampleCards[1]!].map(async (card) => ({
+      name: card.filename,
+      data: (await createSampleWorkbook(card)).toString('base64'),
+    })),
+  )
+  const headers = { Origin: origin }
+  const preview = await request.post(`${api}/api/pu66/import/preview`, {
+    headers,
+    data: { files },
+  })
+  const plan = await preview.json()
+  const applied = await request.post(`${api}/api/pu66/import/apply`, {
+    headers,
+    data: { files, expectedFingerprint: plan.fingerprint },
+  })
+  expect(applied.ok()).toBe(true)
+
+  await page.goto('/')
+  await page.getByLabel('Поиск карточки').fill('24 км 7 пк')
+  await expect(page.getByText(/Найдено: 1 из \d+/)).toBeVisible()
+  const choice = page.getByLabel('Локальная карточка')
+  await choice.selectOption('90002:24:7')
+  await expect(page.getByText('Будет закреплено в проекте')).toBeVisible()
+  await expect(page.getByLabel('Локальный идентификатор переезда')).toHaveValue('90002:24:7')
+  await page.getByLabel('Фронт работ, м').fill('18')
+  await page.getByLabel('Отвод, м').fill('10')
+  await page.getByLabel('Буфер, м').fill('10')
+  await page.getByLabel('Первая').fill('70')
+  await page.getByLabel('Вторая').fill('50')
+  await page.getByLabel('Третья').fill('40')
+  await page.getByRole('button', { name: 'Создать проект' }).click()
+  await expect(page.getByText(/локальная редакция № 1/)).toBeVisible()
+  await expect(page.locator('.opening-notes')).toContainText('Локальная карточка ПУ-66 закреплена')
+  await expect(page.locator('.opening-notes')).not.toContainText('введён вручную')
+  await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  await expect(page.locator('.print-host')).toContainText('Учебная дорога Б')
+  expect(errors).toEqual([])
+})
+
+test('leaving the form while the card is re-read cancels project creation', async ({ page }) => {
+  let calls = 0
+  let release: () => void = () => undefined
+  const held = new Promise<void>((resolve) => (release = resolve))
+  await page.route('**/api/pu66/*/scheme', async (route) => {
+    calls += 1
+    if (calls === 2) await held
+    await route.continue()
+  })
+  await page.goto('/')
+  await page.getByLabel('Поиск карточки').fill('24 км 7 пк')
+  await page.getByLabel('Локальная карточка').selectOption('90002:24:7')
+  await expect(page.getByText('Будет закреплено в проекте')).toBeVisible()
+  await page.getByLabel('Фронт работ, м').fill('18')
+  await page.getByLabel('Отвод, м').fill('10')
+  await page.getByLabel('Буфер, м').fill('10')
+  await page.getByLabel('Первая').fill('70')
+  await page.getByLabel('Вторая').fill('50')
+  await page.getByLabel('Третья').fill('40')
+  await page.getByRole('button', { name: 'Создать проект' }).click()
+  await expect.poll(() => calls).toBe(2)
+  await page.getByRole('button', { name: 'Открыть JSON' }).click()
+  release()
+  await page.getByRole('button', { name: 'Новый проект' }).click()
+  await expect(page.getByRole('alert')).toContainText('Создание проекта отменено')
+  await expect(page.getByText(/локальная редакция № 1/)).toHaveCount(0)
+})
+
 test('A4 print contains exactly one page', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Открыть JSON' }).click()

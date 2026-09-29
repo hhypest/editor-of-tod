@@ -18,6 +18,9 @@ const pu66ListEntrySchema = z.object({
   referenceId: z.string(),
   location: z.string(),
   roadName: z.string(),
+  /** Только для поиска в локальном интерфейсе; в проект не записывается. */
+  section: z.string(),
+  station: z.string(),
   revision: z.number().int().positive(),
   verification: verificationSchema.nullable(),
 })

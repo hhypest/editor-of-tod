@@ -31,6 +31,10 @@ import {
 } from '../domain/edit-history'
 
 /** Owns the open project, edit history and local draft lifecycle for one editor window. */
+const MANUAL_ID_WARNING = 'Идентификатор переезда введён вручную; карточка ПУ-66 не сверена.'
+const PU66_LINKED_WARNING =
+  'Локальная карточка ПУ-66 закреплена как снимок; её актуальность нужно проверить.'
+
 export function useProjectSession(onProjectOpened: () => void) {
   const imported = shallowRef<ImportResult | null>(null)
   const selectedFileName = ref('')
@@ -270,7 +274,7 @@ export function useProjectSession(onProjectOpened: () => void) {
       scheme,
       format: 'scheme-v5',
       warnings: [
-        'Идентификатор переезда введён вручную; карточка ПУ-66 не сверена.',
+        scheme.crossing.source === 'local-pu66' ? PU66_LINKED_WARNING : MANUAL_ID_WARNING,
         'Вариант выбран по длине фронта работ, нормативная проверка и расстановка знаков не выполнены.',
         ...(scheme.parameters.workZones[scheme.template.code]?.workMetres === 30
           ? ['Ровно 30 м: требуется предметная сверка применимости варианта.']
@@ -503,10 +507,10 @@ export function useProjectSession(onProjectOpened: () => void) {
       warnings: [
         ...imported.value.warnings.filter(
           (warning) =>
-            warning !== 'Идентификатор переезда введён вручную; карточка ПУ-66 не сверена.' &&
+            warning !== MANUAL_ID_WARNING &&
             !warning.startsWith('Локальная карточка ПУ-66 закреплена'),
         ),
-        'Локальная карточка ПУ-66 закреплена как снимок; её актуальность нужно проверить.',
+        PU66_LINKED_WARNING,
       ],
     }
   }

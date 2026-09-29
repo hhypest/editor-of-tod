@@ -1,4 +1,6 @@
 import { defaultLegacyParameters, schemeSchema, type Scheme } from './model'
+import { linkPu66Card } from './link-pu66'
+import type { Pu66SchemeRecord } from './pu66-snapshot'
 import { selectTemplateByWorkFront } from './registry'
 
 export type NewSchemeInput = {
@@ -94,4 +96,16 @@ export function createNewScheme(
     )
   }
   return parsed.data
+}
+
+/**
+ * Создаёт проект сразу с закреплённой карточкой ПУ-66: идентификатор берётся из карточки,
+ * в проект попадает только разрешённая выборка выбранной редакции.
+ */
+export function createSchemeFromPu66(
+  input: NewSchemeInput,
+  card: Pu66SchemeRecord,
+  options: { id?: string; now?: string } = {},
+): Scheme {
+  return linkPu66Card(createNewScheme({ ...input, referenceId: card.referenceId }, options), card)
 }

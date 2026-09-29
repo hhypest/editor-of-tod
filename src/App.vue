@@ -370,6 +370,7 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
             v-show="projectTab === 'new'"
             class="module"
             :locked="localBusy || loading"
+            :active="projectTab === 'new' && activeView === 'projects'"
             @create="createProject"
           />
           <LocalProjects
