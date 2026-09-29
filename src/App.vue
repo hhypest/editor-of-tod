@@ -152,7 +152,17 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
     view = 'geometry'
   showView(view)
   await nextTick()
-  document.getElementById(finding.target.slice(1))?.scrollIntoView({ block: 'start' })
+  const field = finding.field
+    ? [...document.querySelectorAll<HTMLElement>(`[data-field="${finding.field}"]`)].find(
+        (element) => element.offsetParent !== null,
+      )
+    : undefined
+  if (field) {
+    field.scrollIntoView({ block: 'center' })
+    field.focus({ preventScroll: true })
+  } else {
+    document.getElementById(finding.target.slice(1))?.scrollIntoView({ block: 'start' })
+  }
 }
 </script>
 

@@ -7,6 +7,8 @@ export type ReviewFinding = {
   title: string
   detail: string
   target: '#details-title' | '#placements-title' | '#pu66-link-title' | '#imported-title'
+  /** Путь первого незаполненного поля формы (`data-field`), к которому переходит «Перейти». */
+  field?: string
 }
 
 const distanceNames = ['d300', 'd250', 'd150', 'd50', 'n100', 'n50'] as const
@@ -15,8 +17,14 @@ function isBlank(value: string): boolean {
   return value.trim().length === 0
 }
 
-function missingFields(fields: ReadonlyArray<readonly [string, string]>): string[] {
-  return fields.filter(([, value]) => isBlank(value)).map(([label]) => label)
+type Field = readonly [label: string, value: string, path: string]
+
+function missingFields(fields: ReadonlyArray<Field>): Field[] {
+  return fields.filter(([, value]) => isBlank(value))
+}
+
+function labels(fields: ReadonlyArray<Field>): string {
+  return fields.map(([label]) => label).join(', ')
 }
 
 let visibilityCache: { json: string; value: boolean | null } | null = null
@@ -38,67 +46,68 @@ export function reviewScheme(scheme: Scheme): ReviewFinding[] {
   const { parameters, titleBlock, crossing, placements } = scheme
 
   const place = missingFields([
-    ['участок', parameters.locationText],
-    ['направление слева', parameters.directions.left],
-    ['направление справа', parameters.directions.right],
+    ['участок', parameters.locationText, 'parameters.locationText'],
+    ['направление слева', parameters.directions.left, 'parameters.directions.left'],
+    ['направление справа', parameters.directions.right, 'parameters.directions.right'],
   ])
   if (place.length) {
     findings.push({
       id: 'place',
       kind: 'fill',
       title: 'Место работ и направления',
-      detail: `Не заполнено: ${place.join(', ')}.`,
+      detail: `Не заполнено: ${labels(place)}.`,
       target: '#details-title',
+      field: place[0]![2],
     })
   }
 
   const titleGroups: ReadonlyArray<{
     id: string
     title: string
-    fields: ReadonlyArray<readonly [string, string]>
+    fields: ReadonlyArray<Field>
   }> = [
     {
       id: 'developer',
       title: 'Разработчик',
       fields: [
-        ['организация', titleBlock.developer.organization],
-        ['ФИО', titleBlock.developer.name],
-        ['дата', titleBlock.developer.date],
+        ['организация', titleBlock.developer.organization, 'titleBlock.developer.organization'],
+        ['ФИО', titleBlock.developer.name, 'titleBlock.developer.name'],
+        ['дата', titleBlock.developer.date, 'titleBlock.developer.date'],
       ],
     },
     {
       id: 'work',
       title: 'Сведения о работах',
       fields: [
-        ['организация', titleBlock.work.organization],
-        ['описание', titleBlock.work.description],
-        ['период', titleBlock.work.period],
+        ['организация', titleBlock.work.organization, 'titleBlock.work.organization'],
+        ['описание', titleBlock.work.description, 'titleBlock.work.description'],
+        ['период', titleBlock.work.period, 'titleBlock.work.period'],
       ],
     },
     {
       id: 'responsible',
       title: 'Ответственные',
       fields: [
-        ['первый', titleBlock.responsible[0]],
-        ['второй', titleBlock.responsible[1]],
+        ['первый', titleBlock.responsible[0], 'titleBlock.responsible.0'],
+        ['второй', titleBlock.responsible[1], 'titleBlock.responsible.1'],
       ],
     },
     {
       id: 'approver',
       title: 'Утверждение владельцем дороги',
       fields: [
-        ['должность', titleBlock.approver.position],
-        ['организация', titleBlock.approver.organization],
-        ['ФИО', titleBlock.approver.name],
+        ['должность', titleBlock.approver.position, 'titleBlock.approver.position'],
+        ['организация', titleBlock.approver.organization, 'titleBlock.approver.organization'],
+        ['ФИО', titleBlock.approver.name, 'titleBlock.approver.name'],
       ],
     },
     {
       id: 'agreement',
       title: 'Согласование с Госавтоинспекцией',
       fields: [
-        ['должность', titleBlock.agreement.position],
-        ['ФИО', titleBlock.agreement.name],
-        ['год', titleBlock.agreement.year],
+        ['должность', titleBlock.agreement.position, 'titleBlock.agreement.position'],
+        ['ФИО', titleBlock.agreement.name, 'titleBlock.agreement.name'],
+        ['год', titleBlock.agreement.year, 'titleBlock.agreement.year'],
       ],
     },
   ]
@@ -109,8 +118,9 @@ export function reviewScheme(scheme: Scheme): ReviewFinding[] {
         id: group.id,
         kind: 'fill',
         title: group.title,
-        detail: `Не заполнено: ${missing.join(', ')}. Состав реквизитов проверьте для конкретного листа.`,
+        detail: `Не заполнено: ${labels(missing)}. Состав реквизитов проверьте для конкретного листа.`,
         target: '#details-title',
+        field: missing[0]![2],
       })
     }
   }
@@ -139,6 +149,7 @@ export function reviewScheme(scheme: Scheme): ReviewFinding[] {
         title: `Расстояние ${name}`,
         detail: `Маркер {${name}} указан на стойках № ${postIds.join(', ')}, а расстояние не введено.`,
         target: '#details-title',
+        field: `parameters.signDistancesMetres.${name}`,
       })
     }
   }
