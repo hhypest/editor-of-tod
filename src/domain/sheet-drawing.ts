@@ -847,29 +847,29 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
         overflow,
       ),
     )
+  // Нормативный источник схемы печатается и на выпускном листе: лист должен быть проверяемым.
+  nodes.push({
+    t: 'text',
+    x: 20,
+    y: SHEET_HEIGHT - 30,
+    text: shortFront
+      ? 'Схема по ОДМ 218.6.019-2016, приложение Б, рис. Б.34: рабочая зона длиной менее 30 м, пропуск встречных направлений по одной полосе.'
+      : 'Схема по ОДМ 218.6.019-2016, приложение Б, рис. Б.33: рабочая зона длиной 30 м и более, пропуск встречных направлений по одной полосе с помощью регулировщиков.',
+    size: 11,
+    italic: true,
+    fill: '#555',
+    cls: 'source-line',
+  })
   if (!options.release)
-    nodes.push(
-      {
-        t: 'text',
-        x: 20,
-        y: SHEET_HEIGHT - 30,
-        text: shortFront
-          ? 'Схема по рис. Б.34 ОДМ 218.6.019-2016: рабочая зона длиной менее 30 м, пропуск встречных направлений по одной полосе.'
-          : 'Схема по рис. Б.33 ОДМ 218.6.019-2016: рабочая зона длиной 30 м и более, пропуск встречных направлений по одной полосе с помощью регулировщиков.',
-        size: 11,
-        italic: true,
-        fill: '#777',
-      },
-      {
-        t: 'text',
-        x: 20,
-        y: SHEET_HEIGHT - 14,
-        text: `${options.revisionLabel} Черновик: расстановка и применимость не подтверждены.`,
-        size: 11,
-        italic: true,
-        fill: '#9b2934',
-      },
-    )
+    nodes.push({
+      t: 'text',
+      x: 20,
+      y: SHEET_HEIGHT - 14,
+      text: `${options.revisionLabel} Черновик: расстановка и применимость не подтверждены.`,
+      size: 11,
+      italic: true,
+      fill: '#9b2934',
+    })
 
   return { nodes, objectBoxes, signCodes: [...codes], overflow }
 }

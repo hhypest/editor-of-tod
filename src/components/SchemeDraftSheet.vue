@@ -222,7 +222,17 @@ async function exportPng(): Promise<void> {
   exporting.value = true
   try {
     if (!(await prepareSheet()) || !paper.value) return
-    downloadBlob(await sheetToPng(paper.value, SHEET_WIDTH, SHEET_HEIGHT), fileName('png'))
+    // Имя и режим фиксируются вместе со снимком листа: смена отметки или правка проекта во время
+    // выгрузки отменяет её, чтобы файл не получил имя другого режима.
+    const schemeAtStart = props.scheme
+    const releaseAtStart = release.value
+    const name = fileName('png')
+    const blob = await sheetToPng(paper.value, SHEET_WIDTH, SHEET_HEIGHT)
+    if (props.scheme !== schemeAtStart || release.value !== releaseAtStart) {
+      printError.value = 'Лист изменился во время выгрузки PNG. Проверьте его и повторите.'
+      return
+    }
+    downloadBlob(blob, name)
   } catch (cause) {
     printError.value = cause instanceof Error ? cause.message : 'Не удалось сформировать PNG.'
   } finally {
@@ -277,7 +287,11 @@ async function exportPng(): Promise<void> {
       <fieldset class="release">
         <legend>Выпуск листа</legend>
         <label class="checkbox">
-          <input v-model="releaseConfirmed" type="checkbox" :disabled="Boolean(blockers.length)" />
+          <input
+            v-model="releaseConfirmed"
+            type="checkbox"
+            :disabled="Boolean(blockers.length) || exporting"
+          />
           Я проверил лист: знаки, расстояния, реквизиты и применимость схемы к условиям работ
         </label>
         <p class="hint">
