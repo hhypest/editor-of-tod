@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test'
 import { zipSync } from 'fflate'
 import { PNG } from 'pngjs'
 import { createSampleWorkbook, sampleCards } from '../../scripts/generate-pu66-samples'
+import { fictionalSignStandard } from '../../server/__tests__/pdf-fixture'
 
 const api = 'http://127.0.0.1:4100'
 const origin = 'http://127.0.0.1:5173'
@@ -340,6 +341,7 @@ test('attaches standards, switches the sign catalog to a new edition and flags t
 
   // Каталог знаков по редакции 2024 из библиотеки.
   await page.getByRole('button', { name: 'Импорт Excel и знаков' }).click()
+  await page.getByText('Загрузка знаков из ZIP (прежний способ)').click()
   const source = page.getByLabel('Документ из библиотеки')
   const option = await source
     .locator('option', { hasText: 'ГОСТ Р 99290-2024' })
@@ -372,6 +374,50 @@ test('attaches standards, switches the sign catalog to a new edition and flags t
     library.locator('.status-current').getByRole('link', { name: 'Открыть PDF' }).click(),
   ])
   await popup.close()
+})
+
+test('extracts the sign catalog from the PDF of a standard in the library', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Реестры', exact: true }).click()
+  await page.getByRole('button', { name: 'Нормативные документы' }).click()
+  const library = page.locator('.library')
+  await library.locator('input[type="file"]').setInputFiles({
+    name: 'GOST-R-99291-2025.pdf',
+    mimeType: 'application/pdf',
+    buffer: fictionalSignStandard(),
+  })
+  await library.getByLabel(/^Назначение/).selectOption('signs')
+  await library.getByLabel('Дата введения в действие').fill('2025-01-01')
+  await library.getByRole('button', { name: 'Проверить документ' }).click()
+  await library.getByRole('button', { name: /Добавить в библиотеку/ }).click()
+  await expect(library).toContainText('ГОСТ Р 99291-2025 добавлен в библиотеку')
+
+  await page.getByRole('button', { name: 'Импорт Excel и знаков' }).click()
+  const box = page.locator('.pdf-signs')
+  const source = box.locator('select')
+  const option = await source
+    .locator('option', { hasText: 'ГОСТ Р 99291-2025' })
+    .getAttribute('value')
+  await source.selectOption(option!)
+  await box.getByRole('button', { name: 'Извлечь знаки из PDF' }).click()
+  await expect(box).toContainText('Страницы 2–3: изображений 7')
+  await expect(box).toContainText('У 1 изображений номер не найден')
+  await expect(box).toContainText('п. 3.2: «Знаки 1.8, 1.15 - 1.16 допускается')
+  await expect(box.locator('[data-key="2-3.2"]')).toContainText('1.34.1_v2')
+  const missing = box.locator('[data-key="2-5"]')
+  await missing.getByLabel('Номер').fill('1.33')
+  await missing.getByLabel('Номер').blur()
+  await expect(box).toContainText('Номера изменены')
+  await expect(box.getByRole('button', { name: /Записать каталог/ })).toBeDisabled()
+  await box.getByRole('button', { name: 'Проверить снова' }).click()
+  await expect(missing).toContainText('1.33')
+  await box.getByRole('button', { name: /Записать каталог/ }).click()
+  await expect(box).toContainText('Каталог знаков записан по ГОСТ Р 99291-2025')
+  await expect(
+    page.getByText(/Текущий набор: ГОСТ Р 99291, редакция 2025, 10 знаков/),
+  ).toBeVisible()
+  await page.locator('#sign-search').fill('1.16_ж')
+  await expect(page.locator('.gallery figcaption')).toHaveText(['1.16_ж'])
 })
 
 test('A4 print contains exactly one page', async ({ page }) => {

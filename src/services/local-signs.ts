@@ -124,3 +124,57 @@ export async function getSignCatalog(): Promise<SignCatalog | null> {
   if (!response.ok) throw new Error('Не удалось прочитать источник каталога.')
   return catalogSchema.nullable().parse(await localJson(response))
 }
+
+const pdfImageSchema = z.strictObject({
+  key: z.string(),
+  page: z.number().int().positive(),
+  detected: z.string().nullable(),
+  example: z.boolean(),
+  code: z.string().nullable(),
+  reason: z.enum(['detected', 'override', 'excluded', 'no-label']),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+})
+const pdfPlanSchema = z.strictObject({
+  ...counts,
+  document: z.strictObject({ id: z.number(), code: z.string(), edition: z.string() }),
+  pages: z.strictObject({ first: z.number(), last: z.number() }).nullable(),
+  yellowRule: z
+    .strictObject({ clause: z.string(), text: z.string(), items: z.array(z.string()) })
+    .nullable(),
+  yellowCodes: z.array(z.string()),
+  images: z.array(pdfImageSchema),
+  signCount: z.number().int().nonnegative(),
+  source: sourceSchema,
+  fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+})
+export type PdfSignPlan = z.infer<typeof pdfPlanSchema>
+export type PdfSignImage = z.infer<typeof pdfImageSchema>
+/** Исправления составителя: номер знака или null — исключить изображение. */
+export type PdfSignOverrides = Record<string, string | null>
+
+export async function previewPdfSigns(
+  documentId: number,
+  overrides: PdfSignOverrides,
+): Promise<PdfSignPlan> {
+  return pdfPlanSchema.parse(
+    await request(`/api/documents/${documentId}/signs/preview`, { overrides }),
+  )
+}
+
+export async function applyPdfSigns(
+  documentId: number,
+  overrides: PdfSignOverrides,
+  fingerprint: string,
+) {
+  return resultSchema.parse(
+    await request(`/api/documents/${documentId}/signs/apply`, {
+      overrides,
+      expectedFingerprint: fingerprint,
+    }),
+  )
+}
+
+export function pdfSignImageUrl(documentId: number, key: string, yellow = false): string {
+  return `/api/documents/${documentId}/signs/image?key=${encodeURIComponent(key)}${yellow ? '&yellow=1' : ''}`
+}

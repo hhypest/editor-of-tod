@@ -29,6 +29,7 @@ import {
   InvalidDocumentUpload,
   previewDocumentUpload,
 } from './document-web-import.ts'
+import { applyPdfSigns, pdfSignImage, previewPdfSigns } from './sign-pdf-import.ts'
 import { documentMetaSchema } from '../src/domain/normative-documents.ts'
 import {
   InvalidPu66Verification,
@@ -173,7 +174,10 @@ export function createRegistryServer(
       const revisionPath = /^\/api\/projects\/([^/]+)\/revisions\/(\d+)$/.exec(pathname)
       const restorePath = /^\/api\/projects\/([^/]+)\/restore$/.exec(pathname)
       const recoveryPath = /^\/api\/recovery\/([^/]+)$/.exec(pathname)
-      const documentPath = /^\/api\/documents\/(\d+)(\/pdf)?$/.exec(pathname)
+      const documentPath =
+        /^\/api\/documents\/(\d+)(\/pdf|\/signs\/preview|\/signs\/apply|\/signs\/image)?$/.exec(
+          pathname,
+        )
       if (req.method === 'GET' && pathname === '/api/status') {
         json(res, 200, { ready: true })
       } else if (req.method === 'GET' && pathname === '/api/crossings') {
@@ -280,6 +284,24 @@ export function createRegistryServer(
             'Cache-Control': 'no-store',
           })
           res.end(Buffer.from(file.pdf))
+        } else if (req.method === 'POST' && documentPath[2] === '/signs/preview') {
+          json(res, 200, await previewPdfSigns(store, id, await readJson(req)))
+        } else if (req.method === 'POST' && documentPath[2] === '/signs/apply') {
+          json(res, 200, await applyPdfSigns(store, id, await readJson(req)))
+        } else if (req.method === 'GET' && documentPath[2] === '/signs/image') {
+          const params = new URL(req.url ?? '/', `http://127.0.0.1:${actualPort}`).searchParams
+          const key = params.get('key') ?? ''
+          if (!/^\d{1,4}-\d{1,4}(\.\d{1,2})?$/.test(key))
+            throw new RequestError(400, 'Неверный номер изображения.')
+          const png = await pdfSignImage(store, id, key, params.get('yellow') === '1')
+          res.writeHead(200, {
+            'Content-Type': 'image/png',
+            'Cache-Control': 'no-store',
+            'X-Content-Type-Options': 'nosniff',
+            'Cross-Origin-Resource-Policy': 'same-origin',
+            'Content-Security-Policy': "default-src 'none'; sandbox",
+          })
+          res.end(png)
         } else if (req.method === 'PUT' && !documentPath[2]) {
           const updated = store.updateDocument(id, documentMetaSchema.parse(await readJson(req)))
           if (!updated) throw new RequestError(404, 'Документ не найден.')

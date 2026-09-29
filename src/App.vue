@@ -105,7 +105,7 @@ async function refreshSetupStatus(): Promise<void> {
   }
 }
 
-async function openSetupImport(target: 'sign-import' | 'pu66-import'): Promise<void> {
+async function openSetupImport(target: 'pdf-sign-import' | 'pu66-import'): Promise<void> {
   registryTab.value = 'imports'
   showView('registries')
   await nextTick()
@@ -345,8 +345,8 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
             <p class="eyebrow">Первый запуск · локальная SQLite готова</p>
             <h2 id="setup-heading">Наполните реестры на этом компьютере</h2>
             <p>
-              Локальная база находится в private-data/registry.sqlite. Добавьте недостающие реестры
-              из своего ZIP со знаками и книг ПУ-66. Файлы выбираются с этого компьютера; после
+              Локальная база находится в private-data/registry.sqlite. Добавьте недостающие реестры:
+              знаки из PDF ГОСТ Р 52290 и книги ПУ-66. Файлы выбираются с этого компьютера; после
               просмотра изменений подтвердите запись.
             </p>
             <ol class="setup-steps">
@@ -355,9 +355,12 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
                   >Знаки:
                   {{ setupStatus.signs ? `${setupStatus.signs} в базе` : 'пока нет' }}</strong
                 >
-                <p>Укажите архив PNG и редакцию ГОСТ.</p>
-                <button type="button" @click="openSetupImport('sign-import')">
-                  {{ setupStatus.signs ? 'Открыть каталог' : 'Импортировать ZIP знаков' }}
+                <p>
+                  Прикрепите PDF ГОСТ Р 52290 в «Нормативных документах» и извлеките из него знаки
+                  (или загрузите ZIP с PNG).
+                </p>
+                <button type="button" @click="openSetupImport('pdf-sign-import')">
+                  {{ setupStatus.signs ? 'Открыть каталог' : 'Извлечь знаки из PDF' }}
                 </button>
               </li>
               <li>
