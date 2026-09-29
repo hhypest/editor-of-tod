@@ -84,10 +84,26 @@ async function loadSigns(): Promise<void> {
     const sizes = new Map(
       list.map((sign) => [sign.code, { width: sign.width, height: sign.height }]),
     )
-    // Закреплённые в проекте редакции доступны из истории, даже если код исключён из архива.
-    for (const code of Object.keys(props.scheme.signImages.revisions))
-      if (!sizes.has(code)) sizes.set(code, { width: 1, height: 1 })
+    // Закреплённые редакции доступны из истории, даже если код исключён из активного архива.
+    // Их пропорции берутся из самого исторического PNG, а не из текущего каталога.
+    const historic = Object.entries(props.scheme.signImages.revisions).filter(
+      ([code]) => !sizes.has(code),
+    )
+    const broken = new Set<string>()
+    await Promise.all(
+      historic.map(async ([code, revision]) => {
+        const probe = new Image()
+        probe.src = `/api/signs/${encodeURIComponent(code)}/image?rev=${revision}`
+        try {
+          await probe.decode()
+          sizes.set(code, { width: probe.naturalWidth, height: probe.naturalHeight })
+        } catch {
+          broken.add(code)
+        }
+      }),
+    )
     signSizes.value = sizes
+    brokenImages.value = broken
     catalogSource.value = props.scheme.signImages.catalog ?? currentCatalog
     catalogState.value = list.length === 2_000 ? 'partial' : 'ready'
   } catch {

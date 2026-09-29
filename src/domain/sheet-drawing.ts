@@ -77,7 +77,10 @@ export type SheetDrawing = {
   objectBoxes: Array<{
     id: number
     kind: 'sign-post' | 'element'
+    /** Знаки стойки или сам элемент: по ним проверяется перекрытие стоек. */
     box: [number, number, number, number]
+    /** Всё, что рисует объект, включая выноску и подпись расстояния: для проверки границ листа. */
+    extent: [number, number, number, number]
   }>
   /** Коды знаков, для которых нужен PNG (после подстановки имени из архива). */
   signCodes: string[]
@@ -179,7 +182,7 @@ function drawPost(
   post: Extract<DraftSheet['placements'][number], { kind: 'sign-post' }>,
   options: SheetOptions,
   available: ReadonlySet<string>,
-): { nodes: SheetNode[]; box: Box; codes: string[] } {
+): { nodes: SheetNode[]; box: Box; extent: Box; codes: string[] } {
   const x = post.x
   const yc = post.y
   const codes = post.signIds.map((code) => signImageCode(code, available))
@@ -257,9 +260,25 @@ function drawPost(
   }
   const left = Math.min(x, right ? x - POLE_BAR - rowWidth : x) - 3
   const rightEdge = Math.max(x, right ? x : x + POLE_BAR + rowWidth) + 3
+  // Повёрнутые коды над (под) знаками и выноска с подписью расстояния.
+  const codeLength = Math.max(0, ...post.signIds.map((code) => textWidth(codeLabel(code), 12.5)))
+  let extentTop = post.side === 'down' ? top - 4 : top - 5 - codeLength
+  let extentBottom =
+    post.side === 'down' ? top + SIGN_HEIGHT + 5 + codeLength : top + SIGN_HEIGHT + 4
+  let extentLeft = left
+  let extentRight = rightEdge
+  if (post.distanceLabel !== null) {
+    const labelLength = textWidth(post.distanceLabel, 12.5)
+    if (post.side === 'down') extentBottom = Math.max(extentBottom, 655 + post.dy + labelLength)
+    else extentTop = Math.min(extentTop, 245 + post.dy - labelLength)
+    const labelX = right ? x + 14 : x - 3
+    extentLeft = Math.min(extentLeft, labelX - 14)
+    extentRight = Math.max(extentRight, labelX + 4)
+  }
   return {
     nodes,
     box: [left, top - 4, rightEdge - left, SIGN_HEIGHT + 8],
+    extent: [extentLeft, extentTop, extentRight - extentLeft, extentBottom - extentTop],
     codes,
   }
 }
@@ -384,35 +403,29 @@ function titleSuffix(sheet: DraftSheet): string {
   return 'направлений по одной полосе'
 }
 
+/**
+ * Примечания листа — только решения, которые составитель явно записал в проекте.
+ * Типовые примечания образцов (время работ, зачехление знаков, передача схемы и т. п.)
+ * не печатаются: их применимость и источники ещё не проверены (docs/standards.md).
+ */
 function notes(sheet: DraftSheet): string[] {
-  const list = [
-    'Производство работ осуществляется в светлое время суток.',
-    'Временные дорожные знаки устанавливаются в соответствии с требованиями ГОСТ Р 52289-2019, ГОСТ Р 58350-2019 и ОДМ 218.6.019-2016.',
-    'Существующие дорожные знаки, противоречащие временным, должны быть зачехлены.',
-    'При наличии примыканий, пересечений в зоне работ запрещающие знаки дублируются после них.',
-    'Дорожные рабочие экипируются светоотражающими жилетами.',
-    'Копию схемы до начала работ предоставлять в УГИБДД МВД.',
-  ]
-  if (sheet.signSize !== 'auto')
-    list.push(`Типоразмер знаков ${sheet.signSize} согласно ГОСТ Р 52289-2019.`)
+  const list: string[] = []
   if (sheet.template === 'b34') {
     if (sheet.regulationMode === 'signs')
-      list.push(
-        'Очерёдность проезда устанавливается знаками 2.6 и 2.7; видимость встречного автомобиля на участке должна быть обеспечена.',
-      )
+      list.push('Очерёдность проезда — знаки 2.6 и 2.7 (решение составителя).')
     else if (sheet.regulationMode === 'one')
-      list.push(
-        'Пропуск транспорта регулирует один регулировщик в месте, хорошо видимом с обоих направлений.',
-      )
+      list.push('Пропуск транспорта регулирует один регулировщик (решение составителя).')
     else if (sheet.regulationMode === 'two')
       list.push(
-        'Пропуск транспорта регулируют два регулировщика у начала и конца места работ; для согласования действий регулировщики обеспечиваются рациями.',
+        'Пропуск транспорта регулируют два регулировщика у начала и конца места работ (решение составителя).',
       )
   }
   if (sheet.settlement !== 'auto')
     list.push(
-      `Расстояния установки знаков приняты для участка ${sheet.settlement === 'in' ? 'в населённом пункте' : 'вне населённого пункта'}.`,
+      `Расстояния установки знаков приняты для участка ${sheet.settlement === 'in' ? 'в населённом пункте' : 'вне населённого пункта'} (решение составителя).`,
     )
+  if (sheet.signSize !== 'auto')
+    list.push(`Типоразмер знаков ${sheet.signSize} (решение составителя).`)
   return list.map((text, index) => `${index + 1}. ${text}`)
 }
 
@@ -572,6 +585,12 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
     laneArrow(30, 490, false),
     laneArrow(SHEET_WIDTH - 80, 490, false),
   )
+  // Подписи направлений не переносятся: длинная подпись останавливает печать.
+  const directionWidth = 420
+  if (textWidth(`← ${sheet.directions.left.trim()}`, 14) > directionWidth)
+    overflow.push('Направление слева')
+  if (textWidth(`${sheet.directions.right.trim()} →`, 14) > directionWidth)
+    overflow.push('Направление справа')
   if (sheet.directions.left.trim())
     nodes.push({ t: 'text', x: 10, y: 372, text: `← ${sheet.directions.left.trim()}`, size: 14 })
   if (sheet.directions.right.trim())
@@ -640,15 +659,18 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
     },
   )
   const axisLabel = sheet.crossingFromPu66?.axisLabel
-  if (axisLabel)
+  if (axisLabel) {
     nodes.push({ t: 'text', x: AX + 5, y: 368, text: axisLabel, size: 12.5, rotate: -90 })
-  const width = Number(sheet.crossingFromPu66?.carriagewayWidthMetres.replace(',', '.'))
-  if (Number.isFinite(width) && width > 0)
+    if (textWidth(axisLabel, 12.5) > 100) overflow.push('Подпись оси переезда')
+  }
+  // Ширина выводится так, как записана в карточке; ширина полосы не вычисляется.
+  const width = sheet.crossingFromPu66?.carriagewayWidthMetres.trim()
+  if (width)
     nodes.push({
       t: 'text',
       x: AX + 25,
       y: 432,
-      text: `ширина проезжей части ${metres(width)} м, полоса ${metres(width / 2)} м`,
+      text: `ширина проезжей части ${width} м`,
       size: 14,
     })
 
@@ -691,7 +713,12 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
         ? drawPost(item, options, available)
         : drawElement(item, available, options)
     drawn.codes.forEach((code) => codes.add(code))
-    objectBoxes.push({ id: item.id, kind: item.kind, box: drawn.box })
+    objectBoxes.push({
+      id: item.id,
+      kind: item.kind,
+      box: drawn.box,
+      extent: 'extent' in drawn ? (drawn.extent as Box) : drawn.box,
+    })
     nodes.push({
       t: 'group',
       objectId: item.id,
@@ -853,11 +880,11 @@ export function overlappingPosts(drawing: SheetDrawing): Array<[number, number]>
   return pairs
 }
 
-/** Объекты, выходящие за поле листа. */
+/** Объекты, которые вместе с выносками и подписями выходят за поле листа. */
 export function objectsOutside(drawing: SheetDrawing): number[] {
   return drawing.objectBoxes
     .filter(
-      ({ box: [x, y, w, h] }) => x < 0 || y < 0 || x + w > SHEET_WIDTH || y + h > SHEET_HEIGHT,
+      ({ extent: [x, y, w, h] }) => x < 0 || y < 0 || x + w > SHEET_WIDTH || y + h > SHEET_HEIGHT,
     )
     .map((item) => item.id)
 }

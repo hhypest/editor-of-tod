@@ -6,6 +6,7 @@ import { applySchemeDetails, createSchemeDetailsDraft } from '../edit-details'
 import { newSignDraft, savePlacement } from '../edit-placements'
 import { projectDraftSheet } from '../draft-sheet'
 import { importSchemeJson } from '../import'
+import { linkPu66Card } from '../link-pu66'
 import {
   drawableWithoutImage,
   drawSheet,
@@ -146,5 +147,57 @@ describe('vector A4 sheet', () => {
       }
       expect(drawing.overflow).toEqual([])
     }
+  })
+
+  it('prints only notes that record the author decisions, not unverified sample notes', () => {
+    const project = scheme()
+    const draft = createSchemeDetailsDraft(project)
+    draft.parameters.regulation.mode = 'two'
+    draft.parameters.location = 'out'
+    const all = texts(
+      drawSheet(projectDraftSheet(applySchemeDetails(project, draft)), options).nodes,
+    )
+    const joined = all.join(' ')
+    expect(joined).not.toContain('светлое время')
+    expect(joined).not.toContain('УГИБДД')
+    expect(joined).not.toContain('зачехлены')
+    expect(all).toContain(
+      '1. Пропуск транспорта регулируют два регулировщика у начала и конца места работ (решение составителя).',
+    )
+  })
+
+  it('prints the carriageway width as recorded and never derives a lane width', () => {
+    const linked = linkPu66Card(scheme(), {
+      referenceId: '90002:24:7',
+      location: '24 км 7 пк',
+      axisLabel: '24 км 7 пк',
+      roadName: 'Учебная дорога Б',
+      crossingWidthMetres: '6,10',
+      revision: 1,
+      updatedAt: '2026-09-28T10:00:00.000Z',
+    })
+    const joined = texts(drawSheet(projectDraftSheet(linked), options).nodes).join(' ')
+    expect(joined).toContain('ширина проезжей части 6,10 м')
+    expect(joined).not.toContain('полоса')
+  })
+
+  it('stops printing when a direction label does not fit', () => {
+    const project = scheme()
+    const draft = createSchemeDetailsDraft(project)
+    draft.parameters.directions.left = 'на очень далёкий населённый пункт '.repeat(4)
+    const drawing = drawSheet(projectDraftSheet(applySchemeDetails(project, draft)), options)
+    expect(drawing.overflow).toEqual(['Направление слева'])
+  })
+
+  it('checks the sheet border against the distance leader, not only the signs', () => {
+    const post = withPost('1.25', 300, '{d300}')
+    post.side = 'up'
+    post.y = '-250'
+    const project = savePlacement(scheme(), post)
+    const drawing = drawSheet(projectDraftSheet(project), options)
+    const [item] = drawing.objectBoxes
+    expect(item!.box[1]).toBeGreaterThan(0)
+    expect(item!.extent[1]).toBeLessThan(0)
+    expect(objectsOutside(drawing)).toEqual([item!.id])
   })
 })
