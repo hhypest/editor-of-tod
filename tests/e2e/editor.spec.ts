@@ -62,6 +62,32 @@ test('review findings move focus to the first empty field', async ({ page }) => 
   await expect(page.getByRole('heading', { name: 'Знаки и объекты', level: 1 })).toBeVisible()
 })
 
+test('B.34 regulation advice explains itself and is applied only by the author', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await page.getByLabel('Локальный идентификатор переезда').fill('TEST-ADVICE')
+  await page.getByLabel('Фронт работ, м').fill('18')
+  await page.getByLabel('Отвод, м').fill('15')
+  await page.getByLabel('Буфер, м').fill('10')
+  await page.getByLabel('Первая').fill('70')
+  await page.getByLabel('Вторая').fill('50')
+  await page.getByLabel('Третья').fill('40')
+  await page.getByRole('button', { name: 'Создать проект' }).click()
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  const advice = page.locator('.advice')
+  await expect(advice).toContainText('нет данных')
+  await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('180')
+  await expect(advice.getByRole('heading')).toContainText('знаки приоритета 2.6/2.7')
+  await expect(page.getByLabel('Регулирование Б.34')).toHaveValue('auto')
+  await advice.getByRole('button', { name: /Выбрать: знаки приоритета/ }).click()
+  await expect(page.getByLabel('Регулирование Б.34')).toHaveValue('signs')
+  await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('300')
+  await page.getByLabel('Прямой участок дороги').check()
+  await expect(advice.getByRole('heading')).toContainText('один регулировщик')
+  await expect(advice).toContainText('не ближе 15 м')
+})
+
 test('restores applied edits and unapplied fields after the window closes', async ({
   page,
   request,

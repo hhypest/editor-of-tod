@@ -7,6 +7,7 @@ import {
   type SchemeDetailsDraft,
 } from '../domain/edit-details'
 import type { Scheme } from '../domain/model'
+import { adviseRegulation, regulationModeLabels } from '../domain/regulation-advice'
 
 const props = defineProps<{
   scheme: Scheme
@@ -66,6 +67,29 @@ watch(
   () => emit('draft', dirty.value ? JSON.parse(JSON.stringify(draft.value)) : null),
   { deep: true, flush: 'post' },
 )
+
+function draftNumber(value: string | undefined): number | null {
+  const input = (value ?? '').trim().replace(',', '.')
+  return /^\d+(?:\.\d+)?$/.test(input) ? Number(input) : null
+}
+
+/** Рекомендация ОДМ по введённым, ещё не применённым данным формы. */
+const advice = computed(() => {
+  const { regulation, speedStagesKmh, workZones } = draft.value.parameters
+  return adviseRegulation({
+    hourly: regulation.hourly,
+    limitedVisibility: regulation.vis,
+    straight: regulation.straight,
+    zoneSpeedKmh: draftNumber(speedStagesKmh[2]),
+    taperMetres: draftNumber(workZones.b34?.taperMetres),
+  })
+})
+
+function applyAdvice(): void {
+  if (props.locked || !advice.value.mode) return
+  draft.value.parameters.regulation.mode = advice.value.mode
+  markDirty()
+}
 
 function markDirty(): void {
   if (props.locked) return
@@ -269,6 +293,31 @@ function applyDraft(): void {
           ><input v-model="draft.parameters.regulation.straight" type="checkbox" />
           Прямой участок дороги
         </label>
+        <section
+          v-if="scheme.template.code === 'b34'"
+          class="advice"
+          aria-labelledby="regulation-advice-title"
+          aria-live="polite"
+        >
+          <h3 id="regulation-advice-title">
+            Рекомендация по ОДМ 218.6.019-2016:
+            {{ advice.mode ? regulationModeLabels[advice.mode] : 'нет данных' }}
+          </h3>
+          <p v-for="reason in advice.reasons" :key="reason">{{ reason }}</p>
+          <p v-for="warning in advice.warnings" :key="warning" class="warning">{{ warning }}</p>
+          <button
+            v-if="advice.mode && advice.mode !== draft.parameters.regulation.mode"
+            type="button"
+            :disabled="locked"
+            @click="applyAdvice"
+          >
+            Выбрать: {{ regulationModeLabels[advice.mode] }}
+          </button>
+          <p class="hint">
+            Рекомендация считается по введённым данным и ничего не выбирает сама. Пороги и пункты
+            требуют предметной сверки; решение и его обоснование остаются за составителем.
+          </p>
+        </section>
         <div v-for="code in zoneCodes" :key="code">
           <h3>Зона {{ code.toUpperCase() }}</h3>
           <button
@@ -442,6 +491,22 @@ function applyDraft(): void {
 </template>
 
 <style scoped>
+.advice {
+  margin: 0.8rem 0 1rem;
+  padding: 0.7rem 0.9rem;
+  border-left: 4px solid #2f7d5b;
+  background: #eef6f1;
+}
+.advice h3 {
+  margin: 0 0 0.4rem;
+}
+.advice p {
+  margin: 0.3rem 0;
+  line-height: 1.45;
+}
+.advice .warning {
+  color: #8a3b12;
+}
 h2 {
   margin: 0 0 1rem;
   font-size: 1.4rem;
