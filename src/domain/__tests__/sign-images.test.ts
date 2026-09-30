@@ -47,6 +47,23 @@ describe('project sign image pinning', () => {
     ).toThrow('2.6')
   })
 
+  it('pins the image shown on the sheet and skips signs drawn without PNG', () => {
+    const base = example()
+    const scheme = {
+      ...base,
+      placements: base.placements.map((placement) =>
+        placement.kind === 'sign-post'
+          ? { ...placement, signIds: ['3.24_50', '3.24_40', '8.1.1_150', '1.25'] }
+          : placement,
+      ),
+    }
+    const pinned = pinSignImages(scheme, { id: 2, documentCode: 'TEST', edition: '2024' }, [
+      { code: '3.24', revision: 5 },
+      { code: '1.25', revision: 1 },
+    ])
+    expect(pinned.signImages.revisions).toEqual({ '3.24': 5, '1.25': 1 })
+  })
+
   it('clears pinned revisions when the used set changes, preserving other edits', () => {
     const scheme = example()
     const pinned = pinSignImages(scheme, { id: 3, documentCode: 'TEST', edition: '2024' }, [

@@ -24,6 +24,7 @@ import {
   type SignSourceInput,
 } from '../services/local-signs'
 import { listDocuments } from '../services/local-documents'
+import PdfSignCatalog from './PdfSignCatalog.vue'
 import {
   catalogEditionStatus,
   documentLabel,
@@ -295,6 +296,11 @@ watch(
   () => void load(),
 )
 
+async function onPdfSignsApplied(): Promise<void> {
+  await load()
+  emit('signsUpdated')
+}
+
 function imageUrl(sign: Sign): string {
   return `/api/signs/${encodeURIComponent(sign.code)}/image`
 }
@@ -420,141 +426,144 @@ onMounted(load)
     </div>
 
     <h3>Каталог дорожных знаков</h3>
-    <div class="verification-form">
-      <h4 id="sign-import">Импорт PNG знаков из локального архива</h4>
-      <p>
-        Архив содержит пары «с номером» и «без номера». Укажите редакцию ГОСТ, с которой сверяли
-        архив; PDF можно приложить для записи его SHA-256. Приложение не извлекает изображения из
-        PDF и не подтверждает, что архив соответствует документу. Файлы остаются только в локальной
-        базе, перед заменой создаётся резервная копия. Отсутствующие в новом архиве коды исключаются
-        из текущего каталога, прежние редакции PNG сохраняются в SQLite.
-      </p>
-      <p v-if="locked" role="status">Сначала примените или отмените правки открытого проекта.</p>
-      <label
-        >Документ из библиотеки
-        <select v-model="signDocumentId" :disabled="signBusy || locked" @change="signPlan = null">
-          <option value="">Не выбран — указать код и редакцию вручную</option>
-          <option v-for="item in signDocuments" :key="item.document.id" :value="item.document.id">
-            {{ documentLabel(item.document)
-            }}{{ item.document.title ? ` — ${item.document.title}` : ''
-            }}{{
-              item.status === 'current'
-                ? ' (действует)'
-                : item.status === 'superseded'
-                  ? ' (заменён)'
-                  : item.status === 'future'
-                    ? ' (ещё не введён)'
-                    : ''
-            }}
-          </option>
-        </select>
-      </label>
-      <p v-if="!signDocuments.length" class="hint">
-        PDF стандарта можно прикрепить в «Реестры» → «Нормативные документы»: тогда код, редакция и
-        хеш PDF берутся из библиотеки, а приложение подскажет, когда каталог знаков устарел.
-      </p>
-      <template v-if="signDocumentId === ''">
-        <label
-          >Документ
-          <input
-            v-model="signDocumentCode"
-            maxlength="120"
-            :disabled="signBusy || locked"
-            @input="signPlan = null"
-        /></label>
-        <label
-          >Редакция
-          <input
-            v-model="signEdition"
-            maxlength="120"
-            :disabled="signBusy || locked"
-            @input="signPlan = null"
-        /></label>
-      </template>
-      <label>
-        ZIP знаков (до {{ MAX_WEB_SIGN_ARCHIVE_BYTES / 1024 / 1024 }} МБ)
-        <input
-          ref="signZipInput"
-          type="file"
-          accept=".zip"
-          :disabled="signBusy || locked"
-          @change="changeSignFiles($event, 'zip')"
-        />
-      </label>
-      <label v-if="signDocumentId === ''">
-        PDF ГОСТ для хеша (необязательно, до {{ MAX_WEB_SIGN_PDF_BYTES / 1024 / 1024 }} МБ)
-        <input
-          ref="signPdfInput"
-          type="file"
-          accept=".pdf"
-          :disabled="signBusy || locked"
-          @change="changeSignFiles($event, 'pdf')"
-        />
-      </label>
-      <button type="button" :disabled="signBusy || locked || !signArchive" @click="previewSigns">
-        Просмотреть изменения знаков
-      </button>
-      <p v-if="signBusy" role="status">Проверка или запись локального каталога…</p>
-      <p v-if="signError" role="alert" class="error">{{ signError }}</p>
-      <p v-if="signNotice" role="status">{{ signNotice }}</p>
-      <div v-if="signPlan" class="import-plan">
+    <PdfSignCatalog :documents="documents" :locked="locked" @applied="onPdfSignsApplied" />
+    <details class="zip-import">
+      <summary id="sign-import">Загрузка знаков из ZIP (прежний способ)</summary>
+      <div class="verification-form">
         <p>
-          В архиве {{ signPlan.signCount }} знаков: новых {{ signPlan.added }}, с изменённым
-          изображением {{ signPlan.changedCodes.length }}, сменится только редакция источника
-          {{ signPlan.relabelled }}, без изменений {{ signPlan.unchanged }}, исключается из текущего
-          набора {{ signPlan.retired }}. Источник: {{ signPlan.source.documentCode }}, редакция
-          {{ signPlan.source.edition
-          }}{{
-            signPlan.source.pdfSha256
-              ? `, PDF SHA-256 ${signPlan.source.pdfSha256}`
-              : ', PDF не выбран'
-          }}.
+          Для PDF без таблиц изображений (например, отсканированного) каталог можно загрузить из
+          архива с парами PNG «с номером» и «без номера». Укажите редакцию ГОСТ, с которой сверяли
+          архив. Файлы остаются только в локальной базе, перед заменой создаётся резервная копия.
+          Отсутствующие в новом архиве коды исключаются из текущего каталога, прежние редакции PNG
+          сохраняются в SQLite.
         </p>
-        <details v-if="signPlan.addedCodes.length">
-          <summary>Новые знаки · {{ signPlan.addedCodes.length }}</summary>
-          <p class="codes">{{ signPlan.addedCodes.join(', ') }}</p>
-        </details>
-        <details v-if="signPlan.retiredCodes.length" open>
-          <summary>Исключаются из текущего набора · {{ signPlan.retiredCodes.length }}</summary>
-          <p class="codes">{{ signPlan.retiredCodes.join(', ') }}</p>
-          <p class="hint">
-            Проекты с закреплёнными редакциями продолжат показывать прежние PNG из истории; новые
-            стойки эти коды не получат.
-          </p>
-        </details>
-        <details v-if="signPlan.changedCodes.length" open>
-          <summary>Изменённые изображения · {{ signPlan.changedCodes.length }}</summary>
-          <ul class="sign-compare">
-            <li v-for="item in signPlan.changedPreviews" :key="item.code">
-              <strong>{{ item.code }}</strong>
-              <img :src="`/api/signs/${encodeURIComponent(item.code)}/image`" alt="Сейчас" />
-              <span aria-hidden="true">→</span>
-              <img :src="item.image" alt="В новом архиве" />
-            </li>
-          </ul>
-          <p v-if="signPlan.changedCodes.length > signPlan.changedPreviews.length" class="hint">
-            Показаны первые {{ signPlan.changedPreviews.length }}; остальные:
-            {{ signPlan.changedCodes.slice(signPlan.changedPreviews.length).join(', ') }}.
-          </p>
-        </details>
-        <button
-          type="button"
-          :disabled="
-            signBusy || locked || signPlan.added + signPlan.updated + signPlan.retired === 0
-          "
-          @click="applySigns"
-        >
-          Подтвердить каталог и создать копию SQLite
+        <p v-if="locked" role="status">Сначала примените или отмените правки открытого проекта.</p>
+        <label
+          >Документ из библиотеки
+          <select v-model="signDocumentId" :disabled="signBusy || locked" @change="signPlan = null">
+            <option value="">Не выбран — указать код и редакцию вручную</option>
+            <option v-for="item in signDocuments" :key="item.document.id" :value="item.document.id">
+              {{ documentLabel(item.document)
+              }}{{ item.document.title ? ` — ${item.document.title}` : ''
+              }}{{
+                item.status === 'current'
+                  ? ' (действует)'
+                  : item.status === 'superseded'
+                    ? ' (заменён)'
+                    : item.status === 'future'
+                      ? ' (ещё не введён)'
+                      : ''
+              }}
+            </option>
+          </select>
+        </label>
+        <p v-if="!signDocuments.length" class="hint">
+          PDF стандарта можно прикрепить в «Реестры» → «Нормативные документы»: тогда код, редакция
+          и хеш PDF берутся из библиотеки, а приложение подскажет, когда каталог знаков устарел.
+        </p>
+        <template v-if="signDocumentId === ''">
+          <label
+            >Документ
+            <input
+              v-model="signDocumentCode"
+              maxlength="120"
+              :disabled="signBusy || locked"
+              @input="signPlan = null"
+          /></label>
+          <label
+            >Редакция
+            <input
+              v-model="signEdition"
+              maxlength="120"
+              :disabled="signBusy || locked"
+              @input="signPlan = null"
+          /></label>
+        </template>
+        <label>
+          ZIP знаков (до {{ MAX_WEB_SIGN_ARCHIVE_BYTES / 1024 / 1024 }} МБ)
+          <input
+            ref="signZipInput"
+            type="file"
+            accept=".zip"
+            :disabled="signBusy || locked"
+            @change="changeSignFiles($event, 'zip')"
+          />
+        </label>
+        <label v-if="signDocumentId === ''">
+          PDF ГОСТ для хеша (необязательно, до {{ MAX_WEB_SIGN_PDF_BYTES / 1024 / 1024 }} МБ)
+          <input
+            ref="signPdfInput"
+            type="file"
+            accept=".pdf"
+            :disabled="signBusy || locked"
+            @change="changeSignFiles($event, 'pdf')"
+          />
+        </label>
+        <button type="button" :disabled="signBusy || locked || !signArchive" @click="previewSigns">
+          Просмотреть изменения знаков
         </button>
+        <p v-if="signBusy" role="status">Проверка или запись локального каталога…</p>
+        <p v-if="signError" role="alert" class="error">{{ signError }}</p>
+        <p v-if="signNotice" role="status">{{ signNotice }}</p>
+        <div v-if="signPlan" class="import-plan">
+          <p>
+            В архиве {{ signPlan.signCount }} знаков: новых {{ signPlan.added }}, с изменённым
+            изображением {{ signPlan.changedCodes.length }}, сменится только редакция источника
+            {{ signPlan.relabelled }}, без изменений {{ signPlan.unchanged }}, исключается из
+            текущего набора {{ signPlan.retired }}. Источник: {{ signPlan.source.documentCode }},
+            редакция {{ signPlan.source.edition
+            }}{{
+              signPlan.source.pdfSha256
+                ? `, PDF SHA-256 ${signPlan.source.pdfSha256}`
+                : ', PDF не выбран'
+            }}.
+          </p>
+          <details v-if="signPlan.addedCodes.length">
+            <summary>Новые знаки · {{ signPlan.addedCodes.length }}</summary>
+            <p class="codes">{{ signPlan.addedCodes.join(', ') }}</p>
+          </details>
+          <details v-if="signPlan.retiredCodes.length" open>
+            <summary>Исключаются из текущего набора · {{ signPlan.retiredCodes.length }}</summary>
+            <p class="codes">{{ signPlan.retiredCodes.join(', ') }}</p>
+            <p class="hint">
+              Проекты с закреплёнными редакциями продолжат показывать прежние PNG из истории; новые
+              стойки эти коды не получат.
+            </p>
+          </details>
+          <details v-if="signPlan.changedCodes.length" open>
+            <summary>Изменённые изображения · {{ signPlan.changedCodes.length }}</summary>
+            <ul class="sign-compare">
+              <li v-for="item in signPlan.changedPreviews" :key="item.code">
+                <strong>{{ item.code }}</strong>
+                <img :src="`/api/signs/${encodeURIComponent(item.code)}/image`" alt="Сейчас" />
+                <span aria-hidden="true">→</span>
+                <img :src="item.image" alt="В новом архиве" />
+              </li>
+            </ul>
+            <p v-if="signPlan.changedCodes.length > signPlan.changedPreviews.length" class="hint">
+              Показаны первые {{ signPlan.changedPreviews.length }}; остальные:
+              {{ signPlan.changedCodes.slice(signPlan.changedPreviews.length).join(', ') }}.
+            </p>
+          </details>
+          <button
+            type="button"
+            :disabled="
+              signBusy || locked || signPlan.added + signPlan.updated + signPlan.retired === 0
+            "
+            @click="applySigns"
+          >
+            Подтвердить каталог и создать копию SQLite
+          </button>
+        </div>
       </div>
-    </div>
+    </details>
     <p v-if="signCatalog">
       Текущий набор: {{ signCatalog.documentCode }}, редакция {{ signCatalog.edition }},
       {{ signCatalog.signCount }} знаков; импорт {{ signCatalog.importedAt }}.
     </p>
     <p v-if="catalogStatus.kind === 'outdated'" class="error" role="status">
       В библиотеке действует {{ documentLabel(catalogStatus.document) }}, а каталог знаков загружен
-      по редакции {{ catalogStatus.catalogEdition }}. Загрузите архив знаков новой редакции и
+      по редакции {{ catalogStatus.catalogEdition }}. Извлеките знаки из PDF новой редакции и
       перезакрепите знаки в проектах после проверки.
     </p>
     <p v-else-if="signs.length">Для прежнего импорта редакция источника не указана.</p>
@@ -665,6 +674,13 @@ input[type='search'] {
 }
 .import-plan {
   flex-basis: 100%;
+}
+.zip-import {
+  margin: 1rem 0;
+}
+.zip-import summary {
+  font-weight: 600;
+  cursor: pointer;
 }
 .verification-form label {
   display: grid;
