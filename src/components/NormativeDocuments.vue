@@ -279,8 +279,8 @@ function megabytes(bytes: number): string {
 
     <div v-if="signsStatus.kind === 'outdated'" class="warning" role="status">
       Каталог знаков загружен по редакции {{ signsStatus.catalogEdition }}, а действует
-      {{ documentLabel(signsStatus.document) }}. Загрузите архив PNG новой редакции в «Импорт Excel
-      и знаков» и выберите там этот документ.
+      {{ documentLabel(signsStatus.document) }}. Извлеките знаки из PDF этой редакции в «Импорт
+      Excel и знаков» (блок «Знаки из PDF стандарта»).
     </div>
     <div v-else-if="signsStatus.kind === 'current'" class="ok" role="status">
       Каталог знаков соответствует действующей редакции {{ documentLabel(signsStatus.document) }}.
