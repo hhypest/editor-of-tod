@@ -685,3 +685,24 @@ test('template plate 8.2.1 shows the dangerous section length and the sign size 
   await expect(plates).toHaveCount(2)
   await expect(plates.first()).toContainText('38 м')
 })
+
+test('help shows the author, the MIT license and third-party components', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Справка', exact: true }).first().click()
+  await page
+    .getByRole('navigation', { name: 'Оглавление справки' })
+    .getByRole('button', { name: 'О программе и лицензии' })
+    .click()
+  const about = page.locator('[data-help="about"]')
+  await expect(about).toContainText('Манченко Иван Григорьевич')
+  await about.getByText('Текст лицензии (оригинал, имеет юридическую силу)').click()
+  await expect(about.locator('pre[lang="en"]')).toContainText('Permission is hereby granted')
+  // В сборке (exe) — список компонентов; в режиме разработки он не формируется.
+  await expect(
+    about.getByText(/Открыть полные тексты лицензий|Список формируется при сборке/),
+  ).toBeVisible()
+  if (process.env.TOD_E2E_EXE) {
+    await about.getByText(/Локальный сервер —/).click()
+    await expect(about.getByRole('cell', { name: 'pdfjs-dist' })).toBeVisible()
+  }
+})

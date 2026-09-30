@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { helpSections, searchHelp, splitLabels, type HelpSection } from '../help/help-content'
+import AboutProgram from './AboutProgram.vue'
 
 const props = defineProps<{
   /** Раздел, который нужно показать при открытии справки. */
@@ -152,6 +153,7 @@ watch(
               </template>
             </dl>
           </template>
+          <AboutProgram v-if="section.id === 'about'" />
         </article>
       </div>
     </div>

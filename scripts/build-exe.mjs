@@ -120,9 +120,25 @@ await inject(output, 'NODE_SEA_BLOB', readFileSync(blob), {
   machoSegmentName: process.platform === 'darwin' && target === 'host' ? 'NODE_SEA' : undefined,
 })
 
+// 5. Лицензии рядом с исполняемым файлом: MIT программы (оригинал и перевод) и тексты
+// лицензий сторонних компонентов, включая встроенную среду Node.js.
+const notices = join(dist, 'legal', 'THIRD_PARTY_LICENSES.txt')
+if (!existsSync(notices)) throw new Error('В сборке нет legal/THIRD_PARTY_LICENSES.txt.')
+if (!readFileSync(notices, 'utf8').includes('Node.js is licensed for use as follows')) {
+  throw new Error(
+    'В THIRD_PARTY_LICENSES.txt нет лицензии Node.js: соберите интерфейс установленным Node.js, рядом с которым лежит файл LICENSE.',
+  )
+}
+copyFileSync(notices, join(releaseDirectory, 'THIRD_PARTY_LICENSES.txt'))
+copyFileSync(join(root, 'LICENSE'), join(releaseDirectory, 'LICENSE.txt'))
+copyFileSync(join(root, 'LICENSE.ru.md'), join(releaseDirectory, 'LICENSE.ru.txt'))
+
 const sha256 = createHash('sha256').update(readFileSync(output)).digest('hex')
 const megabytes = (statSync(output).size / 1024 / 1024).toFixed(1)
 console.log(
   `\nГотово: ${relative(root, output)} (${megabytes} МБ, Node.js ${process.versions.node})`,
 )
 console.log(`SHA-256: ${sha256}`)
+console.log(
+  'Рядом: LICENSE.txt, LICENSE.ru.txt, THIRD_PARTY_LICENSES.txt — передавайте вместе с программой.',
+)

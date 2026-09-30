@@ -127,6 +127,9 @@ function projectId(encoded: string): string {
   return id
 }
 
+/** Сведения о лицензиях сторонних компонентов из сборки интерфейса (раздел «О программе»). */
+const LEGAL_FILES = new Set(['/legal/THIRD_PARTY_LICENSES.txt', '/legal/third-party.json'])
+
 async function serveBuiltApp(
   pathname: string,
   res: ServerResponse,
@@ -135,7 +138,9 @@ async function serveBuiltApp(
   const filename =
     pathname === '/' || pathname === '/index.html'
       ? 'index.html'
-      : pathname === '/favicon.svg' || /^\/assets\/[a-zA-Z0-9._-]+$/.test(pathname)
+      : pathname === '/favicon.svg' ||
+          /^\/assets\/[a-zA-Z0-9._-]+$/.test(pathname) ||
+          LEGAL_FILES.has(pathname)
         ? pathname.slice(1)
         : null
   if (!filename) throw new RequestError(404, 'Страница не найдена.')
@@ -146,6 +151,8 @@ async function serveBuiltApp(
       '.js': 'text/javascript',
       '.css': 'text/css',
       '.svg': 'image/svg+xml',
+      '.txt': 'text/plain',
+      '.json': 'application/json',
     }[extname(filename)]
     if (!type) throw new RequestError(404, 'Файл не найден.')
     res.writeHead(200, {
