@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { selectTemplateByWorkFront } from '../domain/registry'
+import { selectTemplateByWorkFront, templateLabel } from '../domain/registry'
 
 const lengthText = ref('')
 const suggestion = computed(() => {
@@ -24,7 +24,7 @@ const suggestion = computed(() => {
     />
     <p v-if="lengthText && !suggestion" role="alert">Укажите положительное число в метрах.</p>
     <p v-if="suggestion" role="status">
-      По принятому правилу проекта: <strong>{{ suggestion.code.toUpperCase() }}</strong
+      По принятому правилу проекта: <strong>{{ templateLabel(suggestion.code) }}</strong
       >.
       <span v-if="suggestion.boundaryNeedsReview"
         >При ровно 30 м выбран Б.33 по подтверждённому правилу проекта; подписи и размерные

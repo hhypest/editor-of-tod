@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { elementLabels } from '../domain/placement-labels'
 import { computed, onMounted, ref } from 'vue'
 import {
   anchorCoordinates,
@@ -9,6 +10,8 @@ import {
 } from '../domain/placement-workspace'
 import type { Scheme } from '../domain/model'
 import { figureDimensions } from '../domain/figure-dimensions'
+import { templateLabel } from '../domain/registry'
+import { useNormativeRules } from '../composables/useNormativeRules'
 import RoadworkSymbol from './RoadworkSymbol.vue'
 
 type Placement = Scheme['placements'][number]
@@ -29,7 +32,8 @@ const error = ref('')
 const catalog = ref<Set<string>>(new Set())
 const catalogUnavailable = ref(false)
 const anchors = computed(() => anchorCoordinates(props.scheme))
-const dimensions = computed(() => figureDimensions(props.scheme))
+const { rules } = useNormativeRules()
+const dimensions = computed(() => figureDimensions(props.scheme, rules.value))
 const guides = computed(() =>
   (['L0', 'L1', 'Z0', 'Z1', 'E', 'AX'] as const).map((name) => ({
     name,
@@ -129,7 +133,7 @@ function onKeydown(event: KeyboardEvent, placement: Placement): void {
 function nameFor(placement: Placement): string {
   if (placement.kind === 'sign-post')
     return `Стойка № ${placement.id}: ${placement.signIds.join(', ')}`
-  return `Элемент № ${placement.id}: ${placement.text || placement.elementKind}`
+  return `${elementLabels[placement.elementKind]} № ${placement.id}${placement.text ? `: ${placement.text}` : ''}`
 }
 </script>
 
@@ -155,15 +159,15 @@ function nameFor(placement: Placement): string {
     </div>
     <p class="notice">
       Цветные участки показывают введённую размерную цепочку рисунка
-      {{ scheme.template.code.toUpperCase() }}: отвод, участок перед фронтом, фронт работ{{
+      {{ templateLabel(scheme.template.code) }}: отвод, участок перед фронтом, фронт работ{{
         scheme.template.code === 'b33' ? ' и выходной отвод' : ''
       }}. Масштаб условный; расстановка знаков и применимость схемы требуют предметной сверки.
     </p>
     <ol class="dimension-summary" aria-label="Сравнение размеров с рисунком ОДМ">
       <li v-for="part in dimensions" :key="part.part" :class="{ differs: !part.agreesWithFigure }">
-        {{ part.title }}: {{ part.enteredMetres }} м (рисунок: {{ part.figureLabel }}){{
-          part.agreesWithFigure ? '' : ' — сверить'
-        }}
+        {{ part.title }}: {{ part.enteredMetres }} м ({{
+          part.basis ?? `рисунок: ${part.figureLabel}`
+        }}){{ part.agreesWithFigure ? '' : ' — сверить' }}
       </li>
     </ol>
     <p v-if="locked" class="hint" role="status">

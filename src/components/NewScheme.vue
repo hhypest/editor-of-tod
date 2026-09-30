@@ -8,7 +8,7 @@ import {
 } from '../domain/create-scheme'
 import type { Scheme } from '../domain/model'
 import type { Pu66SchemeRecord } from '../domain/pu66-snapshot'
-import { selectTemplateByWorkFront } from '../domain/registry'
+import { selectTemplateByWorkFront, templateLabel } from '../domain/registry'
 import { getPu66SchemeRecord, listPu66Cards, type Pu66ListEntry } from '../services/local-pu66'
 import Pu66CardPicker from './Pu66CardPicker.vue'
 
@@ -223,7 +223,7 @@ watch(
         </div>
         <p v-if="choice" class="hint" role="status">
           По длине фронта предварительно выбран вариант
-          <strong>{{ choice.code.toUpperCase() }}</strong
+          <strong>{{ templateLabel(choice.code) }}</strong
           >.
           <span v-if="choice.boundaryNeedsReview">
             Ровно 30 м: Б.33 по подтверждённому правилу проекта; подписи и размеры рисунков ОДМ

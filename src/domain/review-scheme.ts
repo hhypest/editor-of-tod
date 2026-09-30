@@ -1,5 +1,7 @@
 import type { Scheme } from './model'
 import { figureDimensions } from './figure-dimensions'
+import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
+import { templateLabel } from './registry'
 
 export type ReviewFinding = {
   id: string
@@ -41,7 +43,10 @@ function legacyVisibilityEnsured(scheme: Scheme): boolean | null {
 }
 
 /** A live checklist of data entry and manual review, never a normative compliance decision. */
-export function reviewScheme(scheme: Scheme): ReviewFinding[] {
+export function reviewScheme(
+  scheme: Scheme,
+  rules: NormativeRules = PROTOTYPE_RULES,
+): ReviewFinding[] {
   const findings: ReviewFinding[] = []
   const { parameters, titleBlock, crossing, placements } = scheme
 
@@ -171,17 +176,19 @@ export function reviewScheme(scheme: Scheme): ReviewFinding[] {
     id: 'template',
     kind: 'verify',
     title: 'Вариант и расстановка',
-    detail: `Вариант ${scheme.template.code.toUpperCase()} и размещение объектов не прошли предметную проверку. Сверьте геометрию, условия работ, существующие знаки и применимую редакцию ОДМ.`,
+    detail: `Вариант ${templateLabel(scheme.template.code)} и размещение объектов не прошли предметную проверку. Сверьте геометрию, условия работ, существующие знаки и применимую редакцию ОДМ.`,
     target: '#placements-title',
   })
 
-  const differingDimensions = figureDimensions(scheme).filter((part) => !part.agreesWithFigure)
+  const differingDimensions = figureDimensions(scheme, rules).filter(
+    (part) => !part.agreesWithFigure,
+  )
   if (differingDimensions.length) {
     findings.push({
       id: 'figure-dimensions',
       kind: 'verify',
-      title: `Размерная цепочка рисунка ${scheme.template.code.toUpperCase()}`,
-      detail: `Введённые размеры отличаются от рисунка ОДМ: ${differingDimensions.map((part) => `${part.title.toLowerCase()} ${part.enteredMetres} м (на рисунке ${part.figureLabel})`).join('; ')}. Сверьте размеры и условия конкретных работ.`,
+      title: `Размерная цепочка рисунка ${templateLabel(scheme.template.code)}`,
+      detail: `Введённые размеры отличаются от ожидаемых: ${differingDimensions.map((part) => `${part.title.toLowerCase()} ${part.enteredMetres} м (${part.basis ?? `на рисунке ${part.figureLabel}`})`).join('; ')}. Сверьте размеры и условия конкретных работ.`,
       target: '#details-title',
     })
   }
@@ -192,7 +199,7 @@ export function reviewScheme(scheme: Scheme): ReviewFinding[] {
       id: 'variant-front',
       kind: 'verify',
       title: 'Вариант и длина фронта',
-      detail: `В импортированном проекте выбран ${scheme.template.code.toUpperCase()} при фронте ${frontMetres} м. По подтверждённому правилу проекта нужен ${frontMetres < 30 ? 'Б.34' : 'Б.33'}. Проверьте исходный лист перед правкой.`,
+      detail: `В импортированном проекте выбран ${templateLabel(scheme.template.code)} при фронте ${frontMetres} м. По подтверждённому правилу проекта нужен ${frontMetres < 30 ? 'Б.34' : 'Б.33'}. Проверьте исходный лист перед правкой.`,
       target: '#details-title',
     })
   }
@@ -205,7 +212,7 @@ export function reviewScheme(scheme: Scheme): ReviewFinding[] {
       id: 'b34-traffic',
       kind: 'verify',
       title: 'Условия движения для Б.34',
-      detail: `На листе размещено регулировщиков: ${regulators}. Подпись к рисунку Б.34 указывает на регулировщика при интенсивности более 250 авт./ч в двух направлениях или ограниченной видимости. Оцените условия на месте и зафиксируйте решение составителя.`,
+      detail: `На листе размещено регулировщиков: ${regulators}. Подпись к рисунку Б.34 указывает на регулировщика при интенсивности более ${rules.signsHourly} авт./ч в двух направлениях или ограниченной видимости (${rules.sources['odm-signs-hourly']}). Оцените условия на месте и зафиксируйте решение составителя.`,
       target: '#placements-title',
     })
   }

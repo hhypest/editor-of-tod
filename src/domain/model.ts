@@ -3,7 +3,8 @@ import { pu66SnapshotSchema } from './pu66-snapshot.ts'
 
 const finite = z.number().finite()
 const text = z.string().max(5_000)
-const anchor = z.enum(['abs', 'L0', 'L1', 'Z0', 'Z1', 'E', 'AX'])
+export const anchorSchema = z.enum(['abs', 'L0', 'L1', 'Z0', 'Z1', 'E', 'AX'])
+const anchor = anchorSchema
 
 const workZoneSchema = z.strictObject({
   taperMetres: finite.positive(),

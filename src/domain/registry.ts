@@ -60,3 +60,9 @@ export function selectTemplateByWorkFront(lengthMetres: number): {
   }
   return { code: lengthMetres < 30 ? 'b34' : 'b33', boundaryNeedsReview: lengthMetres === 30 }
 }
+
+/** Обозначение рисунка ОДМ для кода шаблона: «Б.33», «Б.34» (кириллица, с точкой). */
+export function templateLabel(code: string): string {
+  const match = /^b(\d+)$/i.exec(code)
+  return match ? `Б.${match[1]}` : code
+}

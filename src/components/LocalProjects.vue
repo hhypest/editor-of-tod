@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { templateLabel } from '../domain/registry'
 import { onMounted, ref, watch } from 'vue'
 import type { ProjectRevision, ProjectSummary } from '../domain/local-projects'
 import { exportSchemeJson } from '../domain/import'
@@ -106,7 +107,7 @@ function dateLabel(value: string): string {
     <ul v-else class="project-list">
       <li v-for="project in projects" :key="project.id">
         <div>
-          <strong>{{ project.referenceId }} · {{ project.templateCode.toUpperCase() }}</strong>
+          <strong>{{ project.referenceId }} · {{ templateLabel(project.templateCode) }}</strong>
           <small>{{ project.locationText || 'Участок не указан' }}</small>
           <small>Редакция № {{ project.revision }} · {{ dateLabel(project.updatedAt) }}</small>
         </div>
