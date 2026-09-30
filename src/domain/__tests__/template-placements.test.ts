@@ -3,6 +3,7 @@ import { createUnlinkedScheme } from '../create-scheme'
 import { createPlacementDraft, newTextDraft, savePlacement } from '../edit-placements'
 import { anchorCoordinates, movePlacement, placementCoordinates } from '../placement-workspace'
 import { PROTOTYPE_RULES } from '../normative-parameters'
+import { reviewScheme } from '../review-scheme'
 import { schemeSchema, type Scheme } from '../model'
 import {
   buildTemplatePlacements,
@@ -39,6 +40,50 @@ function example(
 }
 
 describe('preliminary B.33/B.34 layout', () => {
+  it('refuses to place two regulators when the zone speed is not in table 5', () => {
+    for (const front of [18, 40]) {
+      const base = example(front, 'out', 'two')
+      const scheme = {
+        ...base,
+        parameters: {
+          ...base.parameters,
+          speedStagesKmh: [70, 50, 45] as [number, number, number],
+        },
+      }
+      expect(() => buildTemplatePlacements(scheme)).toThrow(TemplateBuildError)
+      expect(() => buildTemplatePlacements(scheme)).toThrow('45 км/ч нет в таблице')
+    }
+  })
+
+  it('checks the actual regulator positions against table 5 in the review', () => {
+    const built = rebuildTemplatePlacements(example(18, 'out', 'two')).scheme
+    expect(reviewScheme(built).some((finding) => finding.id === 'regulator-distance')).toBe(false)
+    // Прежняя раскладка: правый регулировщик над местом работ (E − 34).
+    const regulators = built.placements.filter(
+      (item) => item.kind === 'element' && item.elementKind === 'reg',
+    )
+    const right = regulators.find((item) => item.position.anchor === 'E')!
+    const moved = {
+      ...built,
+      placements: built.placements.map((item) =>
+        item.id === right.id && item.kind === 'element'
+          ? { ...item, position: { ...item.position, offsetXSvg: -34 } }
+          : item,
+      ),
+    }
+    const finding = reviewScheme(moved).find((item) => item.id === 'regulator-distance')
+    expect(finding?.kind).toBe('verify')
+    expect(finding?.detail).toContain(`№ ${right.id} стоит над рабочей зоной`)
+    expect(finding?.detail).toContain('не ближе 15 м')
+    const oneLeft = {
+      ...built,
+      placements: built.placements.filter((item) => item.id !== right.id),
+    }
+    expect(
+      reviewScheme(oneLeft).find((item) => item.id === 'regulator-distance')?.detail,
+    ).toContain('регулировщиков: 1 из 2')
+  })
+
   it('puts two regulators before the work zone for each direction (ODM 12.7.2, table 5)', () => {
     for (const front of [18, 40]) {
       const scheme = example(front, 'out', 'two')

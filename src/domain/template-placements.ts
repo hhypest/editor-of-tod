@@ -39,10 +39,29 @@ export class TemplateBuildError extends Error {
   }
 }
 
+/** Два регулировщика: Б.33 всегда, Б.34 — при выбранном регулировании двумя регулировщиками. */
+export function usesTwoRegulators(scheme: Scheme): boolean {
+  return (
+    scheme.template.code === 'b33' ||
+    (scheme.template.code === 'b34' && scheme.parameters.regulation.mode === 'two')
+  )
+}
+
 function checkConditions(scheme: Scheme, rules: NormativeRules): void {
   const { parameters, template } = scheme
   if (parameters.location === 'auto') {
     throw new TemplateBuildError('На этапе 2 укажите, находится ли переезд в населённом пункте.')
+  }
+  // Два регулировщика (Б.33 всегда, Б.34 по решению) ставятся по табл. 5 ОДМ: скорость в зоне
+  // должна быть в таблице, иначе минимальное расстояние не определено.
+  if (usesTwoRegulators(scheme)) {
+    const zoneSpeed = parameters.speedStagesKmh[2]
+    if (rules.regulatorDistance[zoneSpeed] === undefined) {
+      const speeds = Object.keys(rules.regulatorDistance).join(', ')
+      throw new TemplateBuildError(
+        `Скорости в зоне ${zoneSpeed} км/ч нет в таблице расстояний от регулировщика до рабочей зоны (${rules.sources['odm-regulator-distance']}). Укажите третью ступень скорости из таблицы: ${speeds} км/ч.`,
+      )
+    }
   }
   if (template.code !== 'b34') return
   const { regulation } = parameters

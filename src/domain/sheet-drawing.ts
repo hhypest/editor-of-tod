@@ -438,16 +438,20 @@ function notes(sheet: DraftSheet): string[] {
       list.push('Очерёдность проезда — знаки 2.6 и 2.7 (решение составителя).')
     else if (sheet.regulationMode === 'one')
       list.push('Пропуск транспорта регулирует один регулировщик (решение составителя).')
-    else if (sheet.regulationMode === 'two') {
+    else if (sheet.regulationMode === 'two')
       list.push(
         'Пропуск транспорта регулируют два регулировщика у начала и конца места работ (решение составителя).',
       )
-      if (sheet.regulatorDistance)
-        list.push(
-          `Регулировщики стоят не ближе ${sheet.regulatorDistance.metres} м до рабочей зоны (${sheet.regulatorDistance.source}).`,
-        )
-    }
   }
+  // Требование к установке, а не утверждение о листе: фактическое положение регулировщиков
+  // проверяет пункт «Расстояние от регулировщиков» в «Проверить вручную».
+  if (
+    sheet.regulatorDistance &&
+    (sheet.template === 'b33' || (sheet.template === 'b34' && sheet.regulationMode === 'two'))
+  )
+    list.push(
+      `Регулировщиков устанавливать не ближе ${sheet.regulatorDistance.metres} м до рабочей зоны (${sheet.regulatorDistance.source}).`,
+    )
   if (sheet.settlement !== 'auto')
     list.push(
       `Расстояния установки знаков приняты для участка ${sheet.settlement === 'in' ? 'в населённом пункте' : 'вне населённого пункта'} (решение составителя).`,

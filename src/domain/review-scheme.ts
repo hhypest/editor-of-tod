@@ -2,6 +2,8 @@ import type { Scheme } from './model'
 import { figureDimensions } from './figure-dimensions'
 import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import { templateLabel } from './registry'
+import { anchorCoordinates, placementCoordinates } from './placement-workspace'
+import { usesTwoRegulators } from './template-placements'
 
 export type ReviewFinding = {
   id: string
@@ -240,6 +242,9 @@ export function reviewScheme(
     })
   }
 
+  const regulatorFinding = regulatorDistanceFinding(scheme, rules)
+  if (regulatorFinding) findings.push(regulatorFinding)
+
   const legacyVisibility = legacyVisibilityEnsured(scheme)
   if (legacyVisibility !== null && parameters.regulation.vis === legacyVisibility) {
     findings.push({
@@ -290,4 +295,55 @@ export function reviewScheme(
   }
 
   return findings
+}
+
+/**
+ * Два регулировщика стоят у начала и конца места работ, каждый не ближе расстояния по табл. 5
+ * ОДМ до рабочей зоны Z0–Z1 со стороны своего направления (п. 12.7.2). Пункт появляется, только
+ * если на листе это не так или расстояние не определено: примечание листа — требование, а этот
+ * пункт сверяет с ним фактические объекты.
+ */
+function regulatorDistanceFinding(scheme: Scheme, rules: NormativeRules): ReviewFinding | null {
+  if (!usesTwoRegulators(scheme)) return null
+  const zone = scheme.parameters.workZones[scheme.template.code]
+  if (!zone) return null
+  const source = rules.sources['odm-regulator-distance']
+  const zoneSpeed = scheme.parameters.speedStagesKmh[2]
+  const required = rules.regulatorDistance[zoneSpeed]
+  const base = {
+    id: 'regulator-distance',
+    kind: 'verify' as const,
+    title: 'Расстояние от регулировщиков',
+    target: '#placements-title' as const,
+  }
+  if (required === undefined)
+    return {
+      ...base,
+      detail: `Скорости в зоне ${zoneSpeed} км/ч нет в таблице расстояний (${source}). Определите расстояние от регулировщиков до рабочей зоны и проверьте их положение на листе.`,
+      basis: JSON.stringify([zoneSpeed, scheme.placements]),
+    }
+  const anchors = anchorCoordinates(scheme)
+  const unitsPerMetre = (anchors.Z1 - anchors.Z0) / zone.workMetres
+  const middle = (anchors.Z0 + anchors.Z1) / 2
+  const regulators = scheme.placements.filter(
+    (placement) => placement.kind === 'element' && placement.elementKind === 'reg',
+  )
+  const problems: string[] = []
+  if (regulators.length < 2) problems.push(`на листе регулировщиков: ${regulators.length} из 2`)
+  for (const regulator of regulators) {
+    const { x } = placementCoordinates(regulator, anchors)
+    const metres = (x <= middle ? anchors.Z0 - x : x - anchors.Z1) / unitsPerMetre
+    if (metres < required - 0.5)
+      problems.push(
+        metres <= 0
+          ? `№ ${regulator.id} стоит над рабочей зоной`
+          : `№ ${regulator.id} — примерно ${Math.round(metres)} м до рабочей зоны`,
+      )
+  }
+  if (!problems.length) return null
+  return {
+    ...base,
+    detail: `Регулировщики должны стоять не ближе ${required} м до рабочей зоны при скорости ${zoneSpeed} км/ч (${source}): ${problems.join('; ')}. Пересоберите шаблон на этапе 3 или передвиньте объекты; если так задумано, зафиксируйте решение.`,
+    basis: JSON.stringify([required, regulators]),
+  }
 }
