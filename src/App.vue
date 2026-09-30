@@ -735,7 +735,9 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
               class="module"
               :scheme="imported.scheme"
               :has-pending-input="editorDirty"
+              :locked="localBusy"
               @navigate="navigateToFinding"
+              @apply="onProjectApplied"
             />
           </section>
 
