@@ -88,7 +88,14 @@ async function preview(): Promise<void> {
 }
 
 async function apply(): Promise<void> {
-  if (!plan.value || documentId.value === '' || props.locked || stale.value) return
+  if (
+    !plan.value ||
+    documentId.value === '' ||
+    props.locked ||
+    stale.value ||
+    unresolved.value.length
+  )
+    return
   busy.value = true
   error.value = ''
   try {
@@ -312,12 +319,22 @@ function statusLabel(status: string): string {
           {{ plan.changedCodes.slice(changedShown.length).join(', ') }}.
         </p>
       </details>
+      <p v-if="unresolved.length && !stale" class="error" role="status">
+        Запись недоступна: у {{ unresolved.length }} изображений нет номера. Укажите номер или
+        снимите отметку «в каталог», затем нажмите «Проверить снова».
+      </p>
       <p v-if="stale" class="error" role="status">
         Номера изменены — нажмите «Проверить снова», чтобы увидеть итог перед записью.
       </p>
       <button
         type="button"
-        :disabled="busy || locked || stale || plan.added + plan.updated + plan.retired === 0"
+        :disabled="
+          busy ||
+          locked ||
+          stale ||
+          unresolved.length > 0 ||
+          plan.added + plan.updated + plan.retired === 0
+        "
         @click="apply"
       >
         Записать каталог знаков и создать копию SQLite
