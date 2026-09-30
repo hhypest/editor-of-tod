@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PHONE_PATTERN, responsibleFromLegacy } from './title-block.ts'
 import { pu66SnapshotSchema } from './pu66-snapshot.ts'
 
 const finite = z.number().finite()
@@ -88,13 +89,45 @@ const elementPlacementV5Schema = elementPlacementSchema.extend({
   position: position.extend({ ySvg: finite, zoneFraction: finite.optional() }),
 })
 
-const titleBlockSchema = z.strictObject({
+/** Реквизиты листа v1–v5: ответственные — две строки текста. */
+const titleBlockV5Schema = z.strictObject({
   developer: z.strictObject({ organization: text, name: text, date: text }),
   work: z.strictObject({ organization: text, description: text, period: text }),
   responsible: z.tuple([text, text]),
   approver: z.strictObject({ position: text, organization: text, name: text }),
   agreement: z.strictObject({ position: text, name: text, year: text }),
 })
+
+/** Телефон ответственного по маске +7 (XXX) XXX-XX-XX или пусто, пока не введён. */
+export const phoneSchema = z.union([z.literal(''), z.string().regex(PHONE_PATTERN)])
+export const responsiblePersonSchema = z.strictObject({
+  position: text,
+  name: text,
+  phone: phoneSchema,
+})
+
+/**
+ * Реквизиты листа v6: должность разработчика; ответственные отдельными полями — первый
+ * обязателен, второй по желанию. Подписи на листе рисуются строкой «______ ФИО».
+ */
+export const titleBlockSchema = z.strictObject({
+  developer: z.strictObject({ organization: text, position: text, name: text, date: text }),
+  work: z.strictObject({ organization: text, description: text, period: text }),
+  responsible: z.array(responsiblePersonSchema).min(1).max(2),
+  approver: z.strictObject({ position: text, organization: text, name: text }),
+  agreement: z.strictObject({ position: text, name: text, year: text }),
+})
+
+/**
+ * Отметки ручной проверки: пункт «Проверить вручную» → отпечаток его содержания на момент
+ * отметки. Если содержание пункта изменилось, отметка перестаёт действовать.
+ */
+export const reviewMarksSchema = z
+  .record(
+    z.string().min(1).max(80),
+    z.strictObject({ fingerprint: z.string().min(1).max(128), markedAt: z.iso.datetime() }),
+  )
+  .refine((marks) => Object.keys(marks).length <= 100, 'Слишком много отметок проверки')
 
 const parameterFields = {
   locationText: text,
@@ -153,7 +186,7 @@ const sharedFields = {
   id: z.uuid(),
   createdAt: z.iso.datetime(),
   template: templateSchema,
-  titleBlock: titleBlockSchema,
+  titleBlock: titleBlockV5Schema,
   placements: z
     .array(z.discriminatedUnion('kind', [signPlacementSchema, elementPlacementSchema]))
     .max(2_000),
@@ -262,39 +295,51 @@ export const schemeV4Schema = z
   })
   .superRefine(checkModernScheme)
 
+const schemeV5Fields = {
+  ...sharedFields,
+  template: templateV5Schema,
+  signImages: z
+    .strictObject({
+      catalog: z
+        .strictObject({ documentCode: text, edition: text, id: z.number().int().positive() })
+        .nullable(),
+      revisions: z.record(z.string().min(1).max(120), z.number().int().positive()),
+    })
+    .default(() => ({ catalog: null, revisions: {} })),
+  placements: z
+    .array(z.discriminatedUnion('kind', [signPlacementSchema, elementPlacementV5Schema]))
+    .max(2_000),
+  crossing: crossingSchema,
+  parameters: z.strictObject({
+    ...parameterFields,
+    signDistancesMetres: signDistancesV5Schema,
+    location: z.enum(['auto', 'in', 'out']),
+    signSize: z.enum(['auto', 'I', 'II', 'III', 'IV']),
+    settlementSpeedKmh: finite.positive(),
+    lastSettlement: z.boolean().nullable(),
+    frontStyle: z.enum(['part', 'solid']),
+    frontFromPu66: z.boolean(),
+    regulation: regulationSchema,
+    workZones: z.strictObject({
+      b33: workZoneSchema.nullable(),
+      b34: workZoneSchema.nullable(),
+    }),
+  }),
+  source: z.union([legacySourceSchema, z.strictObject({ kind: z.literal('created-in-editor') })]),
+}
+
+/** Read-only validator for files and SQLite revisions saved before 30.09.2026 (format v5). */
+export const schemeV5Schema = z
+  .strictObject({ ...schemeV5Fields, schemaVersion: z.literal(5) })
+  .superRefine(checkModernScheme)
+
+/** Текущий формат проекта v6: реквизиты с должностями и телефонами, отметки проверки. */
 export const schemeSchema = z
   .strictObject({
-    ...sharedFields,
-    template: templateV5Schema,
-    signImages: z
-      .strictObject({
-        catalog: z
-          .strictObject({ documentCode: text, edition: text, id: z.number().int().positive() })
-          .nullable(),
-        revisions: z.record(z.string().min(1).max(120), z.number().int().positive()),
-      })
-      .default(() => ({ catalog: null, revisions: {} })),
-    placements: z
-      .array(z.discriminatedUnion('kind', [signPlacementSchema, elementPlacementV5Schema]))
-      .max(2_000),
-    schemaVersion: z.literal(5),
-    crossing: crossingSchema,
-    parameters: z.strictObject({
-      ...parameterFields,
-      signDistancesMetres: signDistancesV5Schema,
-      location: z.enum(['auto', 'in', 'out']),
-      signSize: z.enum(['auto', 'I', 'II', 'III', 'IV']),
-      settlementSpeedKmh: finite.positive(),
-      lastSettlement: z.boolean().nullable(),
-      frontStyle: z.enum(['part', 'solid']),
-      frontFromPu66: z.boolean(),
-      regulation: regulationSchema,
-      workZones: z.strictObject({
-        b33: workZoneSchema.nullable(),
-        b34: workZoneSchema.nullable(),
-      }),
-    }),
-    source: z.union([legacySourceSchema, z.strictObject({ kind: z.literal('created-in-editor') })]),
+    ...schemeV5Fields,
+    schemaVersion: z.literal(6),
+    titleBlock: titleBlockSchema,
+    reviewMarks: reviewMarksSchema.default(() => ({})),
   })
   .superRefine(checkModernScheme)
 
@@ -302,6 +347,8 @@ export type Scheme = z.infer<typeof schemeSchema>
 export type SchemeV2 = z.infer<typeof schemeV2Schema>
 export type SchemeV3 = z.infer<typeof schemeV3Schema>
 export type SchemeV4 = z.infer<typeof schemeV4Schema>
+export type SchemeV5 = z.infer<typeof schemeV5Schema>
+export type TitleBlock = z.infer<typeof titleBlockSchema>
 export type Crossing = z.infer<typeof crossingSchema>
 export type Template = z.infer<typeof templateSchema>
 export type SignPlacement = z.infer<typeof signPlacementSchema>
@@ -319,7 +366,7 @@ export function upgradeSchemeV3(value: unknown): Scheme {
 
 export function upgradeSchemeV4(value: unknown): Scheme {
   const previous = schemeV4Schema.parse(value)
-  return schemeSchema.parse({
+  return upgradeSchemeV5({
     ...previous,
     schemaVersion: 5,
     template: { ...previous.template, projectionVersion: 'draft-1' },
@@ -332,6 +379,27 @@ export function upgradeSchemeV4(value: unknown): Scheme {
   })
 }
 
+/** Реквизиты v1–v5 → v6: строки ответственных разбираются на должность, ФИО и телефон. */
+export function upgradeTitleBlock(previous: z.infer<typeof titleBlockV5Schema>): TitleBlock {
+  return {
+    developer: { ...previous.developer, position: '' },
+    work: { ...previous.work },
+    responsible: responsibleFromLegacy(previous.responsible[0], previous.responsible[1]),
+    approver: { ...previous.approver },
+    agreement: { ...previous.agreement },
+  }
+}
+
+export function upgradeSchemeV5(value: unknown): Scheme {
+  const previous = schemeV5Schema.parse(value)
+  return schemeSchema.parse({
+    ...previous,
+    schemaVersion: 6,
+    titleBlock: upgradeTitleBlock(previous.titleBlock),
+    reviewMarks: {},
+  })
+}
+
 export function parseStoredScheme(value: unknown): Scheme {
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 2) {
     return upgradeSchemeV2(value)
@@ -341,6 +409,9 @@ export function parseStoredScheme(value: unknown): Scheme {
   }
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 4) {
     return upgradeSchemeV4(value)
+  }
+  if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 5) {
+    return upgradeSchemeV5(value)
   }
   return schemeSchema.parse(value)
 }

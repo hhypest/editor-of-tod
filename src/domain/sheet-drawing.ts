@@ -1,3 +1,4 @@
+import { responsibleLine } from './title-block'
 import type { DraftSheet } from './draft-sheet'
 
 /**
@@ -151,6 +152,11 @@ function metres(value: number): string {
 
 function blank(value: string, placeholder = '______________'): string {
   return value.trim() || placeholder
+}
+
+/** Место для подписи перед расшифровкой: «_______________ И.И. Иванов». */
+function signatureLine(name: string): string {
+  return `_______________ ${blank(name, '________________')}`
 }
 
 /**
@@ -470,7 +476,8 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
       [
         { text: 'Разработано:', size: 17, bold: true },
         { text: blank(title.developer.organization), size: 13, gap: 6 },
-        { text: blank(title.developer.name), size: 13, gap: 6 },
+        { text: blank(title.developer.position), size: 13, gap: 4 },
+        { text: signatureLine(title.developer.name), size: 13, gap: 10 },
         { text: blank(title.developer.date, '«___» ____________ 20__г.'), size: 13, gap: 4 },
       ],
       20,
@@ -511,11 +518,8 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
           gap: 4,
         },
         {
-          text: `Ответственные за проведение дорожных работ: ${[
-            title.responsible[0],
-            title.responsible[1],
-          ]
-            .map((person) => blank(person))
+          text: `Ответственные за проведение дорожных работ: ${title.responsible
+            .map((person) => blank(responsibleLine(person)))
             .join('; ')}`,
           size: 14,
           gap: 3,
@@ -537,12 +541,12 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
         { text: 'Утверждаю:', size: 17, bold: true },
         { text: blank(title.approver.position), size: 13, gap: 3 },
         { text: blank(title.approver.organization), size: 13 },
-        { text: blank(title.approver.name), size: 13 },
-        { text: `«____» _______________ ${year}г.`, size: 13, gap: 3 },
+        { text: signatureLine(title.approver.name), size: 13, gap: 10 },
+        { text: `«____» _______________ ${year}г.`, size: 13, gap: 6 },
         { text: 'Согласовано:', size: 17, bold: true, gap: 10 },
         { text: blank(title.agreement.position), size: 13, gap: 3 },
-        { text: blank(title.agreement.name), size: 13 },
-        { text: `«____» _______________ ${year}г.`, size: 13, gap: 3 },
+        { text: signatureLine(title.agreement.name), size: 13, gap: 10 },
+        { text: `«____» _______________ ${year}г.`, size: 13, gap: 6 },
       ],
       1370,
       14,

@@ -481,8 +481,8 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
               @change="onFileSelected"
             />
             <p class="hint">
-              Поддерживаются v1 и schemaVersion 2, 3, 4, 5 размером до 32 МБ. Открытие само по себе
-              не записывает файл в SQLite.
+              Поддерживаются v1 и schemaVersion 2–6 размером до 32 МБ. Открытие само по себе не
+              записывает файл в SQLite.
             </p>
             <p v-if="loading" class="hint" role="status">Проверяем файл…</p>
             <p v-if="errorMessage" class="error" role="alert">{{ errorMessage }}</p>
@@ -578,7 +578,7 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
                   Сохранить как новый черновик
                 </button>
                 <button type="button" :disabled="editorDirty || localBusy" @click="saveV5">
-                  Скачать JSON v5
+                  Скачать JSON v6
                 </button>
                 <button
                   v-if="imported.scheme.source.kind === 'legacy-html-v1'"

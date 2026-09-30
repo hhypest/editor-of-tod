@@ -252,7 +252,7 @@ export function useProjectSession(onProjectOpened: () => void) {
 
   function saveV5(): void {
     if (imported.value && !editorDirty.value) {
-      downloadJson(exportSchemeJson(imported.value.scheme), 'v5')
+      downloadJson(exportSchemeJson(imported.value.scheme), 'v6')
       modifiedSinceDownload.value = false
     }
   }
@@ -277,7 +277,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     beginSession()
     imported.value = {
       scheme,
-      format: 'scheme-v5',
+      format: 'scheme-v6',
       warnings: [
         PU66_LINKED_WARNING,
         'Вариант выбран по длине фронта работ, нормативная проверка и расстановка знаков не выполнены.',
@@ -374,7 +374,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     beginSession()
     imported.value = {
       scheme,
-      format: 'scheme-v5',
+      format: 'scheme-v6',
       warnings: ['Схема не прошла нормативную проверку.'],
     }
     history.value = startHistory(scheme)
@@ -557,7 +557,7 @@ export function useProjectSession(onProjectOpened: () => void) {
       beginSession(record.sessionId, record.version)
       imported.value = {
         scheme: record.scheme,
-        format: 'scheme-v5',
+        format: 'scheme-v6',
         warnings: ['Восстановлена рабочая копия; проверьте ввод и сохраните редакцию.'],
       }
       history.value = startHistory(record.scheme)

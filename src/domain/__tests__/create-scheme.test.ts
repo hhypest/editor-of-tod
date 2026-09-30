@@ -28,7 +28,7 @@ const options = {
 describe('scheme conditions without a pinned card (older projects and tests)', () => {
   it('starts B.34 with only entered measurements and supports editing and JSON roundtrip', () => {
     const scheme = createUnlinkedScheme(input, options)
-    expect(scheme.schemaVersion).toBe(5)
+    expect(scheme.schemaVersion).toBe(6)
     expect(scheme.crossing).toEqual({
       referenceId: 'TEST-NEW',
       source: 'entered-by-editor',
@@ -66,7 +66,7 @@ describe('scheme conditions without a pinned card (older projects and tests)', (
     const withText = savePlacement(edited, placement)
     expect(importSchemeJson(exportSchemeJson(withText))).toMatchObject({
       scheme: withText,
-      format: 'scheme-v5',
+      format: 'scheme-v6',
     })
     expect(withText.source).toEqual({ kind: 'created-in-editor' })
     expect(scheme.parameters.signDistancesMetres.d50).toBeNull()

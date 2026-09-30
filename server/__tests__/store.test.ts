@@ -332,7 +332,7 @@ describe('local SQLite registries', () => {
         .prepare('SELECT revision, scheme_json FROM project_revisions ORDER BY revision')
         .all() as { revision: number; scheme_json: string }[]
       expect(records.map((record) => JSON.parse(record.scheme_json).schemaVersion)).toEqual([
-        2, 5, 5,
+        2, 6, 6,
       ])
       expect(JSON.parse(records[0]!.scheme_json)).toEqual(previous)
     } finally {

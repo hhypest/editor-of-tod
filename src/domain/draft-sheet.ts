@@ -1,4 +1,5 @@
 import type { Scheme } from './model'
+import { responsibleLine } from './title-block'
 import { figureDimensions, type FigureDimension } from './figure-dimensions'
 import {
   anchorCoordinates,
@@ -161,7 +162,11 @@ export function projectDraftSheet(scheme: Scheme): DraftSheet {
     titleRows: [
       {
         label: 'Разработчик',
-        value: [scheme.titleBlock.developer.organization, scheme.titleBlock.developer.name]
+        value: [
+          scheme.titleBlock.developer.organization,
+          scheme.titleBlock.developer.position,
+          scheme.titleBlock.developer.name,
+        ]
           .filter(Boolean)
           .join(' · '),
       },
@@ -173,7 +178,10 @@ export function projectDraftSheet(scheme: Scheme): DraftSheet {
           .join(' · '),
       },
       { label: 'Период', value: scheme.titleBlock.work.period },
-      { label: 'Ответственные', value: scheme.titleBlock.responsible.filter(Boolean).join(' · ') },
+      {
+        label: 'Ответственные',
+        value: scheme.titleBlock.responsible.map(responsibleLine).filter(Boolean).join(' · '),
+      },
       {
         label: 'Владелец дороги',
         value: [

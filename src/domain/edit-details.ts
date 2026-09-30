@@ -1,4 +1,5 @@
 import { schemeSchema, type Scheme, type WorkZone } from './model'
+import { PHONE_PLACEHOLDER, phoneComplete } from './title-block'
 
 type WorkZoneDraft = {
   taperMetres: string
@@ -46,7 +47,9 @@ function cloneTitleBlock(title: Scheme['titleBlock']): Scheme['titleBlock'] {
   return {
     developer: { ...title.developer },
     work: { ...title.work },
-    responsible: [title.responsible[0], title.responsible[1]],
+    responsible: title.responsible.map((person) => ({
+      ...person,
+    })) as Scheme['titleBlock']['responsible'],
     approver: { ...title.approver },
     agreement: { ...title.agreement },
   }
@@ -123,6 +126,13 @@ function parseZone(zone: WorkZoneDraft | null, name: string): WorkZone | null {
 
 export function applySchemeDetails(scheme: Scheme, draft: SchemeDetailsDraft): Scheme {
   const { parameters } = draft
+  draft.titleBlock.responsible.forEach((person, index) => {
+    if (person.phone.trim() && !phoneComplete(person.phone.trim())) {
+      throw new SchemeEditError(
+        `Телефон ответственного № ${index + 1}: введите номер полностью в виде ${PHONE_PLACEHOLDER} или очистите поле.`,
+      )
+    }
+  })
   const candidate = {
     ...scheme,
     parameters: {
@@ -158,7 +168,13 @@ export function applySchemeDetails(scheme: Scheme, draft: SchemeDetailsDraft): S
         b34: parseZone(parameters.workZones.b34, 'Б.34'),
       },
     },
-    titleBlock: cloneTitleBlock(draft.titleBlock),
+    titleBlock: {
+      ...cloneTitleBlock(draft.titleBlock),
+      responsible: draft.titleBlock.responsible.map((person) => ({
+        ...person,
+        phone: person.phone.trim(),
+      })) as Scheme['titleBlock']['responsible'],
+    },
   }
   const checked = schemeSchema.safeParse(candidate)
   if (!checked.success) {

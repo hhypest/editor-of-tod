@@ -76,6 +76,7 @@ export function reviewScheme(
       title: 'Разработчик',
       fields: [
         ['организация', titleBlock.developer.organization, 'titleBlock.developer.organization'],
+        ['должность', titleBlock.developer.position, 'titleBlock.developer.position'],
         ['ФИО', titleBlock.developer.name, 'titleBlock.developer.name'],
         ['дата', titleBlock.developer.date, 'titleBlock.developer.date'],
       ],
@@ -92,10 +93,15 @@ export function reviewScheme(
     {
       id: 'responsible',
       title: 'Ответственные',
-      fields: [
-        ['первый', titleBlock.responsible[0], 'titleBlock.responsible.0'],
-        ['второй', titleBlock.responsible[1], 'titleBlock.responsible.1'],
-      ],
+      // Первый ответственный обязателен, второй проверяется, только если добавлен.
+      fields: titleBlock.responsible.flatMap((person, index): Field[] => {
+        const who = index === 0 ? 'первого' : 'второго'
+        return [
+          [`должность ${who}`, person.position, `titleBlock.responsible.${index}.position`],
+          [`ФИО ${who}`, person.name, `titleBlock.responsible.${index}.name`],
+          [`телефон ${who}`, person.phone, `titleBlock.responsible.${index}.phone`],
+        ]
+      }),
     },
     {
       id: 'approver',
