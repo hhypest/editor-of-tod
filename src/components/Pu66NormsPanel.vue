@@ -11,6 +11,7 @@ import {
   type Pu66Norms,
 } from '../domain/pu66-norms'
 import { getPu66Norms } from '../services/local-normatives'
+import { expectedTypesize, TWO_LANE_TYPESIZE_ROW } from '../domain/normative-defaults'
 
 const props = defineProps<{
   referenceId: string
@@ -63,6 +64,16 @@ const selectable = computed(() =>
   typesize.value === 'IV'
     ? typesize.value
     : null,
+)
+
+/**
+ * Схемы Б.33/Б.34 строятся для дороги с двумя полосами. Категория в ПУ-66 описывает дорогу в
+ * целом, а не число полос у переезда, поэтому строка таблицы по категории, отличная от
+ * двухполосной, — повод проверить число полос, а не готовый ответ.
+ */
+const twoLaneTypesize = computed(() => expectedTypesize('out', rules.value))
+const rowConflict = computed(
+  () => Boolean(typesizeRow.value) && typesizeRow.value !== TWO_LANE_TYPESIZE_ROW,
 )
 
 const rows = computed(() => (norms.value ? normRows(norms.value.technicalRows) : []))
@@ -124,6 +135,11 @@ function show(value: string | number | null): string {
               rules.sources['gost-sign-typesize']
             }}{{ rules.confirmed['gost-sign-typesize'] ? '' : '; параметр не подтверждён' }}). Число
             полос по категории проверьте на месте.
+            <strong v-if="rowConflict" class="conflict">
+              Схемы Б.33/Б.34 рассчитаны на дорогу с двумя полосами (одна закрыта, по другой пропуск
+              встречных направлений) — для неё типоразмер {{ twoLaneTypesize }}. Категория описывает
+              дорогу в целом; если у места работ две полосы, оставьте {{ twoLaneTypesize }}.
+            </strong>
             <button
               v-if="selectable"
               type="button"
@@ -248,5 +264,11 @@ tr.above td {
 }
 tr.differs td:last-child {
   color: #8a5a00;
+}
+.conflict {
+  display: block;
+  margin-top: 0.3rem;
+  color: #8a3b12;
+  font-weight: 600;
 }
 </style>

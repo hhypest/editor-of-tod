@@ -150,7 +150,9 @@ function restore(item: NormativeMarkData): void {
     return
   }
   const [, group, key] = item.field.split('.')
-  if (group === 'signDistancesMetres')
+  if (group === 'signSize' && typeof item.normative === 'string')
+    draft.value.parameters.signSize = item.normative as Scheme['parameters']['signSize']
+  else if (group === 'signDistancesMetres')
     draft.value.parameters.signDistancesMetres[key as DistanceField] = String(item.normative)
   else if (group === 'speedStagesKmh')
     draft.value.parameters.speedStagesKmh[Number(key)] = String(item.normative)
@@ -294,7 +296,7 @@ function applyDraft(): void {
           Расстояния вводятся в метрах, скорости — в км/ч. Для созданного в редакторе проекта
           изменение фронта через границу 30 м требует нового проекта с другим вариантом.
         </p>
-        <h3>Местоположение и разрешённая скорость</h3>
+        <h3>Местоположение, скорость и типоразмер знаков</h3>
         <div class="fields with-marks">
           <label
             ><span class="caption">Местоположение</span>
@@ -313,6 +315,17 @@ function applyDraft(): void {
               type="text"
             />
             <NormativeMark :mark="marks['parameters.approachSpeedKmh']" @restore="restore" />
+          </label>
+          <label
+            ><span class="caption">Типоразмер знаков</span>
+            <select v-model="draft.parameters.signSize" data-field="parameters.signSize">
+              <option value="auto">Уточнить</option>
+              <option value="I">I</option>
+              <option value="II">II</option>
+              <option value="III">III</option>
+              <option value="IV">IV (работы на дорогах IА, IБ)</option>
+            </select>
+            <NormativeMark :mark="marks['parameters.signSize']" @restore="restore" />
           </label>
         </div>
         <p class="hint">
@@ -370,16 +383,6 @@ function applyDraft(): void {
         </label>
         <h3>Условия и решение составителя</h3>
         <div class="fields">
-          <label
-            >Типоразмер знаков
-            <select v-model="draft.parameters.signSize">
-              <option value="auto">Уточнить</option>
-              <option value="I">I</option>
-              <option value="II">II</option>
-              <option value="III">III</option>
-              <option value="IV">IV (работы на дорогах IА, IБ)</option>
-            </select>
-          </label>
           <label
             >Вид фронта работ
             <select v-model="draft.parameters.frontStyle">

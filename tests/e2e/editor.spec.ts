@@ -657,3 +657,52 @@ test('distances and speeds follow normative values but stay editable; saved proj
   await page.getByLabel('Найти проект').fill('нет такого переезда')
   await expect(page.getByText('Ничего не найдено')).toBeVisible()
 })
+
+test('template plate 8.2.1 shows the dangerous section length and the sign size follows table 1', async ({
+  page,
+  request,
+}) => {
+  await importSampleCards(request)
+  await page.goto('/')
+  await fillNewProject(page, '12 км 3 пк', '90001:12:3')
+  await page.getByRole('button', { name: 'Создать проект' }).click()
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  // Двухполосная дорога вне населённого пункта: типоразмер II по таблице 1 ГОСТ Р 52289.
+  const size = page.locator('[data-field="parameters.signSize"]')
+  await expect(size).toHaveValue('II')
+  await expect(page.locator('label', { has: size })).toContainText('по нормативу')
+  await size.selectOption('III')
+  await expect(page.locator('label', { has: size })).toContainText('Изменено · норматив II')
+  await page.getByLabel('Регулирование Б.34').selectOption('two')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  await expect(page.locator('li', { hasText: 'Типоразмер знаков не по таблице 1' })).toBeVisible()
+
+  await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
+  await page.getByRole('button', { name: 'Собрать черновой шаблон' }).click()
+  // Отвод 10 + буфер 10 + фронт 18 = 38 м от начала отвода до конца работ.
+  const plates = page.locator('.print-host [data-drawn-sign="8.2.1_38"]')
+  await expect(plates).toHaveCount(2)
+  await expect(plates.first()).toContainText('38 м')
+})
+
+test('help shows the author, the MIT license and third-party components', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Справка', exact: true }).first().click()
+  await page
+    .getByRole('navigation', { name: 'Оглавление справки' })
+    .getByRole('button', { name: 'О программе и лицензии' })
+    .click()
+  const about = page.locator('[data-help="about"]')
+  await expect(about).toContainText('Манченко Иван Григорьевич')
+  await about.getByText('Текст лицензии (оригинал, имеет юридическую силу)').click()
+  await expect(about.locator('pre[lang="en"]')).toContainText('Permission is hereby granted')
+  // В сборке (exe) — список компонентов; в режиме разработки он не формируется.
+  await expect(
+    about.getByText(/Открыть полные тексты лицензий|Список формируется при сборке/),
+  ).toBeVisible()
+  if (process.env.TOD_E2E_EXE) {
+    await about.getByText(/Локальный сервер —/).click()
+    await expect(about.getByRole('cell', { name: 'pdfjs-dist' })).toBeVisible()
+  }
+})

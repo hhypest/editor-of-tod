@@ -28,6 +28,10 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: editor-of-tod-win-x64
-          path: release/editor-of-tod.exe
+          path: |
+            release/editor-of-tod.exe
+            release/LICENSE.txt
+            release/LICENSE.ru.txt
+            release/THIRD_PARTY_LICENSES.txt
           retention-days: 14
           if-no-files-found: error

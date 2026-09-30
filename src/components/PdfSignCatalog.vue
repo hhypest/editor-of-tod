@@ -301,7 +301,7 @@ function statusLabel(status: string): string {
         <summary>Исключаются из текущего набора · {{ plan.retiredCodes.length }}</summary>
         <p v-if="retiredOther.length" class="codes">{{ retiredOther.join(', ') }}</p>
         <p v-if="retiredDrawn.length" class="hint">
-          Рисуются программой без PNG (скорость 3.24 и расстояние 8.1.1):
+          Рисуются программой без PNG (скорость 3.24, расстояние 8.1.1, протяжённость 8.2.1):
           <span class="codes">{{ retiredDrawn.join(', ') }}</span
           >.
         </p>

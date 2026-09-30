@@ -1,6 +1,11 @@
 import { defaultLegacyParameters, schemeSchema, type Scheme } from './model'
 import { linkPu66Card } from './link-pu66'
-import { defaultSpeedStages, fillDistanceDefaults, type SchemeLocation } from './normative-defaults'
+import {
+  defaultSpeedStages,
+  expectedTypesize,
+  fillDistanceDefaults,
+  type SchemeLocation,
+} from './normative-defaults'
 import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import type { Pu66SchemeRecord } from './pu66-snapshot'
 import { selectTemplateByWorkFront } from './registry'
@@ -113,6 +118,9 @@ export function createUnlinkedScheme(
       ),
       ...legacyParameters,
       location: input.location,
+      // Типоразмер по таблице 1 ГОСТ Р 52289 для двухполосной дороги; в населённом пункте — по
+      // классу улицы, его выбирает составитель.
+      signSize: expectedTypesize(input.location, options.rules ?? PROTOTYPE_RULES) ?? 'auto',
       approachSpeedKmh,
       speedStagesKmh: speeds,
       yellowTemporarySigns: input.yellowTemporarySigns,

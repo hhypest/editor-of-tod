@@ -387,7 +387,12 @@ describe('local SQLite registries', () => {
     const upgraded = {
       ...scheme,
       template: { ...scheme.template, projectionVersion: 'draft-1' },
-      parameters: { ...scheme.parameters, location: 'auto', approachSpeedKmh: 60 },
+      parameters: {
+        ...scheme.parameters,
+        location: 'auto',
+        approachSpeedKmh: 60,
+        signSize: 'auto',
+      },
     }
     try {
       expect(store.getProject(scheme.id)?.scheme).toEqual(upgraded)

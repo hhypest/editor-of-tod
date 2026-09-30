@@ -187,7 +187,7 @@ function applyDraft(): void {
         .split(/[,;\n]/)
         .map((code) => code.trim())
         .filter(Boolean)
-      // Знаки 3.24 с числом и 8.1.1 с расстоянием программа дорисует сама.
+      // Знаки 3.24 с числом, 8.1.1 с расстоянием и 8.2.1 с протяжённостью программа дорисует сама.
       const allowed = (code: string) =>
         knownCodes.value.has(signImageCode(code, knownCodes.value)) || drawableWithoutImage(code)
       if (!catalog.value.length || codes.some((code) => !allowed(code))) {

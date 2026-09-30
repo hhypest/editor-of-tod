@@ -1,6 +1,13 @@
 {
   "name": "editor-of-tod",
   "version": "0.1.0",
+  "description": "Локальный редактор схем организации дорожного движения на время ремонта железнодорожных переездов",
+  "license": "MIT",
+  "author": "Манченко Иван Григорьевич",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hhypest/editor-of-tod.git"
+  },
   "private": true,
   "type": "module",
   "scripts": {
