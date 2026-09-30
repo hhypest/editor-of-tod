@@ -34,7 +34,8 @@ const props = defineProps<{
   modifiedSinceLocalSave: boolean
   previewOnly?: boolean
 }>()
-const sheet = computed(() => projectDraftSheet(props.scheme))
+const { rules: normativeRules } = useNormativeRules()
+const sheet = computed(() => projectDraftSheet(props.scheme, normativeRules.value))
 const paper = ref<SVGSVGElement | null>(null)
 const prefix = `sheet-${useId()}`
 const zoom = ref(props.previewOnly ? 0.19 : 0.75)
@@ -128,7 +129,6 @@ const blockers = computed(() => {
   return list
 })
 /** Пункты «Проверить вручную» без действующей отметки: выпуск листа недоступен. */
-const { rules: normativeRules } = useNormativeRules()
 const uncheckedItems = computed(() =>
   unmarkedChecks(props.scheme, reviewScheme(props.scheme, normativeRules.value)),
 )

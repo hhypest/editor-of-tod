@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { createUnlinkedScheme } from '../create-scheme'
 import { createPlacementDraft, newTextDraft, savePlacement } from '../edit-placements'
-import { movePlacement } from '../placement-workspace'
+import { anchorCoordinates, movePlacement, placementCoordinates } from '../placement-workspace'
+import { PROTOTYPE_RULES } from '../normative-parameters'
 import { schemeSchema, type Scheme } from '../model'
 import {
   buildTemplatePlacements,
@@ -38,6 +39,40 @@ function example(
 }
 
 describe('preliminary B.33/B.34 layout', () => {
+  it('puts two regulators before the work zone for each direction (ODM 12.7.2, table 5)', () => {
+    for (const front of [18, 40]) {
+      const scheme = example(front, 'out', 'two')
+      const anchors = anchorCoordinates(scheme)
+      const zone = scheme.parameters.workZones[scheme.template.code]!
+      const unitsPerMetre = (anchors.Z1 - anchors.Z0) / zone.workMetres
+      const regulators = buildTemplatePlacements(scheme)
+        .filter((item) => item.kind === 'element' && item.elementKind === 'reg')
+        .map((item) => placementCoordinates(item, anchors).x)
+        .sort((a, b) => a - b)
+      expect(regulators).toHaveLength(2)
+      const [left, right] = regulators as [number, number]
+      // Скорость в зоне 40 км/ч → 15 м по табл. 5; оба регулировщика вне места работ.
+      const minimum = 15 * unitsPerMetre
+      expect(anchors.Z0 - left).toBeGreaterThanOrEqual(minimum - 1)
+      expect(left).toBeLessThan(anchors.L0)
+      expect(right - anchors.Z1).toBeGreaterThanOrEqual(minimum - 1)
+      expect(right).toBeGreaterThan(anchors.E)
+    }
+    // Подтверждённое расстояние больше — регулировщики отодвигаются.
+    const scheme = example(18, 'out', 'two')
+    const anchors = anchorCoordinates(scheme)
+    const far = {
+      ...PROTOTYPE_RULES,
+      regulatorDistance: { ...PROTOTYPE_RULES.regulatorDistance, 40: 30 },
+    }
+    const right = Math.max(
+      ...buildTemplatePlacements(scheme, far)
+        .filter((item) => item.kind === 'element' && item.elementKind === 'reg')
+        .map((item) => placementCoordinates(item, anchors).x),
+    )
+    expect(right - anchors.Z1).toBeGreaterThanOrEqual(30 * ((anchors.Z1 - anchors.Z0) / 18) - 1)
+  })
+
   it.each([
     [40, 'out', 'two', 2, false],
     [40, 'in', 'two', 2, false],

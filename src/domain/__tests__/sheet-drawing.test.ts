@@ -164,6 +164,9 @@ describe('vector A4 sheet', () => {
     expect(all).toContain(
       '1. Пропуск транспорта регулируют два регулировщика у начала и конца места работ (решение составителя).',
     )
+    expect(all).toContain(
+      '2. Регулировщики стоят не ближе 15 м до рабочей зоны (ОДМ 218.6.019, таблица 5).',
+    )
   })
 
   it('prints the carriageway width as recorded and never derives a lane width', () => {

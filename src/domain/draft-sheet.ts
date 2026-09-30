@@ -1,4 +1,5 @@
 import type { Scheme } from './model'
+import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import { responsibleLine } from './title-block'
 import { figureDimensions, type FigureDimension } from './figure-dimensions'
 import {
@@ -61,6 +62,11 @@ export type DraftSheet = {
   axisX: number
   anchors: ReturnType<typeof anchorCoordinates>
   regulationMode: Scheme['parameters']['regulation']['mode']
+  /**
+   * Расстояние от регулировщика до рабочей зоны по табл. 5 ОДМ для скорости в зоне и его
+   * источник; null — скорости нет в таблице.
+   */
+  regulatorDistance: { metres: number; source: string } | null
   settlement: Scheme['parameters']['location']
   signSize: Scheme['parameters']['signSize']
   titleBlock: Scheme['titleBlock']
@@ -83,7 +89,10 @@ function renderDistanceLabel(
 }
 
 /** Whitelist of fields used on a provisional A4 sheet; never include the whole PU-66 snapshot or legacy source. */
-export function projectDraftSheet(scheme: Scheme): DraftSheet {
+export function projectDraftSheet(
+  scheme: Scheme,
+  rules: NormativeRules = PROTOTYPE_RULES,
+): DraftSheet {
   const zone = scheme.parameters.workZones[scheme.template.code]
   if (!zone) throw new Error('Размеры выбранного варианта не заполнены.')
   const anchors = anchorCoordinates(scheme)
@@ -155,6 +164,12 @@ export function projectDraftSheet(scheme: Scheme): DraftSheet {
     axisX: anchors.AX,
     anchors,
     regulationMode: scheme.parameters.regulation.mode,
+    regulatorDistance: (() => {
+      const metres = rules.regulatorDistance[scheme.parameters.speedStagesKmh[2]]
+      return metres === undefined
+        ? null
+        : { metres, source: rules.sources['odm-regulator-distance'] ?? 'ОДМ 218.6.019, табл. 5' }
+    })(),
     settlement: scheme.parameters.location,
     signSize: scheme.parameters.signSize,
     titleBlock: JSON.parse(JSON.stringify(scheme.titleBlock)) as Scheme['titleBlock'],
