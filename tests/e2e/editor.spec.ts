@@ -342,6 +342,21 @@ test('release sheet drops the draft mark and downloads a PNG', async ({ page, re
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   const host = page.locator('.print-host')
   await expect(host.locator('.draft-mark')).toHaveCount(1)
+  // Выпуск недоступен, пока не отмечены пункты «Проверить вручную».
+  await expect(host.getByLabel(/Я проверил лист/)).toBeDisabled()
+  await expect(host).toContainText('не отмечены пункты «Проверить вручную»')
+  const checks = page.locator('.checks li')
+  const total = await checks.count()
+  expect(total).toBeGreaterThan(1)
+  for (let index = 0; index < total; index++) {
+    await checks.nth(index).getByLabel('Проверено').check()
+    await expect(checks.nth(index)).toHaveClass(/marked/)
+  }
+  await expect(page.getByRole('heading', { name: /отмечено (\d+) из \1/ })).toBeVisible()
+  // Снятая отметка снова закрывает выпуск.
+  await checks.last().getByLabel('Проверено').uncheck()
+  await expect(host.getByLabel(/Я проверил лист/)).toBeDisabled()
+  await checks.last().getByLabel('Проверено').check()
   await host.getByLabel(/Я проверил лист/).check()
   await expect(host.getByRole('heading', { name: 'Выпускной лист A4' })).toBeVisible()
   await expect(host.locator('.draft-mark')).toHaveCount(0)

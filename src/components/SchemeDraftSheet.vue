@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useNormativeRules } from '../composables/useNormativeRules'
+import { unmarkedChecks } from '../domain/review-marks'
+import { reviewScheme } from '../domain/review-scheme'
 import { templateLabel } from '../domain/registry'
 import { computed, nextTick, onMounted, ref, useId, watch } from 'vue'
 import type { Scheme } from '../domain/model'
@@ -123,8 +126,15 @@ const blockers = computed(() => {
     )
   return list
 })
-/** Выпускной лист только после подтверждения и без блокирующих замечаний. */
-const release = computed(() => releaseConfirmed.value && !blockers.value.length)
+/** Пункты «Проверить вручную» без действующей отметки: выпуск листа недоступен. */
+const { rules: normativeRules } = useNormativeRules()
+const uncheckedItems = computed(() =>
+  unmarkedChecks(props.scheme, reviewScheme(props.scheme, normativeRules.value)),
+)
+/** Выпускной лист только после подтверждения, отметки всех проверок и без блокирующих замечаний. */
+const release = computed(
+  () => releaseConfirmed.value && !blockers.value.length && !uncheckedItems.value.length,
+)
 const drawing = computed(() =>
   release.value
     ? drawSheet(sheet.value, { ...drawingOptions.value, release: true })
@@ -325,7 +335,7 @@ async function exportPng(): Promise<void> {
           <input
             v-model="releaseConfirmed"
             type="checkbox"
-            :disabled="Boolean(blockers.length) || exporting"
+            :disabled="Boolean(blockers.length) || Boolean(uncheckedItems.length) || exporting"
           />
           Я проверил лист: знаки, расстояния, реквизиты и применимость схемы к условиям работ
         </label>
@@ -333,9 +343,11 @@ async function exportPng(): Promise<void> {
           {{
             blockers.length
               ? 'Выпуск недоступен, пока есть замечания ниже.'
-              : release
-                ? 'Выпускной лист: без отметки «черновик» и служебных строк. Любое изменение проекта возвращает черновик.'
-                : 'После отметки лист печатается и выгружается без отметки «черновик». Отметка не сохраняется в проекте и не заменяет согласование.'
+              : uncheckedItems.length
+                ? `Выпуск недоступен: не отмечены пункты «Проверить вручную» (${uncheckedItems.length}): ${uncheckedItems.map((item) => item.title).join('; ')}.`
+                : release
+                  ? 'Выпускной лист: без отметки «черновик» и служебных строк. Любое изменение проекта возвращает черновик.'
+                  : 'После отметки лист печатается и выгружается без отметки «черновик». Отметка не сохраняется в проекте и не заменяет согласование.'
           }}
         </p>
       </fieldset>

@@ -11,6 +11,11 @@ export type ReviewFinding = {
   target: '#details-title' | '#placements-title' | '#pu66-link-title' | '#imported-title'
   /** Путь первого незаполненного поля формы (`data-field`), к которому переходит «Перейти». */
   field?: string
+  /**
+   * Данные, которые проверяет составитель в пункте «Проверить вручную». Не показываются, но
+   * входят в отпечаток отметки: после их изменения отметка «Проверено» перестаёт действовать.
+   */
+  basis?: string
 }
 
 const distanceNames = ['d300', 'd250', 'd150', 'd50', 'n100', 'n50'] as const
@@ -176,6 +181,7 @@ export function reviewScheme(
           ? 'Идентификатор перенесён из старого проекта; локальная карточка ПУ-66 не закреплена. Сверьте данные перед использованием.'
           : 'Идентификатор введён вручную; локальная карточка ПУ-66 не закреплена. Сверьте данные перед использованием.',
     target: '#pu66-link-title',
+    basis: JSON.stringify(crossing),
   })
 
   findings.push({
@@ -184,6 +190,13 @@ export function reviewScheme(
     title: 'Вариант и расстановка',
     detail: `Вариант ${templateLabel(scheme.template.code)} и размещение объектов не прошли предметную проверку. Сверьте геометрию, условия работ, существующие знаки и применимую редакцию ОДМ.`,
     target: '#placements-title',
+    basis: JSON.stringify([
+      scheme.template,
+      parameters.workZones[scheme.template.code],
+      parameters.signDistancesMetres,
+      parameters.speedStagesKmh,
+      placements,
+    ]),
   })
 
   const differingDimensions = figureDimensions(scheme, rules).filter(
@@ -220,6 +233,7 @@ export function reviewScheme(
       title: 'Условия движения для Б.34',
       detail: `На листе размещено регулировщиков: ${regulators}. Подпись к рисунку Б.34 указывает на регулировщика при интенсивности более ${rules.signsHourly} авт./ч в двух направлениях или ограниченной видимости (${rules.sources['odm-signs-hourly']}). Оцените условия на месте и зафиксируйте решение составителя.`,
       target: '#placements-title',
+      basis: JSON.stringify([parameters.regulation, parameters.location, regulators]),
     })
   }
 
@@ -253,6 +267,14 @@ export function reviewScheme(
       detail:
         'Сверьте коды, изображения PNG и применимость знаков в локальном каталоге. Совпадение кода с каталогом не подтверждает применимость.',
       target: '#imported-title',
+      basis: JSON.stringify([
+        placements.flatMap((placement) =>
+          placement.kind === 'sign-post' ? [placement.signIds] : [],
+        ),
+        parameters.yellowTemporarySigns,
+        parameters.signSize,
+        scheme.signImages,
+      ]),
     })
   }
 
