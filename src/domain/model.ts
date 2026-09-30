@@ -282,7 +282,7 @@ export const schemeSchema = z
       ...parameterFields,
       signDistancesMetres: signDistancesV5Schema,
       location: z.enum(['auto', 'in', 'out']),
-      signSize: z.enum(['auto', 'I', 'II', 'III']),
+      signSize: z.enum(['auto', 'I', 'II', 'III', 'IV']),
       settlementSpeedKmh: finite.positive(),
       lastSettlement: z.boolean().nullable(),
       frontStyle: z.enum(['part', 'solid']),

@@ -108,4 +108,33 @@ describe('first launch with synthetic source files', () => {
       (await parsePu66(await createSampleWorkbook(ordinary), ordinary.filename)).card.key,
     ).toBe('90001:12:3')
   })
+
+  it('gives the local editor traffic, visibility and the norm column of a synthetic card', async () => {
+    const sample = sampleCards[0]!
+    const parsed = await parsePu66(await createSampleWorkbook(sample), sample.filename)
+    const store = new RegistryStore(':memory:')
+    try {
+      store.importPu66([parsed])
+      const norms = store.getPu66Norms(parsed.card.key)!
+      expect(norms).toMatchObject({
+        referenceId: '90001:12:3',
+        carCountPerDay: parsed.card.carCountPerDay,
+        roadCategory: parsed.card.roadCategory,
+        revision: 1,
+      })
+      expect(norms.technicalRows.length).toBeGreaterThanOrEqual(30)
+      expect(Object.keys(norms.technicalRows[0]!)).toEqual([
+        'item',
+        'label',
+        'statedNorm',
+        'previous',
+        'current',
+      ])
+      // Выборка для схемы по-прежнему без технической таблицы и интенсивности.
+      expect(store.getPu66Scheme(parsed.card.key)).not.toHaveProperty('technicalRows')
+      expect(store.getPu66Norms('90009:1:1')).toBeNull()
+    } finally {
+      store.close()
+    }
+  })
 })

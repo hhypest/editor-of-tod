@@ -198,3 +198,25 @@ export function localCardSummary(card: Pu66Card) {
     carCountPerDay: card.carCountPerDay,
   }
 }
+
+/**
+ * Сведения карточки для нормативных подсказок в локальном редакторе: интенсивность, категория
+ * дороги, видимость и техническая таблица с графой «Норма». Не входят в JSON проекта и на лист.
+ */
+export function normativeFields(card: Pu66Card) {
+  return {
+    referenceId: card.key,
+    roadCategory: card.roadCategory,
+    carCountPerDay: card.carCountPerDay,
+    trainCountPerDay: card.trainCountPerDay,
+    trainVisibilityMetres: card.trainVisibilityMetres,
+    years: card.years,
+    technicalRows: card.technicalRows.map((row) => ({
+      item: row.item,
+      label: row.label,
+      statedNorm: row.statedNorm,
+      previous: row.previous,
+      current: row.current,
+    })),
+  }
+}

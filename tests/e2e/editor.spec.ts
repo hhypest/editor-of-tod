@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 import { zipSync } from 'fflate'
 import { PNG } from 'pngjs'
 import { createSampleWorkbook, sampleCards } from '../../scripts/generate-pu66-samples'
-import { fictionalSignStandard } from '../../server/__tests__/pdf-fixture'
+import { fictionalMethodology, fictionalSignStandard } from '../../server/__tests__/pdf-fixture'
 
 const api = 'http://127.0.0.1:4100'
 const origin = 'http://127.0.0.1:5173'
@@ -63,7 +63,7 @@ test('review findings move focus to the first empty field', async ({ page }) => 
   await expect(page.getByRole('heading', { name: 'Знаки и объекты', level: 1 })).toBeVisible()
 })
 
-test('unverified B.34 regulation hint explains the prototype rules but cannot be applied', async ({
+test('B.34 regulation hint with unconfirmed parameters explains the rules but cannot be applied', async ({
   page,
 }) => {
   await page.goto('/')
@@ -79,14 +79,15 @@ test('unverified B.34 regulation hint explains the prototype rules but cannot be
   const advice = page.locator('.advice')
   await expect(advice).toContainText('нет данных')
   await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('180')
-  await expect(advice.getByRole('heading')).toContainText('не проверены')
+  await expect(advice.getByRole('heading')).toContainText('неподтверждёнными параметрами')
   await expect(advice.getByRole('heading')).toContainText('знаки приоритета 2.6/2.7')
   await expect(advice.getByRole('button')).toHaveCount(0)
   await expect(page.getByLabel('Регулирование Б.34')).toHaveValue('auto')
   await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('300')
   await page.getByLabel('Прямой участок дороги').check()
   await expect(advice.getByRole('heading')).toContainText('один регулировщик')
-  await expect(advice).toContainText('значение не проверено')
+  await expect(advice).toContainText('Не подтверждены: Интенсивность')
+  await expect(advice).toContainText('«Нормативные параметры»')
 })
 
 test('restores applied edits and unapplied fields after the window closes', async ({
@@ -418,6 +419,40 @@ test('extracts the sign catalog from the PDF of a standard in the library', asyn
   ).toBeVisible()
   await page.locator('#sign-search').fill('1.16_ж')
   await expect(page.locator('.gallery figcaption')).toHaveText(['1.16_ж'])
+})
+
+test('confirms a normative parameter from the text of an attached document', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Реестры', exact: true }).click()
+  await page.getByRole('button', { name: 'Нормативные документы' }).click()
+  const library = page.locator('.library')
+  await library.locator('input[type="file"]').setInputFiles({
+    name: 'odm-218.6.019-2026.pdf',
+    mimeType: 'application/pdf',
+    buffer: fictionalMethodology(520),
+  })
+  await expect(library.getByLabel('Обозначение', { exact: true })).toHaveValue('ОДМ 218.6.019')
+  await library.getByLabel('Дата введения в действие').fill('2026-01-01')
+  await library.getByRole('button', { name: 'Проверить документ' }).click()
+  await library.getByRole('button', { name: /Добавить в библиотеку/ }).click()
+  await expect(library).toContainText('добавлен в библиотеку')
+
+  await page.getByRole('button', { name: 'Нормативные параметры' }).click()
+  const box = page.locator('.parameters')
+  const item = box.locator('[data-parameter="odm-signs-hourly"]')
+  await expect(item).toContainText('ОДМ 218.6.019-2026, п. 5.4.4')
+  await expect(item).toContainText('используется значение прототипа')
+  await item.getByRole('button', { name: 'Проверить и подтвердить' }).click()
+  await expect(item.locator('.quote')).toContainText('протяженностью менее 45 м')
+  await expect(item).toContainText('Значение из текста: 260 авт/ч.')
+  await expect(item.getByLabel('Значение, авт/ч')).toHaveValue('260')
+  await expect(item.getByRole('button', { name: 'Подтвердить значение' })).toBeDisabled()
+  await box.getByLabel('Кто подтверждает (для журнала)').fill('Учебный составитель')
+  await item.getByRole('button', { name: 'Подтвердить значение' }).click()
+  await expect(box).toContainText('подтверждено значение 260 авт/ч')
+  await expect(item).toContainText('Подтверждено')
+  await expect(item.locator('.value')).toHaveText('260 авт/ч')
+  await expect(box).toContainText('Подтверждено 1 из 8')
 })
 
 test('A4 print contains exactly one page', async ({ page }) => {

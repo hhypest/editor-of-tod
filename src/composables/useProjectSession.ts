@@ -9,6 +9,7 @@ import {
 import type { Scheme } from '../domain/model'
 import { schemeSchema } from '../domain/model'
 import { rebuildTemplatePlacements, TemplateBuildError } from '../domain/template-placements'
+import { useNormativeRules } from './useNormativeRules'
 import { clearPinsAfterSignChange, pinSignImages, usedSignCodes } from '../domain/sign-images'
 import {
   deleteRecoveryDraft,
@@ -36,6 +37,7 @@ const PU66_LINKED_WARNING =
   'Локальная карточка ПУ-66 закреплена как снимок; её актуальность нужно проверить.'
 
 export function useProjectSession(onProjectOpened: () => void) {
+  const { rules: normativeRules } = useNormativeRules()
   const imported = shallowRef<ImportResult | null>(null)
   const selectedFileName = ref('')
   const errorMessage = ref('')
@@ -457,7 +459,7 @@ export function useProjectSession(onProjectOpened: () => void) {
         scheme: rebuilt,
         keptSlots,
         staleSlots,
-      } = rebuildTemplatePlacements(imported.value.scheme)
+      } = rebuildTemplatePlacements(imported.value.scheme, normativeRules.value)
       onProjectApplied(rebuilt)
       selectedPlacementId.value = null
       templateMessage.value =

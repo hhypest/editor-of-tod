@@ -1,4 +1,5 @@
 import { schemeSchema, type Scheme } from './model'
+import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import { parseHourly } from './regulation-advice'
 
 type Placement = Scheme['placements'][number]
@@ -37,7 +38,7 @@ export class TemplateBuildError extends Error {
   }
 }
 
-function checkConditions(scheme: Scheme): void {
+function checkConditions(scheme: Scheme, rules: NormativeRules): void {
   const { parameters, template } = scheme
   if (parameters.location === 'auto') {
     throw new TemplateBuildError('На этапе 2 укажите, находится ли переезд в населённом пункте.')
@@ -51,14 +52,14 @@ function checkConditions(scheme: Scheme): void {
   }
   if (regulation.mode === 'signs') {
     const hourly = parseHourly(regulation.hourly)
-    if (hourly === null || hourly >= 250 || regulation.vis) {
+    if (hourly === null || hourly >= rules.signsHourly || regulation.vis) {
       throw new TemplateBuildError(
-        'Для варианта со знаками 2.6/2.7 укажите интенсивность менее 250 авт./ч и подтвердите достаточную видимость (ОДМ, п. 5.4.4).',
+        `Для варианта со знаками 2.6/2.7 укажите интенсивность менее ${rules.signsHourly} авт./ч и подтвердите достаточную видимость (${rules.sources['odm-signs-hourly']}).`,
       )
     }
-    if (parameters.workZones.b34?.taperMetres !== 15) {
+    if (parameters.workZones.b34?.taperMetres !== rules.signsTaperMetres) {
       throw new TemplateBuildError(
-        'Для знаков 2.6/2.7 проверьте и укажите отгон 15 м (ОДМ, п. 4.1.8.3).',
+        `Для знаков 2.6/2.7 проверьте и укажите отгон ${rules.signsTaperMetres} м (${rules.sources['odm-signs-taper']}).`,
       )
     }
   }
@@ -86,12 +87,15 @@ function distancePlate(metres: number | null, marker: string): string {
   return metres === 300 ? '8.1.1' : `8.1.1_${metres}`
 }
 
-/** Промежуточные ступени скорости в населённом пункте: шаг не более 20 км/ч до скорости в зоне. */
-export function settlementSteps(approachKmh: number, zoneKmh: number): number[] {
+/**
+ * Промежуточные ступени скорости в населённом пункте: шаг не более `stepKmh` (нормативный
+ * параметр «шаг ступенчатого ограничения», ГОСТ Р 52289, п. 5.4.22) до скорости в зоне.
+ */
+export function settlementSteps(approachKmh: number, zoneKmh: number, stepKmh = 20): number[] {
   const steps: number[] = []
   let current = approachKmh
-  while (current - zoneKmh > 20) {
-    current -= 20
+  while (current - zoneKmh > stepKmh) {
+    current -= stepKmh
     steps.push(current)
   }
   return steps
@@ -104,8 +108,11 @@ export function settlementSteps(approachKmh: number, zoneKmh: number): number[] 
  * приоритета — 2.6 с табличкой 8.1.1 и 2.7. Generated objects can be rebuilt without touching
  * manual edits.
  */
-export function buildTemplatePlacements(scheme: Scheme): Placement[] {
-  checkConditions(scheme)
+export function buildTemplatePlacements(
+  scheme: Scheme,
+  rules: NormativeRules = PROTOTYPE_RULES,
+): Placement[] {
+  checkConditions(scheme, rules)
   const { parameters, template } = scheme
   const shortFront = template.code === 'b34'
   const priority = shortFront && parameters.regulation.mode === 'signs'
@@ -178,7 +185,9 @@ export function buildTemplatePlacements(scheme: Scheme): Placement[] {
     post('R:end', ['3.31', yellow('3.20')], 'E', after[2], 'down', 'right', null)
   } else {
     const layout = draftTemplateProfile.offsets.settlement[priority ? 'priority' : 'regular']
-    const steps = settlementSteps(parameters.settlementSpeedKmh, zone).map(speed)
+    const steps = settlementSteps(parameters.settlementSpeedKmh, zone, rules.speedStepKmh).map(
+      speed,
+    )
     post('L:warning', ['1.25', ...steps], 'L0', layout.far, 'down', 'left', '{n100}')
     post(
       'L:narrowing',
@@ -273,7 +282,10 @@ export function buildTemplatePlacements(scheme: Scheme): Placement[] {
   return placements
 }
 
-export function rebuildTemplatePlacements(scheme: Scheme): {
+export function rebuildTemplatePlacements(
+  scheme: Scheme,
+  rules: NormativeRules = PROTOTYPE_RULES,
+): {
   scheme: Scheme
   keptSlots: number
   /** Вручную изменённые объекты прежней версии шаблона: у них нет места в новой раскладке. */
@@ -281,7 +293,7 @@ export function rebuildTemplatePlacements(scheme: Scheme): {
 } {
   const manual = scheme.placements.filter((placement) => !placement.generatedByTemplate)
   const taken = new Set(manual.flatMap((placement) => placement.templateSlot ?? []))
-  const built = buildTemplatePlacements({ ...scheme, placements: manual })
+  const built = buildTemplatePlacements({ ...scheme, placements: manual }, rules)
   const current = new Set(built.flatMap((placement) => placement.templateSlot ?? []))
   const generated = built.filter(
     (placement) => !placement.templateSlot || !taken.has(placement.templateSlot),

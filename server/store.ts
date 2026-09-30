@@ -29,13 +29,20 @@ import {
   type Pu66Verification,
   type Pu66VerificationWrite,
 } from '../src/domain/pu66-review.ts'
-import { type Pu66Card, type Pu66Import, localCardSummary, schemeFields } from './pu66.ts'
+import {
+  type Pu66Card,
+  type Pu66Import,
+  localCardSummary,
+  normativeFields,
+  schemeFields,
+} from './pu66.ts'
 import { type SignImport } from './signs.ts'
 import {
   documentMetaSchema,
   type DocumentMeta,
   type DocumentRecord,
 } from '../src/domain/normative-documents.ts'
+import type { ParameterConfirmation } from '../src/domain/normative-parameters.ts'
 
 export type SignCatalogSource = {
   documentCode: string
@@ -192,7 +199,8 @@ export class RegistryStore {
         version !== 7 &&
         version !== 8 &&
         version !== 9 &&
-        version !== 10
+        version !== 10 &&
+        version !== 11
       ) {
         throw new Error(`Неизвестная версия локальной базы: ${version}. Файл не изменён.`)
       }
@@ -419,6 +427,36 @@ export class RegistryStore {
             'ALTER TABLE sign_catalog_batches ADD COLUMN document_id INTEGER REFERENCES normative_documents(id)',
           )
         this.db.exec('PRAGMA user_version = 10')
+      }
+      if (version < 11) {
+        this.db.exec(`
+        BEGIN;
+        CREATE TABLE IF NOT EXISTS document_pages (
+          document_id INTEGER NOT NULL REFERENCES normative_documents(id),
+          page INTEGER NOT NULL,
+          text TEXT NOT NULL,
+          PRIMARY KEY (document_id, page)
+        );
+        CREATE TABLE IF NOT EXISTS parameter_confirmations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          parameter_id TEXT NOT NULL,
+          document_id INTEGER REFERENCES normative_documents(id),
+          document_label TEXT NOT NULL,
+          clause TEXT NOT NULL,
+          page INTEGER,
+          quote TEXT NOT NULL,
+          fragment TEXT NOT NULL,
+          value_json TEXT NOT NULL,
+          confirmed_by TEXT NOT NULL,
+          confirmed_at TEXT NOT NULL,
+          note TEXT NOT NULL,
+          recorded_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS parameter_confirmations_by_parameter
+          ON parameter_confirmations(parameter_id, id);
+        PRAGMA user_version = 11;
+        COMMIT;
+      `)
       }
       if (this.listNormative().length === 0) {
         for (const entry of initialNormativeEntries) this.saveNormative(entry, 0)
@@ -1040,6 +1078,23 @@ export class RegistryStore {
       : null
   }
 
+  getPu66Norms(
+    requestedKey: string,
+  ): (ReturnType<typeof normativeFields> & { revision: number; updatedAt: string }) | null {
+    const key = this.resolvePu66Key(requestedKey)
+    if (!key) return null
+    const row = this.db
+      .prepare('SELECT payload_json, revision, updated_at FROM pu66_cards WHERE key = ?')
+      .get(key) as { payload_json: string; revision: number; updated_at: string } | undefined
+    return row
+      ? {
+          ...normativeFields(JSON.parse(row.payload_json) as Pu66Card),
+          revision: row.revision,
+          updatedAt: row.updated_at,
+        }
+      : null
+  }
+
   latestSignCatalog(): {
     id: number
     documentCode: string
@@ -1452,8 +1507,91 @@ export class RegistryStore {
       )
     if (this.listDocuments().some((document) => document.amendsId === id))
       throw new DocumentInUse('Сначала удалите изменения, прикреплённые к этому документу.')
+    const confirmations = this.db
+      .prepare('SELECT COUNT(*) AS count FROM parameter_confirmations WHERE document_id = ?')
+      .get(id) as { count: number }
+    if (confirmations.count)
+      throw new DocumentInUse(
+        'По этому документу подтверждены нормативные параметры: запись нужна для истории и не удаляется.',
+      )
+    this.db.prepare('DELETE FROM document_pages WHERE document_id = ?').run(id)
     this.db.prepare('DELETE FROM normative_documents WHERE id = ?').run(id)
     return true
+  }
+
+  /** Сохранённый текст страниц документа или null, если текст ещё не извлекался. */
+  getDocumentText(id: number): string[] | null {
+    const rows = this.db
+      .prepare('SELECT page, text FROM document_pages WHERE document_id = ? ORDER BY page')
+      .all(id) as Array<{ page: number; text: string }>
+    return rows.length ? rows.map((row) => row.text) : null
+  }
+
+  saveDocumentText(id: number, pages: readonly string[]): void {
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      this.db.prepare('DELETE FROM document_pages WHERE document_id = ?').run(id)
+      const insert = this.db.prepare(
+        'INSERT INTO document_pages (document_id, page, text) VALUES (?, ?, ?)',
+      )
+      // Пустой документ (скан без текста) сохраняется одной пустой страницей, чтобы не
+      // разбирать его повторно.
+      ;(pages.length ? pages : ['']).forEach((text, index) => insert.run(id, index + 1, text))
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
+  listParameterConfirmations(): ParameterConfirmation[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT id, parameter_id, document_id, document_label, clause, page, quote, fragment,
+                  value_json, confirmed_by, confirmed_at, note
+             FROM parameter_confirmations ORDER BY parameter_id, id`,
+        )
+        .all() as Array<Record<string, unknown>>
+    ).map((row) => ({
+      id: Number(row.id),
+      parameterId: String(row.parameter_id),
+      documentId: row.document_id === null ? null : Number(row.document_id),
+      documentLabel: String(row.document_label),
+      clause: String(row.clause),
+      page: row.page === null ? null : Number(row.page),
+      quote: String(row.quote),
+      fragment: String(row.fragment),
+      value: JSON.parse(String(row.value_json)) as ParameterConfirmation['value'],
+      confirmedBy: String(row.confirmed_by),
+      confirmedAt: String(row.confirmed_at),
+      note: String(row.note),
+    }))
+  }
+
+  addParameterConfirmation(input: Omit<ParameterConfirmation, 'id'>): ParameterConfirmation {
+    const row = this.db
+      .prepare(
+        `INSERT INTO parameter_confirmations
+          (parameter_id, document_id, document_label, clause, page, quote, fragment, value_json,
+           confirmed_by, confirmed_at, note, recorded_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+      )
+      .get(
+        input.parameterId,
+        input.documentId,
+        input.documentLabel,
+        input.clause,
+        input.page,
+        input.quote,
+        input.fragment,
+        JSON.stringify(input.value),
+        input.confirmedBy,
+        input.confirmedAt,
+        input.note,
+        this.now(),
+      ) as { id: number }
+    return { ...input, id: row.id }
   }
 
   async createBackup(): Promise<string> {

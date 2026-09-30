@@ -5,6 +5,7 @@ import ImportedData from './components/ImportedData.vue'
 import LocalProjects from './components/LocalProjects.vue'
 import NewScheme from './components/NewScheme.vue'
 import NormativeDocuments from './components/NormativeDocuments.vue'
+import NormativeParameters from './components/NormativeParameters.vue'
 import PlacementEditor from './components/PlacementEditor.vue'
 import Pu66Linker from './components/Pu66Linker.vue'
 import SchemeDraftSheet from './components/SchemeDraftSheet.vue'
@@ -16,12 +17,14 @@ import ProjectDataInspector from './components/ProjectDataInspector.vue'
 import { reviewScheme, type ReviewFinding } from './domain/review-scheme'
 import { usedSignCodes } from './domain/sign-images'
 import { useProjectSession } from './composables/useProjectSession'
+import { useNormativeRules } from './composables/useNormativeRules'
 
 type View = 'projects' | 'source' | 'geometry' | 'objects' | 'review' | 'registries'
 const stages = ['source', 'geometry', 'objects', 'review'] as const
 const activeView = ref<View>('projects')
 const projectTab = ref<'new' | 'file' | 'local'>('new')
-const registryTab = ref<'imports' | 'documents' | 'entries'>('imports')
+const { reload: reloadNormativeRules } = useNormativeRules()
+const registryTab = ref<'imports' | 'documents' | 'parameters' | 'entries'>('imports')
 const registriesVisited = ref(false)
 const setupStatus = ref<{ cards: number; signs: number } | null>(null)
 const setupError = ref('')
@@ -69,7 +72,10 @@ const {
 } = useProjectSession(() => showView('source'))
 
 const signCatalogVersion = ref(0)
-onMounted(() => void refreshSetupStatus())
+onMounted(() => {
+  void refreshSetupStatus()
+  void reloadNormativeRules()
+})
 const saveState = computed(() => {
   if (recoveryStatus.value === 'error') return 'Копия восстановления не записана'
   if (recoveryStatus.value === 'pending' || recoveryStatus.value === 'saving')
@@ -114,6 +120,8 @@ async function openSetupImport(target: 'pdf-sign-import' | 'pu66-import'): Promi
 
 function onSignsUpdated(): void {
   signCatalogVersion.value++
+  // Смена документов меняет действующие редакции нормативных параметров.
+  void reloadNormativeRules()
   void refreshSetupStatus()
 }
 
@@ -469,6 +477,13 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
             </button>
             <button
               type="button"
+              :aria-pressed="registryTab === 'parameters'"
+              @click="registryTab = 'parameters'"
+            >
+              Нормативные параметры
+            </button>
+            <button
+              type="button"
               :aria-pressed="registryTab === 'entries'"
               @click="registryTab = 'entries'"
             >
@@ -489,6 +504,11 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
             class="module"
             :locked="editorDirty"
             @changed="onSignsUpdated"
+          />
+          <NormativeParameters
+            v-if="registryTab === 'parameters'"
+            class="module"
+            :refresh-key="signCatalogVersion"
           />
           <LocalRegistries v-show="registryTab === 'entries'" class="module" />
         </section>
