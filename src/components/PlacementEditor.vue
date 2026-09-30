@@ -61,7 +61,7 @@ onMounted(async () => {
     catalog.value = (await response.json()) as SignMeta[]
   } catch {
     catalogError.value =
-      'Не удалось открыть локальный каталог PNG. Для стойки сначала импортируйте архив.'
+      'Не удалось открыть локальный каталог PNG. Для стойки сначала загрузите каталог знаков в «Реестры» → «Импорт Excel и знаков».'
   }
 })
 
@@ -169,7 +169,7 @@ function applyDraft(): void {
         .map((code) => code.trim())
         .filter(Boolean)
       if (!catalog.value.length || codes.some((code) => !knownCodes.value.has(code))) {
-        throw new PlacementEditError('Выберите только коды PNG из локального архива знаков.')
+        throw new PlacementEditError('Выберите только коды из локального каталога знаков.')
       }
     }
     const updated = savePlacement(props.scheme, draft.value)

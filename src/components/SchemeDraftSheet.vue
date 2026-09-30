@@ -62,7 +62,7 @@ const revisionLabel = computed(() =>
 const drawingOptions = computed(() => ({
   signSizes: signSizes.value,
   catalogLabel: catalogSource.value
-    ? `Знаки: PNG локального архива · ${catalogSource.value.documentCode}, редакция ${catalogSource.value.edition}.`
+    ? `Знаки: PNG локального каталога · ${catalogSource.value.documentCode}, редакция ${catalogSource.value.edition}.`
     : 'Знаки: редакция каталога не указана.',
   revisionLabel: revisionLabel.value,
 }))
@@ -91,10 +91,12 @@ const blockers = computed(() => {
   else if (catalogState.value !== 'ready')
     list.push('Для печати нужен полный доступ к локальному каталогу PNG знаков.')
   else if (!catalogSource.value || catalogSource.value.edition === 'не указана')
-    list.push('Для печати укажите редакцию ГОСТ при импорте локального архива PNG.')
+    list.push(
+      'Для печати загрузите каталог знаков с указанием редакции ГОСТ (из PDF в библиотеке или ZIP).',
+    )
   if (missingSigns.value.length)
     list.push(
-      `В локальном архиве отсутствуют PNG: ${missingSigns.value.join(', ')}. Обновите архив или исправьте объекты.`,
+      `В локальном каталоге нет PNG: ${missingSigns.value.join(', ')}. Обновите каталог знаков или исправьте объекты.`,
     )
   if (outsideIds.value.length)
     list.push(
@@ -331,11 +333,12 @@ async function exportPng(): Promise<void> {
         }}
       </p>
       <p v-if="catalogState === 'ready' && missingSigns.length" class="error" role="status">
-        Нет PNG в локальном архиве: {{ missingSigns.join(', ') }}. Печать заблокирована до
+        Нет PNG в локальном каталоге: {{ missingSigns.join(', ') }}. Печать заблокирована до
         исправления.
       </p>
       <p v-if="catalogState === 'ready' && drawnSigns.length" class="hint" role="status">
-        Нарисованы без PNG: {{ drawnSigns.join(', ') }}. Проверьте их вид или добавьте PNG в архив.
+        Нарисованы без PNG: {{ drawnSigns.join(', ') }}. Проверьте их вид или добавьте PNG в
+        каталог.
       </p>
       <p v-if="editionStatus.kind === 'outdated'" class="error" role="status">
         Знаки {{ scheme.signImages.catalog ? 'проекта закреплены' : 'каталога загружены' }} по
@@ -343,8 +346,8 @@ async function exportPng(): Promise<void> {
         {{ documentLabel(editionStatus.document) }}.
         {{
           scheme.signImages.catalog
-            ? 'После загрузки архива новой редакции проверьте знаки и закрепите редакции PNG заново на этапе «Знаки и объекты».'
-            : 'Загрузите архив знаков новой редакции в «Реестры» → «Импорт Excel и знаков».'
+            ? 'После загрузки каталога новой редакции проверьте знаки и закрепите редакции PNG заново на этапе «Знаки и объекты».'
+            : 'Извлеките знаки из PDF новой редакции в «Реестры» → «Импорт Excel и знаков».'
         }}
       </p>
       <p v-if="outsideIds.length" class="hint">
