@@ -143,6 +143,18 @@ export async function applyPdfSigns(store: RegistryStore, documentId: number, bo
   const { expectedFingerprint, overrides } = applySchema.parse(body)
   const first = await plan(store, documentId, overrides)
   if (first.fingerprint !== expectedFingerprint) throw new RevisionConflict()
+  // Изображение без номера не попало бы в каталог и могло бы молча исключить знак из текущего
+  // набора: составитель должен указать номер или явно исключить изображение.
+  const unresolved = first.assignments.filter((item) => item.reason === 'no-label')
+  if (unresolved.length)
+    throw new InvalidSignUpload(
+      `У изображений ${unresolved
+        .slice(0, 10)
+        .map((item) => item.key)
+        .join(
+          ', ',
+        )}${unresolved.length > 10 ? ' и других' : ''} не указан номер: укажите его или исключите изображение из каталога.`,
+    )
   const result = {
     added: first.counts.added,
     updated: first.counts.updated,

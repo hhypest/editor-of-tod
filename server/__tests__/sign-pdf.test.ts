@@ -23,7 +23,10 @@ function pixel(png: Buffer, x: number, y: number): number[] {
 }
 
 const directories: string[] = []
+const stores: RegistryStore[] = []
 afterEach(() => {
+  // На Windows открытый файл SQLite не даёт удалить временную папку.
+  for (const store of stores.splice(0)) store.close()
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 
@@ -141,6 +144,7 @@ describe('sign catalog from a library document', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-sign-pdf-'))
     directories.push(directory)
     const store = new RegistryStore(join(directory, 'registry.sqlite'))
+    stores.push(store)
     const body = {
       file: { name: 'uchebny-standart.pdf', data: standard().toString('base64') },
       meta: {
@@ -163,6 +167,26 @@ describe('sign catalog from a library document', () => {
     )
     return { store, document }
   }
+
+  it('refuses to write while an image has no number and is not excluded', async () => {
+    const { store, document } = await library()
+    const preview = await previewPdfSigns(store, document.id, {})
+    expect(preview.images.find((image) => image.key === '2-5')?.reason).toBe('no-label')
+    await expect(
+      applyPdfSigns(store, document.id, {
+        overrides: {},
+        expectedFingerprint: preview.fingerprint,
+      }),
+    ).rejects.toThrow('2-5 не указан номер')
+    expect(store.latestSignCatalog()).toBeNull()
+    const excluded = { '2-5': null }
+    const plan = await previewPdfSigns(store, document.id, { overrides: excluded })
+    const result = await applyPdfSigns(store, document.id, {
+      overrides: excluded,
+      expectedFingerprint: plan.fingerprint,
+    })
+    expect(result.signCount).toBe(9)
+  })
 
   it('previews and writes the catalog with the document as its source', async () => {
     const { store, document } = await library()
