@@ -105,11 +105,13 @@ describe('live draft review', () => {
         target[keys.at(-1)!] =
           keys[1] === 'location'
             ? 'out'
-            : keys[1] === 'signDistancesMetres'
-              ? '100'
-              : keys.at(-1) === 'phone'
-                ? '+7 (900) 000-00-00'
-                : 'Учебное значение'
+            : keys[1] === 'signSize'
+              ? 'II'
+              : keys[1] === 'signDistancesMetres'
+                ? '100'
+                : keys.at(-1) === 'phone'
+                  ? '+7 (900) 000-00-00'
+                  : 'Учебное значение'
       }
       draft = { ...draft }
     }

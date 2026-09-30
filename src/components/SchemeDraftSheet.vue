@@ -89,7 +89,7 @@ const drawnSigns = computed(() =>
       (!signSizes.value.has(code) || brokenImages.value.has(code)) && drawableWithoutImage(code),
   ),
 )
-/** Число нанесено поверх изображения стандарта (3.24, 8.1.1) — вид совпадает с ГОСТ. */
+/** Число нанесено поверх изображения стандарта (3.24, 8.1.1, 8.2.1) — вид совпадает с ГОСТ. */
 const drawnOverBase = computed(() =>
   drawnSigns.value.filter((code) => {
     const base = drawnSignBase(code)
@@ -389,7 +389,7 @@ async function exportPng(): Promise<void> {
       </p>
       <p v-if="catalogState === 'ready' && drawnWithoutBase.length" class="hint" role="status">
         Нарисованы без изображения стандарта: {{ drawnWithoutBase.join(', ') }}. Извлеките в каталог
-        знаки 3.24 и 8.1.1 из ГОСТ Р 52290, чтобы вид совпадал со стандартом.
+        знаки 3.24, 8.1.1 и 8.2.1 из ГОСТ Р 52290, чтобы вид совпадал со стандартом.
       </p>
       <p v-if="editionStatus.kind === 'outdated'" class="error" role="status">
         Знаки {{ scheme.signImages.catalog ? 'проекта закреплены' : 'каталога загружены' }} по

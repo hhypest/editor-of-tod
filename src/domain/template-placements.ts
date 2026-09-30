@@ -114,6 +114,26 @@ function distancePlate(metres: number | null, marker: DistanceField): string {
 }
 
 /**
+ * Протяжённость опасного участка для таблички 8.2.1 «Зона действия» при повторном знаке 1.25:
+ * от начала отвода до конца работ — отвод + буфер + фронт активной зоны (ГОСТ Р 52289-2019,
+ * п. 5.9.5; ОДМ 218.6.019-2016, п. 8.1.2.2 о повторном знаке 1.25 с табличкой 8.2.1). Без
+ * округления; погрешность сложения дробных чисел убирается до сотых.
+ */
+export function dangerousSectionMetres(scheme: Scheme): number | null {
+  const zone = scheme.parameters.workZones[scheme.template.code]
+  if (!zone) return null
+  return Number((zone.taperMetres + zone.bufferMetres + zone.workMetres).toFixed(2))
+}
+
+/** Код таблички 8.2.1 с протяжённостью: «8.2.1_47»; лист рисует число поверх изображения ГОСТ. */
+export function zonePlateCode(scheme: Scheme): string {
+  const metres = dangerousSectionMetres(scheme)
+  if (metres === null)
+    throw new TemplateBuildError('На этапе 2 укажите размеры зоны работ выбранного варианта.')
+  return `8.2.1_${metres}`
+}
+
+/**
  * Промежуточные ступени скорости в населённом пункте: шаг не более `stepKmh` (нормативный
  * параметр «шаг ступенчатого ограничения», ГОСТ Р 52289, п. 5.4.22) до скорости в зоне.
  */
@@ -130,7 +150,8 @@ export function settlementSteps(approachKmh: number, zoneKmh: number, stepKmh = 
 /**
  * Builds only schematic objects. Состав стоек повторяет рисунки Б.33/Б.34 ОДМ 218.6.019-2016:
  * предупреждение 1.25, ступени скорости 3.24 с запретом обгона 3.20, сужение 1.20.2/1.20.3,
- * знак 1.25 с табличкой 8.2.1 у начала работ, конец ограничений 3.31; для Б.34 со знаками
+ * знак 1.25 с табличкой 8.2.1 (протяжённость от начала отвода до конца работ) у начала работ,
+ * конец ограничений 3.31; для Б.34 со знаками
  * приоритета — 2.6 с табличкой 8.1.1 и 2.7. Generated objects can be rebuilt without touching
  * manual edits.
  */
@@ -150,8 +171,9 @@ export function buildTemplatePlacements(
     return yellow(kmh === 50 ? '3.24' : `3.24_${kmh}`)
   }
   const [first, second, zone] = parameters.speedStagesKmh
-  const entry = priority ? [yellow('2.6'), '8.2.1', '1.25'] : ['8.2.1', '1.25']
-  const exit = priority ? ['1.25', '8.2.1', '2.7'] : ['1.25', '8.2.1']
+  const zonePlate = zonePlateCode(scheme)
+  const entry = priority ? [yellow('2.6'), zonePlate, '1.25'] : [zonePlate, '1.25']
+  const exit = priority ? ['1.25', zonePlate, '2.7'] : ['1.25', zonePlate]
   const distances = parameters.signDistancesMetres
 
   let id = Math.max(scheme.nextPlacementId, 1 + Math.max(0, ...scheme.placements.map((p) => p.id)))

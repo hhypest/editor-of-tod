@@ -657,3 +657,31 @@ test('distances and speeds follow normative values but stay editable; saved proj
   await page.getByLabel('Найти проект').fill('нет такого переезда')
   await expect(page.getByText('Ничего не найдено')).toBeVisible()
 })
+
+test('template plate 8.2.1 shows the dangerous section length and the sign size follows table 1', async ({
+  page,
+  request,
+}) => {
+  await importSampleCards(request)
+  await page.goto('/')
+  await fillNewProject(page, '12 км 3 пк', '90001:12:3')
+  await page.getByRole('button', { name: 'Создать проект' }).click()
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  // Двухполосная дорога вне населённого пункта: типоразмер II по таблице 1 ГОСТ Р 52289.
+  const size = page.locator('[data-field="parameters.signSize"]')
+  await expect(size).toHaveValue('II')
+  await expect(page.locator('label', { has: size })).toContainText('по нормативу')
+  await size.selectOption('III')
+  await expect(page.locator('label', { has: size })).toContainText('Изменено · норматив II')
+  await page.getByLabel('Регулирование Б.34').selectOption('two')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  await expect(page.locator('li', { hasText: 'Типоразмер знаков не по таблице 1' })).toBeVisible()
+
+  await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
+  await page.getByRole('button', { name: 'Собрать черновой шаблон' }).click()
+  // Отвод 10 + буфер 10 + фронт 18 = 38 м от начала отвода до конца работ.
+  const plates = page.locator('.print-host [data-drawn-sign="8.2.1_38"]')
+  await expect(plates).toHaveCount(2)
+  await expect(plates.first()).toContainText('38 м')
+})

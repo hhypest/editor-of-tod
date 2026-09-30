@@ -17,8 +17,15 @@ type Parameters = Scheme['parameters']
 /** Поля параметров, от которых зависят значения по умолчанию. */
 export type DefaultsFields = Pick<
   Parameters,
-  'location' | 'approachSpeedKmh' | 'signDistancesMetres' | 'speedStagesKmh'
+  'location' | 'approachSpeedKmh' | 'signDistancesMetres' | 'speedStagesKmh' | 'signSize'
 >
+type SignSize = Parameters['signSize']
+
+/**
+ * Строка таблицы 1 ГОСТ Р 52289 для схем Б.33/Б.34: они строятся для дороги с двумя полосами
+ * (одна закрыта, движение по другой), поэтому вне населённого пункта это «две и три полосы».
+ */
+export const TWO_LANE_TYPESIZE_ROW = 'две и три полосы'
 export type DistanceField = keyof Parameters['signDistancesMetres']
 
 /** Поля расстояний, которые использует раскладка для каждого местоположения. */
@@ -46,6 +53,28 @@ export function distanceSource(field: DistanceField, rules: NormativeRules): str
 
 export function approachSource(location: SchemeLocation, rules: NormativeRules): string {
   return rules.sources[location === 'in' ? 'pdd-speed-settlement' : 'pdd-speed-outside']!
+}
+
+/**
+ * Типоразмер знаков по таблице 1 ГОСТ Р 52289 (п. 5.1.16): вне населённого пункта — строка
+ * двухполосной дороги (II). В населённом пункте типоразмер зависит от класса улицы, которого в
+ * проекте нет, — null, выбирает составитель.
+ */
+export function expectedTypesize(location: SchemeLocation, rules: NormativeRules): SignSize | null {
+  if (location === 'in') return null
+  const value = rules.typesize[TWO_LANE_TYPESIZE_ROW] ?? 'II'
+  return value === 'I' || value === 'II' || value === 'III' || value === 'IV' ? value : 'II'
+}
+
+export function typesizeSource(rules: NormativeRules): string {
+  return `${rules.sources['gost-sign-typesize']}, дорога с двумя и тремя полосами вне населённого пункта`
+}
+
+/** Типоразмер при смене местоположения: значение по умолчанию прежнего варианта заменяется. */
+function switchTypesize(current: SignSize, to: SchemeLocation, rules: NormativeRules): SignSize {
+  const outside = expectedTypesize('out', rules)
+  if (to === 'out') return current === 'auto' ? outside! : current
+  return current === outside ? 'auto' : current
 }
 
 export function defaultApproachSpeed(location: SchemeLocation, rules: NormativeRules): number {
@@ -97,6 +126,7 @@ export function resetToNormative<T extends DefaultsFields>(
     approachSpeedKmh: approach,
     signDistancesMetres: distances,
     speedStagesKmh: defaultSpeedStages(approach, rules),
+    signSize: expectedTypesize(location, rules) ?? parameters.signSize,
   }
 }
 
@@ -130,6 +160,7 @@ export function switchLocation<T extends DefaultsFields>(
     speedStagesKmh: stagesWereDefault
       ? defaultSpeedStages(approach, rules)
       : parameters.speedStagesKmh,
+    signSize: switchTypesize(parameters.signSize, to, rules),
   }
 }
 
@@ -159,8 +190,8 @@ export type NormativeMark = {
   /** Путь поля формы (`data-field`). */
   field: string
   title: string
-  value: number | null
-  normative: number
+  value: number | string | null
+  normative: number | string
   source: string
   state: 'normative' | 'changed' | 'empty'
 }
@@ -214,6 +245,16 @@ export function normativeMarks(parameters: DefaultsFields, rules: NormativeRules
           : `шаг ${rules.speedStepKmh} км/ч от разрешённой скорости, ${rules.sources['gost-speed-step']}`,
     })
   }
+  const typesize = expectedTypesize(location, rules)
+  if (typesize) {
+    mark({
+      field: 'parameters.signSize',
+      title: 'типоразмер знаков',
+      value: parameters.signSize === 'auto' ? null : parameters.signSize,
+      normative: typesize,
+      source: typesizeSource(rules),
+    })
+  }
   return result
 }
 
@@ -228,7 +269,13 @@ export function normativeDeviations(
 /** Параметры, из которых берутся значения по умолчанию для местоположения. */
 export function defaultsParameterIds(location: SchemeLocation): string[] {
   return location === 'out'
-    ? ['odm-sign-distances-outside', 'pdd-speed-outside', 'odm-zone-speed', 'gost-speed-step']
+    ? [
+        'odm-sign-distances-outside',
+        'pdd-speed-outside',
+        'odm-zone-speed',
+        'gost-speed-step',
+        'gost-sign-typesize',
+      ]
     : [
         'gost-sign-distances-settlement',
         'pdd-speed-settlement',

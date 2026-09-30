@@ -3,9 +3,12 @@ import { figureDimensions } from './figure-dimensions'
 import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import { templateLabel } from './registry'
 import { anchorCoordinates, placementCoordinates } from './placement-workspace'
-import { usesTwoRegulators } from './template-placements'
+import { dangerousSectionMetres, usesTwoRegulators } from './template-placements'
+import { ZONE_PLATE } from './sheet-drawing'
 import {
   distanceTitles,
+  expectedTypesize,
+  typesizeSource,
   largestSpeedStep,
   normativeDeviations,
   warningDistanceProblem,
@@ -226,7 +229,10 @@ export function reviewScheme(
     ]),
   })
 
-  const deviations = normativeDeviations(parameters, rules)
+  // Типоразмер — отдельным пунктом ниже: ошибка в нём меняет все знаки листа.
+  const deviations = normativeDeviations(parameters, rules).filter(
+    (item) => item.field !== 'parameters.signSize',
+  )
   if (deviations.length) {
     findings.push({
       id: 'normative-values',
@@ -243,6 +249,44 @@ export function reviewScheme(
       basis: JSON.stringify(
         deviations.map(({ field, value, normative }) => [field, value, normative]),
       ),
+    })
+  }
+
+  const typesize =
+    parameters.location === 'auto' ? null : expectedTypesize(parameters.location, rules)
+  if (parameters.signSize === 'auto') {
+    findings.push({
+      id: 'typesize',
+      kind: 'fill',
+      title: 'Типоразмер знаков',
+      detail: typesize
+        ? `Типоразмер не выбран. По таблице 1 ГОСТ Р 52289 для дороги с двумя и тремя полосами вне населённого пункта — ${typesize} (${typesizeSource(rules)}).`
+        : 'Типоразмер не выбран. В населённом пункте он зависит от класса улицы (ГОСТ Р 52289, п. 5.1.16, табл. 1).',
+      target: '#details-title',
+      field: 'parameters.signSize',
+    })
+  } else if (typesize && parameters.signSize !== typesize) {
+    findings.push({
+      id: 'typesize',
+      kind: 'verify',
+      title: 'Типоразмер знаков не по таблице 1',
+      detail: `Выбран типоразмер ${parameters.signSize}, а по таблице 1 для дороги с двумя и тремя полосами вне населённого пункта — ${typesize} (${typesizeSource(rules)}). Больший типоразмер допускается при необходимости (п. 5.1.16), IV — для работ на дорогах IА и IБ категории; на одной дороге предпочтительно один типоразмер. Проверьте основание или верните ${typesize} на этапе 2.`,
+      target: '#details-title',
+      field: 'parameters.signSize',
+      basis: JSON.stringify([parameters.signSize, typesize]),
+    })
+  }
+
+  const zonePlates = zonePlateProblems(scheme)
+  if (zonePlates) {
+    findings.push({
+      id: 'zone-plate',
+      kind: 'verify',
+      title: 'Табличка 8.2.1 у знака 1.25',
+      detail: zonePlates,
+      target: '#placements-title',
+      markBlocked:
+        'Табличка показывает неверную протяжённость: пересоберите шаблон на этапе 3 или исправьте код таблички у стойки.',
     })
   }
 
@@ -414,4 +458,28 @@ function regulatorDistanceFinding(scheme: Scheme, rules: NormativeRules): Review
     detail: `Регулировщики должны стоять не ближе ${required} м до рабочей зоны при скорости ${zoneSpeed} км/ч (${source}): ${problems.join('; ')}. Пересоберите шаблон на этапе 3 или передвиньте объекты; если так задумано, зафиксируйте решение.`,
     basis: JSON.stringify([required, regulators]),
   }
+}
+
+/**
+ * Табличка 8.2.1 при повторном знаке 1.25 указывает протяжённость опасного участка — от начала
+ * отвода до конца работ (ГОСТ Р 52289-2019, п. 5.9.5). Изображение «8.2.1» из каталога несёт
+ * пример «100 м» из ГОСТ Р 52290; «8.2.1_N» с другим числом, чем текущая протяжённость, остаётся
+ * после изменения размеров зоны без пересборки шаблона.
+ */
+function zonePlateProblems(scheme: Scheme): string | null {
+  const expected = dangerousSectionMetres(scheme)
+  if (expected === null) return null
+  const shown = (value: number | string) => `${String(value).replace('.', ',')} м`
+  const problems: string[] = []
+  for (const placement of scheme.placements) {
+    if (placement.kind !== 'sign-post' || !placement.signIds.includes('1.25')) continue
+    for (const code of placement.signIds) {
+      if (code === '8.2.1') problems.push(`№ ${placement.id} — изображение ГОСТ с примером «100 м»`)
+      const value = ZONE_PLATE.exec(code)?.[1]
+      if (value !== undefined && Number(value) !== expected)
+        problems.push(`№ ${placement.id} — ${shown(value)}`)
+    }
+  }
+  if (!problems.length) return null
+  return `Протяжённость опасного участка от начала отвода до конца работ — ${shown(expected)} (ГОСТ Р 52289-2019, п. 5.9.5), а на табличках стоек: ${problems.join('; ')}. Пересоберите шаблон на этапе 3 или укажите у стойки код 8.2.1_${expected}.`
 }

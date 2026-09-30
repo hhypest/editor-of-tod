@@ -145,6 +145,7 @@ export function draftDefaultsFields(draft: SchemeDetailsDraft): DefaultsFields {
     signDistancesMetres: Object.fromEntries(
       distanceKeys.map((key) => [key, draftValue(parameters.signDistancesMetres[key])]),
     ) as Record<DistanceField, number | null>,
+    signSize: parameters.signSize,
     speedStagesKmh: parameters.speedStagesKmh.map((value) => draftValue(value) ?? Number.NaN) as [
       number,
       number,
@@ -157,6 +158,7 @@ export function draftDefaultsFields(draft: SchemeDetailsDraft): DefaultsFields {
 function writeDefaults(draft: SchemeDetailsDraft, before: DefaultsFields, after: DefaultsFields) {
   const { parameters } = draft
   parameters.location = after.location
+  parameters.signSize = after.signSize
   if (after.approachSpeedKmh !== before.approachSpeedKmh)
     parameters.approachSpeedKmh = after.approachSpeedKmh?.toString() ?? ''
   for (const key of distanceKeys) {

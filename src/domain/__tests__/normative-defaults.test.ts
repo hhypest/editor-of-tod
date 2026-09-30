@@ -12,6 +12,7 @@ import {
   largestSpeedStep,
   normativeDeviations,
   normativeMarks,
+  resetToNormative,
   switchLocation,
   warningDistanceProblem,
 } from '../normative-defaults'
@@ -23,6 +24,9 @@ import {
   type ParameterState,
 } from '../normative-parameters'
 import { detailsDraftSchema } from '../recovery'
+import { schemeSchema } from '../model'
+import { drawableWithoutImage, drawnSignBase } from '../sheet-drawing'
+import { dangerousSectionMetres } from '../template-placements'
 import { reviewScheme } from '../review-scheme'
 
 const rules = PROTOTYPE_RULES
@@ -67,7 +71,7 @@ describe('normative defaults of distances and speeds', () => {
     expect(project('in').parameters.signDistancesMetres).toMatchObject({ n100: 100, n50: 50 })
     expect(normativeDeviations(project().parameters, rules)).toEqual([])
     expect(normativeMarks(project().parameters, rules).map((mark) => mark.state)).toEqual(
-      Array(8).fill('normative'),
+      Array(9).fill('normative'),
     )
   })
 
@@ -270,5 +274,69 @@ describe('normative defaults in the details form', () => {
       parameters: { ...oldDraft.parameters, location: 'out' as const },
     }
     expect(detailsDraftSchema.parse(outside).parameters.approachSpeedKmh).toBe('')
+  })
+})
+
+describe('sign size by table 1 and the 8.2.1 plate', () => {
+  it('defaults to II outside a settlement and flags other sizes', () => {
+    const outside = project('out')
+    expect(outside.parameters.signSize).toBe('II')
+    expect(project('in').parameters.signSize).toBe('auto')
+    expect(reviewScheme(outside, rules).some((finding) => finding.id === 'typesize')).toBe(false)
+
+    const larger = { ...outside, parameters: { ...outside.parameters, signSize: 'III' as const } }
+    const finding = reviewScheme(larger, rules).find((item) => item.id === 'typesize')
+    expect(finding).toMatchObject({ kind: 'verify', field: 'parameters.signSize' })
+    expect(finding?.detail).toContain('Выбран типоразмер III')
+    expect(finding?.detail).toContain('— II')
+    // Типоразмер не попадает в общий пункт о нормативных значениях.
+    expect(reviewScheme(larger, rules).some((item) => item.id === 'normative-values')).toBe(false)
+    expect(resetToNormative(larger.parameters, rules).signSize).toBe('II')
+
+    const unset = { ...outside, parameters: { ...outside.parameters, signSize: 'auto' as const } }
+    expect(reviewScheme(unset, rules).find((item) => item.id === 'typesize')?.kind).toBe('fill')
+  })
+
+  it('switches the default size with the location but keeps a chosen one', () => {
+    const outside = project('out').parameters
+    expect(switchLocation(outside, 'in', rules).signSize).toBe('auto')
+    expect(switchLocation({ ...outside, signSize: 'III' }, 'in', rules).signSize).toBe('III')
+    const inside = project('in').parameters
+    expect(switchLocation(inside, 'out', rules).signSize).toBe('II')
+    expect(switchLocation({ ...inside, signSize: 'I' }, 'out', rules).signSize).toBe('I')
+  })
+
+  it('asks to rebuild posts whose 8.2.1 plate does not show the dangerous section length', () => {
+    const scheme = project('out')
+    const withPlate = (code: string) =>
+      schemeSchema.parse({
+        ...scheme,
+        placements: [
+          {
+            kind: 'sign-post',
+            id: 1,
+            generatedByTemplate: true,
+            position: { anchor: 'L0', offsetXSvg: -2, offsetYSvg: 0 },
+            side: 'down',
+            stand: 'right',
+            signIds: [code, '1.25'],
+            distanceLabel: '0',
+          },
+        ],
+        nextPlacementId: 2,
+      })
+    // Отвод 10 + буфер 15 + фронт 40 = 65 м.
+    expect(dangerousSectionMetres(scheme)).toBe(65)
+    const example = reviewScheme(withPlate('8.2.1'), rules).find((item) => item.id === 'zone-plate')
+    expect(example?.detail).toContain('«100 м»')
+    expect(example?.markBlocked).toBeTruthy()
+    expect(
+      reviewScheme(withPlate('8.2.1_60'), rules).find((item) => item.id === 'zone-plate')?.detail,
+    ).toContain('№ 1 — 60 м')
+    expect(
+      reviewScheme(withPlate('8.2.1_65'), rules).some((item) => item.id === 'zone-plate'),
+    ).toBe(false)
+    expect(drawableWithoutImage('8.2.1_38.5')).toBe(true)
+    expect(drawnSignBase('8.2.1_47')).toBe('8.2.1')
   })
 })

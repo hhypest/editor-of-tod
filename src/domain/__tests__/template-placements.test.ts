@@ -8,6 +8,7 @@ import { schemeSchema, type Scheme } from '../model'
 import {
   buildTemplatePlacements,
   rebuildTemplatePlacements,
+  dangerousSectionMetres,
   settlementSteps,
   TemplateBuildError,
 } from '../template-placements'
@@ -147,7 +148,11 @@ describe('preliminary B.33/B.34 layout', () => {
       expect(codes.includes('2.7')).toBe(priority)
       expect(codes.some((code) => code.startsWith('8.1.1'))).toBe(priority)
       // Начало и конец работ: 1.25 с табличкой 8.2.1 на обоих подходах, конец ограничений 3.31.
-      expect(codes.filter((code) => code === '8.2.1')).toHaveLength(2)
+      // На табличке — протяжённость от начала отвода до конца работ (ГОСТ Р 52289, п. 5.9.5).
+      const zone = scheme.parameters.workZones[scheme.template.code]!
+      const length = zone.taperMetres + zone.bufferMetres + zone.workMetres
+      expect(codes.filter((code) => code === `8.2.1_${length}`)).toHaveLength(2)
+      expect(codes).not.toContain('8.2.1')
       expect(codes.filter((code) => code === '3.31')).toHaveLength(2)
       expect(codes).toContain('3.24_40_ж')
       expect(
@@ -254,15 +259,35 @@ describe('preliminary B.33/B.34 layout', () => {
       ['3.24_70_ж+3.20_ж', '{d250}'],
       ['3.24_ж+1.20.2_ж', '{d150}'],
       ['3.24_40_ж', '{d50}'],
-      ['8.2.1+1.25', '0'],
+      ['8.2.1_65+1.25', '0'],
       ['3.20_ж+3.31', null],
-      ['1.25+8.2.1', '0'],
+      ['1.25+8.2.1_65', '0'],
       ['3.24_40_ж', '{d50}'],
       ['1.20.3_ж+3.24_ж', '{d150}'],
       ['3.20_ж+3.24_70_ж', '{d250}'],
       ['1.25', '{d300}'],
       ['3.31+3.20_ж', null],
     ])
+  })
+
+  it('writes the dangerous section length on 8.2.1 without rounding', () => {
+    const scheme = example(18, 'out', 'two')
+    const fractional = schemeSchema.parse({
+      ...scheme,
+      parameters: {
+        ...scheme.parameters,
+        workZones: {
+          ...scheme.parameters.workZones,
+          b34: { ...scheme.parameters.workZones.b34!, taperMetres: 10.1, workMetres: 18.2 },
+        },
+      },
+    })
+    // 10,1 + 10 + 18,2 = 38,3 м; погрешность сложения дробей не попадает в код.
+    expect(dangerousSectionMetres(fractional)).toBe(38.3)
+    const codes = buildTemplatePlacements(fractional).flatMap((item) =>
+      item.kind === 'sign-post' ? item.signIds : [],
+    )
+    expect(codes.filter((code) => code === '8.2.1_38.3')).toHaveLength(2)
   })
 
   it('adds speed steps of at most 20 km/h in a settlement', () => {
