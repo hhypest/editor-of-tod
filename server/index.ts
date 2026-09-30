@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { readFile } from 'node:fs/promises'
-import { join, extname } from 'node:path'
+import { dirname, join, extname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { z, ZodError } from 'zod'
 import {
@@ -32,6 +32,7 @@ import {
 import { applyPdfSigns, pdfSignImage, previewPdfSigns } from './sign-pdf-import.ts'
 import { confirmParameter, InvalidParameter, listParameterStates } from './normative-parameters.ts'
 import { documentMetaSchema } from '../src/domain/normative-documents.ts'
+import { clientEventsSchema, DiagnosticsLog, routeOf } from './diagnostics.ts'
 import {
   InvalidPu66Verification,
   ProjectTooLarge,
@@ -163,13 +164,21 @@ export function createRegistryServer(
   store: RegistryStore,
   listenPort = port,
   staticFiles: StaticFiles = defaultStaticFiles(),
+  diagnostics: DiagnosticsLog = new DiagnosticsLog(null, { version: 'dev', mode: 'test' }),
 ) {
   const server = createServer(async (req, res) => {
+    const started = performance.now()
+    let route = routeOf(req.method ?? 'GET', '/api/?')
+    res.on('finish', () => {
+      if (route !== 'GET /api/diagnostics')
+        diagnostics.request(route, res.statusCode, performance.now() - started)
+    })
     try {
       const address = server.address()
       const actualPort = typeof address === 'object' && address ? address.port : listenPort
-      checkRequest(req, actualPort)
       const pathname = new URL(req.url ?? '/', `http://127.0.0.1:${actualPort}`).pathname
+      route = routeOf(req.method ?? 'GET', pathname)
+      checkRequest(req, actualPort)
       const projectPath = /^\/api\/projects\/([^/]+)$/.exec(pathname)
       const revisionListPath = /^\/api\/projects\/([^/]+)\/revisions$/.exec(pathname)
       const revisionPath = /^\/api\/projects\/([^/]+)\/revisions\/(\d+)$/.exec(pathname)
@@ -181,6 +190,15 @@ export function createRegistryServer(
         )
       if (req.method === 'GET' && pathname === '/api/status') {
         json(res, 200, { ready: true })
+      } else if (req.method === 'GET' && pathname === '/api/diagnostics') {
+        json(res, 200, diagnostics.report(store))
+      } else if (req.method === 'POST' && pathname === '/api/diagnostics/events') {
+        const { events } = clientEventsSchema.parse(await readJson(req))
+        for (const event of events) diagnostics.record({ source: 'client', ...event })
+        json(res, 200, { recorded: events.length })
+      } else if (req.method === 'POST' && pathname === '/api/diagnostics/clear') {
+        diagnostics.clear()
+        json(res, 200, { cleared: true })
       } else if (req.method === 'GET' && pathname === '/api/crossings') {
         json(res, 200, store.listCrossings())
       } else if (req.method === 'GET' && pathname === '/api/normative') {
@@ -407,6 +425,7 @@ export function createRegistryServer(
         json(res, 400, { error: `Неверное поле «${issue?.path.join('.') || 'запись'}».` })
       } else {
         json(res, 500, { error: 'Внутренняя ошибка локального реестра.' })
+        diagnostics.serverError(route, error)
         console.error('Ошибка локального реестра:', error)
       }
     }
@@ -420,7 +439,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.env.TOD_DATABASE_PATH ??
     fileURLToPath(new URL('../private-data/registry.sqlite', import.meta.url))
   const store = new RegistryStore(databasePath)
-  const server = createRegistryServer(store)
+  const diagnostics = new DiagnosticsLog(join(dirname(databasePath), 'diagnostics.jsonl'), {
+    version: 'dev',
+    mode: 'npm run dev',
+  })
+  const server = createRegistryServer(store, port, undefined, diagnostics)
   server.listen(port, '127.0.0.1', () => {
     console.log(`Локальный редактор: http://127.0.0.1:${port}/`)
     console.log(`Реестр хранится в ${databasePath}`)

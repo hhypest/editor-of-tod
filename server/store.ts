@@ -512,6 +512,11 @@ export class RegistryStore {
     }
   }
 
+  /** Версия схемы локальной базы (`PRAGMA user_version`) — для диагностики. */
+  schemaVersion(): number {
+    return (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version
+  }
+
   listCrossings(): CrossingRecord[] {
     return this.rows('crossings').map((row) => ({
       ...crossingDraftSchema.parse(JSON.parse(row.payload_json)),

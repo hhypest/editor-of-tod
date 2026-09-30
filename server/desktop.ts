@@ -6,6 +6,7 @@ import { get } from 'node:http'
 import { dirname, join } from 'node:path'
 import { getAsset, isSea } from 'node:sea'
 import { resolveDataDirectory, resolvePort } from './app-paths.ts'
+import { DiagnosticsLog } from './diagnostics.ts'
 import { createRegistryServer, DEFAULT_PORT, type StaticFiles } from './index.ts'
 import { RegistryStore } from './store.ts'
 
@@ -80,7 +81,11 @@ async function main(): Promise<void> {
   }
 
   const store = new RegistryStore(databasePath)
-  const server = createRegistryServer(store, port, isSea() ? seaFiles() : undefined)
+  const diagnostics = new DiagnosticsLog(join(dirname(databasePath), 'diagnostics.jsonl'), {
+    version,
+    mode: isSea() ? 'exe' : 'npm run desktop',
+  })
+  const server = createRegistryServer(store, port, isSea() ? seaFiles() : undefined, diagnostics)
 
   let closing = false
   const shutdown = () => {

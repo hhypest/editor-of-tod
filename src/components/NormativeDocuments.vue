@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { timed } from '../services/diagnostics'
 import { computed, onMounted, reactive, ref } from 'vue'
 import {
   actualityCheckDue,
@@ -144,7 +145,9 @@ async function check(): Promise<void> {
   error.value = ''
   notice.value = ''
   try {
-    preview.value = await previewDocument(file.value, { ...form })
+    preview.value = await timed('Проверка документа', () =>
+      previewDocument(file.value!, { ...form }),
+    )
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Не удалось проверить PDF.'
   } finally {
@@ -175,7 +178,9 @@ async function add(): Promise<void> {
   busy.value = true
   error.value = ''
   try {
-    const result = await applyDocument(file.value, { ...form }, preview.value.fingerprint)
+    const result = await timed('Добавление документа', () =>
+      applyDocument(file.value!, { ...form }, preview.value!.fingerprint),
+    )
     notice.value = `${documentLabel(result.document)} добавлен в библиотеку. Копия SQLite: ${result.backup}.`
     resetForm()
     await load()

@@ -8,6 +8,7 @@ import {
 } from '../domain/import'
 import type { Scheme } from '../domain/model'
 import { schemeSchema } from '../domain/model'
+import { reportError } from '../services/diagnostics'
 import { rebuildTemplatePlacements, TemplateBuildError } from '../domain/template-placements'
 import { useNormativeRules } from './useNormativeRules'
 import { clearPinsAfterSignChange, pinSignImages, usedSignCodes } from '../domain/sign-images'
@@ -228,6 +229,11 @@ export function useProjectSession(onProjectOpened: () => void) {
       selectedPlacementId.value = imported.value.scheme.placements[0]?.id ?? null
       onProjectOpened()
     } catch (error) {
+      // Записываются только код ошибки и путь поля; ни содержимое, ни имя файла в журнал не
+      // попадают.
+      if (error instanceof SchemeImportError)
+        reportError('Открытие JSON-проекта', `${error.code}: ${error.field ?? ''}`)
+      else reportError('Открытие JSON-проекта', error, { withText: false })
       errorMessage.value =
         error instanceof SchemeImportError ? error.message : 'Не удалось прочитать выбранный файл.'
     } finally {
@@ -301,6 +307,8 @@ export function useProjectSession(onProjectOpened: () => void) {
   }
 
   function showLocalError(cause: unknown): void {
+    // Текст ответа базы может содержать ключ переезда или имя файла — пишется только тип ошибки.
+    reportError('Операция с локальной базой', cause, { withText: false })
     localError.value =
       cause instanceof Error ? cause.message : 'Операция с локальной базой не удалась.'
     if (localError.value.includes('Запись изменилась')) {
