@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { expect, test } from '@playwright/test'
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 import { zipSync } from 'fflate'
 import { PNG } from 'pngjs'
 import { createSampleWorkbook, sampleCards } from '../../scripts/generate-pu66-samples'
@@ -8,17 +8,77 @@ import { fictionalMethodology, fictionalSignStandard } from '../../server/__test
 const api = 'http://127.0.0.1:4100'
 const origin = 'http://127.0.0.1:5173'
 
-test('new project: form edits apply, review opens, and console stays clean', async ({ page }) => {
-  const errors: string[] = []
-  page.on('pageerror', (error) => errors.push(error.message))
-  await page.goto('/')
-  await page.getByLabel('Локальный идентификатор переезда').fill('TEST-BROWSER')
+/** Книги генерируются один раз: новая генерация отличается байтами и дала бы новую редакцию. */
+let sampleFiles: Promise<Array<{ name: string; data: string }>> | undefined
+
+/** Импортирует четыре вымышленные карточки ПУ-66; повторный вызов ничего не меняет. */
+async function importSampleCards(request: APIRequestContext): Promise<void> {
+  sampleFiles ??= Promise.all(
+    sampleCards.slice(0, 4).map(async (card) => ({
+      name: card.filename,
+      data: (await createSampleWorkbook(card)).toString('base64'),
+    })),
+  )
+  const files = await sampleFiles
+  const headers = { Origin: origin }
+  const preview = await request.post(`${api}/api/pu66/import/preview`, {
+    headers,
+    data: { files },
+  })
+  expect(preview.ok()).toBe(true)
+  const plan = await preview.json()
+  if (!plan.added && !plan.updated) return
+  const applied = await request.post(`${api}/api/pu66/import/apply`, {
+    headers,
+    data: { files, expectedFingerprint: plan.fingerprint },
+  })
+  expect(applied.ok()).toBe(true)
+}
+
+/** Выбирает карточку ПУ-66 по км и пк и заполняет обязательные условия новой схемы. */
+async function fillNewProject(
+  page: Page,
+  search: string,
+  key: string,
+  sizes = { taper: '10' },
+): Promise<void> {
+  await page.getByLabel('Поиск карточки').fill(search)
+  await page.getByLabel('Локальная карточка').selectOption(key)
+  await expect(page.getByText('Будет закреплено в проекте')).toBeVisible()
   await page.getByLabel('Фронт работ, м').fill('18')
-  await page.getByLabel('Отвод, м').fill('10')
+  await page.getByLabel('Отвод, м').fill(sizes.taper)
   await page.getByLabel('Буфер, м').fill('10')
   await page.getByLabel('Первая').fill('70')
   await page.getByLabel('Вторая').fill('50')
   await page.getByLabel('Третья').fill('40')
+}
+
+test('without PU-66 cards a new project cannot be started', async ({ page }) => {
+  await page.route('**/api/pu66', (route) => route.fulfill({ json: [] }))
+  await page.goto('/')
+  const blocked = page.locator('.blocked')
+  await expect(blocked).toContainText('начать новый проект невозможно')
+  await expect(page.getByRole('button', { name: 'Создать проект' })).toHaveCount(0)
+  await expect(page.getByLabel('Фронт работ, м')).toHaveCount(0)
+  await blocked.getByRole('button', { name: 'Импортировать ПУ-66' }).click()
+  await expect(page.getByRole('heading', { name: 'Локальные реестры' })).toBeVisible()
+
+  await page.unroute('**/api/pu66')
+  await page.route('**/api/pu66', (route) => route.abort())
+  await page.reload()
+  await expect(page.locator('.blocked')).toContainText('реестр ПУ-66 недоступен')
+  await expect(page.getByRole('button', { name: 'Создать проект' })).toHaveCount(0)
+})
+
+test('new project: form edits apply, review opens, and console stays clean', async ({
+  page,
+  request,
+}) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await importSampleCards(request)
+  await page.goto('/')
+  await fillNewProject(page, '12 км 3 пк', '90001:12:3')
   await page.getByRole('button', { name: 'Создать проект' }).click()
   await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
   await expect(page.getByRole('heading', { name: 'Размеры и параметры схемы' })).toBeVisible()
@@ -30,15 +90,10 @@ test('new project: form edits apply, review opens, and console stays clean', asy
   expect(errors).toEqual([])
 })
 
-test('review findings move focus to the first empty field', async ({ page }) => {
+test('review findings move focus to the first empty field', async ({ page, request }) => {
+  await importSampleCards(request)
   await page.goto('/')
-  await page.getByLabel('Локальный идентификатор переезда').fill('TEST-FOCUS')
-  await page.getByLabel('Фронт работ, м').fill('18')
-  await page.getByLabel('Отвод, м').fill('10')
-  await page.getByLabel('Буфер, м').fill('10')
-  await page.getByLabel('Первая').fill('70')
-  await page.getByLabel('Вторая').fill('50')
-  await page.getByLabel('Третья').fill('40')
+  await fillNewProject(page, '36 км 1 пк', '90003:36:1')
   await page.getByRole('button', { name: 'Создать проект' }).click()
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   const findings = page.locator('li', { hasText: 'Место работ и направления' })
@@ -65,15 +120,11 @@ test('review findings move focus to the first empty field', async ({ page }) => 
 
 test('B.34 regulation hint with unconfirmed parameters explains the rules but cannot be applied', async ({
   page,
+  request,
 }) => {
+  await importSampleCards(request)
   await page.goto('/')
-  await page.getByLabel('Локальный идентификатор переезда').fill('TEST-ADVICE')
-  await page.getByLabel('Фронт работ, м').fill('18')
-  await page.getByLabel('Отвод, м').fill('15')
-  await page.getByLabel('Буфер, м').fill('10')
-  await page.getByLabel('Первая').fill('70')
-  await page.getByLabel('Вторая').fill('50')
-  await page.getByLabel('Третья').fill('40')
+  await fillNewProject(page, '12 км 3 пк', '90001:12:3', { taper: '15' })
   await page.getByRole('button', { name: 'Создать проект' }).click()
   await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
   const advice = page.locator('.advice')
@@ -94,14 +145,9 @@ test('restores applied edits and unapplied fields after the window closes', asyn
   page,
   request,
 }) => {
+  await importSampleCards(request)
   await page.goto('/')
-  await page.getByLabel('Локальный идентификатор переезда').fill('TEST-RECOVERY')
-  await page.getByLabel('Фронт работ, м').fill('18')
-  await page.getByLabel('Отвод, м').fill('10')
-  await page.getByLabel('Буфер, м').fill('10')
-  await page.getByLabel('Первая').fill('70')
-  await page.getByLabel('Вторая').fill('50')
-  await page.getByLabel('Третья').fill('40')
+  await fillNewProject(page, '48 км 5 пк', '90004:48:5')
   await page.getByRole('button', { name: 'Создать проект' }).click()
   await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
   await page.getByLabel('n100').fill('100')
@@ -111,18 +157,21 @@ test('restores applied edits and unapplied fields after the window closes', asyn
 
   const recovery = await (await request.get(`${api}/api/recovery`)).json()
   const sessionId = recovery.find(
-    (item: { referenceId: string }) => item.referenceId === 'TEST-RECOVERY',
+    (item: { referenceId: string }) => item.referenceId === '90004:48:5',
   )?.sessionId
   expect(sessionId).toBeTruthy()
   expect(
     (await (await request.get(`${api}/api/projects`)).json()).some(
-      (item: { referenceId: string }) => item.referenceId === 'TEST-RECOVERY',
+      (item: { referenceId: string }) => item.referenceId === '90004:48:5',
     ),
   ).toBe(false)
 
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Копии восстановления' })).toBeVisible()
-  await page.getByRole('button', { name: 'Восстановить' }).last().click()
+  await page
+    .locator('li', { hasText: '90004:48:5' })
+    .getByRole('button', { name: 'Восстановить' })
+    .click()
   await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
   await expect(page.getByLabel('n100')).toHaveValue('100')
   await expect(page.getByLabel('n50')).toHaveValue('50')
@@ -136,7 +185,7 @@ test('restores applied edits and unapplied fields after the window closes', asyn
     ),
   ).toBe(false)
   const saved = (await (await request.get(`${api}/api/projects`)).json()).find(
-    (item: { referenceId: string }) => item.referenceId === 'TEST-RECOVERY',
+    (item: { referenceId: string }) => item.referenceId === '90004:48:5',
   )
   expect(saved.revision).toBe(1)
   expect(
@@ -214,7 +263,11 @@ test('imports synthetic station PU-66 and a generated PNG ZIP through the local 
   await page.getByRole('button', { name: 'Реестры', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Локальные реестры' })).toBeVisible()
   expect((await (await request.get(`${api}/api/signs`)).json()).length).toBe(1)
-  expect((await (await request.get(`${api}/api/pu66`)).json()).length).toBe(1)
+  expect(
+    (await (await request.get(`${api}/api/pu66`)).json()).some((card: { referenceId: string }) =>
+      card.referenceId.startsWith('ст.'),
+    ),
+  ).toBe(true)
 })
 
 test('creates a project from a PU-66 card found by kilometre and picket', async ({
@@ -223,31 +276,17 @@ test('creates a project from a PU-66 card found by kilometre and picket', async 
 }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
-  const files = await Promise.all(
-    [sampleCards[0]!, sampleCards[1]!].map(async (card) => ({
-      name: card.filename,
-      data: (await createSampleWorkbook(card)).toString('base64'),
-    })),
-  )
-  const headers = { Origin: origin }
-  const preview = await request.post(`${api}/api/pu66/import/preview`, {
-    headers,
-    data: { files },
-  })
-  const plan = await preview.json()
-  const applied = await request.post(`${api}/api/pu66/import/apply`, {
-    headers,
-    data: { files, expectedFingerprint: plan.fingerprint },
-  })
-  expect(applied.ok()).toBe(true)
+  await importSampleCards(request)
 
   await page.goto('/')
+  await expect(page.getByRole('button', { name: 'Создать проект' })).toBeDisabled()
   await page.getByLabel('Поиск карточки').fill('24 км 7 пк')
   await expect(page.getByText(/Найдено: 1 из \d+/)).toBeVisible()
   const choice = page.getByLabel('Локальная карточка')
   await choice.selectOption('90002:24:7')
   await expect(page.getByText('Будет закреплено в проекте')).toBeVisible()
-  await expect(page.getByLabel('Локальный идентификатор переезда')).toHaveValue('90002:24:7')
+  await expect(page.locator('#new-scheme-title ~ form .preview')).toContainText('90002:24:7')
+  await expect(page.getByRole('button', { name: 'Создать проект' })).toBeEnabled()
   await page.getByLabel('Фронт работ, м').fill('18')
   await page.getByLabel('Отвод, м').fill('10')
   await page.getByLabel('Буфер, м').fill('10')
@@ -263,7 +302,11 @@ test('creates a project from a PU-66 card found by kilometre and picket', async 
   expect(errors).toEqual([])
 })
 
-test('leaving the form while the card is re-read cancels project creation', async ({ page }) => {
+test('leaving the form while the card is re-read cancels project creation', async ({
+  page,
+  request,
+}) => {
+  await importSampleCards(request)
   let calls = 0
   let release: () => void = () => undefined
   const held = new Promise<void>((resolve) => (release = resolve))
@@ -291,15 +334,10 @@ test('leaving the form while the card is re-read cancels project creation', asyn
   await expect(page.getByText(/локальная редакция № 1/)).toHaveCount(0)
 })
 
-test('release sheet drops the draft mark and downloads a PNG', async ({ page }) => {
+test('release sheet drops the draft mark and downloads a PNG', async ({ page, request }) => {
+  await importSampleCards(request)
   await page.goto('/')
-  await page.getByLabel('Локальный идентификатор переезда').fill('TEST-RELEASE')
-  await page.getByLabel('Фронт работ, м').fill('18')
-  await page.getByLabel('Отвод, м').fill('10')
-  await page.getByLabel('Буфер, м').fill('10')
-  await page.getByLabel('Первая').fill('70')
-  await page.getByLabel('Вторая').fill('50')
-  await page.getByLabel('Третья').fill('40')
+  await fillNewProject(page, '12 км 3 пк', '90001:12:3')
   await page.getByRole('button', { name: 'Создать проект' }).click()
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   const host = page.locator('.print-host')

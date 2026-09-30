@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createNewScheme } from '../create-scheme'
+import { createUnlinkedScheme } from '../create-scheme'
 import { schemeSchema } from '../model'
 import {
   checkNorm,
@@ -45,7 +45,7 @@ describe('PU-66 norm column', () => {
   })
 
   it('lets a project keep sign size IV suggested for works on IА/IБ roads', () => {
-    const scheme = createNewScheme({
+    const scheme = createUnlinkedScheme({
       referenceId: 'TEST-IV',
       locationText: 'Учебный переезд',
       directionLeft: 'А',

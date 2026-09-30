@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import b33 from '../../../tests/fixtures/manual-v1.json?raw'
 import b34 from '../../../tests/fixtures/legacy-b34-manual.json?raw'
-import { createNewScheme } from '../create-scheme'
+import { createUnlinkedScheme } from '../create-scheme'
 import { applySchemeDetails, createSchemeDetailsDraft } from '../edit-details'
 import { newSignDraft, newTextDraft, savePlacement } from '../edit-placements'
 import { projectDraftSheet } from '../draft-sheet'
@@ -9,7 +9,7 @@ import { importSchemeJson } from '../import'
 import { linkPu66Card } from '../link-pu66'
 
 function nativeScheme() {
-  return createNewScheme({
+  return createUnlinkedScheme({
     referenceId: 'TEST-SHEET',
     locationText: 'Учебный участок',
     directionLeft: 'А',

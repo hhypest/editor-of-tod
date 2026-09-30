@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { createNewScheme } from '../create-scheme'
+import { createUnlinkedScheme } from '../create-scheme'
 import { exportSchemeJson, importSchemeJson } from '../import'
 import { linkPu66Card } from '../link-pu66'
 import type { Pu66SchemeRecord } from '../pu66-snapshot'
 
-const scheme = createNewScheme({
+const scheme = createUnlinkedScheme({
   referenceId: 'TEST-OLD',
   locationText: 'Ручная подпись участка',
   directionLeft: '',

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import b33 from '../../../tests/fixtures/manual-v1.json?raw'
 import b34 from '../../../tests/fixtures/legacy-b34-manual.json?raw'
-import { createNewScheme } from '../create-scheme'
+import { createUnlinkedScheme } from '../create-scheme'
 import { applySchemeDetails, createSchemeDetailsDraft } from '../edit-details'
 import { newSignDraft, savePlacement } from '../edit-placements'
 import { projectDraftSheet } from '../draft-sheet'
@@ -32,7 +32,7 @@ const options = {
 }
 
 function scheme() {
-  return createNewScheme({
+  return createUnlinkedScheme({
     referenceId: 'TEST-DRAW',
     locationText: 'Учебный участок',
     directionLeft: 'на А',

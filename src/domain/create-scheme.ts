@@ -3,8 +3,8 @@ import { linkPu66Card } from './link-pu66'
 import type { Pu66SchemeRecord } from './pu66-snapshot'
 import { selectTemplateByWorkFront } from './registry'
 
+/** Условия новой схемы, которые составитель вводит сам; переезд задаёт карточка ПУ-66. */
 export type NewSchemeInput = {
-  referenceId: string
   locationText: string
   directionLeft: string
   directionRight: string
@@ -33,8 +33,13 @@ function positiveNumber(value: string, label: string): number {
   return result
 }
 
-export function createNewScheme(
-  input: NewSchemeInput,
+/**
+ * Проект без закреплённой карточки — такими были проекты до 30.09.2026 и импортированные v1.
+ * Интерфейс так новые схемы не создаёт (см. {@link createSchemeFromPu66}); функция нужна
+ * для проверки введённых условий и для тестов.
+ */
+export function createUnlinkedScheme(
+  input: NewSchemeInput & { referenceId: string },
   options: { id?: string; now?: string } = {},
 ): Scheme {
   if (!input.referenceId.trim()) {
@@ -99,13 +104,21 @@ export function createNewScheme(
 }
 
 /**
- * Создаёт проект сразу с закреплённой карточкой ПУ-66: идентификатор берётся из карточки,
- * в проект попадает только разрешённая выборка выбранной редакции.
+ * Единственный способ начать новую схему: идентификатор берётся из карточки ПУ-66 локального
+ * реестра, в проект попадает только разрешённая выборка выбранной редакции.
  */
 export function createSchemeFromPu66(
   input: NewSchemeInput,
-  card: Pu66SchemeRecord,
+  card: Pu66SchemeRecord | null | undefined,
   options: { id?: string; now?: string } = {},
 ): Scheme {
-  return linkPu66Card(createNewScheme({ ...input, referenceId: card.referenceId }, options), card)
+  if (!card?.referenceId.trim()) {
+    throw new SchemeCreationError(
+      'Новую схему можно начать только с карточки ПУ-66 из локального реестра. Выберите карточку.',
+    )
+  }
+  return linkPu66Card(
+    createUnlinkedScheme({ ...input, referenceId: card.referenceId }, options),
+    card,
+  )
 }

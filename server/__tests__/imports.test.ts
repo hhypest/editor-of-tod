@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { zipSync } from 'fflate'
 import { PNG } from 'pngjs'
 import { describe, expect, it } from 'vitest'
-import { createNewScheme } from '../../src/domain/create-scheme'
+import { createUnlinkedScheme } from '../../src/domain/create-scheme'
 import { linkPu66Card } from '../../src/domain/link-pu66'
 import { annualPu66ReviewStatus } from '../../src/domain/pu66-review'
 import { runImport } from '../import-cli'
@@ -180,7 +180,7 @@ describe('private import formats', () => {
         revision: 1,
         updatedAt: expect.any(String),
       })
-      const native = createNewScheme({
+      const native = createUnlinkedScheme({
         referenceId: 'TEST-NEW',
         locationText: '',
         directionLeft: '',

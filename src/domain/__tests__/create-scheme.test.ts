@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  createNewScheme,
+  createUnlinkedScheme,
   createSchemeFromPu66,
   SchemeCreationError,
   type NewSchemeInput,
@@ -9,7 +9,7 @@ import { applySchemeDetails, createSchemeDetailsDraft } from '../edit-details'
 import { newTextDraft, savePlacement } from '../edit-placements'
 import { exportSchemeJson, importSchemeJson } from '../import'
 
-const input: NewSchemeInput = {
+const input: NewSchemeInput & { referenceId: string } = {
   referenceId: 'TEST-NEW',
   locationText: 'Учебный переезд',
   directionLeft: 'Условное А',
@@ -25,9 +25,9 @@ const options = {
   now: '2026-09-26T12:00:00.000Z',
 }
 
-describe('native project creation', () => {
+describe('scheme conditions without a pinned card (older projects and tests)', () => {
   it('starts B.34 with only entered measurements and supports editing and JSON roundtrip', () => {
-    const scheme = createNewScheme(input, options)
+    const scheme = createUnlinkedScheme(input, options)
     expect(scheme.schemaVersion).toBe(5)
     expect(scheme.crossing).toEqual({
       referenceId: 'TEST-NEW',
@@ -73,7 +73,7 @@ describe('native project creation', () => {
   })
 
   it('chooses B.33 at 30 m, keeps the inactive variant empty and checks active zone', () => {
-    const scheme = createNewScheme({ ...input, frontMetres: '30' }, options)
+    const scheme = createUnlinkedScheme({ ...input, frontMetres: '30' }, options)
     expect(scheme.template.code).toBe('b33')
     expect(scheme.parameters.workZones.b34).toBeNull()
     expect(scheme.parameters.workZones.b33?.workMetres).toBe(30)
@@ -83,7 +83,7 @@ describe('native project creation', () => {
   })
 
   it('does not silently keep B.34 after the native work front crosses 30 m', () => {
-    const scheme = createNewScheme(input, options)
+    const scheme = createUnlinkedScheme(input, options)
     const draft = createSchemeDetailsDraft(scheme)
     draft.parameters.workZones.b34!.workMetres = '31'
     expect(() => applySchemeDetails(scheme, draft)).toThrow('workZones.b34.workMetres')
@@ -96,8 +96,8 @@ describe('native project creation', () => {
     [{ ...input, bufferMetres: 'неизвестно' }, 'буфер'],
     [{ ...input, speedStagesKmh: ['70', '', '40'] as [string, string, string] }, 'скорость 2'],
   ])('rejects missing or invalid measurements', (bad, field) => {
-    expect(() => createNewScheme(bad, options)).toThrow(SchemeCreationError)
-    expect(() => createNewScheme(bad, options)).toThrow(field)
+    expect(() => createUnlinkedScheme(bad, options)).toThrow(SchemeCreationError)
+    expect(() => createUnlinkedScheme(bad, options)).toThrow(field)
   })
 })
 
@@ -112,8 +112,16 @@ describe('project created from a local PU-66 card', () => {
     updatedAt: '2026-09-28T10:00:00.000Z',
   }
 
+  it('refuses to start a new scheme without a PU-66 card', () => {
+    for (const missing of [null, undefined, { ...card, referenceId: '  ' }]) {
+      expect(() => createSchemeFromPu66(input, missing, options)).toThrow(SchemeCreationError)
+      expect(() => createSchemeFromPu66(input, missing, options)).toThrow('карточки ПУ-66')
+    }
+  })
+
   it('takes the key from the card and pins only the whitelisted snapshot', () => {
-    const scheme = createSchemeFromPu66({ ...input, referenceId: 'ввод вручную' }, card, options)
+    // Посторонний идентификатор во входных данных не должен попасть в проект.
+    const scheme = createSchemeFromPu66(input, card, options)
     expect(scheme.crossing).toEqual({
       referenceId: '90002:24:7',
       source: 'local-pu66',
@@ -127,7 +135,7 @@ describe('project created from a local PU-66 card', () => {
       },
     })
     expect(scheme.parameters.locationText).toBe(input.locationText)
-    expect(exportSchemeJson(scheme)).not.toContain('ввод вручную')
+    expect(exportSchemeJson(scheme)).not.toContain('TEST-NEW')
   })
 
   it('still validates the measurements typed by the author', () => {

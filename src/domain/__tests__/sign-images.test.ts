@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { createNewScheme } from '../create-scheme'
+import { createUnlinkedScheme } from '../create-scheme'
 import { newSignDraft, savePlacement } from '../edit-placements'
 import { exportSchemeJson, importSchemeJson } from '../import'
 import { clearPinsAfterSignChange, pinSignImages, usedSignCodes } from '../sign-images'
 
 function example() {
-  const scheme = createNewScheme({
+  const scheme = createUnlinkedScheme({
     referenceId: 'TEST-PIN',
     locationText: 'Учебный переезд',
     directionLeft: 'А',
