@@ -63,14 +63,34 @@ function push(event: ClientEvent): void {
   schedule()
 }
 
-function describe(error: unknown): string {
-  if (error instanceof Error)
-    return `${error.name}: ${error.message}\n${(error.stack ?? '').split('\n').slice(1, 5).join('\n')}`
-  return String(error)
+/**
+ * Описание ошибки для журнала. `withText: false` — только тип и стек: текст ошибок операций с
+ * файлами и базой может содержать имя книги ПУ-66, название станции или ключ переезда, а
+ * серверная очистка распознаёт лишь ключи, телефоны и ФИО. Первая строка стека V8 повторяет
+ * сообщение, поэтому она отбрасывается.
+ */
+function describe(error: unknown, withText: boolean): string {
+  if (error instanceof Error) {
+    const frames = (error.stack ?? '')
+      .split('\n')
+      .filter((line) => /^\s*at\s|@/.test(line))
+      .slice(0, 4)
+      .join('\n')
+    return withText ? `${error.name}: ${error.message}\n${frames}` : `${error.name}\n${frames}`
+  }
+  return withText ? String(error) : typeof error
 }
 
-export function reportError(name: string, error: unknown): void {
-  push({ kind: 'error', name, message: describe(error) })
+/**
+ * Ошибка в журнал. Для ошибок кода (окно, Vue) текст полезен и записывается; для ошибок
+ * операций с пользовательскими данными передайте `{ withText: false }`.
+ */
+export function reportError(
+  name: string,
+  error: unknown,
+  options: { withText?: boolean } = {},
+): void {
+  push({ kind: 'error', name, message: describe(error, options.withText ?? true) })
 }
 
 export function reportEvent(name: string, message?: string): void {
@@ -79,7 +99,7 @@ export function reportEvent(name: string, message?: string): void {
 
 /**
  * Замер долгой операции: длительность записывается в журнал вместе с исходом. Ошибка
- * операции записывается и пробрасывается дальше без изменений.
+ * операции записывается (тип и стек, без текста) и пробрасывается дальше без изменений.
  */
 export async function timed<T>(name: string, operation: () => Promise<T>): Promise<T> {
   const started = performance.now()
@@ -92,7 +112,8 @@ export async function timed<T>(name: string, operation: () => Promise<T>): Promi
       kind: 'error',
       name,
       durationMs: Math.round(performance.now() - started),
-      message: describe(error),
+      // Операции работают с файлами пользователя: текст ошибки не записывается.
+      message: describe(error, false),
     })
     throw error
   }

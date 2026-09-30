@@ -229,11 +229,11 @@ export function useProjectSession(onProjectOpened: () => void) {
       selectedPlacementId.value = imported.value.scheme.placements[0]?.id ?? null
       onProjectOpened()
     } catch (error) {
-      // Текст ошибки импорта содержит только путь поля; сам файл в журнал не попадает.
-      reportError(
-        'Открытие JSON-проекта',
-        error instanceof SchemeImportError ? `${error.code}: ${error.field ?? ''}` : error,
-      )
+      // Записываются только код ошибки и путь поля; ни содержимое, ни имя файла в журнал не
+      // попадают.
+      if (error instanceof SchemeImportError)
+        reportError('Открытие JSON-проекта', `${error.code}: ${error.field ?? ''}`)
+      else reportError('Открытие JSON-проекта', error, { withText: false })
       errorMessage.value =
         error instanceof SchemeImportError ? error.message : 'Не удалось прочитать выбранный файл.'
     } finally {
@@ -307,7 +307,8 @@ export function useProjectSession(onProjectOpened: () => void) {
   }
 
   function showLocalError(cause: unknown): void {
-    reportError('Операция с локальной базой', cause)
+    // Текст ответа базы может содержать ключ переезда или имя файла — пишется только тип ошибки.
+    reportError('Операция с локальной базой', cause, { withText: false })
     localError.value =
       cause instanceof Error ? cause.message : 'Операция с локальной базой не удалась.'
     if (localError.value.includes('Запись изменилась')) {
