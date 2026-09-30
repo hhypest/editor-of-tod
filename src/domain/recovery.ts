@@ -18,35 +18,47 @@ const titleBlockV5DraftSchema = z.strictObject({
 })
 
 export const detailsDraftSchema = z.strictObject({
-  parameters: z.strictObject({
-    locationText: text,
-    directions: z.strictObject({ left: text, right: text }),
-    signDistancesMetres: z.strictObject({
-      d300: text,
-      d250: text,
-      d150: text,
-      d50: text,
-      n100: text,
-      n50: text,
+  // Копии до 01.10.2026 (v6) хранят «скорость в населённом пункте» — она становится скоростью
+  // на подходе, кроме местоположения «вне населённого пункта», где поле не использовалось.
+  parameters: z.preprocess(
+    (value) => {
+      if (!value || typeof value !== 'object' || !('settlementSpeedKmh' in value)) return value
+      const { settlementSpeedKmh, ...rest } = value as Record<string, unknown>
+      return {
+        ...rest,
+        approachSpeedKmh: rest.location === 'out' ? '' : settlementSpeedKmh,
+      }
+    },
+    z.strictObject({
+      locationText: text,
+      directions: z.strictObject({ left: text, right: text }),
+      signDistancesMetres: z.strictObject({
+        d300: text,
+        d250: text,
+        d150: text,
+        d50: text,
+        n100: text,
+        n50: text,
+      }),
+      speedStagesKmh: z.tuple([text, text, text]),
+      yellowTemporarySigns: z.boolean(),
+      location: z.enum(['auto', 'in', 'out']),
+      signSize: z.enum(['auto', 'I', 'II', 'III', 'IV']),
+      approachSpeedKmh: text,
+      lastSettlement: z.boolean().nullable(),
+      frontStyle: z.enum(['part', 'solid']),
+      frontFromPu66: z.boolean(),
+      regulation: z.strictObject({
+        mode: z.enum(['auto', 'signs', 'one', 'two']),
+        hourly: text,
+        k: z.number().finite(),
+        vis: z.boolean(),
+        straight: z.boolean(),
+        last: text.nullable(),
+      }),
+      workZones: z.strictObject({ b33: zone.nullable(), b34: zone.nullable() }),
     }),
-    speedStagesKmh: z.tuple([text, text, text]),
-    yellowTemporarySigns: z.boolean(),
-    location: z.enum(['auto', 'in', 'out']),
-    signSize: z.enum(['auto', 'I', 'II', 'III', 'IV']),
-    settlementSpeedKmh: text,
-    lastSettlement: z.boolean().nullable(),
-    frontStyle: z.enum(['part', 'solid']),
-    frontFromPu66: z.boolean(),
-    regulation: z.strictObject({
-      mode: z.enum(['auto', 'signs', 'one', 'two']),
-      hourly: text,
-      k: z.number().finite(),
-      vis: z.boolean(),
-      straight: z.boolean(),
-      last: text.nullable(),
-    }),
-    workZones: z.strictObject({ b33: zone.nullable(), b34: zone.nullable() }),
-  }),
+  ),
   // Копии восстановления до 30.09.2026 хранят реквизиты v5 — они переводятся в v6 при чтении.
   // Телефон в неприменённом вводе может быть набран не полностью.
   titleBlock: z.preprocess(

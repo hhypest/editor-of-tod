@@ -16,6 +16,8 @@ function project(frontMetres: string, taperMetres: string, bufferMetres: string)
     taperMetres,
     bufferMetres,
     speedStagesKmh: ['70', '50', '40'],
+    location: 'out',
+    approachSpeedKmh: '90',
     yellowTemporarySigns: false,
   })
 }

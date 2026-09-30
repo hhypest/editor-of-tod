@@ -6,8 +6,10 @@ import {
   schemeV3Schema,
   schemeV4Schema,
   schemeV5Schema,
+  schemeV6Schema,
   upgradeSchemeV4,
   upgradeSchemeV5,
+  upgradeSchemeV6,
   upgradeSchemeV2,
   upgradeSchemeV3,
   defaultLegacyParameters,
@@ -32,8 +34,18 @@ export class SchemeImportError extends Error {
 
 export interface ImportResult {
   scheme: Scheme
-  format: 'legacy-v1' | 'scheme-v2' | 'scheme-v3' | 'scheme-v4' | 'scheme-v5' | 'scheme-v6'
+  format:
+    'legacy-v1' | 'scheme-v2' | 'scheme-v3' | 'scheme-v4' | 'scheme-v5' | 'scheme-v6' | 'scheme-v7'
   warnings: string[]
+}
+
+/** До v7 скорость на подходе вне населённого пункта не вводилась. */
+function approachWarning(scheme: Scheme): string[] {
+  return scheme.parameters.approachSpeedKmh === null
+    ? [
+        'Разрешённая скорость на подходе в прежнем формате не хранилась. Укажите её на этапе 2 — от неё считаются ступени скорости по умолчанию.',
+      ]
+    : []
 }
 
 /** Прежние строки ответственных разбираются автоматически — составитель должен это проверить. */
@@ -214,7 +226,7 @@ function migrateLegacy(
 
   const { params, head } = legacy
   const candidate = {
-    schemaVersion: 6,
+    schemaVersion: 7,
     id,
     createdAt: now,
     crossing: { referenceId: params.key, source: 'legacy-pu66', snapshot: null },
@@ -238,7 +250,11 @@ function migrateLegacy(
       },
       location: params.loc ?? defaultLegacyParameters.location,
       signSize: params.size ?? defaultLegacyParameters.signSize,
-      settlementSpeedKmh: params.vIn ?? defaultLegacyParameters.settlementSpeedKmh,
+      // В прототипе скорость vIn вводилась только для населённого пункта.
+      approachSpeedKmh:
+        (params.loc ?? defaultLegacyParameters.location) === 'out'
+          ? null
+          : (params.vIn ?? defaultLegacyParameters.settlementSpeedKmh),
       lastSettlement: params.locLast ?? defaultLegacyParameters.lastSettlement,
       frontStyle: params.front ?? defaultLegacyParameters.frontStyle,
       frontFromPu66: params.zPu ?? defaultLegacyParameters.frontFromPu66,
@@ -295,7 +311,11 @@ function migrateLegacy(
 
   const parsed = schemeSchema.safeParse(candidate)
   if (!parsed.success) invalidIssue(parsed.error.issues)
-  return { scheme: parsed.data, format: 'legacy-v1', warnings }
+  return {
+    scheme: parsed.data,
+    format: 'legacy-v1',
+    warnings: [...warnings, ...approachWarning(parsed.data)],
+  }
 }
 
 export function importSchemeJson(
@@ -359,22 +379,38 @@ export function importSchemeJson(
   if ('schemaVersion' in value && value.schemaVersion === 5) {
     const parsed = schemeV5Schema.safeParse(value)
     if (!parsed.success) invalidIssue(parsed.error.issues)
+    const scheme = upgradeSchemeV5(parsed.data)
     return {
-      scheme: upgradeSchemeV5(parsed.data),
+      scheme,
       format: 'scheme-v5',
       warnings: [
         'Импортированная схема пока не проверена по действующим нормативным источникам.',
         ...responsibleWarning(parsed.data.titleBlock.responsible),
+        ...approachWarning(scheme),
       ],
     }
   }
 
   if ('schemaVersion' in value && value.schemaVersion === 6) {
+    const parsed = schemeV6Schema.safeParse(value)
+    if (!parsed.success) invalidIssue(parsed.error.issues)
+    const scheme = upgradeSchemeV6(parsed.data)
+    return {
+      scheme,
+      format: 'scheme-v6',
+      warnings: [
+        'Импортированная схема пока не проверена по действующим нормативным источникам.',
+        ...approachWarning(scheme),
+      ],
+    }
+  }
+
+  if ('schemaVersion' in value && value.schemaVersion === 7) {
     const parsed = schemeSchema.safeParse(value)
     if (!parsed.success) invalidIssue(parsed.error.issues)
     return {
       scheme: parsed.data,
-      format: 'scheme-v6',
+      format: 'scheme-v7',
       warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
     }
   }
@@ -395,7 +431,7 @@ export function importSchemeJson(
 
   throw new SchemeImportError(
     'unsupported-version',
-    'Версия проекта не поддерживается. Поддерживаются v: 1 и schemaVersion: 2–6.',
+    'Версия проекта не поддерживается. Поддерживаются v: 1 и schemaVersion: 2–7.',
   )
 }
 

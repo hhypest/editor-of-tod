@@ -333,13 +333,34 @@ export const schemeV5Schema = z
   .strictObject({ ...schemeV5Fields, schemaVersion: z.literal(5) })
   .superRefine(checkModernScheme)
 
-/** Текущий формат проекта v6: реквизиты с должностями и телефонами, отметки проверки. */
+const schemeV6Fields = {
+  ...schemeV5Fields,
+  titleBlock: titleBlockSchema,
+  reviewMarks: reviewMarksSchema.default(() => ({})),
+}
+
+/** Read-only validator for files and SQLite revisions saved before 01.10.2026 (format v6). */
+export const schemeV6Schema = z
+  .strictObject({ ...schemeV6Fields, schemaVersion: z.literal(6) })
+  .superRefine(checkModernScheme)
+
+const { settlementSpeedKmh: _settlementSpeed, ...parametersV7Fields } =
+  schemeV5Fields.parameters.shape
+void _settlementSpeed
+
+/**
+ * Текущий формат проекта v7: вместо «скорости в населённом пункте» — разрешённая скорость на
+ * подходе к месту работ для обоих вариантов местоположения. От неё считаются ступени 3.24 по
+ * умолчанию; null — скорость не указана (проекты вне населённого пункта до v7).
+ */
 export const schemeSchema = z
   .strictObject({
-    ...schemeV5Fields,
-    schemaVersion: z.literal(6),
-    titleBlock: titleBlockSchema,
-    reviewMarks: reviewMarksSchema.default(() => ({})),
+    ...schemeV6Fields,
+    schemaVersion: z.literal(7),
+    parameters: z.strictObject({
+      ...parametersV7Fields,
+      approachSpeedKmh: finite.positive().nullable(),
+    }),
   })
   .superRefine(checkModernScheme)
 
@@ -348,6 +369,7 @@ export type SchemeV2 = z.infer<typeof schemeV2Schema>
 export type SchemeV3 = z.infer<typeof schemeV3Schema>
 export type SchemeV4 = z.infer<typeof schemeV4Schema>
 export type SchemeV5 = z.infer<typeof schemeV5Schema>
+export type SchemeV6 = z.infer<typeof schemeV6Schema>
 export type TitleBlock = z.infer<typeof titleBlockSchema>
 export type Crossing = z.infer<typeof crossingSchema>
 export type Template = z.infer<typeof templateSchema>
@@ -392,11 +414,30 @@ export function upgradeTitleBlock(previous: z.infer<typeof titleBlockV5Schema>):
 
 export function upgradeSchemeV5(value: unknown): Scheme {
   const previous = schemeV5Schema.parse(value)
-  return schemeSchema.parse({
+  return upgradeSchemeV6({
     ...previous,
     schemaVersion: 6,
     titleBlock: upgradeTitleBlock(previous.titleBlock),
     reviewMarks: {},
+  })
+}
+
+/**
+ * v6 → v7. До v7 скорость на подходе вводилась только для населённого пункта; вне его поле
+ * не использовалось, поэтому значение не переносится, а составитель укажет скорость сам.
+ * Для «не определено» переносится прежнее значение — его вводили как скорость в населённом
+ * пункте.
+ */
+export function upgradeSchemeV6(value: unknown): Scheme {
+  const previous = schemeV6Schema.parse(value)
+  const { settlementSpeedKmh, ...parameters } = previous.parameters
+  return schemeSchema.parse({
+    ...previous,
+    schemaVersion: 7,
+    parameters: {
+      ...parameters,
+      approachSpeedKmh: parameters.location === 'out' ? null : settlementSpeedKmh,
+    },
   })
 }
 
@@ -412,6 +453,9 @@ export function parseStoredScheme(value: unknown): Scheme {
   }
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 5) {
     return upgradeSchemeV5(value)
+  }
+  if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 6) {
+    return upgradeSchemeV6(value)
   }
   return schemeSchema.parse(value)
 }

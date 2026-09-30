@@ -41,6 +41,8 @@ function scheme() {
     taperMetres: '10',
     bufferMetres: '10',
     speedStagesKmh: ['70', '50', '40'],
+    location: 'out',
+    approachSpeedKmh: '90',
     yellowTemporarySigns: true,
   })
 }
@@ -179,6 +181,8 @@ describe('vector A4 sheet', () => {
       taperMetres: '10',
       bufferMetres: '15',
       speedStagesKmh: ['70', '50', '40'],
+      location: 'out',
+      approachSpeedKmh: '90',
       yellowTemporarySigns: false,
     })
     const all = texts(drawSheet(projectDraftSheet(project), options).nodes)

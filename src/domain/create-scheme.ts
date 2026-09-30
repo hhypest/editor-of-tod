@@ -1,5 +1,7 @@
 import { defaultLegacyParameters, schemeSchema, type Scheme } from './model'
 import { linkPu66Card } from './link-pu66'
+import { defaultSpeedStages, fillDistanceDefaults, type SchemeLocation } from './normative-defaults'
+import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import type { Pu66SchemeRecord } from './pu66-snapshot'
 import { selectTemplateByWorkFront } from './registry'
 
@@ -11,9 +13,30 @@ export type NewSchemeInput = {
   frontMetres: string
   taperMetres: string
   bufferMetres: string
+  /** Выбирается при создании: от него зависят расстояния и скорость по умолчанию. */
+  location: SchemeLocation | ''
+  approachSpeedKmh: string
   speedStagesKmh: [string, string, string]
   yellowTemporarySigns: boolean
 }
+
+/**
+ * Значения формы после выбора местоположения: разрешённая скорость и ступени 3.24 из
+ * нормативных параметров. Расстояния до знаков подставляются при создании проекта.
+ */
+export function newSchemeDefaults(
+  location: SchemeLocation,
+  rules: NormativeRules,
+): Pick<NewSchemeInput, 'approachSpeedKmh' | 'speedStagesKmh'> {
+  const approach = rules.allowedSpeedKmh[location]
+  return {
+    approachSpeedKmh: String(approach),
+    speedStagesKmh: defaultSpeedStages(approach, rules).map(String) as [string, string, string],
+  }
+}
+
+const { settlementSpeedKmh: _settlementSpeed, ...legacyParameters } = defaultLegacyParameters
+void _settlementSpeed
 
 export class SchemeCreationError extends Error {
   constructor(message: string) {
@@ -40,7 +63,7 @@ function positiveNumber(value: string, label: string): number {
  */
 export function createUnlinkedScheme(
   input: NewSchemeInput & { referenceId: string },
-  options: { id?: string; now?: string } = {},
+  options: { id?: string; now?: string; rules?: NormativeRules } = {},
 ): Scheme {
   if (!input.referenceId.trim()) {
     throw new SchemeCreationError('Укажите локальный идентификатор переезда.')
@@ -48,6 +71,12 @@ export function createUnlinkedScheme(
   const workMetres = positiveNumber(input.frontMetres, 'фронт работ')
   const taperMetres = positiveNumber(input.taperMetres, 'отвод')
   const bufferMetres = positiveNumber(input.bufferMetres, 'буфер')
+  if (input.location !== 'in' && input.location !== 'out') {
+    throw new SchemeCreationError(
+      'Укажите, находится ли место работ в населённом пункте: от этого зависят расстояния до знаков и скорости.',
+    )
+  }
+  const approachSpeedKmh = positiveNumber(input.approachSpeedKmh, 'разрешённая скорость на подходе')
   const speeds = input.speedStagesKmh.map((value, index) =>
     positiveNumber(value, `скорость ${index + 1}`),
   ) as [number, number, number]
@@ -59,7 +88,7 @@ export function createUnlinkedScheme(
     labels: { taper: '', buffer: '', work: '' },
   }
   const parsed = schemeSchema.safeParse({
-    schemaVersion: 6,
+    schemaVersion: 7,
     id: options.id ?? crypto.randomUUID(),
     createdAt: options.now ?? new Date().toISOString(),
     crossing: {
@@ -77,8 +106,14 @@ export function createUnlinkedScheme(
     parameters: {
       locationText: input.locationText.trim(),
       directions: { left: input.directionLeft.trim(), right: input.directionRight.trim() },
-      signDistancesMetres: { d300: null, d250: null, d150: null, d50: null, n100: null, n50: null },
-      ...defaultLegacyParameters,
+      signDistancesMetres: fillDistanceDefaults(
+        { d300: null, d250: null, d150: null, d50: null, n100: null, n50: null },
+        input.location,
+        options.rules ?? PROTOTYPE_RULES,
+      ),
+      ...legacyParameters,
+      location: input.location,
+      approachSpeedKmh,
       speedStagesKmh: speeds,
       yellowTemporarySigns: input.yellowTemporarySigns,
       workZones: { b33: code === 'b33' ? zone : null, b34: code === 'b34' ? zone : null },
@@ -111,7 +146,7 @@ export function createUnlinkedScheme(
 export function createSchemeFromPu66(
   input: NewSchemeInput,
   card: Pu66SchemeRecord | null | undefined,
-  options: { id?: string; now?: string } = {},
+  options: { id?: string; now?: string; rules?: NormativeRules } = {},
 ): Scheme {
   if (!card?.referenceId.trim()) {
     throw new SchemeCreationError(

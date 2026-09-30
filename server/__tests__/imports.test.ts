@@ -189,6 +189,8 @@ describe('private import formats', () => {
         taperMetres: '8',
         bufferMetres: '10',
         speedStagesKmh: ['70', '50', '40'],
+        location: 'out',
+        approachSpeedKmh: '90',
         yellowTemporarySigns: false,
       })
       const selected = store.getPu66Scheme(card.key)

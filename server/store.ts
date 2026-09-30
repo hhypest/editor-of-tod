@@ -169,6 +169,15 @@ const initialNormativeEntries: NormativeDraft[] = [
   },
 ]
 
+/**
+ * Поле последней редакции проекта для списка «Мои проекты»: по нему составитель узнаёт
+ * проект (место по ПУ-66, дорога, направления, описание работ). Не строка — пустая строка.
+ */
+function summaryText(path: string): string {
+  return `CASE WHEN json_type(scheme_json, '${path}') = 'text'
+    THEN substr(json_extract(scheme_json, '${path}'), 1, 500) ELSE '' END`
+}
+
 export class RegistryStore {
   private readonly db: DatabaseSync
   readonly path: string
@@ -549,7 +558,12 @@ export class RegistryStore {
     return this.db
       .prepare(
         `SELECT id, reference_id AS referenceId, location_text AS locationText,
-          template_code AS templateCode, revision, updated_at AS updatedAt
+          template_code AS templateCode, revision, updated_at AS updatedAt,
+          ${summaryText('$.crossing.snapshot.location')} AS crossingLocation,
+          ${summaryText('$.crossing.snapshot.roadName')} AS roadName,
+          ${summaryText('$.parameters.directions.left')} AS directionLeft,
+          ${summaryText('$.parameters.directions.right')} AS directionRight,
+          ${summaryText('$.titleBlock.work.description')} AS workDescription
           FROM project_drafts ORDER BY updated_at DESC, id`,
       )
       .all() as ProjectSummary[]

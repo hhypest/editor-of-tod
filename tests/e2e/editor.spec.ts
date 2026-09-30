@@ -35,27 +35,36 @@ async function importSampleCards(request: APIRequestContext): Promise<void> {
   expect(applied.ok()).toBe(true)
 }
 
+/** Вкладка «Новый проект»: при наличии сохранённых проектов стартовая вкладка — «Мои проекты». */
+async function openNewProjectTab(page: Page): Promise<void> {
+  await page
+    .getByRole('group', { name: 'Способ открытия проекта' })
+    .getByRole('button', { name: 'Новый проект' })
+    .click()
+}
+
 /** Выбирает карточку ПУ-66 по км и пк и заполняет обязательные условия новой схемы. */
 async function fillNewProject(
   page: Page,
   search: string,
   key: string,
   sizes = { taper: '10' },
+  location: 'Вне населённого пункта' | 'В населённом пункте' = 'Вне населённого пункта',
 ): Promise<void> {
+  await openNewProjectTab(page)
   await page.getByLabel('Поиск карточки').fill(search)
   await page.getByLabel('Локальная карточка').selectOption(key)
   await expect(page.getByText('Будет закреплено в проекте')).toBeVisible()
   await page.getByLabel('Фронт работ, м').fill('18')
   await page.getByLabel('Отвод, м').fill(sizes.taper)
   await page.getByLabel('Буфер, м').fill('10')
-  await page.getByLabel('Первая').fill('70')
-  await page.getByLabel('Вторая').fill('50')
-  await page.getByLabel('Третья').fill('40')
+  await page.getByLabel(location).check()
 }
 
 test('without PU-66 cards a new project cannot be started', async ({ page }) => {
   await page.route('**/api/pu66', (route) => route.fulfill({ json: [] }))
   await page.goto('/')
+  await openNewProjectTab(page)
   const blocked = page.locator('.blocked')
   await expect(blocked).toContainText('начать новый проект невозможно')
   await expect(page.getByRole('button', { name: 'Создать проект' })).toHaveCount(0)
@@ -66,6 +75,7 @@ test('without PU-66 cards a new project cannot be started', async ({ page }) => 
   await page.unroute('**/api/pu66')
   await page.route('**/api/pu66', (route) => route.abort())
   await page.reload()
+  await openNewProjectTab(page)
   await expect(page.locator('.blocked')).toContainText('реестр ПУ-66 недоступен')
   await expect(page.getByRole('button', { name: 'Создать проект' })).toHaveCount(0)
 })
@@ -82,7 +92,7 @@ test('new project: form edits apply, review opens, and console stays clean', asy
   await page.getByRole('button', { name: 'Создать проект' }).click()
   await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
   await expect(page.getByRole('heading', { name: 'Размеры и параметры схемы' })).toBeVisible()
-  await page.getByLabel('n100').fill('100')
+  await page.locator('[data-field="parameters.signDistancesMetres.d250"]').fill('240')
   await page.getByRole('button', { name: 'Применить правки' }).click()
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   await expect(page.getByRole('heading', { name: 'Реквизиты листа и согласования' })).toBeVisible()
@@ -147,12 +157,14 @@ test('restores applied edits and unapplied fields after the window closes', asyn
 }) => {
   await importSampleCards(request)
   await page.goto('/')
-  await fillNewProject(page, '48 км 5 пк', '90004:48:5')
+  await fillNewProject(page, '48 км 5 пк', '90004:48:5', undefined, 'В населённом пункте')
   await page.getByRole('button', { name: 'Создать проект' }).click()
   await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
-  await page.getByLabel('n100').fill('100')
+  const n100 = page.locator('[data-field="parameters.signDistancesMetres.n100"]')
+  const n50 = page.locator('[data-field="parameters.signDistancesMetres.n50"]')
+  await n100.fill('90')
   await page.getByRole('button', { name: 'Применить правки' }).click()
-  await page.getByLabel('n50').fill('50')
+  await n50.fill('45')
   await expect(page.locator('.save-state')).toContainText('копия восстановления записана')
 
   const recovery = await (await request.get(`${api}/api/recovery`)).json()
@@ -173,12 +185,12 @@ test('restores applied edits and unapplied fields after the window closes', asyn
     .getByRole('button', { name: 'Восстановить' })
     .click()
   await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
-  await expect(page.getByLabel('n100')).toHaveValue('100')
-  await expect(page.getByLabel('n50')).toHaveValue('50')
+  await expect(n100).toHaveValue('90')
+  await expect(n50).toHaveValue('45')
   await expect(page.locator('.save-state')).toContainText('Неприменённый ввод')
   await page.getByRole('button', { name: 'Применить правки' }).click()
-  await page.getByRole('button', { name: 'Сохранить локально' }).click()
-  await expect(page.locator('.save-state')).toHaveText('Черновик сохранён')
+  await page.getByRole('button', { name: 'Сохранить проект' }).click()
+  await expect(page.locator('.save-state')).toHaveText('Сохранён')
   expect(
     (await (await request.get(`${api}/api/recovery`)).json()).some(
       (item: { sessionId: string }) => item.sessionId === sessionId,
@@ -191,7 +203,7 @@ test('restores applied edits and unapplied fields after the window closes', asyn
   expect(
     (await (await request.get(`${api}/api/projects/${saved.id}`)).json()).scheme.parameters
       .signDistancesMetres,
-  ).toMatchObject({ n100: 100, n50: 50 })
+  ).toMatchObject({ n100: 90, n50: 45 })
 })
 
 test('newer v1 JSON retains the zone fraction and resolves settlement markers', async ({
@@ -200,7 +212,7 @@ test('newer v1 JSON retains the zone fraction and resolves settlement markers', 
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto('/')
-  await page.getByRole('button', { name: 'Открыть JSON' }).click()
+  await page.getByRole('button', { name: 'Открыть файл' }).click()
   const fixture = readFileSync('tests/fixtures/legacy-v1-new-fields.json')
   await page.locator('#scheme-file').setInputFiles({
     name: 'anonymized-v1.json',
@@ -279,6 +291,7 @@ test('creates a project from a PU-66 card found by kilometre and picket', async 
   await importSampleCards(request)
 
   await page.goto('/')
+  await openNewProjectTab(page)
   await expect(page.getByRole('button', { name: 'Создать проект' })).toBeDisabled()
   await page.getByLabel('Поиск карточки').fill('24 км 7 пк')
   await expect(page.getByText(/Найдено: 1 из \d+/)).toBeVisible()
@@ -286,13 +299,20 @@ test('creates a project from a PU-66 card found by kilometre and picket', async 
   await choice.selectOption('90002:24:7')
   await expect(page.getByText('Будет закреплено в проекте')).toBeVisible()
   await expect(page.locator('#new-scheme-title ~ form .preview')).toContainText('90002:24:7')
+  // Без выбора местоположения проект не создаётся: от него зависят нормативные значения.
+  await expect(page.getByRole('button', { name: 'Создать проект' })).toBeDisabled()
+  await page.getByLabel('В населённом пункте').check()
+  await expect(page.getByLabel('Разрешённая скорость на подходе, км/ч')).toHaveValue('60')
+  await expect(page.getByLabel('Скорость в зоне работ, км/ч')).toHaveValue('40')
   await expect(page.getByRole('button', { name: 'Создать проект' })).toBeEnabled()
   await page.getByLabel('Фронт работ, м').fill('18')
   await page.getByLabel('Отвод, м').fill('10')
   await page.getByLabel('Буфер, м').fill('10')
-  await page.getByLabel('Первая').fill('70')
-  await page.getByLabel('Вторая').fill('50')
-  await page.getByLabel('Третья').fill('40')
+  await page.getByLabel('Вне населённого пункта').check()
+  // Скорость и ступени пересчитаны для нового местоположения: 90 → 70 → 50 → 40.
+  await expect(page.getByLabel('Разрешённая скорость на подходе, км/ч')).toHaveValue('90')
+  await expect(page.getByLabel('Первая ступень 3.24')).toHaveValue('70')
+  await expect(page.getByLabel('Вторая ступень 3.24')).toHaveValue('50')
   await page.getByRole('button', { name: 'Создать проект' }).click()
   await expect(page.getByText(/локальная редакция № 1/)).toBeVisible()
   await expect(page.locator('.opening-notes')).toContainText('Локальная карточка ПУ-66 закреплена')
@@ -316,18 +336,17 @@ test('leaving the form while the card is re-read cancels project creation', asyn
     await route.continue()
   })
   await page.goto('/')
+  await openNewProjectTab(page)
   await page.getByLabel('Поиск карточки').fill('24 км 7 пк')
   await page.getByLabel('Локальная карточка').selectOption('90002:24:7')
   await expect(page.getByText('Будет закреплено в проекте')).toBeVisible()
   await page.getByLabel('Фронт работ, м').fill('18')
   await page.getByLabel('Отвод, м').fill('10')
   await page.getByLabel('Буфер, м').fill('10')
-  await page.getByLabel('Первая').fill('70')
-  await page.getByLabel('Вторая').fill('50')
-  await page.getByLabel('Третья').fill('40')
+  await page.getByLabel('Вне населённого пункта').check()
   await page.getByRole('button', { name: 'Создать проект' }).click()
   await expect.poll(() => calls).toBe(2)
-  await page.getByRole('button', { name: 'Открыть JSON' }).click()
+  await page.getByRole('button', { name: 'Открыть файл' }).click()
   release()
   await page.getByRole('button', { name: 'Новый проект' }).click()
   await expect(page.getByRole('alert')).toContainText('Создание проекта отменено')
@@ -505,7 +524,7 @@ test('confirms a normative parameter from the text of an attached document', asy
   await expect(box).toContainText('подтверждено значение 260 авт/ч')
   await expect(item).toContainText('Подтверждено')
   await expect(item.locator('.value')).toHaveText('260 авт/ч')
-  await expect(box).toContainText('Подтверждено 1 из 8')
+  await expect(box).toContainText('Подтверждено 1 из 14')
 })
 
 test('opens help for the current screen, searches it and jumps by contents', async ({ page }) => {
@@ -558,7 +577,7 @@ test('downloads a diagnostics file without card data', async ({ page, request })
 
 test('A4 print contains exactly one page', async ({ page }) => {
   await page.goto('/')
-  await page.getByRole('button', { name: 'Открыть JSON' }).click()
+  await page.getByRole('button', { name: 'Открыть файл' }).click()
   await page.locator('#scheme-file').setInputFiles({
     name: 'anonymized-v1.json',
     mimeType: 'application/json',
@@ -569,4 +588,61 @@ test('A4 print contains exactly one page', async ({ page }) => {
   await expect(page.locator('.print-host')).toHaveCSS('margin-top', '0px')
   const pdf = await page.pdf({ printBackground: true, preferCSSPageSize: true })
   expect(pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).toHaveLength(1)
+})
+
+test('distances and speeds follow normative values but stay editable; saved projects are easy to find', async ({
+  page,
+  request,
+}) => {
+  await importSampleCards(request)
+  await page.goto('/')
+  await fillNewProject(page, '36 км 1 пк', '90003:36:1')
+  await page.getByRole('button', { name: 'Создать проект' }).click()
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+
+  const d300 = page.locator('[data-field="parameters.signDistancesMetres.d300"]')
+  const approach = page.locator('[data-field="parameters.approachSpeedKmh"]')
+  await expect(d300).toHaveValue('300')
+  await expect(page.locator('[data-field="parameters.speedStagesKmh.0"]')).toHaveValue('70')
+  const d300Label = page.locator('label', { has: d300 })
+  await expect(d300Label).toContainText('по нормативу')
+
+  // Правка под местные условия остаётся и помечается.
+  await d300.fill('280')
+  await expect(d300Label).toContainText('Изменено · норматив 300')
+
+  // Смена местоположения подставляет значения населённого пункта, правка вне его сохраняется.
+  await page.locator('[data-field="parameters.location"]').selectOption('in')
+  await expect(approach).toHaveValue('60')
+  await expect(page.locator('[data-field="parameters.signDistancesMetres.n100"]')).toHaveValue(
+    '100',
+  )
+  await expect(d300).toHaveCount(0)
+  await page.locator('[data-field="parameters.location"]').selectOption('out')
+  await expect(approach).toHaveValue('90')
+  await expect(d300).toHaveValue('280')
+  await d300Label.getByRole('button', { name: 'Вернуть' }).click()
+  await expect(d300).toHaveValue('300')
+
+  // Своя разрешённая скорость пересчитывает ступени: 70 → 50 → 40 на 50 → 40 → 40.
+  await approach.fill('70')
+  await approach.blur()
+  await expect(page.locator('[data-field="parameters.speedStagesKmh.0"]')).toHaveValue('50')
+  await expect(page.locator('label', { has: approach })).toContainText('Изменено · норматив 90')
+  await page.getByRole('button', { name: 'Вернуть все нормативные значения' }).click()
+  await expect(approach).toHaveValue('90')
+  await expect(page.locator('[data-field="parameters.speedStagesKmh.0"]')).toHaveValue('70')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await page.getByRole('button', { name: 'Сохранить проект' }).click()
+  await expect(page.locator('.save-state')).toHaveText('Сохранён')
+
+  // «Мои проекты»: проект узнаётся по переезду и находится поиском.
+  await page.getByRole('button', { name: 'Мои проекты' }).first().click()
+  const list = page.locator('#local-projects-title ~ .project-list')
+  const card = list.locator('li', { hasText: 'Переезд 90003:36:1' })
+  await expect(card).toContainText('открыт сейчас')
+  await page.getByLabel('Найти проект').fill('90003')
+  await expect(list.locator('> li')).toHaveCount(1)
+  await page.getByLabel('Найти проект').fill('нет такого переезда')
+  await expect(page.getByText('Ничего не найдено')).toBeVisible()
 })

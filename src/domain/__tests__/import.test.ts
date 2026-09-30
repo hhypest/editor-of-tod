@@ -6,8 +6,8 @@ import {
   MAX_PROJECT_FILE_BYTES,
   SchemeImportError,
 } from '../import'
-import { schemeV2Schema, schemeV3Schema, schemeV5Schema } from '../model'
-import { oldSnapshot, v5Snapshot } from '../../../tests/fixtures/old-version'
+import { schemeV2Schema, schemeV3Schema, schemeV5Schema, schemeV6Schema } from '../model'
+import { oldSnapshot, v5Snapshot, v6Snapshot } from '../../../tests/fixtures/old-version'
 
 const importedAt = '2026-09-26T12:00:00.000Z'
 const id = '55740b36-080a-4cbe-9476-e71ffb1ab47f'
@@ -140,11 +140,11 @@ describe('import of autonomous editor projects', () => {
     expect(result.warnings.join(' ')).toContain('d50')
   })
 
-  it('exports and re-imports v6 without creating another identity or losing the source', () => {
+  it('exports and re-imports v7 without creating another identity or losing the source', () => {
     const first = importSchemeJson(JSON.stringify(sourceFixture()), { id, now: importedAt })
     const second = importSchemeJson(exportSchemeJson(first.scheme))
 
-    expect(second.format).toBe('scheme-v6')
+    expect(second.format).toBe('scheme-v7')
     expect(second.scheme).toEqual(first.scheme)
     expect(second.scheme.id).toBe(id)
   })
@@ -155,6 +155,24 @@ describe('import of autonomous editor projects', () => {
     const reopened = importSchemeJson(JSON.stringify(earlierV5))
     expect(reopened.scheme).toEqual(scheme)
     expect(reopened.scheme.signImages).toEqual({ catalog: null, revisions: {} })
+  })
+
+  it('opens a v6 file: the settlement speed becomes the approach speed', () => {
+    const scheme = importSchemeJson(JSON.stringify(sourceFixture()), { id, now: importedAt }).scheme
+    const reopened = importSchemeJson(JSON.stringify(schemeV6Schema.parse(v6Snapshot(scheme))))
+    expect(reopened.format).toBe('scheme-v6')
+    expect(reopened.scheme).toEqual(scheme)
+    expect(reopened.scheme.parameters.approachSpeedKmh).toBe(60)
+    expect(reopened.warnings.join(' ')).not.toContain('скорость на подходе')
+
+    // Вне населённого пункта прежнее поле не использовалось: скорость не переносится.
+    const outside = {
+      ...scheme,
+      parameters: { ...scheme.parameters, location: 'out' as const, approachSpeedKmh: null },
+    }
+    const reopenedOutside = importSchemeJson(JSON.stringify(v6Snapshot(outside)))
+    expect(reopenedOutside.scheme.parameters.approachSpeedKmh).toBeNull()
+    expect(reopenedOutside.warnings.join(' ')).toContain('Разрешённая скорость на подходе')
   })
 
   it('opens a v5 file with free-text responsible persons and splits them for v6', () => {
@@ -171,7 +189,7 @@ describe('import of autonomous editor projects', () => {
     }
     const reopened = importSchemeJson(JSON.stringify(schemeV5Schema.parse(v5)))
     expect(reopened.format).toBe('scheme-v5')
-    expect(reopened.scheme.schemaVersion).toBe(6)
+    expect(reopened.scheme.schemaVersion).toBe(7)
     expect(reopened.scheme.titleBlock.responsible).toEqual([
       { position: 'начальник участка', name: 'Учебный Иван Петрович', phone: '+7 (910) 000-11-22' },
     ])
@@ -194,10 +212,10 @@ describe('import of autonomous editor projects', () => {
     expect(reopened.scheme.source).toMatchObject({
       originalJson: migrated.source.kind === 'legacy-html-v1' ? migrated.source.originalJson : '',
     })
-    expect(JSON.parse(exportSchemeJson(reopened.scheme)).schemaVersion).toBe(6)
+    expect(JSON.parse(exportSchemeJson(reopened.scheme)).schemaVersion).toBe(7)
   })
 
-  it('opens the previous v3 format and writes the same data in v6', () => {
+  it('opens the previous v3 format and writes the same data in v7', () => {
     const migrated = importSchemeJson(JSON.stringify(sourceFixture()), {
       id,
       now: importedAt,
@@ -206,7 +224,7 @@ describe('import of autonomous editor projects', () => {
     const reopened = importSchemeJson(JSON.stringify(v3))
     expect(reopened.format).toBe('scheme-v3')
     expect(reopened.scheme).toEqual(migrated)
-    expect(JSON.parse(exportSchemeJson(reopened.scheme)).schemaVersion).toBe(6)
+    expect(JSON.parse(exportSchemeJson(reopened.scheme)).schemaVersion).toBe(7)
   })
 
   it('keeps unknown old fields in the original snapshot', () => {

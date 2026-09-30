@@ -2,6 +2,7 @@ import { schemeSchema, type Scheme } from './model'
 import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import { parseHourly } from './regulation-advice'
 import { anchorCoordinates } from './placement-workspace'
+import { distanceTitles, type DistanceField } from './normative-defaults'
 
 type Placement = Scheme['placements'][number]
 
@@ -52,6 +53,11 @@ function checkConditions(scheme: Scheme, rules: NormativeRules): void {
   if (parameters.location === 'auto') {
     throw new TemplateBuildError('На этапе 2 укажите, находится ли переезд в населённом пункте.')
   }
+  if (parameters.location === 'in' && parameters.approachSpeedKmh === null) {
+    throw new TemplateBuildError(
+      'На этапе 2 укажите разрешённую скорость на подходе: от неё считаются ступени скорости в населённом пункте.',
+    )
+  }
   // Два регулировщика (Б.33 всегда, Б.34 по решению) ставятся по табл. 5 ОДМ: скорость в зоне
   // должна быть в таблице, иначе минимальное расстояние не определено.
   if (usesTwoRegulators(scheme)) {
@@ -95,14 +101,14 @@ function checkConditions(scheme: Scheme, rules: NormativeRules): void {
  * без подстановки и округления. В архиве табличка «300 м» хранится как «8.1.1», остальные —
  * «8.1.1_N»; отсутствующая в архиве табличка рисуется на листе программно.
  */
-function distancePlate(metres: number | null, marker: string): string {
+function distancePlate(metres: number | null, marker: DistanceField): string {
   if (metres === null)
     throw new TemplateBuildError(
-      `На этапе 2 укажите расстояние ${marker}: по нему подписывается табличка 8.1.1 у знака 2.6.`,
+      `На этапе 2 укажите расстояние «${distanceTitles[marker]}»: по нему подписывается табличка 8.1.1 у знака 2.6.`,
     )
   if (!Number.isInteger(metres) || metres <= 0)
     throw new TemplateBuildError(
-      `Расстояние ${marker} для таблички 8.1.1 укажите целым числом метров.`,
+      `Расстояние «${distanceTitles[marker]}» для таблички 8.1.1 укажите целым числом метров.`,
     )
   return metres === 300 ? '8.1.1' : `8.1.1_${metres}`
 }
@@ -205,9 +211,7 @@ export function buildTemplatePlacements(
     post('R:end', ['3.31', yellow('3.20')], 'E', after[2], 'down', 'right', null)
   } else {
     const layout = draftTemplateProfile.offsets.settlement[priority ? 'priority' : 'regular']
-    const steps = settlementSteps(parameters.settlementSpeedKmh, zone, rules.speedStepKmh).map(
-      speed,
-    )
+    const steps = settlementSteps(parameters.approachSpeedKmh!, zone, rules.speedStepKmh).map(speed)
     post('L:warning', ['1.25', ...steps], 'L0', layout.far, 'down', 'left', '{n100}')
     post(
       'L:narrowing',

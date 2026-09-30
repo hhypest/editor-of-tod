@@ -169,6 +169,11 @@ describe('local SQLite registries', () => {
           referenceId: 'TEST-001',
           revision: 2,
           locationText: 'Изменённый учебный участок',
+          // Сведения для узнавания проекта берутся из последней редакции.
+          directionLeft: 'к станции А',
+          directionRight: 'к станции Б',
+          crossingLocation: '',
+          roadName: '',
         },
       ])
       expect(store.listProjectRevisions(scheme.id).map((entry) => entry.revision)).toEqual([2, 1])
@@ -263,6 +268,8 @@ describe('local SQLite registries', () => {
       taperMetres: '8',
       bufferMetres: '10',
       speedStagesKmh: ['70', '50', '40'],
+      location: 'out',
+      approachSpeedKmh: '90',
       yellowTemporarySigns: false,
     })
     const store = new RegistryStore(path)
@@ -332,7 +339,7 @@ describe('local SQLite registries', () => {
         .prepare('SELECT revision, scheme_json FROM project_revisions ORDER BY revision')
         .all() as { revision: number; scheme_json: string }[]
       expect(records.map((record) => JSON.parse(record.scheme_json).schemaVersion)).toEqual([
-        2, 6, 6,
+        2, 7, 7,
       ])
       expect(JSON.parse(records[0]!.scheme_json)).toEqual(previous)
     } finally {
@@ -353,6 +360,8 @@ describe('local SQLite registries', () => {
       taperMetres: '8',
       bufferMetres: '10',
       speedStagesKmh: ['70', '50', '40'],
+      location: 'out',
+      approachSpeedKmh: '90',
       yellowTemporarySigns: false,
     })
     const old = schemeV3Schema.parse(oldSnapshot(scheme, 3))
@@ -373,8 +382,13 @@ describe('local SQLite registries', () => {
     raw.close()
 
     const store = new RegistryStore(path)
-    // Старые версии получают прежнюю версию условной раскладки шаблона.
-    const upgraded = { ...scheme, template: { ...scheme.template, projectionVersion: 'draft-1' } }
+    // Старые версии получают прежнюю версию условной раскладки шаблона; местоположения и
+    // скорости на подходе в v3 не было.
+    const upgraded = {
+      ...scheme,
+      template: { ...scheme.template, projectionVersion: 'draft-1' },
+      parameters: { ...scheme.parameters, location: 'auto', approachSpeedKmh: 60 },
+    }
     try {
       expect(store.getProject(scheme.id)?.scheme).toEqual(upgraded)
       expect(store.getProjectRevision(scheme.id, 1)?.scheme).toEqual(upgraded)
