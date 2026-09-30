@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { SheetNode } from '../domain/sheet-drawing'
+import { drawnSignBase, type SheetNode } from '../domain/sheet-drawing'
 import SheetSign from './SheetSign.vue'
 
 const props = defineProps<{
@@ -9,6 +9,11 @@ const props = defineProps<{
   prefix: string
 }>()
 const emit = defineEmits<{ imageError: [code: string] }>()
+
+function drawnBaseUrl(code: string): string | null {
+  const base = drawnSignBase(code)
+  return base ? props.signUrl(base) : null
+}
 
 function paint(fill: string | undefined): string {
   return fill === 'url(#sheet-hatch)' ? `url(#${props.prefix}-hatch)` : (fill ?? 'none')
@@ -66,6 +71,7 @@ function paint(fill: string | undefined): string {
         v-else-if="node.t === 'sign'"
         :node="node"
         :href="signUrl(node.code)"
+        :base-href="drawnBaseUrl(node.code)"
         @error="emit('imageError', $event)"
       />
       <use

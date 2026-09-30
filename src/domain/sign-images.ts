@@ -1,5 +1,5 @@
 import { schemeSchema, type Scheme } from './model'
-import { drawableWithoutImage, signImageCode } from './sheet-drawing'
+import { drawableWithoutImage, drawnSignBase, signImageCode } from './sheet-drawing'
 
 export function usedSignCodes(scheme: Scheme): string[] {
   const codes = scheme.placements.flatMap((placement) =>
@@ -33,9 +33,13 @@ export function pinSignImages(
   if (!codes.length) throw new Error('На схеме пока нет знаков для закрепления.')
   const revisions = Object.fromEntries(available.map(({ code, revision }) => [code, revision]))
   // Код проекта «3.24_50» показывается изображением «3.24»; закрепляется то, что на листе.
-  const images = [
-    ...new Set(codes.map((code) => signImageCode(code, new Set(Object.keys(revisions))))),
-  ]
+  const shown = codes.map((code) => signImageCode(code, new Set(Object.keys(revisions))))
+  // Для дорисованных знаков закрепляется изображение-основа (3.24, 3.24_ж, 8.1.1).
+  const bases = shown.flatMap((code) => {
+    const base = revisions[code] ? null : drawnSignBase(code)
+    return base && revisions[base] ? [base] : []
+  })
+  const images = [...new Set([...shown, ...bases])]
   // Скорость 3.24 и расстояние 8.1.1 без PNG программа рисует сама: закреплять нечего.
   const missing = images.filter((code) => !revisions[code] && !drawableWithoutImage(code))
   if (missing.length) {

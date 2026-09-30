@@ -13,6 +13,7 @@ import { figureDimensions } from '../domain/figure-dimensions'
 import { templateLabel } from '../domain/registry'
 import { useNormativeRules } from '../composables/useNormativeRules'
 import RoadworkSymbol from './RoadworkSymbol.vue'
+import SignPreview from './SignPreview.vue'
 
 type Placement = Scheme['placements'][number]
 type Drag = {
@@ -248,13 +249,12 @@ function nameFor(placement: Placement): string {
             <template v-if="placement.kind === 'sign-post'">
               <span v-if="placement.stand === 'left'" class="pin" aria-hidden="true" />
               <span v-for="(code, index) in placement.signIds" :key="index" class="sign">
-                <img
-                  v-if="catalog.has(code)"
-                  :src="`/api/signs/${encodeURIComponent(code)}/image${scheme.signImages.revisions[code] ? `?rev=${scheme.signImages.revisions[code]}` : ''}`"
-                  alt=""
-                  draggable="false"
+                <SignPreview
+                  :code="code"
+                  :known="catalog"
+                  :revisions="scheme.signImages.revisions"
+                  :height="38"
                 />
-                <span v-else>{{ code }}</span>
               </span>
               <span v-if="placement.stand === 'right'" class="pin" aria-hidden="true" />
               <small class="object-id">№ {{ placement.id }}</small>

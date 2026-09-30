@@ -12,6 +12,8 @@ import {
 } from '../domain/edit-placements'
 import type { Scheme } from '../domain/model'
 import { anchorCoordinates } from '../domain/placement-workspace'
+import { drawableWithoutImage, signImageCode } from '../domain/sheet-drawing'
+import SignPreview from './SignPreview.vue'
 import {
   anchorLabels,
   elementLabels,
@@ -47,11 +49,21 @@ const catalogError = ref('')
 const catalog = ref<SignMeta[]>([])
 const query = ref('')
 const knownCodes = computed(() => new Set(catalog.value.map((sign) => sign.code)))
+/** Для предпросмотра — также закреплённые в проекте редакции: вид совпадает с листом. */
+const previewCodes = computed(
+  () => new Set([...knownCodes.value, ...Object.keys(props.scheme.signImages.revisions)]),
+)
 const matches = computed(() =>
   catalog.value
     .filter((sign) => sign.code.toLowerCase().includes(query.value.trim().toLowerCase()))
     .slice(0, 12),
 )
+/** Знак можно показать: есть PNG (с учётом 3.24_50 → 3.24) или программа его дорисует. */
+function showable(code: string): boolean {
+  return (
+    previewCodes.value.has(signImageCode(code, previewCodes.value)) || drawableWithoutImage(code)
+  )
+}
 const currentCodes = computed(() =>
   draft.value?.kind === 'sign-post'
     ? draft.value.signCodes
@@ -175,7 +187,10 @@ function applyDraft(): void {
         .split(/[,;\n]/)
         .map((code) => code.trim())
         .filter(Boolean)
-      if (!catalog.value.length || codes.some((code) => !knownCodes.value.has(code))) {
+      // Знаки 3.24 с числом и 8.1.1 с расстоянием программа дорисует сама.
+      const allowed = (code: string) =>
+        knownCodes.value.has(signImageCode(code, knownCodes.value)) || drawableWithoutImage(code)
+      if (!catalog.value.length || codes.some((code) => !allowed(code))) {
         throw new PlacementEditError('Выберите только коды из локального каталога знаков.')
       }
     }
@@ -315,13 +330,14 @@ function removeSelected(): void {
           </label>
           <div v-if="currentCodes.length" class="previews">
             <figure v-for="(code, index) in currentCodes" :key="`${index}-${code}`">
-              <img
-                v-if="knownCodes.has(code)"
-                :src="`/api/signs/${encodeURIComponent(code)}/image`"
-                :alt="`Знак ${code}`"
-                loading="lazy"
+              <div v-if="!showable(code)" class="missing">Нет PNG в локальном каталоге</div>
+              <SignPreview
+                v-else
+                :code="code"
+                :known="previewCodes"
+                :revisions="scheme.signImages.revisions"
+                :height="56"
               />
-              <div v-else class="missing">Нет PNG в локальном каталоге</div>
               <figcaption>{{ code }}</figcaption>
             </figure>
           </div>
@@ -537,7 +553,9 @@ figure {
   border-radius: 0.35rem;
   text-align: center;
 }
-figure img {
+figure img,
+figure svg {
+  display: block;
   width: 100%;
   height: 3.5rem;
   object-fit: contain;

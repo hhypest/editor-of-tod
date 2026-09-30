@@ -1,23 +1,71 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { SheetNode } from '../domain/sheet-drawing'
+import { drawnSignBase, type SheetNode } from '../domain/sheet-drawing'
 
 const props = defineProps<{
   node: Extract<SheetNode, { t: 'sign' }>
   /** Адрес PNG из локального каталога; null — изображения нет. */
   href: string | null
+  /** Изображение-основа из ГОСТ для дорисовываемого знака (3.24, 3.24_ж, 8.1.1). */
+  baseHref?: string | null
 }>()
 const emit = defineEmits<{ error: [code: string] }>()
+const baseCode = computed(() => drawnSignBase(props.node.code) ?? props.node.code)
 
-/** Знак 3.24 без PNG: красная кайма, белый или жёлтый фон, значение скорости. */
+/** Фон знаков по ГОСТ Р 52290-2024: белый и жёлтый (тот же, что у извлечённых PNG). */
+const WHITE = '#ffffff'
+const YELLOW = '#fedc00'
+/**
+ * Шрифт числа. Цифры знаков узкие и полужирные; Bahnschrift (Windows 10 и новее) близок к
+ * шрифту дорожных знаков, остальные — запасные. Ширина задаётся `textLength`, поэтому
+ * пропорции числа совпадают с изображением стандарта при любом доступном шрифте.
+ */
+const FONT =
+  "'Bahnschrift SemiBold Condensed', Bahnschrift, 'Arial Narrow', 'Roboto Condensed', 'DejaVu Sans Condensed', sans-serif"
+
+/** Знак 3.24 с числом: значение скорости и фон. */
 const speed = computed(() => {
   const match = /^3\.24(?:_(\d+))?(_ж)?$/.exec(props.node.code)
   if (!match) return null
-  return { value: match[1] ?? '50', yellow: Boolean(match[2]) }
+  const value = match[1] ?? '50'
+  const { x, y, w, h } = props.node
+  const size = Math.min(w, h)
+  // Пропорции измерены по изображению 3.24 ГОСТ Р 52290-2024: цифры «50» занимают 0,35 высоты
+  // и 0,49 ширины знака, внутренний край красного кольца — 0,38 высоты от центра.
+  const digits = value.length
+  const height = size * (digits > 2 ? 0.28 : 0.35)
+  const width = size * (digits > 2 ? 0.58 : digits === 1 ? 0.24 : 0.485)
+  return {
+    value,
+    fill: match[2] ? YELLOW : WHITE,
+    cx: x + w / 2,
+    cy: y + h / 2,
+    cover: size * 0.36,
+    ring: size / 2,
+    textX: x + w / 2,
+    baseline: y + h / 2 + height / 2,
+    fontSize: height / 0.72,
+    textLength: width,
+  }
 })
-/** Табличка 8.1.1 без PNG: расстояние до объекта. */
-const plate = computed(() => /^8\.1\.1_(\d+)$/.exec(props.node.code)?.[1] ?? null)
-const radius = computed(() => Math.min(props.node.w, props.node.h) / 2)
+/** Табличка 8.1.1: расстояние до объекта. */
+const plate = computed(() => {
+  const value = /^8\.1\.1_(\d+)$/.exec(props.node.code)?.[1]
+  if (!value) return null
+  const { x, y, w, h } = props.node
+  const text = `${value} м`
+  // По изображению 8.1.1 ГОСТ: надпись «300 м» — 0,82 ширины, цифры — 0,49 высоты таблички.
+  return {
+    text,
+    x,
+    y,
+    w,
+    h,
+    baseline: y + h * 0.745,
+    fontSize: (h * 0.49) / 0.72,
+    textLength: Math.min(0.86, (0.82 * text.length) / 5) * w,
+  }
+})
 </script>
 
 <template>
@@ -33,50 +81,80 @@ const radius = computed(() => Math.min(props.node.w, props.node.h) / 2)
     @error="emit('error', node.code)"
   />
   <g v-else-if="speed" :data-drawn-sign="node.code">
-    <circle
-      :cx="node.x + node.w / 2"
-      :cy="node.y + node.h / 2"
-      :r="radius * 0.9"
-      :fill="speed.yellow ? '#ffd200' : '#fff'"
-      stroke="#e30613"
-      :stroke-width="radius * 0.2"
-    />
-    <circle
-      :cx="node.x + node.w / 2"
-      :cy="node.y + node.h / 2"
-      :r="radius"
-      fill="none"
-      stroke="#fff"
-      :stroke-width="radius * 0.04"
-    />
+    <template v-if="baseHref">
+      <image
+        :href="baseHref"
+        :x="node.x"
+        :y="node.y"
+        :width="node.w"
+        :height="node.h"
+        preserveAspectRatio="xMidYMid meet"
+        :data-sign-base="baseCode"
+        @error="emit('error', baseCode)"
+      />
+      <circle :cx="speed.cx" :cy="speed.cy" :r="speed.cover" :fill="speed.fill" />
+    </template>
+    <template v-else>
+      <!-- Без изображения стандарта: кайма, кольцо и фон в пропорциях ГОСТ Р 52290. -->
+      <circle :cx="speed.cx" :cy="speed.cy" :r="speed.ring * 0.98" :fill="WHITE" />
+      <circle :cx="speed.cx" :cy="speed.cy" :r="speed.ring * 0.93" fill="#e32726" />
+      <circle :cx="speed.cx" :cy="speed.cy" :r="speed.ring * 0.76" :fill="speed.fill" />
+    </template>
     <text
-      :x="node.x + node.w / 2"
-      :y="node.y + node.h / 2 + radius * 0.34"
-      :font-size="radius * (speed.value.length > 2 ? 0.8 : 1)"
-      font-weight="bold"
+      :x="speed.textX"
+      :y="speed.baseline"
+      :font-size="speed.fontSize"
+      :textLength="speed.textLength"
+      lengthAdjust="spacingAndGlyphs"
+      :font-family="FONT"
+      font-weight="600"
       text-anchor="middle"
-      fill="#000"
+      fill="#1d1d1b"
       >{{ speed.value }}</text
     >
   </g>
   <g v-else-if="plate" :data-drawn-sign="node.code">
+    <template v-if="baseHref">
+      <image
+        :href="baseHref"
+        :x="plate.x"
+        :y="plate.y"
+        :width="plate.w"
+        :height="plate.h"
+        preserveAspectRatio="none"
+        :data-sign-base="baseCode"
+        @error="emit('error', baseCode)"
+      />
+      <rect
+        :x="plate.x + plate.w * 0.035"
+        :y="plate.y + plate.h * 0.07"
+        :width="plate.w * 0.93"
+        :height="plate.h * 0.86"
+        :fill="WHITE"
+      />
+    </template>
     <rect
-      :x="node.x + 0.8"
-      :y="node.y + 0.8"
-      :width="node.w - 1.6"
-      :height="node.h - 1.6"
-      :rx="node.h * 0.12"
-      :fill="'#fff'"
-      stroke="#000"
-      stroke-width="1.6"
+      v-else
+      :x="plate.x + 1"
+      :y="plate.y + 1"
+      :width="plate.w - 2"
+      :height="plate.h - 2"
+      :rx="plate.h * 0.08"
+      :fill="WHITE"
+      stroke="#1d1d1b"
+      :stroke-width="plate.h * 0.03"
     />
     <text
-      :x="node.x + node.w / 2"
-      :y="node.y + node.h / 2 + node.h * 0.2"
-      :font-size="node.h * 0.56"
-      font-weight="bold"
+      :x="plate.x + plate.w / 2"
+      :y="plate.baseline"
+      :font-size="plate.fontSize"
+      :textLength="plate.textLength"
+      lengthAdjust="spacingAndGlyphs"
+      :font-family="FONT"
+      font-weight="600"
       text-anchor="middle"
-      >{{ plate }} м</text
+      fill="#1d1d1b"
+      >{{ plate.text }}</text
     >
   </g>
   <g v-else :data-missing-sign="node.code">

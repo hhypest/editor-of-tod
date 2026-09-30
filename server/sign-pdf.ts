@@ -292,8 +292,13 @@ function pngOf(image: Raster): Buffer {
 }
 
 /**
- * Вариант знака с жёлтым фоном: белый фон внутри знака (не связанный с краем изображения)
+ * Вариант знака с жёлтым фоном (ГОСТ Р 52290-2024, п. 3.2): белый фон внутри знака
  * окрашивается в жёлтый; переходные светлые пиксели по краю фона — пропорционально.
+ *
+ * Фон — это все белые области внутри каймы, а не только самая большая: внутренность цифр
+ * («0» в «50»), окна автомобилей на 3.20 и другие замкнутые участки фона тоже становятся
+ * жёлтыми. Белыми остаются только области, касающиеся поля вокруг знака или края
+ * изображения, — это наружная белая кайма.
  */
 export function yellowVariant(png: Buffer): Buffer {
   const image = PNG.sync.read(png)
@@ -304,36 +309,49 @@ export function yellowVariant(png: Buffer): Buffer {
   for (let pixel = 0; pixel < background.length; pixel++) {
     background[pixel] = !outside[pixel] && light(rgba, pixel) ? 1 : 0
   }
-  // Внутренний фон — самая большая связная белая область внутри знака: белые символы и
-  // надписи (цифры на синем, окантовка) не меняются.
+  const neighbours = (pixel: number): number[] => {
+    const x = pixel % width
+    return [x > 0 ? pixel - 1 : -1, x < width - 1 ? pixel + 1 : -1, pixel - width, pixel + width]
+  }
+  /** Поле вокруг знака: прозрачный пиксель, белое поле, связанное с краем, или сам край. */
+  const field = (pixel: number): boolean =>
+    pixel < 0 || pixel >= background.length || outside[pixel] === 1 || rgba[pixel * 4 + 3]! < 128
   const component = new Int32Array(width * height).fill(-1)
   const sizes: number[] = []
+  const touchesField: boolean[] = []
   for (let start = 0; start < background.length; start++) {
     if (!background[start] || component[start] !== -1) continue
     const id = sizes.length
     let size = 0
+    let touches = false
     const stack = [start]
     component[start] = id
     while (stack.length) {
       const pixel = stack.pop()!
       size++
       const x = pixel % width
-      for (const next of [
-        x > 0 ? pixel - 1 : -1,
-        x < width - 1 ? pixel + 1 : -1,
-        pixel - width,
-        pixel + width,
-      ]) {
-        if (next >= 0 && next < background.length && background[next] && component[next] === -1) {
+      if (x === 0 || x === width - 1 || pixel < width || pixel >= width * (height - 1))
+        touches = true
+      for (const next of neighbours(pixel)) {
+        if (field(next)) {
+          touches = true
+          continue
+        }
+        if (background[next] && component[next] === -1) {
           component[next] = id
           stack.push(next)
         }
       }
     }
     sizes.push(size)
+    touchesField.push(touches)
   }
   if (!sizes.length) return png
+  // Самая большая область — фон и тогда, когда у знака нет наружной каймы.
   const largest = sizes.indexOf(Math.max(...sizes))
+  const yellow = sizes.map((_, id) => id === largest || !touchesField[id])
+  const isYellow = (pixel: number) =>
+    pixel >= 0 && pixel < component.length && component[pixel]! >= 0 && yellow[component[pixel]!]
   const fill = (pixel: number) => {
     const offset = pixel * 4
     for (let channel = 0; channel < 3; channel++) {
@@ -341,27 +359,19 @@ export function yellowVariant(png: Buffer): Buffer {
       rgba[offset + channel] = Math.round((rgba[offset + channel]! * YELLOW[channel]!) / 255)
     }
   }
+  const smoothed: number[] = []
   for (let pixel = 0; pixel < component.length; pixel++) {
-    if (component[pixel] === largest) {
-      fill(pixel)
-      continue
-    }
-    // Сглаженные пиксели на границе фона.
     if (background[pixel] || outside[pixel]) continue
-    const x = pixel % width
-    const near = [
-      x > 0 ? pixel - 1 : -1,
-      x < width - 1 ? pixel + 1 : -1,
-      pixel - width,
-      pixel + width,
-    ]
+    // Сглаженные пиксели на границе фона.
     const offset = pixel * 4
     if (
-      near.some((next) => next >= 0 && next < component.length && component[next] === largest) &&
+      neighbours(pixel).some(isYellow) &&
       Math.min(rgba[offset]!, rgba[offset + 1]!, rgba[offset + 2]!) >= 160
     )
-      fill(pixel)
+      smoothed.push(pixel)
   }
+  for (let pixel = 0; pixel < component.length; pixel++) if (isYellow(pixel)) fill(pixel)
+  for (const pixel of smoothed) fill(pixel)
   return encode(rgba, width, height)
 }
 
