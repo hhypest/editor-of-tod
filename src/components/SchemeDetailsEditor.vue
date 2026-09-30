@@ -105,7 +105,7 @@ function useHourly(value: string): void {
   markDirty()
 }
 
-function useTypesize(value: 'I' | 'II' | 'III'): void {
+function useTypesize(value: Scheme['parameters']['signSize']): void {
   if (props.locked) return
   draft.value.parameters.signSize = value
   markDirty()
@@ -274,6 +274,7 @@ function applyDraft(): void {
               <option value="I">I</option>
               <option value="II">II</option>
               <option value="III">III</option>
+              <option value="IV">IV (работы на дорогах IА, IБ)</option>
             </select>
           </label>
           <label

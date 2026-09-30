@@ -24,7 +24,7 @@ export const detailsDraftSchema = z.strictObject({
     speedStagesKmh: z.tuple([text, text, text]),
     yellowTemporarySigns: z.boolean(),
     location: z.enum(['auto', 'in', 'out']),
-    signSize: z.enum(['auto', 'I', 'II', 'III']),
+    signSize: z.enum(['auto', 'I', 'II', 'III', 'IV']),
     settlementSpeedKmh: text,
     lastSettlement: z.boolean().nullable(),
     frontStyle: z.enum(['part', 'solid']),

@@ -72,6 +72,11 @@ export function checkNorm(norm: Cell, current: Cell): NormCheck {
 
 export type NormRow = Pu66TechnicalRow & { check: NormCheck }
 
+/** Числовое расхождение с нормой: меньше, больше или не равно точному значению. */
+export function isDiscrepancy(check: NormCheck): boolean {
+  return check === 'below' || check === 'above' || check === 'differs'
+}
+
 /**
  * Строки таблицы для просмотра: без подзаголовков («с правой стороны:»), пустых строк и
  * отметки о внесении данных в конце таблицы.

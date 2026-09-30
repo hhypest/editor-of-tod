@@ -68,8 +68,10 @@ describe('B.34 regulation advice', () => {
     expect(long.mode).toBe('one')
     expect(long.reasons.join(' ')).toContain('протяжённость участка работ 50 м')
     const unknown = adviseRegulation({ ...base, frontMetres: null })
-    expect(unknown.mode).toBe('signs')
-    expect(unknown.warnings.join(' ')).toContain('Укажите протяжённость')
+    expect(unknown.mode).toBeNull()
+    expect(unknown.reasons.join(' ')).toContain('протяжённость участка работ не введена')
+    // Длина не нужна, когда знаки не подходят по интенсивности.
+    expect(adviseRegulation({ ...base, hourly: '300', frontMetres: null }).mode).toBe('one')
   })
 
   it('points to PU-66 and the peak-hour share when intensity is missing', () => {

@@ -4,6 +4,7 @@ import { useNormativeRules } from '../composables/useNormativeRules'
 import {
   cellNumber,
   hourlyFromDaily,
+  isDiscrepancy,
   normRows,
   typesizeRowForCategory,
   type NormCheck,
@@ -18,7 +19,10 @@ const props = defineProps<{
   location: 'auto' | 'in' | 'out'
   locked?: boolean
 }>()
-const emit = defineEmits<{ hourly: [value: string]; typesize: [value: 'I' | 'II' | 'III'] }>()
+const emit = defineEmits<{
+  hourly: [value: string]
+  typesize: [value: 'I' | 'II' | 'III' | 'IV']
+}>()
 const { rules } = useNormativeRules()
 
 const norms = ref<Pu66Norms | null>(null)
@@ -53,22 +57,20 @@ const typesize = computed(() =>
   typesizeRow.value ? (rules.value.typesize[typesizeRow.value] ?? null) : null,
 )
 const selectable = computed(() =>
-  typesize.value === 'I' || typesize.value === 'II' || typesize.value === 'III'
+  typesize.value === 'I' ||
+  typesize.value === 'II' ||
+  typesize.value === 'III' ||
+  typesize.value === 'IV'
     ? typesize.value
     : null,
 )
 
 const rows = computed(() => (norms.value ? normRows(norms.value.technicalRows) : []))
-const problems = computed(() =>
-  rows.value.filter((row) => row.check === 'below' || row.check === 'above'),
-)
+/** Все числовые расхождения, включая отличие от точного значения нормы. */
+const problems = computed(() => rows.value.filter((row) => isDiscrepancy(row.check)))
 const showAll = ref(false)
 /** По умолчанию — только строки с расхождением; полная таблица по кнопке. */
-const shownRows = computed(() =>
-  showAll.value
-    ? rows.value
-    : rows.value.filter((row) => row.check !== 'ok' && row.check !== 'unknown'),
-)
+const shownRows = computed(() => (showAll.value ? rows.value : problems.value))
 
 const checkLabels: Record<NormCheck, string> = {
   ok: 'соответствует',
@@ -146,7 +148,7 @@ function show(value: string | number | null): string {
           Техническая таблица и графа «Норма» ·
           {{
             problems.length
-              ? `не соответствует: ${problems.length}`
+              ? `расхождений с нормой: ${problems.length}`
               : 'числовых несоответствий не найдено'
           }}
         </summary>

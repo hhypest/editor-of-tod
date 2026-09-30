@@ -71,19 +71,22 @@ export function adviseRegulation(
     reasons.push(
       'Интенсивность не введена: без часовой интенсивности рекомендация не даётся. Её можно подсчитать или пересчитать из суточной по ПУ-66 с подтверждённой долей часа пик.',
     )
+  } else if (
+    hourly < rules.signsHourly &&
+    !input.limitedVisibility &&
+    !tooLong &&
+    input.frontMetres === null
+  ) {
+    // Знаки допускаются только при участке короче предела: без длины рекомендации нет.
+    mode = null
+    reasons.push(
+      `Интенсивность ${hourly} авт./ч — менее ${rules.signsHourly} авт./ч, но протяжённость участка работ не введена: знаки 2.6 и 2.7 допускаются только при участке менее ${rules.signsLengthMetres} м (${rules.sources['odm-signs-length']}). Укажите длину рабочей зоны.`,
+    )
   } else if (hourly < rules.signsHourly && !input.limitedVisibility && !tooLong) {
     mode = 'signs'
     reasons.push(
-      `Интенсивность ${hourly} авт./ч в двух направлениях — менее ${rules.signsHourly} авт./ч, ${
-        input.frontMetres === null
-          ? 'протяжённость участка не введена'
-          : `участок ${input.frontMetres} м — менее ${rules.signsLengthMetres} м`
-      }, видимость встречного автомобиля не ограничена: очерёдность можно установить знаками 2.6 и 2.7 (${signsSource}).`,
+      `Интенсивность ${hourly} авт./ч в двух направлениях — менее ${rules.signsHourly} авт./ч, участок ${input.frontMetres} м — менее ${rules.signsLengthMetres} м, видимость встречного автомобиля не ограничена: очерёдность можно установить знаками 2.6 и 2.7 (${signsSource}).`,
     )
-    if (input.frontMetres === null)
-      warnings.push(
-        `Укажите протяжённость участка работ: знаки 2.6 и 2.7 допускаются при участке менее ${rules.signsLengthMetres} м (${rules.sources['odm-signs-length']}).`,
-      )
   } else {
     const cause =
       hourly >= rules.signsHourly

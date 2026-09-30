@@ -10,7 +10,10 @@ import { DocumentInUse, RegistryStore, RevisionConflict } from '../store'
 import { fictionalMethodology as methodology, textPdf } from './pdf-fixture'
 
 const directories: string[] = []
+const stores: RegistryStore[] = []
 afterEach(() => {
+  // На Windows открытый файл SQLite не даёт удалить временную папку.
+  for (const store of stores.splice(0)) store.close()
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 
@@ -40,7 +43,9 @@ async function add(store: RegistryStore, pdf: Buffer, meta: Partial<DocumentMeta
 function library() {
   const directory = mkdtempSync(join(tmpdir(), 'tod-parameters-'))
   directories.push(directory)
-  return new RegistryStore(join(directory, 'registry.sqlite'))
+  const store = new RegistryStore(join(directory, 'registry.sqlite'))
+  stores.push(store)
+  return store
 }
 
 const state = (states: Awaited<ReturnType<typeof listParameterStates>>, id: string) =>

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { createNewScheme } from '../create-scheme'
+import { schemeSchema } from '../model'
 import {
   checkNorm,
+  isDiscrepancy,
   hourlyFromDaily,
   normRows,
   parseNorm,
@@ -31,6 +34,30 @@ describe('PU-66 norm column', () => {
     expect(checkNorm('0,75', 0.75)).toBe('ok')
     expect(checkNorm('Типовой', 'Железобетон')).toBe('unknown')
     expect(checkNorm('не менее 6 м', '-')).toBe('unknown')
+  })
+
+  it('counts an exact-value mismatch as a discrepancy', () => {
+    expect(
+      ['ok', 'below', 'above', 'differs', 'unknown'].filter((check) =>
+        isDiscrepancy(check as Parameters<typeof isDiscrepancy>[0]),
+      ),
+    ).toEqual(['below', 'above', 'differs'])
+  })
+
+  it('lets a project keep sign size IV suggested for works on IА/IБ roads', () => {
+    const scheme = createNewScheme({
+      referenceId: 'TEST-IV',
+      locationText: 'Учебный переезд',
+      directionLeft: 'А',
+      directionRight: 'Б',
+      frontMetres: '18',
+      taperMetres: '10',
+      bufferMetres: '10',
+      speedStagesKmh: ['70', '50', '40'],
+      yellowTemporarySigns: false,
+    })
+    const withIv = { ...scheme, parameters: { ...scheme.parameters, signSize: 'IV' as const } }
+    expect(schemeSchema.parse(withIv).parameters.signSize).toBe('IV')
   })
 
   it('drops subheadings, empty rows and the footer of the table', () => {
