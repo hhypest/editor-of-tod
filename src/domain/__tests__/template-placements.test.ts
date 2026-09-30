@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { createUnlinkedScheme } from '../create-scheme'
 import { createPlacementDraft, newTextDraft, savePlacement } from '../edit-placements'
-import { movePlacement } from '../placement-workspace'
+import { anchorCoordinates, movePlacement, placementCoordinates } from '../placement-workspace'
+import { PROTOTYPE_RULES } from '../normative-parameters'
+import { reviewScheme } from '../review-scheme'
 import { schemeSchema, type Scheme } from '../model'
 import {
   buildTemplatePlacements,
@@ -38,6 +40,84 @@ function example(
 }
 
 describe('preliminary B.33/B.34 layout', () => {
+  it('refuses to place two regulators when the zone speed is not in table 5', () => {
+    for (const front of [18, 40]) {
+      const base = example(front, 'out', 'two')
+      const scheme = {
+        ...base,
+        parameters: {
+          ...base.parameters,
+          speedStagesKmh: [70, 50, 45] as [number, number, number],
+        },
+      }
+      expect(() => buildTemplatePlacements(scheme)).toThrow(TemplateBuildError)
+      expect(() => buildTemplatePlacements(scheme)).toThrow('45 км/ч нет в таблице')
+    }
+  })
+
+  it('checks the actual regulator positions against table 5 in the review', () => {
+    const built = rebuildTemplatePlacements(example(18, 'out', 'two')).scheme
+    expect(reviewScheme(built).some((finding) => finding.id === 'regulator-distance')).toBe(false)
+    // Прежняя раскладка: правый регулировщик над местом работ (E − 34).
+    const regulators = built.placements.filter(
+      (item) => item.kind === 'element' && item.elementKind === 'reg',
+    )
+    const right = regulators.find((item) => item.position.anchor === 'E')!
+    const moved = {
+      ...built,
+      placements: built.placements.map((item) =>
+        item.id === right.id && item.kind === 'element'
+          ? { ...item, position: { ...item.position, offsetXSvg: -34 } }
+          : item,
+      ),
+    }
+    const finding = reviewScheme(moved).find((item) => item.id === 'regulator-distance')
+    expect(finding?.kind).toBe('verify')
+    expect(finding?.detail).toContain(`№ ${right.id} стоит над рабочей зоной`)
+    expect(finding?.detail).toContain('не ближе 15 м')
+    const oneLeft = {
+      ...built,
+      placements: built.placements.filter((item) => item.id !== right.id),
+    }
+    expect(
+      reviewScheme(oneLeft).find((item) => item.id === 'regulator-distance')?.detail,
+    ).toContain('регулировщиков: 1 из 2')
+  })
+
+  it('puts two regulators before the work zone for each direction (ODM 12.7.2, table 5)', () => {
+    for (const front of [18, 40]) {
+      const scheme = example(front, 'out', 'two')
+      const anchors = anchorCoordinates(scheme)
+      const zone = scheme.parameters.workZones[scheme.template.code]!
+      const unitsPerMetre = (anchors.Z1 - anchors.Z0) / zone.workMetres
+      const regulators = buildTemplatePlacements(scheme)
+        .filter((item) => item.kind === 'element' && item.elementKind === 'reg')
+        .map((item) => placementCoordinates(item, anchors).x)
+        .sort((a, b) => a - b)
+      expect(regulators).toHaveLength(2)
+      const [left, right] = regulators as [number, number]
+      // Скорость в зоне 40 км/ч → 15 м по табл. 5; оба регулировщика вне места работ.
+      const minimum = 15 * unitsPerMetre
+      expect(anchors.Z0 - left).toBeGreaterThanOrEqual(minimum - 1)
+      expect(left).toBeLessThan(anchors.L0)
+      expect(right - anchors.Z1).toBeGreaterThanOrEqual(minimum - 1)
+      expect(right).toBeGreaterThan(anchors.E)
+    }
+    // Подтверждённое расстояние больше — регулировщики отодвигаются.
+    const scheme = example(18, 'out', 'two')
+    const anchors = anchorCoordinates(scheme)
+    const far = {
+      ...PROTOTYPE_RULES,
+      regulatorDistance: { ...PROTOTYPE_RULES.regulatorDistance, 40: 30 },
+    }
+    const right = Math.max(
+      ...buildTemplatePlacements(scheme, far)
+        .filter((item) => item.kind === 'element' && item.elementKind === 'reg')
+        .map((item) => placementCoordinates(item, anchors).x),
+    )
+    expect(right - anchors.Z1).toBeGreaterThanOrEqual(30 * ((anchors.Z1 - anchors.Z0) / 18) - 1)
+  })
+
   it.each([
     [40, 'out', 'two', 2, false],
     [40, 'in', 'two', 2, false],

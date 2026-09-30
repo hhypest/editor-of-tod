@@ -164,6 +164,27 @@ describe('vector A4 sheet', () => {
     expect(all).toContain(
       '1. Пропуск транспорта регулируют два регулировщика у начала и конца места работ (решение составителя).',
     )
+    expect(all).toContain(
+      '2. Регулировщиков устанавливать не ближе 15 м до рабочей зоны (ОДМ 218.6.019, таблица 5).',
+    )
+  })
+
+  it('prints the regulator distance requirement for B.33 as well', () => {
+    const project = createUnlinkedScheme({
+      referenceId: 'TEST-B33',
+      locationText: 'Учебный участок',
+      directionLeft: 'А',
+      directionRight: 'Б',
+      frontMetres: '40',
+      taperMetres: '10',
+      bufferMetres: '15',
+      speedStagesKmh: ['70', '50', '40'],
+      yellowTemporarySigns: false,
+    })
+    const all = texts(drawSheet(projectDraftSheet(project), options).nodes)
+    expect(all.join(' ')).toContain(
+      'Регулировщиков устанавливать не ближе 15 м до рабочей зоны (ОДМ 218.6.019, таблица 5).',
+    )
   })
 
   it('prints the carriageway width as recorded and never derives a lane width', () => {

@@ -1,6 +1,7 @@
 import { schemeSchema, type Scheme } from './model'
 import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import { parseHourly } from './regulation-advice'
+import { anchorCoordinates } from './placement-workspace'
 
 type Placement = Scheme['placements'][number]
 
@@ -38,10 +39,29 @@ export class TemplateBuildError extends Error {
   }
 }
 
+/** Два регулировщика: Б.33 всегда, Б.34 — при выбранном регулировании двумя регулировщиками. */
+export function usesTwoRegulators(scheme: Scheme): boolean {
+  return (
+    scheme.template.code === 'b33' ||
+    (scheme.template.code === 'b34' && scheme.parameters.regulation.mode === 'two')
+  )
+}
+
 function checkConditions(scheme: Scheme, rules: NormativeRules): void {
   const { parameters, template } = scheme
   if (parameters.location === 'auto') {
     throw new TemplateBuildError('На этапе 2 укажите, находится ли переезд в населённом пункте.')
+  }
+  // Два регулировщика (Б.33 всегда, Б.34 по решению) ставятся по табл. 5 ОДМ: скорость в зоне
+  // должна быть в таблице, иначе минимальное расстояние не определено.
+  if (usesTwoRegulators(scheme)) {
+    const zoneSpeed = parameters.speedStagesKmh[2]
+    if (rules.regulatorDistance[zoneSpeed] === undefined) {
+      const speeds = Object.keys(rules.regulatorDistance).join(', ')
+      throw new TemplateBuildError(
+        `Скорости в зоне ${zoneSpeed} км/ч нет в таблице расстояний от регулировщика до рабочей зоны (${rules.sources['odm-regulator-distance']}). Укажите третью ступень скорости из таблицы: ${speeds} км/ч.`,
+      )
+    }
   }
   if (template.code !== 'b34') return
   const { regulation } = parameters
@@ -260,9 +280,24 @@ export function buildTemplatePlacements(
   // Переносной комплекс перед отводом и машина прикрытия у начала зоны (рис. Б.33, Б.34).
   element('complex', 'L0', -48, 486, 46, 40)
   element('car', 'L1', 6, 474, 58, 58)
+  // Два регулировщика — у начала и конца места работ (ОДМ 218.6.019-2016, п. 12.7.2), каждый
+  // не ближе расстояния по табл. 5 до рабочей зоны (Z0–Z1) со стороны своего направления.
+  // Для движения справа начало рабочей зоны — Z1: регулировщик стоит правее неё.
+  const anchors = anchorCoordinates(scheme)
+  const workZone = parameters.workZones[template.code]
+  const unitsPerMetre = workZone ? (anchors.Z1 - anchors.Z0) / workZone.workMetres : 0
+  const regulatorMetres = rules.regulatorDistance[zone] ?? null
+  const regulatorUnits = regulatorMetres === null ? 0 : Math.round(regulatorMetres * unitsPerMetre)
+  const twoRegulators = (leftPrototype: number, rightMargin: number, topY: number): void => {
+    // Слева: у начала отвода, но не ближе табл. 5 до Z0.
+    const leftX = Math.min(anchors.L0 + leftPrototype, anchors.Z0 - regulatorUnits)
+    element('reg', 'L0', Math.round(leftX - anchors.L0), 518, 22, 30)
+    // Справа: за концом места работ (E) и не ближе табл. 5 от Z1.
+    const rightX = Math.max(anchors.E + rightMargin, anchors.Z1 + regulatorUnits)
+    element('reg', 'E', Math.round(rightX - anchors.E), topY, 22, 30)
+  }
   if (!shortFront) {
-    element('reg', 'L0', -95, 518, 22, 30)
-    element('reg', 'E', 70, 368, 22, 30)
+    twoRegulators(-95, 70, 368)
   } else {
     element('complex', 'Z1', -22, 462, 46, 40)
     if (parameters.frontStyle !== 'solid')
@@ -274,10 +309,7 @@ export function buildTemplatePlacements(
       ] as const)
         element('pit', 'Z0', 0, y, width, height, fraction)
     if (parameters.regulation.mode === 'one') element('reg', 'Z0', -11, 366, 22, 30, 0.25)
-    if (parameters.regulation.mode === 'two') {
-      element('reg', 'L0', -100, 518, 22, 30)
-      element('reg', 'E', -34, 366, 22, 30)
-    }
+    if (parameters.regulation.mode === 'two') twoRegulators(-100, 40, 366)
   }
   return placements
 }
