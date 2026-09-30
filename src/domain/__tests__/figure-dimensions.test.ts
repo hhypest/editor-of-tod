@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { createUnlinkedScheme } from '../create-scheme'
 import { figureDimensions } from '../figure-dimensions'
 import { importSchemeJson } from '../import'
+import { PROTOTYPE_RULES } from '../normative-parameters'
+import { reviewScheme } from '../review-scheme'
 import legacyB34 from '../../../tests/fixtures/legacy-b34-manual.json?raw'
 
 function project(frontMetres: string, taperMetres: string, bufferMetres: string) {
@@ -56,6 +58,35 @@ describe('dimension chains read from ODM figures B.33/B.34', () => {
     expect(figureDimensions(project('18', '10', '10')).every((part) => part.agreesWithFigure)).toBe(
       true,
     )
+  })
+
+  it('compares the B.34 taper with ODM 4.1.8.3 when priority signs 2.6/2.7 are chosen', () => {
+    const withSigns = (taper: string) => {
+      const scheme = project('21.5', taper, '10')
+      return {
+        ...scheme,
+        parameters: {
+          ...scheme.parameters,
+          regulation: { ...scheme.parameters.regulation, mode: 'signs' as const },
+        },
+      }
+    }
+    const [entry] = figureDimensions(withSigns('15'))
+    expect(entry).toMatchObject({ figureLabel: '15 м', agreesWithFigure: true })
+    expect(entry?.basis).toContain('4.1.8.3')
+    expect(figureDimensions(withSigns('10'))[0]?.agreesWithFigure).toBe(false)
+    // Подтверждённое значение отгона заменяет значение прототипа.
+    const rules = { ...PROTOTYPE_RULES, signsTaperMetres: 20 }
+    expect(figureDimensions(withSigns('20'), rules)[0]).toMatchObject({
+      figureLabel: '20 м',
+      agreesWithFigure: true,
+    })
+    // Без знаков приоритета отвод по-прежнему сравнивается с рисунком.
+    expect(figureDimensions(project('21.5', '15', '10'))[0]).toMatchObject({
+      figureLabel: '10 м',
+      agreesWithFigure: false,
+    })
+    expect(reviewScheme(withSigns('15')).some((f) => f.id === 'figure-dimensions')).toBe(false)
   })
 
   it('never silently revises an imported B.34 drawing to the new template dimensions', () => {

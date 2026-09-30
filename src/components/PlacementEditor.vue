@@ -12,6 +12,13 @@ import {
 } from '../domain/edit-placements'
 import type { Scheme } from '../domain/model'
 import { anchorCoordinates } from '../domain/placement-workspace'
+import {
+  anchorLabels,
+  elementLabels,
+  placementTitle,
+  sideLabels,
+  standLabels,
+} from '../domain/placement-labels'
 
 type SignMeta = { code: string; width: number; height: number }
 const props = defineProps<{
@@ -249,14 +256,7 @@ function removeSelected(): void {
           :disabled="dirty || locked"
           @click="selectPlacement(item.id)"
         >
-          № {{ item.id }} ·
-          {{
-            item.kind === 'sign-post'
-              ? `Стойка ${item.signIds.join(', ')}`
-              : item.elementKind === 'text'
-                ? `Надпись ${item.text ?? ''}`
-                : `Элемент ${item.elementKind}`
-          }}
+          № {{ item.id }} · {{ placementTitle(item) }}
         </button>
       </nav>
 
@@ -276,16 +276,12 @@ function removeSelected(): void {
               : 'Ручной объект.'
           }}
         </p>
-        <div class="fields">
+        <div class="fields position-fields">
           <label
             >Привязка
             <select v-model="draft.anchor">
-              <option
-                v-for="anchor in ['abs', 'L0', 'L1', 'Z0', 'Z1', 'E', 'AX']"
-                :key="anchor"
-                :value="anchor"
-              >
-                {{ anchor }}
+              <option v-for="(label, anchor) in anchorLabels" :key="anchor" :value="anchor">
+                {{ label }}
               </option>
             </select>
           </label>
@@ -298,15 +294,17 @@ function removeSelected(): void {
             <label
               >Сторона
               <select v-model="draft.side">
-                <option value="up">up</option>
-                <option value="down">down</option>
+                <option v-for="(label, side) in sideLabels" :key="side" :value="side">
+                  {{ label }}
+                </option>
               </select>
             </label>
             <label
               >Опора
               <select v-model="draft.stand">
-                <option value="left">left</option>
-                <option value="right">right</option>
+                <option v-for="(label, stand) in standLabels" :key="stand" :value="stand">
+                  {{ label }}
+                </option>
               </select>
             </label>
             <label>Подпись расстояния <input v-model="draft.distanceLabel" type="text" /></label>
@@ -360,7 +358,7 @@ function removeSelected(): void {
           </div>
         </template>
         <template v-else>
-          <p>Тип: {{ draft.elementKind }}</p>
+          <p>Тип: {{ elementLabels[draft.elementKind] }}</p>
           <div v-if="draft.elementKind !== 'text'" class="fields">
             <label>Ширина <input v-model="draft.width" type="text" inputmode="decimal" /></label>
             <label>Высота <input v-model="draft.height" type="text" inputmode="decimal" /></label>
@@ -461,6 +459,17 @@ h4 {
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
   gap: 0.7rem;
   margin: 0.8rem 0;
+}
+.fields.position-fields {
+  grid-template-columns: minmax(13rem, 2fr) repeat(2, minmax(5rem, 1fr));
+}
+@media (max-width: 640px) {
+  .fields.position-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+  .fields.position-fields > label:first-child {
+    grid-column: 1 / -1;
+  }
 }
 label {
   display: block;

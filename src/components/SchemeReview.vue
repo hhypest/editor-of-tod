@@ -2,10 +2,12 @@
 import { computed } from 'vue'
 import type { Scheme } from '../domain/model'
 import { reviewScheme, type ReviewFinding } from '../domain/review-scheme'
+import { useNormativeRules } from '../composables/useNormativeRules'
 
 const props = defineProps<{ scheme: Scheme; hasPendingInput: boolean }>()
 const emit = defineEmits<{ navigate: [finding: ReviewFinding] }>()
-const findings = computed(() => reviewScheme(props.scheme))
+const { rules } = useNormativeRules()
+const findings = computed(() => reviewScheme(props.scheme, rules.value))
 const toFill = computed(() => findings.value.filter((finding) => finding.kind === 'fill'))
 const toVerify = computed(() => findings.value.filter((finding) => finding.kind === 'verify'))
 </script>

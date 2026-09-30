@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { templateLabel } from '../domain/registry'
 import { computed, nextTick, onMounted, ref, useId, watch } from 'vue'
 import type { Scheme } from '../domain/model'
 import { projectDraftSheet } from '../domain/draft-sheet'
@@ -227,7 +228,7 @@ function fileName(extension: string): string {
   return sheetFileName(
     [
       'Схема',
-      sheet.value.template.toUpperCase().replace('B', 'Б'),
+      templateLabel(sheet.value.template).replace('.', ''),
       sheet.value.crossingFromPu66?.location || sheet.value.referenceId,
       release.value ? '' : 'черновик',
     ],

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { anchorLabels, placementTitle } from '../domain/placement-labels'
+import { templateLabel } from '../domain/registry'
 import type { Scheme } from '../domain/model'
 
 defineProps<{ scheme: Scheme }>()
@@ -43,7 +45,7 @@ function metres(value: number | null): string {
         <dd>{{ scheme.parameters.yellowTemporarySigns ? 'да' : 'нет' }}</dd>
       </div>
       <div v-for="code in zoneCodes" :key="code">
-        <dt>{{ code.toUpperCase() }}: отвод / буфер / фронт</dt>
+        <dt>{{ templateLabel(code) }}: отвод / буфер / фронт</dt>
         <dd v-if="scheme.parameters.workZones[code]">
           {{ scheme.parameters.workZones[code]!.taperMetres }} /
           {{ scheme.parameters.workZones[code]!.bufferMetres }} /
@@ -69,14 +71,11 @@ function metres(value: number | null): string {
           <tr v-for="placement in scheme.placements" :key="placement.id">
             <td>{{ placement.id }}</td>
             <td>
-              {{
-                placement.kind === 'sign-post'
-                  ? `Стойка: ${placement.signIds.join(', ')}`
-                  : `Элемент ${placement.elementKind}`
-              }}
+              {{ placementTitle(placement) }}
             </td>
             <td>
-              {{ placement.position.anchor }}; x={{ placement.position.offsetXSvg }}; y={{
+              {{ anchorLabels[placement.position.anchor] }}; x={{ placement.position.offsetXSvg }};
+              y={{
                 placement.kind === 'sign-post'
                   ? placement.position.offsetYSvg
                   : placement.position.ySvg

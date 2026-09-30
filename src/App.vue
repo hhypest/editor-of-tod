@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { templateLabel } from './domain/registry'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import LocalRegistries from './components/LocalRegistries.vue'
 import ImportedData from './components/ImportedData.vue'
@@ -25,7 +26,7 @@ type View = 'projects' | 'source' | 'geometry' | 'objects' | 'review' | 'registr
 const stages = ['source', 'geometry', 'objects', 'review'] as const
 const activeView = ref<View>('projects')
 const projectTab = ref<'new' | 'file' | 'local'>('new')
-const { reload: reloadNormativeRules } = useNormativeRules()
+const { reload: reloadNormativeRules, rules: normativeRules } = useNormativeRules()
 const registryTab = ref<'imports' | 'documents' | 'parameters' | 'entries'>('imports')
 const registriesVisited = ref(false)
 const setupStatus = ref<{ cards: number; signs: number } | null>(null)
@@ -129,7 +130,9 @@ function onSignsUpdated(): void {
 
 const fillCount = computed(() =>
   imported.value
-    ? reviewScheme(imported.value.scheme).filter((finding) => finding.kind === 'fill').length
+    ? reviewScheme(imported.value.scheme, normativeRules.value).filter(
+        (finding) => finding.kind === 'fill',
+      ).length
     : 0,
 )
 const detailsMode = computed<'source' | 'geometry' | 'title'>(() =>
@@ -561,7 +564,7 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
               <span class="eyebrow">{{ selectedFileName }}</span
               ><strong
                 >Переезд {{ imported.scheme.crossing.referenceId }} ·
-                {{ imported.scheme.template.code.toUpperCase() }}</strong
+                {{ templateLabel(imported.scheme.template.code) }}</strong
               ><span class="project-meta"
                 >Фронт {{ frontMetres ?? 'не указан' }} м · объектов
                 {{ imported.scheme.placements.length }} · редакция
@@ -648,7 +651,7 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
             </div>
             <div class="variant-summary">
               <span>Вариант по проекту</span
-              ><strong>{{ imported.scheme.template.code.toUpperCase() }}</strong
+              ><strong>{{ templateLabel(imported.scheme.template.code) }}</strong
               ><span>Фронт {{ frontMetres ?? 'не указан' }} м</span>
             </div>
             <details class="reference">
@@ -807,7 +810,7 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
         <template v-if="imported">
           <div class="preview-heading">
             <strong>Лист схемы</strong
-            ><span class="variant-badge">{{ imported.scheme.template.code.toUpperCase() }}</span>
+            ><span class="variant-badge">{{ templateLabel(imported.scheme.template.code) }}</span>
           </div>
           <SchemeDraftSheet
             :key="`mini-${signCatalogVersion}`"

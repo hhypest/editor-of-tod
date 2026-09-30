@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { templateLabel } from '../domain/registry'
 import { computed, ref, watch } from 'vue'
 import {
   applySchemeDetails,
@@ -258,7 +259,7 @@ function applyDraft(): void {
           Жёлтый фон временных знаков
         </label>
         <h3>Условия и решение составителя</h3>
-        <div class="fields compact">
+        <div class="fields">
           <label
             >Местоположение
             <select v-model="draft.parameters.location">
@@ -282,7 +283,7 @@ function applyDraft(): void {
             <input v-model="draft.parameters.settlementSpeedKmh" inputmode="decimal" type="text" />
           </label>
           <label
-            >Фронт
+            >Вид фронта работ
             <select v-model="draft.parameters.frontStyle">
               <option value="part">Частичный</option>
               <option value="solid">Сплошной</option>
@@ -302,18 +303,20 @@ function applyDraft(): void {
             <input v-model="draft.parameters.regulation.hourly" type="text" />
           </label>
         </div>
-        <label class="checkbox"
-          ><input v-model="draft.parameters.frontFromPu66" type="checkbox" />
-          Фронт взят из ПУ-66 (проверьте размер на месте)
-        </label>
-        <label class="checkbox"
-          ><input v-model="draft.parameters.regulation.vis" type="checkbox" />
-          Видимость ограничена
-        </label>
-        <label class="checkbox"
-          ><input v-model="draft.parameters.regulation.straight" type="checkbox" />
-          Прямой участок дороги
-        </label>
+        <div class="checks">
+          <label class="checkbox"
+            ><input v-model="draft.parameters.frontFromPu66" type="checkbox" />
+            Фронт взят из ПУ-66 (проверьте размер на месте)
+          </label>
+          <label class="checkbox"
+            ><input v-model="draft.parameters.regulation.vis" type="checkbox" />
+            Видимость ограничена
+          </label>
+          <label class="checkbox"
+            ><input v-model="draft.parameters.regulation.straight" type="checkbox" />
+            Прямой участок дороги
+          </label>
+        </div>
         <Pu66NormsPanel
           v-if="scheme.crossing.source === 'local-pu66'"
           :reference-id="scheme.crossing.referenceId"
@@ -359,14 +362,14 @@ function applyDraft(): void {
           </p>
         </section>
         <div v-for="code in zoneCodes" :key="code">
-          <h3>Зона {{ code.toUpperCase() }}</h3>
+          <h3>Зона {{ templateLabel(code) }}</h3>
           <button
             v-if="!draft.parameters.workZones[code]"
             type="button"
             :disabled="locked"
             @click="addZone(code)"
           >
-            Добавить размеры {{ code.toUpperCase() }}
+            Добавить размеры {{ templateLabel(code) }}
           </button>
           <div v-else class="fields compact">
             <label
@@ -591,18 +594,45 @@ label {
   font-size: 0.9rem;
   font-weight: 600;
 }
-input[type='text'] {
+/* Подпись сверху, поле снизу: поля одной строки стоят на общей линии при подписях разной длины. */
+.fields > label {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.3rem;
+  min-width: 0;
+}
+input[type='text'],
+select {
   display: block;
   width: 100%;
+  min-width: 0;
   box-sizing: border-box;
   margin-top: 0.3rem;
   padding: 0.55rem;
   border: 1px solid #93a5b8;
   border-radius: 0.35rem;
+  background: #fff;
   font: inherit;
+  font-weight: 400;
+}
+.fields > label > input[type='text'],
+.fields > label > select {
+  margin-top: 0;
 }
 .checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   margin: 1rem 0;
+}
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.5rem;
+}
+.checks .checkbox {
+  margin: 0.8rem 0;
 }
 .actions {
   display: flex;
