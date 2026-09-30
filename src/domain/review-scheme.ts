@@ -16,6 +16,8 @@ export type ReviewFinding = {
    * входят в отпечаток отметки: после их изменения отметка «Проверено» перестаёт действовать.
    */
   basis?: string
+  /** Почему пункт пока нельзя отметить «Проверено» (например, PNG знаков не закреплены). */
+  markBlocked?: string
 }
 
 const distanceNames = ['d300', 'd250', 'd150', 'd50', 'n100', 'n50'] as const
@@ -190,11 +192,12 @@ export function reviewScheme(
     title: 'Вариант и расстановка',
     detail: `Вариант ${templateLabel(scheme.template.code)} и размещение объектов не прошли предметную проверку. Сверьте геометрию, условия работ, существующие знаки и применимую редакцию ОДМ.`,
     target: '#placements-title',
+    // Всё, от чего зависит раскладка шаблона: параметры схемы (кроме названия участка и
+    // направлений — это подписи листа) и значения нормативных параметров.
     basis: JSON.stringify([
       scheme.template,
-      parameters.workZones[scheme.template.code],
-      parameters.signDistancesMetres,
-      parameters.speedStagesKmh,
+      { ...parameters, locationText: undefined, directions: undefined },
+      { ...rules, sources: undefined, confirmed: undefined },
       placements,
     ]),
   })
@@ -275,6 +278,14 @@ export function reviewScheme(
         parameters.signSize,
         scheme.signImages,
       ]),
+      // Без закрепления лист показывает текущий каталог: после его обновления изображения
+      // сменились бы, а отметка осталась бы действующей.
+      ...(scheme.signImages.catalog
+        ? {}
+        : {
+            markBlocked:
+              'Сначала закрепите редакции PNG на этапе 3 («Закрепить редакции PNG»): без закрепления изображения знаков меняются вместе с каталогом.',
+          }),
     })
   }
 

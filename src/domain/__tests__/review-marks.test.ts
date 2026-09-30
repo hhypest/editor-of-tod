@@ -5,6 +5,8 @@ import { newSignDraft, savePlacement } from '../edit-placements'
 import { exportSchemeJson, importSchemeJson } from '../import'
 import { findingFingerprint, markState, setMark, unmarkedChecks } from '../review-marks'
 import { reviewScheme } from '../review-scheme'
+import { pinSignImages } from '../sign-images'
+import { PROTOTYPE_RULES } from '../normative-parameters'
 
 function project() {
   const scheme = createUnlinkedScheme({
@@ -21,7 +23,15 @@ function project() {
   const post = newSignDraft()
   if (post.kind !== 'sign-post') throw new Error('Expected sign post')
   post.signCodes = '1.25'
-  return savePlacement(scheme, post)
+  // Знаки закреплены: без этого пункт «Знаки на стойках» отметить нельзя.
+  return pinSignImages(
+    savePlacement(scheme, post),
+    { id: 1, documentCode: 'ГОСТ TEST', edition: '2024' },
+    [
+      { code: '1.25', revision: 1 },
+      { code: '3.20', revision: 1 },
+    ],
+  )
 }
 
 const now = '2026-09-30T10:00:00.000Z'
@@ -66,6 +76,36 @@ describe('manual review marks', () => {
         .map((finding) => finding.id)
         .sort(),
     ).toEqual(['signs', 'template'])
+  })
+
+  it('does not accept a sign check until the PNG revisions are pinned', () => {
+    const unpinned = { ...project(), signImages: { catalog: null, revisions: {} } }
+    const signs = reviewScheme(unpinned).find((finding) => finding.id === 'signs')!
+    expect(markState(unpinned, signs).status).toBe('blocked')
+    expect(() => setMark(unpinned, reviewScheme(unpinned), 'signs', true, now)).toThrow(
+      'Закрепить редакции PNG',
+    )
+    expect(unmarkedChecks(unpinned, reviewScheme(unpinned)).map((f) => f.id)).toContain('signs')
+  })
+
+  it('invalidates the layout check when any template input or normative value changes', () => {
+    let scheme = project()
+    scheme = setMark(scheme, reviewScheme(scheme), 'template', true, now)
+    const template = (value: typeof scheme, rules = PROTOTYPE_RULES) =>
+      markState(
+        value,
+        reviewScheme(value, rules).find((finding) => finding.id === 'template')!,
+      )
+    expect(template(scheme).status).toBe('marked')
+    const inside = {
+      ...scheme,
+      parameters: { ...scheme.parameters, location: 'in' as const },
+    }
+    expect(template(inside).status).toBe('stale')
+    expect(template(scheme, { ...PROTOTYPE_RULES, speedStepKmh: 10 }).status).toBe('stale')
+    // Название участка — подпись листа, раскладку не меняет.
+    const renamed = { ...scheme, parameters: { ...scheme.parameters, locationText: 'Другое' } }
+    expect(template(renamed).status).toBe('marked')
   })
 
   it('unmarks a check and drops marks of checks that no longer exist', () => {

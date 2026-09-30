@@ -12,6 +12,8 @@ export type MarkState =
   | { status: 'marked'; markedAt: string }
   /** Отметка есть, но пункт с тех пор изменился. */
   | { status: 'stale'; markedAt: string }
+  /** Пункт пока нельзя отметить; причина — в `finding.markBlocked`. */
+  | { status: 'blocked'; reason: string }
 
 /** FNV-1a (64 бита): короткий устойчивый отпечаток без асинхронного `crypto.subtle`. */
 function fnv1a64(text: string): string {
@@ -29,6 +31,7 @@ export function findingFingerprint(finding: ReviewFinding): string {
 }
 
 export function markState(scheme: Scheme, finding: ReviewFinding): MarkState {
+  if (finding.markBlocked) return { status: 'blocked', reason: finding.markBlocked }
   const mark = scheme.reviewMarks[finding.id]
   if (!mark) return { status: 'unmarked' }
   return mark.fingerprint === findingFingerprint(finding)
@@ -62,6 +65,7 @@ export function setMark(
   )
   const finding = findings.find((item) => item.id === findingId && item.kind === 'verify')
   if (!finding) throw new Error('Пункт ручной проверки не найден: список обновился.')
+  if (checked && finding.markBlocked) throw new Error(finding.markBlocked)
   const marks = Object.fromEntries(
     Object.entries(scheme.reviewMarks).filter(([id]) => current.has(id) && id !== findingId),
   )

@@ -70,7 +70,7 @@ function when(iso: string): string {
           <input
             type="checkbox"
             :checked="state.status === 'marked'"
-            :disabled="locked || hasPendingInput"
+            :disabled="locked || hasPendingInput || state.status === 'blocked'"
             @change="toggle(finding, $event)"
           />
           Проверено
@@ -80,6 +80,9 @@ function when(iso: string): string {
           <a :href="finding.target" @click.prevent="emit('navigate', finding)">Перейти</a>
           <small v-if="state.status === 'marked'" class="mark-note">
             Отмечено {{ when(state.markedAt) }}.
+          </small>
+          <small v-else-if="state.status === 'blocked'" class="mark-note stale">
+            {{ state.reason }}
           </small>
           <small v-else-if="state.status === 'stale'" class="mark-note stale">
             Отмечено {{ when(state.markedAt) }}, но после этого пункт изменился — проверьте снова.
