@@ -128,6 +128,37 @@ describe('sign images from the PDF of a standard', () => {
     expect(findYellowRule('Текст без перечня')).toBeNull()
   })
 
+  it('turns enclosed background (inside of digits, windows) yellow but keeps the outer rim white', () => {
+    // Круглый знак: прозрачное поле, белая кайма, красное кольцо, белый фон и чёрная «цифра 0»
+    // с белой внутренностью.
+    const size = 64
+    const image = new PNG({ width: size, height: size })
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const r = Math.hypot(x + 0.5 - size / 2, y + 0.5 - size / 2)
+        const offset = (y * size + x) * 4
+        const colour =
+          r > 30
+            ? [0, 0, 0, 0]
+            : r > 28
+              ? [255, 255, 255, 255]
+              : r > 21
+                ? [220, 30, 40, 255]
+                : r > 10 || r < 6
+                  ? [255, 255, 255, 255]
+                  : [0, 0, 0, 255]
+        image.data.set(colour, offset)
+      }
+    }
+    const result = PNG.sync.read(yellowVariant(PNG.sync.write(image)))
+    const pixel = (x: number, y: number) =>
+      Array.from(result.data.subarray((y * size + x) * 4, (y * size + x) * 4 + 3))
+    expect(pixel(32, 32)).toEqual([254, 220, 0]) // внутренность «0»
+    expect(pixel(32, 17)).toEqual([254, 220, 0]) // фон знака
+    expect(pixel(32, 3)).toEqual([255, 255, 255]) // наружная кайма
+    expect(pixel(32, 8)).toEqual([220, 30, 40]) // кольцо не меняется
+  })
+
   it('leaves a sign without inner white background unchanged', () => {
     const plate = extraction.images[1]!.png
     expect(yellowVariant(plate).equals(plate)).toBe(true)

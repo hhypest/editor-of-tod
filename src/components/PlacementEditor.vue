@@ -12,6 +12,8 @@ import {
 } from '../domain/edit-placements'
 import type { Scheme } from '../domain/model'
 import { anchorCoordinates } from '../domain/placement-workspace'
+import { drawableWithoutImage, signImageCode } from '../domain/sheet-drawing'
+import SignPreview from './SignPreview.vue'
 import {
   anchorLabels,
   elementLabels,
@@ -52,6 +54,10 @@ const matches = computed(() =>
     .filter((sign) => sign.code.toLowerCase().includes(query.value.trim().toLowerCase()))
     .slice(0, 12),
 )
+/** Знак можно показать: есть PNG (с учётом 3.24_50 → 3.24) или программа его дорисует. */
+function showable(code: string): boolean {
+  return knownCodes.value.has(signImageCode(code, knownCodes.value)) || drawableWithoutImage(code)
+}
 const currentCodes = computed(() =>
   draft.value?.kind === 'sign-post'
     ? draft.value.signCodes
@@ -315,13 +321,8 @@ function removeSelected(): void {
           </label>
           <div v-if="currentCodes.length" class="previews">
             <figure v-for="(code, index) in currentCodes" :key="`${index}-${code}`">
-              <img
-                v-if="knownCodes.has(code)"
-                :src="`/api/signs/${encodeURIComponent(code)}/image`"
-                :alt="`Знак ${code}`"
-                loading="lazy"
-              />
-              <div v-else class="missing">Нет PNG в локальном каталоге</div>
+              <div v-if="!showable(code)" class="missing">Нет PNG в локальном каталоге</div>
+              <SignPreview v-else :code="code" :known="knownCodes" :height="56" />
               <figcaption>{{ code }}</figcaption>
             </figure>
           </div>
@@ -537,7 +538,9 @@ figure {
   border-radius: 0.35rem;
   text-align: center;
 }
-figure img {
+figure img,
+figure svg {
+  display: block;
   width: 100%;
   height: 3.5rem;
   object-fit: contain;

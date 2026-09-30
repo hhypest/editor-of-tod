@@ -169,8 +169,20 @@ export function drawableWithoutImage(code: string): boolean {
   return /^3\.24(_\d+)?(_ж)?$/.test(code) || /^8\.1\.1_\d+$/.test(code)
 }
 
+/**
+ * Изображение-основа знака, который программа дорисовывает: 3.24 с другим числом рисуется
+ * поверх изображения 3.24 (3.24_ж) из каталога ГОСТ Р 52290, табличка 8.1.1 с другим
+ * расстоянием — поверх 8.1.1. Кайма, кольцо и фон берутся из стандарта, заменяется число.
+ */
+export function drawnSignBase(code: string): string | null {
+  const speed = /^3\.24(?:_\d+)?(_ж)?$/.exec(code)
+  if (speed) return `3.24${speed[1] ?? ''}`
+  return /^8\.1\.1_\d+$/.test(code) ? '8.1.1' : null
+}
+
 function signSize(code: string, sizes: ReadonlyMap<string, SignSize>): [number, number] {
-  const known = sizes.get(code)
+  const base = drawnSignBase(code)
+  const known = sizes.get(code) ?? (base ? sizes.get(base) : undefined)
   const plate = code.startsWith('8.') && !code.startsWith('8.22')
   const height = plate ? SIGN_HEIGHT * 0.62 : SIGN_HEIGHT
   if (!known || known.height <= 0) return plate ? [height * 2, height] : [height, height]

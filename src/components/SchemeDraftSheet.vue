@@ -5,6 +5,7 @@ import type { Scheme } from '../domain/model'
 import { projectDraftSheet } from '../domain/draft-sheet'
 import {
   drawableWithoutImage,
+  drawnSignBase,
   drawSheet,
   objectsOutside,
   overlappingPosts,
@@ -82,6 +83,17 @@ const drawnSigns = computed(() =>
     (code) =>
       (!signSizes.value.has(code) || brokenImages.value.has(code)) && drawableWithoutImage(code),
   ),
+)
+/** Число нанесено поверх изображения стандарта (3.24, 8.1.1) — вид совпадает с ГОСТ. */
+const drawnOverBase = computed(() =>
+  drawnSigns.value.filter((code) => {
+    const base = drawnSignBase(code)
+    return base !== null && signUrl(base) !== null
+  }),
+)
+/** Изображения-основы нет в каталоге: знак нарисован целиком программой. */
+const drawnWithoutBase = computed(() =>
+  drawnSigns.value.filter((code) => !drawnOverBase.value.includes(code)),
 )
 const outsideIds = computed(() => objectsOutside(draftDrawing.value))
 /** Причины, по которым лист нельзя печатать или выгружать; проверяются и при Ctrl+P. */
@@ -196,7 +208,11 @@ async function prepareSheet(): Promise<boolean> {
   const schemeAtStart = props.scheme
   await nextTick()
   if (!paper.value) return false
-  const images = [...paper.value.querySelectorAll<SVGImageElement>('image[data-sign-code]')]
+  const images = [
+    ...paper.value.querySelectorAll<SVGImageElement>(
+      'image[data-sign-code], image[data-sign-base]',
+    ),
+  ]
   await Promise.all(
     images.map(async (image) => {
       const probe = new Image()
@@ -204,7 +220,7 @@ async function prepareSheet(): Promise<boolean> {
       try {
         await probe.decode()
       } catch {
-        imageFailed(image.dataset.signCode ?? '')
+        imageFailed(image.dataset.signCode ?? image.dataset.signBase ?? '')
       }
     }),
   )
@@ -337,9 +353,12 @@ async function exportPng(): Promise<void> {
         Нет PNG в локальном каталоге: {{ missingSigns.join(', ') }}. Печать заблокирована до
         исправления.
       </p>
-      <p v-if="catalogState === 'ready' && drawnSigns.length" class="hint" role="status">
-        Нарисованы без PNG: {{ drawnSigns.join(', ') }}. Проверьте их вид или добавьте PNG в
-        каталог.
+      <p v-if="catalogState === 'ready' && drawnOverBase.length" class="hint" role="status">
+        Число нанесено программой поверх изображения стандарта: {{ drawnOverBase.join(', ') }}.
+      </p>
+      <p v-if="catalogState === 'ready' && drawnWithoutBase.length" class="hint" role="status">
+        Нарисованы без изображения стандарта: {{ drawnWithoutBase.join(', ') }}. Извлеките в каталог
+        знаки 3.24 и 8.1.1 из ГОСТ Р 52290, чтобы вид совпадал со стандартом.
       </p>
       <p v-if="editionStatus.kind === 'outdated'" class="error" role="status">
         Знаки {{ scheme.signImages.catalog ? 'проекта закреплены' : 'каталога загружены' }} по
