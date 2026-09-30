@@ -347,7 +347,8 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
             <p class="eyebrow">Рабочее место</p>
             <h1 id="projects-heading">Проекты схем</h1>
             <p>
-              Создайте новую схему, откройте сохранённую редакцию или загрузите прежний JSON-проект.
+              Начните новую схему по карточке ПУ-66, откройте сохранённую редакцию или загрузите
+              прежний JSON-проект.
             </p>
           </div>
           <section v-if="recoveryCopies.length" class="module" aria-labelledby="recovery-heading">
@@ -415,8 +416,8 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
                   {{ setupStatus.cards ? `${setupStatus.cards} в базе` : 'пока нет' }}</strong
                 >
                 <p>
-                  Выберите сразу все XLSX (до 100 книг); для пробы можно создать вымышленные книги
-                  командой npm run samples:pu66.
+                  Без карточек ПУ-66 новый проект не создаётся. Выберите сразу все XLSX (до 100
+                  книг); для пробы можно создать вымышленные книги командой npm run samples:pu66.
                 </p>
                 <button type="button" @click="openSetupImport('pu66-import')">
                   {{ setupStatus.cards ? 'Открыть карточки' : 'Импортировать ПУ-66' }}
@@ -454,6 +455,7 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
             :locked="localBusy || loading"
             :active="projectTab === 'new' && activeView === 'projects'"
             @create="createProject"
+            @import-pu66="openSetupImport('pu66-import')"
           />
           <LocalProjects
             v-if="projectTab === 'local'"

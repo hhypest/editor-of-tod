@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createNewScheme } from '../create-scheme'
+import { createUnlinkedScheme } from '../create-scheme'
 import { applySchemeDetails, createSchemeDetailsDraft } from '../edit-details'
 import { newSignDraft, savePlacement } from '../edit-placements'
 import { linkPu66Card } from '../link-pu66'
@@ -10,7 +10,7 @@ import { importSchemeJson } from '../import'
 import detailsEditor from '../../components/SchemeDetailsEditor.vue?raw'
 
 function newProject(frontMetres = '18') {
-  return createNewScheme(
+  return createUnlinkedScheme(
     {
       referenceId: 'TEST-CROSSING',
       locationText: '',

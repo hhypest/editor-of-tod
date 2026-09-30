@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createNewScheme } from '../../src/domain/create-scheme'
+import { createUnlinkedScheme } from '../../src/domain/create-scheme'
 import { importSchemeJson } from '../../src/domain/import'
 import { createSchemeDetailsDraft } from '../../src/domain/edit-details'
 import { schemeSchema, schemeV2Schema, schemeV3Schema } from '../../src/domain/model'
@@ -254,7 +254,7 @@ describe('local SQLite registries', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-native-'))
     directories.push(directory)
     const path = join(directory, 'registry.sqlite')
-    const scheme = createNewScheme({
+    const scheme = createUnlinkedScheme({
       referenceId: 'TEST-NATIVE',
       locationText: 'Учебный участок',
       directionLeft: '',
@@ -344,7 +344,7 @@ describe('local SQLite registries', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-project-v3-'))
     directories.push(directory)
     const path = join(directory, 'registry.sqlite')
-    const scheme = createNewScheme({
+    const scheme = createUnlinkedScheme({
       referenceId: 'TEST-PREVIOUS',
       locationText: 'Условный участок',
       directionLeft: '',

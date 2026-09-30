@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
-  createNewScheme,
   createSchemeFromPu66,
+  createUnlinkedScheme,
   SchemeCreationError,
   type NewSchemeInput,
 } from '../domain/create-scheme'
@@ -13,9 +13,8 @@ import { getPu66SchemeRecord, listPu66Cards, type Pu66ListEntry } from '../servi
 import Pu66CardPicker from './Pu66CardPicker.vue'
 
 const props = defineProps<{ locked?: boolean; active?: boolean }>()
-const emit = defineEmits<{ create: [scheme: Scheme] }>()
+const emit = defineEmits<{ create: [scheme: Scheme]; importPu66: [] }>()
 const input = reactive<NewSchemeInput>({
-  referenceId: '',
   locationText: '',
   directionLeft: '',
   directionRight: '',
@@ -27,7 +26,8 @@ const input = reactive<NewSchemeInput>({
 })
 const error = ref('')
 const cards = ref<Pu66ListEntry[]>([])
-const registryNote = ref('')
+/** Состояние реестра ПУ-66: без карточек (`empty`, `unavailable`) создать проект нельзя. */
+const registry = ref<'loading' | 'ready' | 'empty' | 'unavailable'>('loading')
 const cardKey = ref('')
 const card = ref<Pu66SchemeRecord | null>(null)
 const busy = ref(false)
@@ -53,14 +53,13 @@ const choice = computed(() => {
 async function loadCards(): Promise<void> {
   try {
     cards.value = await listPu66Cards()
-    registryNote.value = cards.value.length
-      ? ''
-      : 'В локальном реестре пока нет карточек ПУ-66: импортируйте их в разделе «Реестры» или введите идентификатор вручную.'
+    registry.value = cards.value.length ? 'ready' : 'empty'
   } catch {
     cards.value = []
-    registryNote.value =
-      'Локальный реестр ПУ-66 недоступен: идентификатор можно ввести вручную и закрепить карточку позже.'
+    registry.value = 'unavailable'
   }
+  // Выбранная карточка могла исчезнуть из реестра после восстановления резервной копии.
+  if (cardKey.value && !cards.value.some((item) => item.referenceId === cardKey.value)) forgetCard()
 }
 
 async function chooseCard(key: string): Promise<void> {
@@ -72,7 +71,6 @@ async function chooseCard(key: string): Promise<void> {
     const selected = await getPu66SchemeRecord(key)
     if (cardKey.value !== key) return
     card.value = selected
-    input.referenceId = selected.referenceId
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Карточка не открылась.'
   } finally {
@@ -92,10 +90,12 @@ async function create(): Promise<void> {
   try {
     const selected = card.value
     if (!selected) {
-      emit('create', createNewScheme(input))
+      error.value =
+        'Новую схему можно начать только с карточки ПУ-66 из локального реестра. Выберите карточку.'
       return
     }
-    createNewScheme({ ...input, referenceId: selected.referenceId })
+    // Условия проверяются до повторного чтения карточки, чтобы ошибка ввода была видна сразу.
+    createUnlinkedScheme({ ...input, referenceId: selected.referenceId })
     // Карточку перечитываем перед созданием: запись могла обновиться после просмотра.
     const latest = await getPu66SchemeRecord(selected.referenceId)
     if (current !== attempt || props.locked) {
@@ -120,20 +120,51 @@ async function create(): Promise<void> {
 }
 
 onMounted(loadCards)
+// Карточки могли импортировать в «Реестрах», пока форма была скрыта.
+watch(
+  () => props.active,
+  (active, previous) => {
+    if (active && previous === false) void loadCards()
+  },
+)
 </script>
 
 <template>
   <section aria-labelledby="new-scheme-title">
-    <h2 id="new-scheme-title">Новый проект без старого JSON</h2>
+    <h2 id="new-scheme-title">Новый проект по карточке ПУ-66</h2>
     <p class="hint">
-      Найдите переезд в локальном реестре ПУ-66: местоположение, подпись оси, дорога и ширина
-      проезжей части попадут на лист из выбранной редакции карточки. Измеренные размеры и скорости
-      заполните вручную. Без реестра идентификатор можно ввести вручную и закрепить карточку позже.
-      Выбор карточки не считается её сверкой. После ввода условий на этапе 2 можно собрать условную
-      расстановку на этапе 3.
+      Новая схема начинается только с карточки переезда из локального реестра ПУ-66: идентификатор,
+      местоположение, подпись оси, дорога и ширина проезжей части попадут в проект из выбранной
+      редакции карточки. Измеренные размеры и скорости заполните сами. Выбор карточки не считается
+      её сверкой. После ввода условий на этапе 2 можно собрать условную расстановку на этапе 3.
     </p>
-    <form @submit.prevent="create">
-      <fieldset :disabled="locked || busy">
+    <div v-if="registry === 'empty' || registry === 'unavailable'" class="blocked" role="alert">
+      <p v-if="registry === 'empty'">
+        <strong>В локальном реестре нет карточек ПУ-66 — начать новый проект невозможно.</strong>
+        Импортируйте книги ПУ-66 в разделе «Реестры», затем вернитесь сюда.
+      </p>
+      <p v-else>
+        <strong>Локальный реестр ПУ-66 недоступен — начать новый проект невозможно.</strong>
+        Проверьте, что локальный сервер запущен, и повторите попытку.
+      </p>
+      <div class="actions">
+        <button
+          v-if="registry === 'empty'"
+          type="button"
+          class="primary"
+          @click="emit('importPu66')"
+        >
+          Импортировать ПУ-66
+        </button>
+        <button type="button" class="secondary" @click="loadCards">Проверить снова</button>
+      </div>
+      <p class="hint">
+        Сохранённые черновики и прежние JSON-проекты по-прежнему открываются во вкладках «Черновики
+        SQLite» и «Открыть JSON».
+      </p>
+    </div>
+    <form v-else @submit.prevent="create">
+      <fieldset :disabled="locked || busy || registry === 'loading'">
         <section class="card" aria-labelledby="new-scheme-card-title">
           <h3 id="new-scheme-card-title">Карточка ПУ-66</h3>
           <Pu66CardPicker
@@ -143,10 +174,15 @@ onMounted(loadCards)
             :cards="cards"
             @choose="chooseCard"
           />
-          <p v-if="registryNote" class="hint">{{ registryNote }}</p>
+          <p v-if="registry === 'loading'" class="hint">Читаю локальный реестр ПУ-66…</p>
+          <p v-else-if="!card" class="hint">
+            Найдите и выберите карточку переезда — без неё проект не создаётся.
+          </p>
           <div v-if="card" class="preview" role="status">
             <p class="hint">Будет закреплено в проекте (редакция № {{ card.revision }}):</p>
             <dl>
+              <dt>Идентификатор</dt>
+              <dd>{{ card.referenceId }}</dd>
               <dt>Местоположение</dt>
               <dd>{{ card.location }}</dd>
               <dt>Подпись оси</dt>
@@ -156,22 +192,10 @@ onMounted(loadCards)
               <dt>Ширина проезжей части, м</dt>
               <dd>{{ card.crossingWidthMetres ?? 'не указана' }}</dd>
             </dl>
-            <button type="button" class="secondary" @click="forgetCard">
-              Создать без карточки
-            </button>
+            <button type="button" class="secondary" @click="forgetCard">Выбрать другую</button>
           </div>
         </section>
         <div class="fields">
-          <label
-            >Локальный идентификатор переезда
-            <input
-              v-model="input.referenceId"
-              type="text"
-              maxlength="120"
-              required
-              :readonly="Boolean(card)"
-            />
-          </label>
           <label
             >Участок
             <input v-model="input.locationText" type="text" maxlength="5000" />
@@ -226,7 +250,7 @@ onMounted(loadCards)
           Жёлтый фон временных знаков
         </label>
         <p v-if="error" class="error" role="alert">{{ error }}</p>
-        <button type="submit" class="primary">Создать проект</button>
+        <button type="submit" class="primary" :disabled="!card">Создать проект</button>
       </fieldset>
     </form>
   </section>
@@ -295,6 +319,22 @@ button.secondary {
   background: #fff;
   color: #185ca5;
   font-weight: 400;
+}
+.blocked {
+  padding: 0.9rem 1rem;
+  border-left: 3px solid #b7791f;
+  border-radius: 0.35rem;
+  background: #fff8e8;
+  line-height: 1.5;
+}
+.blocked p {
+  margin: 0 0 0.7rem;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.7rem;
 }
 .card {
   margin-bottom: 1rem;

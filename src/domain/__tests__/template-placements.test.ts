@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createNewScheme } from '../create-scheme'
+import { createUnlinkedScheme } from '../create-scheme'
 import { createPlacementDraft, newTextDraft, savePlacement } from '../edit-placements'
 import { movePlacement } from '../placement-workspace'
 import { schemeSchema, type Scheme } from '../model'
@@ -15,7 +15,7 @@ function example(
   location: 'in' | 'out',
   mode: Scheme['parameters']['regulation']['mode'],
 ) {
-  const base = createNewScheme({
+  const base = createUnlinkedScheme({
     referenceId: 'TEST-TEMPLATE',
     locationText: 'Учебная дорога',
     directionLeft: 'А',

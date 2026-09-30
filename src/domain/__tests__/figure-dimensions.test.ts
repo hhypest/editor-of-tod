@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { createNewScheme } from '../create-scheme'
+import { createUnlinkedScheme } from '../create-scheme'
 import { figureDimensions } from '../figure-dimensions'
 import { importSchemeJson } from '../import'
 import legacyB34 from '../../../tests/fixtures/legacy-b34-manual.json?raw'
 
 function project(frontMetres: string, taperMetres: string, bufferMetres: string) {
-  return createNewScheme({
+  return createUnlinkedScheme({
     referenceId: 'TEST-FIGURE',
     locationText: 'Учебный участок',
     directionLeft: 'А',
