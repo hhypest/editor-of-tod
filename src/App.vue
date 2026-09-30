@@ -6,6 +6,8 @@ import LocalProjects from './components/LocalProjects.vue'
 import NewScheme from './components/NewScheme.vue'
 import NormativeDocuments from './components/NormativeDocuments.vue'
 import NormativeParameters from './components/NormativeParameters.vue'
+import HelpPage from './components/HelpPage.vue'
+import { helpSectionFor } from './help/help-content'
 import PlacementEditor from './components/PlacementEditor.vue'
 import Pu66Linker from './components/Pu66Linker.vue'
 import SchemeDraftSheet from './components/SchemeDraftSheet.vue'
@@ -19,7 +21,7 @@ import { usedSignCodes } from './domain/sign-images'
 import { useProjectSession } from './composables/useProjectSession'
 import { useNormativeRules } from './composables/useNormativeRules'
 
-type View = 'projects' | 'source' | 'geometry' | 'objects' | 'review' | 'registries'
+type View = 'projects' | 'source' | 'geometry' | 'objects' | 'review' | 'registries' | 'help'
 const stages = ['source', 'geometry', 'objects', 'review'] as const
 const activeView = ref<View>('projects')
 const projectTab = ref<'new' | 'file' | 'local'>('new')
@@ -141,6 +143,25 @@ const referencedSignIds = computed(() =>
   imported.value ? usedSignCodes(imported.value.scheme) : [],
 )
 
+/** Экран открытого проекта (этапы 1–4), а не общий раздел. */
+const inProject = computed(
+  () =>
+    activeView.value !== 'projects' &&
+    activeView.value !== 'registries' &&
+    activeView.value !== 'help',
+)
+const helpSection = ref<string | null>(null)
+const helpOpenKey = ref(0)
+
+/** Справка по экрану, с которого её открыли. */
+function openHelp(section?: string): void {
+  if (activeView.value !== 'help')
+    helpSection.value = section ?? helpSectionFor(activeView.value, registryTab.value)
+  else if (section) helpSection.value = section
+  helpOpenKey.value++
+  activeView.value = 'help'
+}
+
 function showView(view: View): void {
   if (!imported.value && stages.includes(view as (typeof stages)[number])) return
   if (view === 'registries') registriesVisited.value = true
@@ -222,6 +243,15 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
           Реестры
         </button>
         <button
+          type="button"
+          class="header-button"
+          :aria-current="activeView === 'help' ? 'page' : undefined"
+          title="Справка по текущему экрану"
+          @click="openHelp()"
+        >
+          Справка
+        </button>
+        <button
           v-if="imported"
           type="button"
           class="top-save"
@@ -298,6 +328,9 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
           >
             Локальные реестры
           </button>
+          <button type="button" :class="{ selected: activeView === 'help' }" @click="openHelp()">
+            Справка
+          </button>
         </div>
       </aside>
 
@@ -356,6 +389,11 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
               Локальная база находится в private-data/registry.sqlite. Добавьте недостающие реестры:
               знаки из PDF ГОСТ Р 52290 и книги ПУ-66. Файлы выбираются с этого компьютера; после
               просмотра изменений подтвердите запись.
+            </p>
+            <p>
+              <button type="button" class="link-button" @click="openHelp('first-run')">
+                Порядок настройки в справке
+              </button>
             </p>
             <ol class="setup-steps">
               <li>
@@ -513,11 +551,10 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
           <LocalRegistries v-show="registryTab === 'entries'" class="module" />
         </section>
 
+        <HelpPage v-if="activeView === 'help'" :section="helpSection" :open-key="helpOpenKey" />
+
         <template v-if="imported">
-          <div
-            v-show="activeView !== 'projects' && activeView !== 'registries'"
-            class="project-bar"
-          >
+          <div v-show="inProject" class="project-bar">
             <div>
               <span class="eyebrow">{{ selectedFileName }}</span
               ><strong
@@ -562,11 +599,7 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
               </div>
             </details>
           </div>
-          <p
-            v-show="activeView !== 'projects' && activeView !== 'registries' && editorDirty"
-            class="feedback pending"
-            role="status"
-          >
+          <p v-show="inProject && editorDirty" class="feedback pending" role="status">
             Есть неприменённый ввод. Вернитесь к изменённой форме и нажмите «Применить правки» или
             «Отменить ввод» перед сохранением и печатью.
           </p>
@@ -727,11 +760,7 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
             :scheme="imported.scheme"
           />
 
-          <nav
-            v-show="activeView !== 'projects' && activeView !== 'registries'"
-            class="stage-controls"
-            aria-label="Переход между этапами"
-          >
+          <nav v-show="inProject" class="stage-controls" aria-label="Переход между этапами">
             <button v-if="activeView === 'source'" type="button" @click="showView('projects')">
               ← К проектам
             </button>
@@ -1262,6 +1291,15 @@ input[type='file'] {
   color: #53685e;
   font-size: 0.78rem;
   line-height: 1.5;
+}
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #185ca5;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
 }
 .preview-open {
   width: 100%;
