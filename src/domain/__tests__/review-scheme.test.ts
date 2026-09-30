@@ -55,13 +55,13 @@ describe('live draft review', () => {
     const field = (scheme: typeof initial, id: string) =>
       reviewScheme(scheme).find((finding) => finding.id === id)?.field
     expect(field(initial, 'place')).toBe('parameters.locationText')
-    expect(field(initial, 'responsible')).toBe('titleBlock.responsible.0')
+    expect(field(initial, 'responsible')).toBe('titleBlock.responsible.0.position')
     const draft = createSchemeDetailsDraft(initial)
     draft.parameters.locationText = 'Учебный участок'
     draft.titleBlock.developer.organization = 'Учебная организация'
     const edited = applySchemeDetails(initial, draft)
     expect(field(edited, 'place')).toBe('parameters.directions.left')
-    expect(field(edited, 'developer')).toBe('titleBlock.developer.name')
+    expect(field(edited, 'developer')).toBe('titleBlock.developer.position')
     const post = newSignDraft()
     if (post.kind !== 'sign-post') throw new Error('Expected sign draft')
     post.signCodes = '1.25'
@@ -89,12 +89,25 @@ describe('live draft review', () => {
         const keys = finding.field!.split('.')
         let target: Record<string, unknown> = draft as unknown as Record<string, unknown>
         for (const key of keys.slice(0, -1)) target = target[key] as Record<string, unknown>
-        target[keys.at(-1)!] = keys[1] === 'signDistancesMetres' ? '100' : 'Учебное значение'
+        target[keys.at(-1)!] =
+          keys[1] === 'signDistancesMetres'
+            ? '100'
+            : keys.at(-1) === 'phone'
+              ? '+7 (900) 000-00-00'
+              : 'Учебное значение'
       }
       draft = { ...draft }
     }
     expect(paths.size).toBeGreaterThan(15)
-    for (const path of paths) expect(detailsEditor).toContain(`data-field="${path}"`)
+    for (const path of paths) {
+      // Поля ответственных строятся в цикле: `titleBlock.responsible.${index}.name`.
+      const responsible = /^titleBlock\.responsible\.\d+\.(\w+)$/.exec(path)
+      expect(detailsEditor).toContain(
+        responsible
+          ? `:data-field="\`titleBlock.responsible.\${index}.${responsible[1]}\`"`
+          : `data-field="${path}"`,
+      )
+    }
   })
 
   it('flags only missing distances referenced by sign posts and removes them when entered', () => {

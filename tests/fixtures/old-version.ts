@@ -1,13 +1,36 @@
 import type { Scheme } from '../../src/domain/model'
+import { responsibleLine } from '../../src/domain/title-block'
+
+/** Реквизиты в форме v1–v5: без должности разработчика, ответственные — две строки. */
+export function oldTitleBlock(scheme: Scheme) {
+  const { developer, responsible, ...rest } = scheme.titleBlock
+  return {
+    ...rest,
+    developer: { organization: developer.organization, name: developer.name, date: developer.date },
+    responsible: [
+      responsibleLine(responsible[0]!),
+      responsible[1] ? responsibleLine(responsible[1]) : '',
+    ] as [string, string],
+  }
+}
+
+/** Снимок формата v5 (до 30.09.2026): те же поля, кроме реквизитов и отметок проверки. */
+export function v5Snapshot(scheme: Scheme) {
+  const { reviewMarks: _marks, ...rest } = scheme
+  void _marks
+  return { ...rest, schemaVersion: 5 as const, titleBlock: oldTitleBlock(scheme) }
+}
 
 /** Reconstruct the shape of old saved snapshots for migration tests. */
 export function oldSnapshot(scheme: Scheme, schemaVersion: 2 | 3 | 4) {
   const parameters = scheme.parameters
-  const { signImages: _signImages, ...oldBase } = scheme
+  const { signImages: _signImages, reviewMarks: _marks, ...oldBase } = scheme
   void _signImages
+  void _marks
   return {
     ...oldBase,
     schemaVersion,
+    titleBlock: oldTitleBlock(scheme),
     template: {
       code: scheme.template.code,
       sourceReference: scheme.template.sourceReference,

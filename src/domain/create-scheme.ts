@@ -59,7 +59,7 @@ export function createUnlinkedScheme(
     labels: { taper: '', buffer: '', work: '' },
   }
   const parsed = schemeSchema.safeParse({
-    schemaVersion: 5,
+    schemaVersion: 6,
     id: options.id ?? crypto.randomUUID(),
     createdAt: options.now ?? new Date().toISOString(),
     crossing: {
@@ -84,14 +84,15 @@ export function createUnlinkedScheme(
       workZones: { b33: code === 'b33' ? zone : null, b34: code === 'b34' ? zone : null },
     },
     titleBlock: {
-      developer: { organization: '', name: '', date: '' },
+      developer: { organization: '', position: '', name: '', date: '' },
       work: { organization: '', description: '', period: '' },
-      responsible: ['', ''],
+      responsible: [{ position: '', name: '', phone: '' }],
       approver: { position: '', organization: '', name: '' },
       agreement: { position: '', name: '', year: '' },
     },
     placements: [],
     nextPlacementId: 1,
+    reviewMarks: {},
     source: { kind: 'created-in-editor' },
   })
   if (!parsed.success) {

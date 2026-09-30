@@ -198,7 +198,7 @@ function applyDraft(): void {
     selectedId.value = id
     dirty.value = false
     error.value = ''
-    status.value = `Объект ${id} применён к проекту. Скачайте копию v5 для сохранения.`
+    status.value = `Объект ${id} применён к проекту. Скачайте копию v6 для сохранения.`
     emit('select', id)
     emit('apply', updated)
     emit('dirty', false)

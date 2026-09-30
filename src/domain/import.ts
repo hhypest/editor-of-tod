@@ -5,13 +5,16 @@ import {
   schemeV2Schema,
   schemeV3Schema,
   schemeV4Schema,
+  schemeV5Schema,
   upgradeSchemeV4,
+  upgradeSchemeV5,
   upgradeSchemeV2,
   upgradeSchemeV3,
   defaultLegacyParameters,
   type Scheme,
   type WorkZone,
 } from './model'
+import { responsibleFromLegacy } from './title-block'
 
 export const MAX_PROJECT_FILE_BYTES = 32 * 1024 * 1024
 const MAX_LEGACY_FILE_BYTES = 10 * 1024 * 1024
@@ -29,8 +32,17 @@ export class SchemeImportError extends Error {
 
 export interface ImportResult {
   scheme: Scheme
-  format: 'legacy-v1' | 'scheme-v2' | 'scheme-v3' | 'scheme-v4' | 'scheme-v5'
+  format: 'legacy-v1' | 'scheme-v2' | 'scheme-v3' | 'scheme-v4' | 'scheme-v5' | 'scheme-v6'
   warnings: string[]
+}
+
+/** Прежние строки ответственных разбираются автоматически — составитель должен это проверить. */
+function responsibleWarning(lines: readonly string[]): string[] {
+  return lines.some((line) => line.trim())
+    ? [
+        'Ответственные разделены на должность, ФИО и телефон автоматически — проверьте их в «Реквизиты листа» на этапе 4.',
+      ]
+    : []
 }
 
 function invalidIssue(issues: ZodIssue[]): never {
@@ -172,6 +184,7 @@ function migrateLegacy(
     'Шаблон и номера знаков перенесены как данные; нормативная проверка не выполняется, изображения доступны только из локального каталога PNG.',
   ]
   warnUnknownLegacyFields(legacy, warnings)
+  warnings.push(...responsibleWarning([legacy.head.resp1, legacy.head.resp2]))
   const seen = new Set<number>()
   for (const [index, object] of legacy.objects.entries()) {
     if (seen.has(object.id)) {
@@ -201,7 +214,7 @@ function migrateLegacy(
 
   const { params, head } = legacy
   const candidate = {
-    schemaVersion: 5,
+    schemaVersion: 6,
     id,
     createdAt: now,
     crossing: { referenceId: params.key, source: 'legacy-pu66', snapshot: null },
@@ -235,9 +248,14 @@ function migrateLegacy(
       workZones: { b33: mapWorkZone(params.len.b33), b34: mapWorkZone(params.len.b34) },
     },
     titleBlock: {
-      developer: { organization: head.dev_org, name: head.dev_fio, date: head.dev_date },
+      developer: {
+        organization: head.dev_org,
+        position: '',
+        name: head.dev_fio,
+        date: head.dev_date,
+      },
       work: { organization: head.org, description: head.work, period: head.term },
-      responsible: [head.resp1, head.resp2],
+      responsible: responsibleFromLegacy(head.resp1, head.resp2),
       approver: { position: head.ap_pos, organization: head.ap_org, name: head.ap_fio },
       agreement: { position: head.ag_pos, name: head.ag_fio, year: head.year },
     },
@@ -271,6 +289,7 @@ function migrateLegacy(
           },
     ),
     nextPlacementId,
+    reviewMarks: {},
     source: { kind: 'legacy-html-v1', importedAt: now, originalJson },
   }
 
@@ -304,7 +323,10 @@ export function importSchemeJson(
     return {
       scheme: upgradeSchemeV2(parsed.data),
       format: 'scheme-v2',
-      warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
+      warnings: [
+        'Импортированная схема пока не проверена по действующим нормативным источникам.',
+        ...responsibleWarning(parsed.data.titleBlock.responsible),
+      ],
     }
   }
 
@@ -314,7 +336,10 @@ export function importSchemeJson(
     return {
       scheme: upgradeSchemeV3(parsed.data),
       format: 'scheme-v3',
-      warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
+      warnings: [
+        'Импортированная схема пока не проверена по действующим нормативным источникам.',
+        ...responsibleWarning(parsed.data.titleBlock.responsible),
+      ],
     }
   }
 
@@ -324,16 +349,32 @@ export function importSchemeJson(
     return {
       scheme: upgradeSchemeV4(parsed.data),
       format: 'scheme-v4',
-      warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
+      warnings: [
+        'Импортированная схема пока не проверена по действующим нормативным источникам.',
+        ...responsibleWarning(parsed.data.titleBlock.responsible),
+      ],
     }
   }
 
   if ('schemaVersion' in value && value.schemaVersion === 5) {
+    const parsed = schemeV5Schema.safeParse(value)
+    if (!parsed.success) invalidIssue(parsed.error.issues)
+    return {
+      scheme: upgradeSchemeV5(parsed.data),
+      format: 'scheme-v5',
+      warnings: [
+        'Импортированная схема пока не проверена по действующим нормативным источникам.',
+        ...responsibleWarning(parsed.data.titleBlock.responsible),
+      ],
+    }
+  }
+
+  if ('schemaVersion' in value && value.schemaVersion === 6) {
     const parsed = schemeSchema.safeParse(value)
     if (!parsed.success) invalidIssue(parsed.error.issues)
     return {
       scheme: parsed.data,
-      format: 'scheme-v5',
+      format: 'scheme-v6',
       warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
     }
   }
@@ -354,7 +395,7 @@ export function importSchemeJson(
 
   throw new SchemeImportError(
     'unsupported-version',
-    'Версия проекта не поддерживается. Поддерживаются v: 1 и schemaVersion: 2, 3, 4 или 5.',
+    'Версия проекта не поддерживается. Поддерживаются v: 1 и schemaVersion: 2–6.',
   )
 }
 

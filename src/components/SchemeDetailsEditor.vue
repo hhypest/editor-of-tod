@@ -11,6 +11,7 @@ import type { Scheme } from '../domain/model'
 import { adviseRegulation, regulationModeLabels } from '../domain/regulation-advice'
 import { useNormativeRules } from '../composables/useNormativeRules'
 import Pu66NormsPanel from './Pu66NormsPanel.vue'
+import { formatPhone, PHONE_PLACEHOLDER } from '../domain/title-block'
 
 const props = defineProps<{
   scheme: Scheme
@@ -112,6 +113,30 @@ function useTypesize(value: Scheme['parameters']['signSize']): void {
   markDirty()
 }
 
+function addResponsible(): void {
+  if (props.locked || draft.value.titleBlock.responsible.length >= 2) return
+  const [first] = draft.value.titleBlock.responsible
+  if (!first) return
+  draft.value.titleBlock.responsible = [first, { position: '', name: '', phone: '' }]
+  markDirty()
+}
+
+function removeResponsible(): void {
+  if (props.locked || draft.value.titleBlock.responsible.length < 2) return
+  const [first] = draft.value.titleBlock.responsible
+  if (first) draft.value.titleBlock.responsible = [first]
+  markDirty()
+}
+
+/** Маска телефона применяется при наборе: цифры раскладываются в +7 (XXX) XXX-XX-XX. */
+function onPhoneInput(index: number, event: Event): void {
+  const input = event.target as HTMLInputElement
+  const person = draft.value.titleBlock.responsible[index]
+  if (!person) return
+  person.phone = formatPhone(input.value)
+  input.value = person.phone
+}
+
 function markDirty(): void {
   if (props.locked) return
   error.value = ''
@@ -136,7 +161,7 @@ function applyDraft(): void {
     const updated = applySchemeDetails(props.scheme, draft.value)
     dirty.value = false
     error.value = ''
-    status.value = 'Правки применены к проекту. Сохраните черновик или скачайте копию v5.'
+    status.value = 'Правки применены к проекту. Сохраните черновик или скачайте копию v6.'
     emit('apply', updated)
     emit('dirty', false)
   } catch (cause) {
@@ -421,6 +446,13 @@ function applyDraft(): void {
               type="text"
           /></label>
           <label
+            >Должность
+            <input
+              v-model="draft.titleBlock.developer.position"
+              data-field="titleBlock.developer.position"
+              type="text"
+          /></label>
+          <label
             >ФИО
             <input
               v-model="draft.titleBlock.developer.name"
@@ -458,20 +490,57 @@ function applyDraft(): void {
               data-field="titleBlock.work.period"
               type="text"
           /></label>
+        </div>
+        <h3>Ответственные за проведение работ</h3>
+        <p class="hint">
+          Первый ответственный обязателен, второй — по необходимости. Телефон вводится цифрами,
+          маска {{ PHONE_PLACEHOLDER }} подставляется сама.
+        </p>
+        <div
+          v-for="(person, index) in draft.titleBlock.responsible"
+          :key="index"
+          class="fields responsible"
+          role="group"
+          :aria-label="`Ответственный ${index + 1}`"
+        >
           <label
-            >Ответственный 1
+            >Должность ответственного {{ index + 1 }}
             <input
-              v-model="draft.titleBlock.responsible[0]"
-              data-field="titleBlock.responsible.0"
+              v-model="person.position"
+              :data-field="`titleBlock.responsible.${index}.position`"
               type="text"
           /></label>
           <label
-            >Ответственный 2
+            >ФИО ответственного {{ index + 1 }}
             <input
-              v-model="draft.titleBlock.responsible[1]"
-              data-field="titleBlock.responsible.1"
+              v-model="person.name"
+              :data-field="`titleBlock.responsible.${index}.name`"
               type="text"
           /></label>
+          <label
+            >Телефон ответственного {{ index + 1 }}
+            <input
+              :value="person.phone"
+              :data-field="`titleBlock.responsible.${index}.phone`"
+              type="tel"
+              inputmode="tel"
+              autocomplete="off"
+              :placeholder="PHONE_PLACEHOLDER"
+              maxlength="18"
+              @input="onPhoneInput(index, $event)"
+          /></label>
+        </div>
+        <div class="actions">
+          <button
+            v-if="draft.titleBlock.responsible.length < 2"
+            type="button"
+            @click="addResponsible"
+          >
+            Добавить второго ответственного
+          </button>
+          <button v-else type="button" @click="removeResponsible">
+            Убрать второго ответственного
+          </button>
         </div>
         <h3>Утверждает владелец автомобильной дороги</h3>
         <div class="fields">
@@ -586,6 +655,9 @@ legend {
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
   gap: 0.8rem 1rem;
 }
+.fields.responsible {
+  margin-bottom: 0.8rem;
+}
 .fields.compact {
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
 }
@@ -603,6 +675,7 @@ label {
   min-width: 0;
 }
 input[type='text'],
+input[type='tel'],
 select {
   display: block;
   width: 100%;
@@ -617,6 +690,7 @@ select {
   font-weight: 400;
 }
 .fields > label > input[type='text'],
+.fields > label > input[type='tel'],
 .fields > label > select {
   margin-top: 0;
 }

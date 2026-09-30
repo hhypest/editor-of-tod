@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { schemeSchema } from './model.ts'
+import { schemeSchema, upgradeTitleBlock } from './model.ts'
 
 const text = z.string().max(5_000)
 const zone = z.strictObject({
@@ -7,6 +7,14 @@ const zone = z.strictObject({
   bufferMetres: text,
   workMetres: text,
   labels: z.strictObject({ taper: text, buffer: text, work: text }),
+})
+
+const titleBlockV5DraftSchema = z.strictObject({
+  developer: z.strictObject({ organization: text, name: text, date: text }),
+  work: z.strictObject({ organization: text, description: text, period: text }),
+  responsible: z.tuple([text, text]),
+  approver: z.strictObject({ position: text, organization: text, name: text }),
+  agreement: z.strictObject({ position: text, name: text, year: text }),
 })
 
 export const detailsDraftSchema = z.strictObject({
@@ -39,13 +47,24 @@ export const detailsDraftSchema = z.strictObject({
     }),
     workZones: z.strictObject({ b33: zone.nullable(), b34: zone.nullable() }),
   }),
-  titleBlock: z.strictObject({
-    developer: z.strictObject({ organization: text, name: text, date: text }),
-    work: z.strictObject({ organization: text, description: text, period: text }),
-    responsible: z.tuple([text, text]),
-    approver: z.strictObject({ position: text, organization: text, name: text }),
-    agreement: z.strictObject({ position: text, name: text, year: text }),
-  }),
+  // Копии восстановления до 30.09.2026 хранят реквизиты v5 — они переводятся в v6 при чтении.
+  // Телефон в неприменённом вводе может быть набран не полностью.
+  titleBlock: z.preprocess(
+    (value) => {
+      const legacy = titleBlockV5DraftSchema.safeParse(value)
+      return legacy.success ? upgradeTitleBlock(legacy.data) : value
+    },
+    z.strictObject({
+      developer: z.strictObject({ organization: text, position: text, name: text, date: text }),
+      work: z.strictObject({ organization: text, description: text, period: text }),
+      responsible: z
+        .array(z.strictObject({ position: text, name: text, phone: text }))
+        .min(1)
+        .max(2),
+      approver: z.strictObject({ position: text, organization: text, name: text }),
+      agreement: z.strictObject({ position: text, name: text, year: text }),
+    }),
+  ),
 })
 
 const baseDraft = {

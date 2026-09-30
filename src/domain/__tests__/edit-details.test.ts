@@ -3,6 +3,7 @@ import { reactive } from 'vue'
 import fixture from '../../../tests/fixtures/manual-v1.json?raw'
 import { applySchemeDetails, createSchemeDetailsDraft, SchemeEditError } from '../edit-details'
 import { exportSchemeJson, importSchemeJson } from '../import'
+import { detailsDraftSchema } from '../recovery'
 
 const source = importSchemeJson(fixture, {
   id: '55740b36-080a-4cbe-9476-e71ffb1ab47f',
@@ -69,5 +70,45 @@ describe('editing imported project details', () => {
     const draft = createSchemeDetailsDraft(source)
     draft.titleBlock.work.description = 'x'.repeat(5_001)
     expect(() => applySchemeDetails(source, draft)).toThrow('titleBlock.work.description')
+  })
+})
+
+describe('title block v6 in the details form', () => {
+  it('rejects an incomplete phone and keeps one or two responsible persons', () => {
+    const scheme = importSchemeJson(fixture).scheme
+    const draft = createSchemeDetailsDraft(scheme)
+    draft.titleBlock.responsible = [
+      { position: 'мастер', name: 'Учебный А.Б.', phone: '+7 (910) 12' },
+    ]
+    expect(() => applySchemeDetails(scheme, draft)).toThrow('Телефон ответственного № 1')
+    draft.titleBlock.responsible[0]!.phone = '+7 (910) 123-45-67'
+    draft.titleBlock.developer.position = 'инженер'
+    const one = applySchemeDetails(scheme, draft)
+    expect(one.titleBlock.responsible).toHaveLength(1)
+    expect(one.titleBlock.developer.position).toBe('инженер')
+    const two = createSchemeDetailsDraft(one)
+    two.titleBlock.responsible = [
+      two.titleBlock.responsible[0]!,
+      { position: '', name: 'Второй Учебный', phone: '' },
+    ]
+    expect(applySchemeDetails(one, two).titleBlock.responsible).toHaveLength(2)
+  })
+
+  it('upgrades an unapplied v5 title block from a recovery copy', () => {
+    const scheme = importSchemeJson(fixture).scheme
+    const draft = JSON.parse(JSON.stringify(createSchemeDetailsDraft(scheme)))
+    draft.titleBlock = {
+      developer: { organization: 'Учебная', name: 'Учебный', date: '' },
+      work: { organization: '', description: '', period: '' },
+      responsible: ['мастер Учебный Иван Петрович', 'Второй Б.В.'],
+      approver: { position: '', organization: '', name: '' },
+      agreement: { position: '', name: '', year: '' },
+    }
+    const parsed = detailsDraftSchema.parse(draft)
+    expect(parsed.titleBlock.developer.position).toBe('')
+    expect(parsed.titleBlock.responsible).toEqual([
+      { position: 'мастер', name: 'Учебный Иван Петрович', phone: '' },
+      { position: '', name: 'Второй Б.В.', phone: '' },
+    ])
   })
 })

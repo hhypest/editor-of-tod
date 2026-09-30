@@ -578,7 +578,7 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
                   Сохранить как новый черновик
                 </button>
                 <button type="button" :disabled="editorDirty || localBusy" @click="saveV5">
-                  Скачать JSON v5
+                  Скачать JSON v6
                 </button>
                 <button
                   v-if="imported.scheme.source.kind === 'legacy-html-v1'"
