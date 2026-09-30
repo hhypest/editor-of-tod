@@ -270,7 +270,7 @@ describe('preliminary B.33/B.34 layout', () => {
     ])
   })
 
-  it('writes the dangerous section length on 8.2.1 without rounding', () => {
+  it('writes the dangerous section length on 8.2.1 rounded to whole metres', () => {
     const scheme = example(18, 'out', 'two')
     const fractional = schemeSchema.parse({
       ...scheme,
@@ -282,12 +282,24 @@ describe('preliminary B.33/B.34 layout', () => {
         },
       },
     })
-    // 10,1 + 10 + 18,2 = 38,3 м; погрешность сложения дробей не попадает в код.
-    expect(dangerousSectionMetres(fractional)).toBe(38.3)
+    // 10,1 + 10 + 18,2 = 38,3 м → 38 м: протяжённость на табличке округляется до целых.
+    expect(dangerousSectionMetres(fractional)).toBe(38)
+    const half = schemeSchema.parse({
+      ...fractional,
+      parameters: {
+        ...fractional.parameters,
+        workZones: {
+          ...fractional.parameters.workZones,
+          b34: { ...fractional.parameters.workZones.b34!, workMetres: 27.4 },
+        },
+      },
+    })
+    // 10,1 + 10 + 27,4 = 47,5 → 48 (половина — вверх, без погрешности сложения дробей).
+    expect(dangerousSectionMetres(half)).toBe(48)
     const codes = buildTemplatePlacements(fractional).flatMap((item) =>
       item.kind === 'sign-post' ? item.signIds : [],
     )
-    expect(codes.filter((code) => code === '8.2.1_38.3')).toHaveLength(2)
+    expect(codes.filter((code) => code === '8.2.1_38')).toHaveLength(2)
   })
 
   it('adds speed steps of at most 20 km/h in a settlement', () => {

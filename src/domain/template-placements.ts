@@ -116,13 +116,15 @@ function distancePlate(metres: number | null, marker: DistanceField): string {
 /**
  * Протяжённость опасного участка для таблички 8.2.1 «Зона действия» при повторном знаке 1.25:
  * от начала отвода до конца работ — отвод + буфер + фронт активной зоны (ГОСТ Р 52289-2019,
- * п. 5.9.5; ОДМ 218.6.019-2016, п. 8.1.2.2 о повторном знаке 1.25 с табличкой 8.2.1). Без
- * округления; погрешность сложения дробных чисел убирается до сотых.
+ * п. 5.9.5; ОДМ 218.6.019-2016, п. 8.1.2.2 о повторном знаке 1.25 с табличкой 8.2.1).
+ * Округляется до целых метров (решение составителя 30.09.2026), половина — вверх: 47,5 → 48.
+ * Перед округлением убирается погрешность сложения дробей (10,1 + 10 + 27,4 = 47,5, а не 47,4999…).
  */
 export function dangerousSectionMetres(scheme: Scheme): number | null {
   const zone = scheme.parameters.workZones[scheme.template.code]
   if (!zone) return null
-  return Number((zone.taperMetres + zone.bufferMetres + zone.workMetres).toFixed(2))
+  const sum = zone.taperMetres + zone.bufferMetres + zone.workMetres
+  return Math.round(Number(sum.toFixed(6)))
 }
 
 /** Код таблички 8.2.1 с протяжённостью: «8.2.1_47»; лист рисует число поверх изображения ГОСТ. */
