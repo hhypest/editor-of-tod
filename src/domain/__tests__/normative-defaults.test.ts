@@ -206,6 +206,33 @@ describe('normative defaults of distances and speeds', () => {
   })
 })
 
+describe('review of projects without a location', () => {
+  it('asks for the location and points normative findings at their fields', () => {
+    const scheme = project('out')
+    const unknown = { ...scheme, parameters: { ...scheme.parameters, location: 'auto' as const } }
+    const location = reviewScheme(unknown, rules).find((finding) => finding.id === 'location')
+    expect(location).toMatchObject({ kind: 'fill', field: 'parameters.location' })
+    expect(reviewScheme(scheme, rules).some((finding) => finding.id === 'location')).toBe(false)
+
+    const changed = {
+      ...scheme,
+      parameters: {
+        ...scheme.parameters,
+        approachSpeedKmh: 110,
+        signDistancesMetres: { ...scheme.parameters.signDistancesMetres, d300: 400 },
+      },
+    }
+    const fields = Object.fromEntries(
+      reviewScheme(changed, rules).map((finding) => [finding.id, finding.field]),
+    )
+    expect(fields).toMatchObject({
+      'normative-values': 'parameters.signDistancesMetres.d300',
+      'warning-distance': 'parameters.signDistancesMetres.d300',
+      'speed-step': 'parameters.approachSpeedKmh',
+    })
+  })
+})
+
 describe('normative defaults in the details form', () => {
   it('switches location and approach speed in the draft without touching edited fields', () => {
     const draft = createSchemeDetailsDraft(project('out'))

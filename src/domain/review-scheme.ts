@@ -17,7 +17,10 @@ export type ReviewFinding = {
   title: string
   detail: string
   target: '#details-title' | '#placements-title' | '#pu66-link-title' | '#imported-title'
-  /** Путь первого незаполненного поля формы (`data-field`), к которому переходит «Перейти». */
+  /**
+   * Поле формы (`data-field`), к которому переходит «Перейти»: у пунктов «Нужно заполнить» —
+   * первое незаполненное, у пунктов «Проверить вручную» — первое проверяемое.
+   */
   field?: string
   /**
    * Данные, которые проверяет составитель в пункте «Проверить вручную». Не показываются, но
@@ -151,6 +154,19 @@ export function reviewScheme(
     }
   }
 
+  // Без местоположения не подставляются и не сверяются расстояния и скорости (старые проекты).
+  if (parameters.location === 'auto') {
+    findings.push({
+      id: 'location',
+      kind: 'fill',
+      title: 'Местоположение',
+      detail:
+        'Не указано, находится ли место работ в населённом пункте. От этого зависят расстояния до знаков, ступени скорости и их проверка; без выбора шаблон не собирается, а лист не выпускается.',
+      target: '#details-title',
+      field: 'parameters.location',
+    })
+  }
+
   if (!placements.length) {
     findings.push({
       id: 'placements',
@@ -223,6 +239,7 @@ export function reviewScheme(
         )
         .join('; ')}. Исправление под местные условия допустимо — проверьте его обоснование.`,
       target: '#details-title',
+      field: deviations[0]!.field,
       basis: JSON.stringify(
         deviations.map(({ field, value, normative }) => [field, value, normative]),
       ),
@@ -237,6 +254,7 @@ export function reviewScheme(
       title: 'Расстояние до знака 1.25 вне диапазона',
       detail: `Знак 1.25 стоит в ${warning.value} м до начала работ, а диапазон — от ${warning.range[0]} до ${warning.range[1]} м (${warning.source}). Иное расстояние допускается, но указывается на табличке 8.1.1 — проверьте её на стойках со знаком 1.25.`,
       target: '#details-title',
+      field: `parameters.signDistancesMetres.${parameters.location === 'in' ? 'n100' : 'd300'}`,
       basis: JSON.stringify([warning.value, warning.range]),
     })
   }
@@ -249,6 +267,7 @@ export function reviewScheme(
       title: 'Шаг ступеней скорости',
       detail: `Между соседними ступенями (от разрешённой скорости ${parameters.approachSpeedKmh} км/ч до скорости в зоне) перепад ${step} км/ч — больше ${rules.speedStepKmh} км/ч (${rules.sources['gost-speed-step']}). Проверьте ступени на этапе 2.`,
       target: '#details-title',
+      field: 'parameters.approachSpeedKmh',
       basis: JSON.stringify([parameters.approachSpeedKmh, parameters.speedStagesKmh]),
     })
   }

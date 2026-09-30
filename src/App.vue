@@ -212,8 +212,10 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
     view = 'registries'
     registryTab.value = 'imports'
   } else if (
+    // Поля параметров схемы (кроме места работ) стоят на этапе 2 «Схема движения».
+    finding.field?.startsWith('parameters.') ||
     finding.id.startsWith('distance-') ||
-    ['figure-dimensions', 'variant-front', 'boundary-30'].includes(finding.id)
+    ['figure-dimensions', 'variant-front', 'boundary-30', 'legacy-visibility'].includes(finding.id)
   )
     view = 'geometry'
   showView(view)

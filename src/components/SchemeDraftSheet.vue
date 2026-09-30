@@ -132,9 +132,18 @@ const blockers = computed(() => {
 const uncheckedItems = computed(() =>
   unmarkedChecks(props.scheme, reviewScheme(props.scheme, normativeRules.value)),
 )
+/**
+ * Без местоположения (старые проекты) расстояния и скорости не сверены с нормативами: черновик
+ * печатается, а выпускной лист — нет.
+ */
+const locationMissing = computed(() => props.scheme.parameters.location === 'auto')
 /** Выпускной лист только после подтверждения, отметки всех проверок и без блокирующих замечаний. */
 const release = computed(
-  () => releaseConfirmed.value && !blockers.value.length && !uncheckedItems.value.length,
+  () =>
+    releaseConfirmed.value &&
+    !blockers.value.length &&
+    !uncheckedItems.value.length &&
+    !locationMissing.value,
 )
 const drawing = computed(() =>
   release.value
@@ -338,7 +347,12 @@ async function exportPng(): Promise<void> {
           <input
             v-model="releaseConfirmed"
             type="checkbox"
-            :disabled="Boolean(blockers.length) || Boolean(uncheckedItems.length) || exporting"
+            :disabled="
+              Boolean(blockers.length) ||
+              Boolean(uncheckedItems.length) ||
+              locationMissing ||
+              exporting
+            "
           />
           Я проверил лист: знаки, расстояния, реквизиты и применимость схемы к условиям работ
         </label>
@@ -346,11 +360,13 @@ async function exportPng(): Promise<void> {
           {{
             blockers.length
               ? 'Выпуск недоступен, пока есть замечания ниже.'
-              : uncheckedItems.length
-                ? `Выпуск недоступен: не отмечены пункты «Проверить вручную» (${uncheckedItems.length}): ${uncheckedItems.map((item) => item.title).join('; ')}.`
-                : release
-                  ? 'Выпускной лист: без отметки «черновик» и служебных строк. Любое изменение проекта возвращает черновик.'
-                  : 'После отметки лист печатается и выгружается без отметки «черновик». Отметка не сохраняется в проекте и не заменяет согласование.'
+              : locationMissing
+                ? 'Выпуск недоступен: на этапе 2 укажите, находится ли место работ в населённом пункте, — без этого расстояния до знаков и скорости не сверены с нормативами.'
+                : uncheckedItems.length
+                  ? `Выпуск недоступен: не отмечены пункты «Проверить вручную» (${uncheckedItems.length}): ${uncheckedItems.map((item) => item.title).join('; ')}.`
+                  : release
+                    ? 'Выпускной лист: без отметки «черновик» и служебных строк. Любое изменение проекта возвращает черновик.'
+                    : 'После отметки лист печатается и выгружается без отметки «черновик». Отметка не сохраняется в проекте и не заменяет согласование.'
           }}
         </p>
       </fieldset>

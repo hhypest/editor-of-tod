@@ -88,11 +88,14 @@ describe('live draft review', () => {
     post.distanceLabel = '{d300} {d250} {d150} {d50} {n100} {n50}'
     const paths = new Set<string>()
     const empty = savePlacement(withoutDistances(newProject()), post)
-    for (const finding of reviewScheme(empty)) if (finding.field) paths.add(finding.field)
+    for (const finding of reviewScheme(empty))
+      if (finding.kind === 'fill' && finding.field) paths.add(finding.field)
     // Заполняем поля по одному, чтобы каждое по очереди стало «первым незаполненным».
     let draft = createSchemeDetailsDraft(empty)
     for (let step = 0; step < 20; step++) {
-      const findings = reviewScheme(applySchemeDetails(empty, draft)).filter((f) => f.field)
+      const findings = reviewScheme(applySchemeDetails(empty, draft)).filter(
+        (f) => f.kind === 'fill' && f.field,
+      )
       if (!findings.length) break
       for (const finding of findings) {
         paths.add(finding.field!)
@@ -100,11 +103,13 @@ describe('live draft review', () => {
         let target: Record<string, unknown> = draft as unknown as Record<string, unknown>
         for (const key of keys.slice(0, -1)) target = target[key] as Record<string, unknown>
         target[keys.at(-1)!] =
-          keys[1] === 'signDistancesMetres'
-            ? '100'
-            : keys.at(-1) === 'phone'
-              ? '+7 (900) 000-00-00'
-              : 'Учебное значение'
+          keys[1] === 'location'
+            ? 'out'
+            : keys[1] === 'signDistancesMetres'
+              ? '100'
+              : keys.at(-1) === 'phone'
+                ? '+7 (900) 000-00-00'
+                : 'Учебное значение'
       }
       draft = { ...draft }
     }

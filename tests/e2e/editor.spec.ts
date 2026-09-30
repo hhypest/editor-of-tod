@@ -632,6 +632,17 @@ test('distances and speeds follow normative values but stay editable; saved proj
   await page.getByRole('button', { name: 'Вернуть все нормативные значения' }).click()
   await expect(approach).toHaveValue('90')
   await expect(page.locator('[data-field="parameters.speedStagesKmh.0"]')).toHaveValue('70')
+
+  // Отличие от норматива попадает в «Проверить вручную», «Перейти» ведёт к полю на этапе 2.
+  await d300.fill('280')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  await page
+    .locator('li', { hasText: 'Расстояния и скорости не по нормативным значениям' })
+    .getByRole('link', { name: 'Перейти' })
+    .click()
+  await expect(d300).toBeFocused()
+  await d300Label.getByRole('button', { name: 'Вернуть' }).click()
   await page.getByRole('button', { name: 'Применить правки' }).click()
   await page.getByRole('button', { name: 'Сохранить проект' }).click()
   await expect(page.locator('.save-state')).toHaveText('Сохранён')
