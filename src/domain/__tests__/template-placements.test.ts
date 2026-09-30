@@ -26,6 +26,8 @@ function example(
     taperMetres: mode === 'signs' ? '15' : '10',
     bufferMetres: front < 30 ? '10' : '15',
     speedStagesKmh: ['70', '50', '40'],
+    location: 'out',
+    approachSpeedKmh: '90',
     yellowTemporarySigns: true,
   })
   return schemeSchema.parse({
@@ -33,6 +35,7 @@ function example(
     parameters: {
       ...base.parameters,
       location,
+      approachSpeedKmh: location === 'in' ? 60 : 90,
       signDistancesMetres: { d300: 300, d250: 250, d150: 150, d50: 50, n100: 100, n50: 50 },
       regulation: { ...base.parameters.regulation, mode, hourly: '180', straight: true },
     },
@@ -268,10 +271,15 @@ describe('preliminary B.33/B.34 layout', () => {
     const scheme = example(18, 'in', 'two')
     const faster = schemeSchema.parse({
       ...scheme,
-      parameters: { ...scheme.parameters, settlementSpeedKmh: 80 },
+      parameters: { ...scheme.parameters, approachSpeedKmh: 80 },
     })
     const first = buildTemplatePlacements(faster).find((item) => item.kind === 'sign-post')
     expect(first).toMatchObject({ signIds: ['1.25', '3.24_60_ж'], distanceLabel: '{n100}' })
+    const unknown = schemeSchema.parse({
+      ...scheme,
+      parameters: { ...scheme.parameters, approachSpeedKmh: null },
+    })
+    expect(() => buildTemplatePlacements(unknown)).toThrow('разрешённую скорость на подходе')
   })
 
   it('reports hand-edited objects of the previous template version on rebuild', () => {
@@ -303,7 +311,7 @@ describe('preliminary B.33/B.34 layout', () => {
     expect(plate(150)).toBe('8.1.1_150')
     expect(plate(175)).toBe('8.1.1_175')
     expect(plate(300)).toBe('8.1.1')
-    expect(() => plate(null)).toThrow('укажите расстояние d150')
+    expect(() => plate(null)).toThrow('укажите расстояние «Вторая ступень 3.24 и сужение 1.20»')
     expect(() => plate(150.5)).toThrow('целым числом')
   })
 
@@ -313,7 +321,7 @@ describe('preliminary B.33/B.34 layout', () => {
     const moved = movePlacement(outside, start.id, 12, 0)
     const inside = schemeSchema.parse({
       ...moved,
-      parameters: { ...moved.parameters, location: 'in' },
+      parameters: { ...moved.parameters, location: 'in', approachSpeedKmh: 60 },
     })
     const rebuilt = rebuildTemplatePlacements(inside)
     const posts = rebuilt.scheme.placements.filter((item) => item.kind === 'sign-post')

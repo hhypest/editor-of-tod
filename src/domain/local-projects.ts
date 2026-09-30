@@ -26,6 +26,12 @@ export const projectSummarySchema = z.strictObject({
   templateCode: z.enum(['b33', 'b34']),
   revision: z.number().int().positive(),
   updatedAt: z.iso.datetime(),
+  /** Сведения последней редакции, по которым составитель узнаёт проект в списке. */
+  crossingLocation: z.string(),
+  roadName: z.string(),
+  directionLeft: z.string(),
+  directionRight: z.string(),
+  workDescription: z.string(),
 })
 
 export const projectRevisionSchema = projectRecordSchema.pick({ revision: true, updatedAt: true })

@@ -52,6 +52,22 @@ export type ParameterDefinition = NumberParameter | TableParameter
 export const ODM = 'ОДМ 218.6.019'
 export const GOST_RULES = 'ГОСТ Р 52289'
 
+/** Строки таблиц расстояний по умолчанию → поля проекта (подписи видит составитель). */
+export const OUTSIDE_DISTANCE_KEYS = {
+  d300: 'Знак 1.25 «Дорожные работы»',
+  d250: 'Первая ступень 3.24 и знак 3.20',
+  d150: 'Вторая ступень 3.24 и сужение 1.20',
+  d50: 'Знак скорости в зоне работ 3.24',
+} as const
+export const SETTLEMENT_DISTANCE_KEYS = {
+  n100: 'Знак 1.25 и ступени 3.24',
+  n50: 'Знак скорости в зоне работ 3.24 и сужение 1.20',
+} as const
+export const WARNING_RANGE_KEYS = {
+  out: 'Вне населённого пункта',
+  in: 'В населённом пункте',
+} as const
+
 export const parameterDefinitions: readonly ParameterDefinition[] = [
   {
     id: 'odm-signs-hourly',
@@ -142,6 +158,91 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
       'работы на дорогах IА и IБ категории': 'IV',
     },
     valuePattern: /^(I|II|III|IV)$/,
+  },
+  {
+    id: 'pdd-speed-settlement',
+    title: 'Разрешённая скорость в населённом пункте (значение по умолчанию на подходе)',
+    unit: 'км/ч',
+    usedIn: 'Подстановка разрешённой скорости на подходе и ступеней 3.24 в населённом пункте',
+    source: { kind: 'clause', documentCode: 'ПДД', clause: '10.2' },
+    type: 'number',
+    fallback: 60,
+    min: 5,
+    max: 130,
+    pattern:
+      /в населенных пунктах разрешается движение транспортных средств со скоростью не более (\d+) км/u,
+  },
+  {
+    id: 'pdd-speed-outside',
+    title: 'Разрешённая скорость вне населённых пунктов (значение по умолчанию на подходе)',
+    unit: 'км/ч',
+    usedIn: 'Подстановка разрешённой скорости на подходе и ступеней 3.24 вне населённого пункта',
+    source: { kind: 'clause', documentCode: 'ПДД', clause: '10.3' },
+    type: 'number',
+    fallback: 90,
+    min: 5,
+    max: 130,
+    pattern: /на остальных дорогах-не более (\d+) км\/ч/u,
+  },
+  {
+    id: 'odm-zone-speed',
+    title: 'Скорость в зоне работ на рисунках Б.33 и Б.34 (значение по умолчанию)',
+    unit: 'км/ч',
+    usedIn: 'Подстановка скорости в зоне работ (последняя ступень 3.24)',
+    source: { kind: 'table', documentCode: ODM, table: 'Б.33', clause: 'рисунки Б.33 и Б.34' },
+    type: 'number',
+    fallback: 40,
+    min: 5,
+    max: 130,
+  },
+  {
+    id: 'odm-sign-distances-outside',
+    title: 'Расстояния от стоек до начала работ вне населённого пункта (значения по умолчанию)',
+    unit: 'м',
+    usedIn: 'Подстановка расстояний до знаков вне населённого пункта',
+    source: { kind: 'table', documentCode: ODM, table: 'Б.33', clause: 'рисунки Б.33 и Б.34' },
+    type: 'table',
+    keyLabel: 'Стойка',
+    valueLabel: 'Расстояние до начала работ, м',
+    fallback: {
+      [OUTSIDE_DISTANCE_KEYS.d300]: '300',
+      [OUTSIDE_DISTANCE_KEYS.d250]: '250',
+      [OUTSIDE_DISTANCE_KEYS.d150]: '150',
+      [OUTSIDE_DISTANCE_KEYS.d50]: '50',
+    },
+    valuePattern: /^\d{1,4}$/,
+  },
+  {
+    id: 'gost-sign-distances-settlement',
+    title:
+      'Расстояния от стоек до начала работ в населённом пункте (значения по умолчанию в пределах п. 5.2.2)',
+    unit: 'м',
+    usedIn: 'Подстановка расстояний до знаков в населённом пункте',
+    source: { kind: 'clause', documentCode: GOST_RULES, clause: '5.2.2' },
+    type: 'table',
+    keyLabel: 'Стойка',
+    valueLabel: 'Расстояние до начала работ, м',
+    fallback: {
+      [SETTLEMENT_DISTANCE_KEYS.n100]: '100',
+      [SETTLEMENT_DISTANCE_KEYS.n50]: '50',
+    },
+    valuePattern: /^\d{1,4}$/,
+  },
+  {
+    id: 'gost-warning-distance',
+    title: 'Диапазон расстояний от предупреждающего знака до начала опасного участка',
+    unit: 'м',
+    usedIn:
+      'Предупреждение о расстоянии до знака 1.25 вне диапазона (иное расстояние указывают табличкой 8.1.1)',
+    source: { kind: 'clause', documentCode: GOST_RULES, clause: '5.2.2' },
+    type: 'table',
+    keyLabel: 'Местоположение',
+    valueLabel: 'Диапазон, м',
+    fallback: {
+      [WARNING_RANGE_KEYS.out]: '150–300',
+      [WARNING_RANGE_KEYS.in]: '50–100',
+    },
+    valuePattern: /^\d{1,4}\s*[–-]\s*\d{1,4}$/,
   },
   {
     id: 'peak-hour-share',
@@ -277,6 +378,24 @@ export type NormativeRules = {
   regulatorDistance: Readonly<Record<number, number>>
   speedStepKmh: number
   typesize: Readonly<Record<string, string>>
+  /** Разрешённая скорость по умолчанию на подходе: в населённом пункте и вне его. */
+  allowedSpeedKmh: Readonly<{ in: number; out: number }>
+  /** Скорость в зоне работ по умолчанию (последняя ступень 3.24). */
+  zoneSpeedKmh: number
+  /** Расстояния от стоек до начала работ по умолчанию. */
+  signDistances: Readonly<{
+    d300: number
+    d250: number
+    d150: number
+    d50: number
+    n100: number
+    n50: number
+  }>
+  /** Диапазон расстояния до предупреждающего знака; null — значение таблицы не разобрано. */
+  warningDistance: Readonly<{
+    in: readonly [number, number] | null
+    out: readonly [number, number] | null
+  }>
   peakHourShare: number | null
   /** Параметр подтверждён для действующей редакции. */
   confirmed: Readonly<Record<string, boolean>>
@@ -315,6 +434,20 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
   }
   const number = (id: string) => values[id] as number
   const table = (id: string) => values[id] as Record<string, string>
+  /**
+   * Строки таблицы по известным подписям. Составитель может переименовать строку при
+   * подтверждении; тогда для неё действует значение прототипа.
+   */
+  const tableNumbers = <K extends string>(id: string, keys: Readonly<Record<K, string>>) => {
+    const definition = parameterDefinition(id) as TableParameter
+    const confirmedRows = table(id)
+    return Object.fromEntries(
+      (Object.entries(keys) as Array<[K, string]>).map(([field, key]) => [
+        field,
+        Number(confirmedRows[key] ?? definition.fallback[key]),
+      ]),
+    ) as Record<K, number>
+  }
   return {
     signsHourly: number('odm-signs-hourly'),
     signsLengthMetres: number('odm-signs-length'),
@@ -328,10 +461,29 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
     ),
     speedStepKmh: number('gost-speed-step'),
     typesize: table('gost-sign-typesize'),
+    allowedSpeedKmh: { in: number('pdd-speed-settlement'), out: number('pdd-speed-outside') },
+    zoneSpeedKmh: number('odm-zone-speed'),
+    signDistances: {
+      ...tableNumbers('odm-sign-distances-outside', OUTSIDE_DISTANCE_KEYS),
+      ...tableNumbers('gost-sign-distances-settlement', SETTLEMENT_DISTANCE_KEYS),
+    },
+    warningDistance: {
+      in: range(table('gost-warning-distance')[WARNING_RANGE_KEYS.in]),
+      out: range(table('gost-warning-distance')[WARNING_RANGE_KEYS.out]),
+    },
     peakHourShare: (values['peak-hour-share'] as number | null) ?? null,
     confirmed,
     sources,
   }
+}
+
+/** «150–300» → [150, 300]; неразборчивое значение — null. */
+function range(value: string | undefined): readonly [number, number] | null {
+  const match = /^(\d+)\s*[–-]\s*(\d+)$/.exec(value?.trim() ?? '')
+  if (!match) return null
+  const low = Number(match[1])
+  const high = Number(match[2])
+  return low <= high ? [low, high] : null
 }
 
 /** Правила прототипа: ни один параметр не подтверждён. */

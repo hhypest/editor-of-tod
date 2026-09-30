@@ -3,10 +3,25 @@ import { templateLabel } from '../domain/registry'
 import { computed, ref, watch } from 'vue'
 import {
   applySchemeDetails,
+  changeDraftApproach,
+  changeDraftLocation,
   createSchemeDetailsDraft,
+  draftDefaultsFields,
+  resetDraftToNormative,
   SchemeEditError,
   type SchemeDetailsDraft,
 } from '../domain/edit-details'
+import {
+  defaultsParameterIds,
+  distanceFields,
+  distanceTitles,
+  normativeMarks,
+  speedTitles,
+  type DistanceField,
+  type NormativeMark as NormativeMarkData,
+} from '../domain/normative-defaults'
+import { settlementSteps } from '../domain/template-placements'
+import NormativeMark from './NormativeMark.vue'
 import type { Scheme } from '../domain/model'
 import { adviseRegulation, regulationModeLabels } from '../domain/regulation-advice'
 import { useNormativeRules } from '../composables/useNormativeRules'
@@ -78,6 +93,75 @@ function draftNumber(value: string | undefined): number | null {
 }
 
 const { rules: normativeRules } = useNormativeRules()
+
+/** Смена местоположения подставляет значения по умолчанию, не трогая исправленные вручную. */
+const location = computed({
+  get: () => draft.value.parameters.location,
+  set: (to) => {
+    const from = draft.value.parameters.location
+    draft.value.parameters.location = to
+    changeDraftLocation(draft.value, from, normativeRules.value)
+    markDirty()
+  },
+})
+
+/** Скорость применяется по завершении ввода (`v-model.lazy`): ступени пересчитываются один раз. */
+const approachSpeed = computed({
+  get: () => draft.value.parameters.approachSpeedKmh,
+  set: (value) => {
+    const previous = draft.value.parameters.approachSpeedKmh
+    draft.value.parameters.approachSpeedKmh = value
+    changeDraftApproach(draft.value, previous, normativeRules.value)
+    markDirty()
+  },
+})
+
+const markList = computed(() =>
+  normativeMarks(draftDefaultsFields(draft.value), normativeRules.value),
+)
+const marks = computed<Record<string, NormativeMarkData>>(() =>
+  Object.fromEntries(markList.value.map((item) => [item.field, item])),
+)
+const hasDeviations = computed(() => markList.value.some((item) => item.state !== 'normative'))
+const unconfirmedDefaults = computed(() => {
+  const current = draft.value.parameters.location
+  if (current === 'auto') return []
+  return defaultsParameterIds(current)
+    .filter((id) => !normativeRules.value.confirmed[id])
+    .map((id) => normativeRules.value.sources[id] ?? id)
+    .filter((source, index, all) => all.indexOf(source) === index)
+})
+
+/** Промежуточные ступени в населённом пункте строит шаблон — показываем, какими они будут. */
+const settlementStepsText = computed(() => {
+  const { location: current, approachSpeedKmh, speedStagesKmh } = draft.value.parameters
+  if (current !== 'in') return ''
+  const approach = draftNumber(approachSpeedKmh)
+  const zone = draftNumber(speedStagesKmh[2])
+  if (approach === null || zone === null) return ''
+  const steps = settlementSteps(approach, zone, normativeRules.value.speedStepKmh)
+  return `Знаки 3.24 на подходе: ${[...steps, zone].join(' → ')} км/ч (промежуточные ступени строятся с шагом не более ${normativeRules.value.speedStepKmh} км/ч).`
+})
+
+function restore(item: NormativeMarkData): void {
+  if (props.locked) return
+  if (item.field === 'parameters.approachSpeedKmh') {
+    approachSpeed.value = String(item.normative)
+    return
+  }
+  const [, group, key] = item.field.split('.')
+  if (group === 'signDistancesMetres')
+    draft.value.parameters.signDistancesMetres[key as DistanceField] = String(item.normative)
+  else if (group === 'speedStagesKmh')
+    draft.value.parameters.speedStagesKmh[Number(key)] = String(item.normative)
+  markDirty()
+}
+
+function restoreAll(): void {
+  if (props.locked) return
+  resetDraftToNormative(draft.value, normativeRules.value)
+  markDirty()
+}
 
 /** Рекомендация ОДМ по введённым, ещё не применённым данным формы. */
 const advice = computed(() => {
@@ -210,74 +294,75 @@ function applyDraft(): void {
           Расстояния вводятся в метрах, скорости — в км/ч. Для созданного в редакторе проекта
           изменение фронта через границу 30 м требует нового проекта с другим вариантом.
         </p>
-        <h3>Расстояния до знаков, м</h3>
-        <p class="hint">
-          Неизвестное расстояние оставьте пустым. Допускается дробная часть через запятую или точку.
-        </p>
-        <div class="fields compact">
+        <h3>Местоположение и разрешённая скорость</h3>
+        <div class="fields with-marks">
           <label
-            >d300
-            <input
-              v-model="draft.parameters.signDistancesMetres.d300"
-              data-field="parameters.signDistancesMetres.d300"
-              type="text"
-              inputmode="decimal"
-          /></label>
+            ><span class="caption">Местоположение</span>
+            <select v-model="location" data-field="parameters.location">
+              <option value="auto" disabled>Не определено</option>
+              <option value="in">В населённом пункте</option>
+              <option value="out">Вне населённого пункта</option>
+            </select>
+          </label>
           <label
-            >d250
+            ><span class="caption">Разрешённая скорость на подходе, км/ч</span>
             <input
-              v-model="draft.parameters.signDistancesMetres.d250"
-              data-field="parameters.signDistancesMetres.d250"
-              type="text"
+              v-model.lazy="approachSpeed"
+              data-field="parameters.approachSpeedKmh"
               inputmode="decimal"
-          /></label>
-          <label
-            >d150
-            <input
-              v-model="draft.parameters.signDistancesMetres.d150"
-              data-field="parameters.signDistancesMetres.d150"
               type="text"
-              inputmode="decimal"
-          /></label>
-          <label
-            >d50
-            <input
-              v-model="draft.parameters.signDistancesMetres.d50"
-              data-field="parameters.signDistancesMetres.d50"
-              type="text"
-              inputmode="decimal"
-          /></label>
-          <label
-            >n100
-            <input
-              v-model="draft.parameters.signDistancesMetres.n100"
-              data-field="parameters.signDistancesMetres.n100"
-              type="text"
-              inputmode="decimal"
-          /></label>
-          <label
-            >n50
-            <input
-              v-model="draft.parameters.signDistancesMetres.n50"
-              data-field="parameters.signDistancesMetres.n50"
-              type="text"
-              inputmode="decimal"
-          /></label>
+            />
+            <NormativeMark :mark="marks['parameters.approachSpeedKmh']" @restore="restore" />
+          </label>
         </div>
-        <h3>Ступени скорости, км/ч</h3>
-        <div class="fields compact">
-          <label
-            >Первая
-            <input v-model="draft.parameters.speedStagesKmh[0]" type="text" inputmode="decimal"
-          /></label>
-          <label
-            >Вторая
-            <input v-model="draft.parameters.speedStagesKmh[1]" type="text" inputmode="decimal"
-          /></label>
-          <label
-            >Третья
-            <input v-model="draft.parameters.speedStagesKmh[2]" type="text" inputmode="decimal"
-          /></label>
+        <p class="hint">
+          Расстояния и ступени скорости подставляются по нормативным значениям: при выборе
+          местоположения и при смене разрешённой скорости. Любое значение можно исправить под
+          местные условия — оно сохранится и будет помечено как изменённое.
+        </p>
+        <p v-if="draft.parameters.location === 'auto'" class="hint warning">
+          Выберите местоположение — от него зависят расстояния до знаков и ступени скорости.
+        </p>
+        <template v-else>
+          <h3>Расстояния от стоек до начала работ, м</h3>
+          <div class="fields with-marks pairs">
+            <label v-for="field in distanceFields[draft.parameters.location]" :key="field"
+              ><span class="caption">{{ distanceTitles[field] }}</span>
+              <input
+                v-model="draft.parameters.signDistancesMetres[field]"
+                :data-field="`parameters.signDistancesMetres.${field}`"
+                type="text"
+                inputmode="decimal"
+              />
+              <NormativeMark
+                :mark="marks[`parameters.signDistancesMetres.${field}`]"
+                @restore="restore"
+              />
+            </label>
+          </div>
+        </template>
+        <h3>Ступени скорости 3.24, км/ч</h3>
+        <div class="fields compact with-marks">
+          <label v-for="index in draft.parameters.location === 'in' ? [2] : [0, 1, 2]" :key="index"
+            ><span class="caption">{{ speedTitles[index] }}</span>
+            <input
+              v-model="draft.parameters.speedStagesKmh[index]"
+              :data-field="`parameters.speedStagesKmh.${index}`"
+              type="text"
+              inputmode="decimal"
+            />
+            <NormativeMark :mark="marks[`parameters.speedStagesKmh.${index}`]" @restore="restore" />
+          </label>
+        </div>
+        <p v-if="settlementStepsText" class="hint">{{ settlementStepsText }}</p>
+        <div v-if="Object.keys(marks).length || unconfirmedDefaults.length" class="normative">
+          <button v-if="hasDeviations" type="button" :disabled="locked" @click="restoreAll">
+            Вернуть все нормативные значения
+          </button>
+          <p v-if="unconfirmedDefaults.length" class="hint">
+            Не подтверждены: {{ unconfirmedDefaults.join('; ') }}. Пока действуют значения
+            прототипа; подтвердите их в «Реестры» → «Нормативные параметры».
+          </p>
         </div>
         <label class="checkbox">
           <input v-model="draft.parameters.yellowTemporarySigns" type="checkbox" />
@@ -285,14 +370,6 @@ function applyDraft(): void {
         </label>
         <h3>Условия и решение составителя</h3>
         <div class="fields">
-          <label
-            >Местоположение
-            <select v-model="draft.parameters.location">
-              <option value="auto">Не определено</option>
-              <option value="in">В населённом пункте</option>
-              <option value="out">Вне населённого пункта</option>
-            </select>
-          </label>
           <label
             >Типоразмер знаков
             <select v-model="draft.parameters.signSize">
@@ -302,10 +379,6 @@ function applyDraft(): void {
               <option value="III">III</option>
               <option value="IV">IV (работы на дорогах IА, IБ)</option>
             </select>
-          </label>
-          <label
-            >Скорость в населённом пункте, км/ч
-            <input v-model="draft.parameters.settlementSpeedKmh" inputmode="decimal" type="text" />
           </label>
           <label
             >Вид фронта работ
@@ -603,6 +676,15 @@ function applyDraft(): void {
 </template>
 
 <style scoped>
+.normative {
+  margin: 0.6rem 0;
+}
+.normative button {
+  margin-bottom: 0.3rem;
+}
+.warning {
+  color: #8a3b12;
+}
 .advice {
   margin: 0.8rem 0 1rem;
   padding: 0.7rem 0.9rem;
@@ -665,6 +747,29 @@ label {
   display: block;
   font-size: 0.9rem;
   font-weight: 600;
+}
+/*
+ * Поля с пометкой норматива: подпись, поле и пометка — три строки общей сетки, поэтому поля
+ * стоят на одной линии при подписях разной длины и при пометках разной высоты.
+ */
+.fields.with-marks > label {
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: stretch;
+  row-gap: 0.3rem;
+}
+.fields.with-marks > label > .caption {
+  align-self: end;
+}
+.fields.pairs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (max-width: 36rem) {
+  .fields.pairs {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 /* Подпись сверху, поле снизу: поля одной строки стоят на общей линии при подписях разной длины. */
 .fields > label {

@@ -258,7 +258,7 @@ export function useProjectSession(onProjectOpened: () => void) {
 
   function saveV5(): void {
     if (imported.value && !editorDirty.value) {
-      downloadJson(exportSchemeJson(imported.value.scheme), 'v6')
+      downloadJson(exportSchemeJson(imported.value.scheme), 'v7')
       modifiedSinceDownload.value = false
     }
   }
@@ -283,7 +283,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     beginSession()
     imported.value = {
       scheme,
-      format: 'scheme-v6',
+      format: 'scheme-v7',
       warnings: [
         PU66_LINKED_WARNING,
         'Вариант выбран по длине фронта работ, нормативная проверка и расстановка знаков не выполнены.',
@@ -312,9 +312,9 @@ export function useProjectSession(onProjectOpened: () => void) {
     localError.value =
       cause instanceof Error ? cause.message : 'Операция с локальной базой не удалась.'
     if (localError.value.includes('Запись изменилась')) {
-      localError.value += ' Ваши правки остались открытыми. Обновите список черновиков.'
+      localError.value += ' Ваши правки остались открытыми. Обновите список проектов.'
       if (localRevision.value === null) {
-        localError.value += ' Для отдельной копии используйте «Сохранить как новый черновик».'
+        localError.value += ' Для отдельной копии используйте «Сохранить как новый проект».'
       }
     }
   }
@@ -330,7 +330,7 @@ export function useProjectSession(onProjectOpened: () => void) {
       localRevision.value = saved.revision
       if (imported.value.scheme === schemeAtSave) modifiedSinceLocalSave.value = false
       projectsRefreshKey.value++
-      localNotice.value = `Черновик сохранён в SQLite: редакция № ${saved.revision}.`
+      localNotice.value = `Проект сохранён на этом компьютере (версия ${saved.revision}). Он есть в списке «Мои проекты».`
       if (imported.value.scheme === schemeAtSave) {
         // Редакция уже записана: сбой удаления копии восстановления не должен выглядеть как сбой сохранения.
         try {
@@ -366,10 +366,9 @@ export function useProjectSession(onProjectOpened: () => void) {
       localRevision.value = saved.revision
       modifiedSinceLocalSave.value = false
       modifiedSinceDownload.value = true
-      selectedFileName.value = `Локальный черновик · редакция № ${saved.revision}`
+      selectedFileName.value = `Сохранённый проект · версия ${saved.revision}`
       projectsRefreshKey.value++
-      localNotice.value =
-        'Создан отдельный черновик с новым ID. Скачайте его JSON при необходимости.'
+      localNotice.value = 'Создана отдельная копия проекта — она появилась в «Мои проекты».'
       void clearRecovery(previousSessionId).catch(showLocalError)
     } catch (cause) {
       showLocalError(cause)
@@ -382,12 +381,12 @@ export function useProjectSession(onProjectOpened: () => void) {
     beginSession()
     imported.value = {
       scheme,
-      format: 'scheme-v6',
+      format: 'scheme-v7',
       warnings: ['Схема не прошла нормативную проверку.'],
     }
     history.value = startHistory(scheme)
     selectedPlacementId.value = scheme.placements[0]?.id ?? null
-    selectedFileName.value = `Локальный черновик · редакция № ${revision}`
+    selectedFileName.value = `Сохранённый проект · версия ${revision}`
     localRevision.value = revision
     detailsDirty.value = false
     placementDirty.value = false
@@ -400,7 +399,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     if (localBusy.value || loading.value) return
     if (
       hasUnsavedWork.value &&
-      !window.confirm('Есть правки без сохранённой копии. Открыть черновик?')
+      !window.confirm('Есть несохранённые правки. Открыть другой проект?')
     )
       return
     if (hasUnsavedWork.value && !(await flushRecovery())) return
@@ -430,7 +429,7 @@ export function useProjectSession(onProjectOpened: () => void) {
       return
     if (
       !window.confirm(
-        `Восстановить редакцию № ${sourceRevision} как новую редакцию проекта? Несохранённые правки в открытой вкладке будут заменены; сохранённая текущая редакция останется в истории.`,
+        `Вернуться к версии ${sourceRevision}? Она сохранится как новая версия проекта. Несохранённые правки в открытой вкладке будут заменены; текущая версия останется в списке версий.`,
       )
     )
       return
@@ -442,7 +441,7 @@ export function useProjectSession(onProjectOpened: () => void) {
       const record = await restoreLocalRevision(id, sourceRevision, expectedRevision)
       openProjectRecord(record.scheme, record.revision)
       projectsRefreshKey.value++
-      localNotice.value = `Редакция № ${sourceRevision} восстановлена как № ${record.revision}.`
+      localNotice.value = `Проект возвращён к версии ${sourceRevision} и сохранён как версия ${record.revision}.`
     } catch (cause) {
       showLocalError(cause)
     } finally {
@@ -565,8 +564,8 @@ export function useProjectSession(onProjectOpened: () => void) {
       beginSession(record.sessionId, record.version)
       imported.value = {
         scheme: record.scheme,
-        format: 'scheme-v6',
-        warnings: ['Восстановлена рабочая копия; проверьте ввод и сохраните редакцию.'],
+        format: 'scheme-v7',
+        warnings: ['Восстановлена рабочая копия; проверьте ввод и сохраните проект.'],
       }
       history.value = startHistory(record.scheme)
       selectedPlacementId.value =
@@ -582,8 +581,7 @@ export function useProjectSession(onProjectOpened: () => void) {
       pendingDetails.value = record.detailsDraft
       pendingPlacement.value = record.placementDraft
       recoverySeed.value = { details: record.detailsDraft, placement: record.placementDraft }
-      localNotice.value =
-        'Рабочая копия восстановлена. Примените ввод в форме и сохраните редакцию SQLite.'
+      localNotice.value = 'Рабочая копия восстановлена. Примените ввод в форме и сохраните проект.'
     } catch (cause) {
       showLocalError(cause)
     } finally {

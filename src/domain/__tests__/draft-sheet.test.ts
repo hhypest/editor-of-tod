@@ -18,6 +18,8 @@ function nativeScheme() {
     taperMetres: '8',
     bufferMetres: '12',
     speedStagesKmh: ['70', '50', '40'],
+    location: 'out',
+    approachSpeedKmh: '90',
     yellowTemporarySigns: false,
   })
 }
@@ -60,13 +62,15 @@ describe('provisional print projection', () => {
     post.distanceLabel = '{d300} / {d50} / {other}'
     const withPost = savePlacement(nativeScheme(), post)
     const draft = createSchemeDetailsDraft(withPost)
-    draft.parameters.signDistancesMetres.d300 = '300'
+    draft.parameters.signDistancesMetres.d300 = '280'
+    draft.parameters.signDistancesMetres.d50 = ''
     const edited = applySchemeDetails(withPost, draft)
     expect(projectDraftSheet(edited).placements[0]).toMatchObject({
-      distanceLabel: '300 м / {d50} / {other}',
+      distanceLabel: '280 м / {d50} / {other}',
     })
+    // Новый проект получает расстояния по нормативным параметрам.
     expect(projectDraftSheet(withPost).placements[0]).toMatchObject({
-      distanceLabel: '{d300} / {d50} / {other}',
+      distanceLabel: '300 м / 50 м / {other}',
     })
   })
 

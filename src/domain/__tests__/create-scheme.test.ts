@@ -18,6 +18,8 @@ const input: NewSchemeInput & { referenceId: string } = {
   taperMetres: '8',
   bufferMetres: '12',
   speedStagesKmh: ['70', '50', '40'],
+  location: 'out',
+  approachSpeedKmh: '90',
   yellowTemporarySigns: false,
 }
 const options = {
@@ -28,7 +30,7 @@ const options = {
 describe('scheme conditions without a pinned card (older projects and tests)', () => {
   it('starts B.34 with only entered measurements and supports editing and JSON roundtrip', () => {
     const scheme = createUnlinkedScheme(input, options)
-    expect(scheme.schemaVersion).toBe(6)
+    expect(scheme.schemaVersion).toBe(7)
     expect(scheme.crossing).toEqual({
       referenceId: 'TEST-NEW',
       source: 'entered-by-editor',
@@ -45,19 +47,11 @@ describe('scheme conditions without a pinned card (older projects and tests)', (
         labels: { taper: '', buffer: '', work: '' },
       },
     })
-    expect(scheme.parameters.signDistancesMetres).toEqual({
-      d300: null,
-      d250: null,
-      d150: null,
-      d50: null,
-      n100: null,
-      n50: null,
-    })
     expect(scheme.placements).toEqual([])
     expect(scheme.nextPlacementId).toBe(1)
 
     const details = createSchemeDetailsDraft(scheme)
-    details.parameters.signDistancesMetres.d50 = '50'
+    details.parameters.signDistancesMetres.d50 = '45'
     details.titleBlock.work.description = 'Условная работа'
     const edited = applySchemeDetails(scheme, details)
     const placement = newTextDraft()
@@ -66,10 +60,19 @@ describe('scheme conditions without a pinned card (older projects and tests)', (
     const withText = savePlacement(edited, placement)
     expect(importSchemeJson(exportSchemeJson(withText))).toMatchObject({
       scheme: withText,
-      format: 'scheme-v6',
+      format: 'scheme-v7',
     })
     expect(withText.source).toEqual({ kind: 'created-in-editor' })
-    expect(scheme.parameters.signDistancesMetres.d50).toBeNull()
+    // Расстояния выбранного местоположения подставлены по нормативным параметрам.
+    expect(scheme.parameters.signDistancesMetres).toEqual({
+      d300: 300,
+      d250: 250,
+      d150: 150,
+      d50: 50,
+      n100: null,
+      n50: null,
+    })
+    expect(scheme.parameters).toMatchObject({ location: 'out', approachSpeedKmh: 90 })
   })
 
   it('chooses B.33 at 30 m, keeps the inactive variant empty and checks active zone', () => {
@@ -95,6 +98,8 @@ describe('scheme conditions without a pinned card (older projects and tests)', (
     [{ ...input, taperMetres: '-2' }, 'отвод'],
     [{ ...input, bufferMetres: 'неизвестно' }, 'буфер'],
     [{ ...input, speedStagesKmh: ['70', '', '40'] as [string, string, string] }, 'скорость 2'],
+    [{ ...input, location: '' as const }, 'населённом пункте'],
+    [{ ...input, approachSpeedKmh: '' }, 'разрешённая скорость'],
   ])('rejects missing or invalid measurements', (bad, field) => {
     expect(() => createUnlinkedScheme(bad, options)).toThrow(SchemeCreationError)
     expect(() => createUnlinkedScheme(bad, options)).toThrow(field)

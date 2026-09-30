@@ -3,9 +3,12 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   createSchemeFromPu66,
   createUnlinkedScheme,
+  newSchemeDefaults,
   SchemeCreationError,
   type NewSchemeInput,
 } from '../domain/create-scheme'
+import { defaultSpeedStages, type SchemeLocation } from '../domain/normative-defaults'
+import { useNormativeRules } from '../composables/useNormativeRules'
 import type { Scheme } from '../domain/model'
 import type { Pu66SchemeRecord } from '../domain/pu66-snapshot'
 import { selectTemplateByWorkFront, templateLabel } from '../domain/registry'
@@ -21,8 +24,61 @@ const input = reactive<NewSchemeInput>({
   frontMetres: '',
   taperMetres: '',
   bufferMetres: '',
+  location: '',
+  approachSpeedKmh: '',
   speedStagesKmh: ['', '', ''],
   yellowTemporarySigns: false,
+})
+const { rules } = useNormativeRules()
+
+function parsed(value: string): number | null {
+  const normalized = value.trim().replace(',', '.')
+  return /^\d+(?:\.\d+)?$/.test(normalized) ? Number(normalized) : null
+}
+
+/** Ступени формы совпадают с расчётными от скорости (или ещё не введены). */
+function stagesAreDefault(approach: string): boolean {
+  if (input.speedStagesKmh.every((value) => !value.trim())) return true
+  const speed = parsed(approach)
+  if (speed === null) return false
+  const expected = defaultSpeedStages(speed, rules.value).map(String)
+  return input.speedStagesKmh.every((value, index) => parsed(value) === Number(expected[index]))
+}
+
+/**
+ * Выбор местоположения подставляет разрешённую скорость и ступени по нормативным параметрам.
+ * Исправленные составителем значения остаются: скорость меняется, только если была пустой
+ * или равной значению по умолчанию прежнего местоположения.
+ */
+function chooseLocation(to: SchemeLocation): void {
+  const from = input.location
+  if (from === to) return
+  const previousDefault = from ? String(rules.value.allowedSpeedKmh[from]) : ''
+  const keepStages = !stagesAreDefault(input.approachSpeedKmh)
+  input.location = to
+  if (!input.approachSpeedKmh.trim() || parsed(input.approachSpeedKmh) === parsed(previousDefault))
+    input.approachSpeedKmh = newSchemeDefaults(to, rules.value).approachSpeedKmh
+  if (!keepStages) fillStages()
+}
+
+function fillStages(): void {
+  const speed = parsed(input.approachSpeedKmh)
+  if (speed !== null)
+    input.speedStagesKmh = defaultSpeedStages(speed, rules.value).map(String) as [
+      string,
+      string,
+      string,
+    ]
+}
+
+/** Скорость применяется по завершении ввода: ступени пересчитываются, если не исправлены. */
+const approachSpeed = computed({
+  get: () => input.approachSpeedKmh,
+  set: (value: string) => {
+    const keepStages = !stagesAreDefault(input.approachSpeedKmh)
+    input.approachSpeedKmh = value
+    if (!keepStages) fillStages()
+  },
 })
 const error = ref('')
 const cards = ref<Pu66ListEntry[]>([])
@@ -95,7 +151,7 @@ async function create(): Promise<void> {
       return
     }
     // Условия проверяются до повторного чтения карточки, чтобы ошибка ввода была видна сразу.
-    createUnlinkedScheme({ ...input, referenceId: selected.referenceId })
+    createUnlinkedScheme({ ...input, referenceId: selected.referenceId }, { rules: rules.value })
     // Карточку перечитываем перед созданием: запись могла обновиться после просмотра.
     const latest = await getPu66SchemeRecord(selected.referenceId)
     if (current !== attempt || props.locked) {
@@ -108,7 +164,7 @@ async function create(): Promise<void> {
       error.value = `Карточка обновлена до редакции № ${latest.revision}. Проверьте данные и создайте проект ещё раз.`
       return
     }
-    emit('create', createSchemeFromPu66(input, latest))
+    emit('create', createSchemeFromPu66(input, latest, { rules: rules.value }))
   } catch (cause) {
     error.value =
       cause instanceof SchemeCreationError || cause instanceof Error
@@ -135,7 +191,8 @@ watch(
     <p class="hint">
       Новая схема начинается только с карточки переезда из локального реестра ПУ-66: идентификатор,
       местоположение, подпись оси, дорога и ширина проезжей части попадут в проект из выбранной
-      редакции карточки. Измеренные размеры и скорости заполните сами. Выбор карточки не считается
+      редакции карточки. Измеренные размеры заполните сами; скорости и расстояния до знаков
+      подставятся по нормативным значениям после выбора местоположения. Выбор карточки не считается
       её сверкой. После ввода условий на этапе 2 можно собрать условную расстановку на этапе 3.
     </p>
     <div v-if="registry === 'empty' || registry === 'unavailable'" class="blocked" role="alert">
@@ -159,8 +216,8 @@ watch(
         <button type="button" class="secondary" @click="loadCards">Проверить снова</button>
       </div>
       <p class="hint">
-        Сохранённые черновики и прежние JSON-проекты по-прежнему открываются во вкладках «Черновики
-        SQLite» и «Открыть JSON».
+        Сохранённые проекты открываются во вкладке «Мои проекты», файлы проектов — во вкладке
+        «Открыть файл».
       </p>
     </div>
     <form v-else @submit.prevent="create">
@@ -230,27 +287,62 @@ watch(
             различаются.
           </span>
         </p>
-        <h3>Три ступени скорости, км/ч</h3>
-        <div class="fields compact">
-          <label
-            >Первая
-            <input v-model="input.speedStagesKmh[0]" type="text" inputmode="decimal" required
-          /></label>
-          <label
-            >Вторая
-            <input v-model="input.speedStagesKmh[1]" type="text" inputmode="decimal" required
-          /></label>
-          <label
-            >Третья
-            <input v-model="input.speedStagesKmh[2]" type="text" inputmode="decimal" required
-          /></label>
-        </div>
+        <fieldset class="location" :disabled="locked || busy">
+          <legend>Где проходят работы</legend>
+          <label class="radio">
+            <input
+              type="radio"
+              name="new-scheme-location"
+              value="out"
+              :checked="input.location === 'out'"
+              required
+              @change="chooseLocation('out')"
+            />
+            Вне населённого пункта
+          </label>
+          <label class="radio">
+            <input
+              type="radio"
+              name="new-scheme-location"
+              value="in"
+              :checked="input.location === 'in'"
+              @change="chooseLocation('in')"
+            />
+            В населённом пункте
+          </label>
+        </fieldset>
+        <template v-if="input.location">
+          <p class="hint">
+            Скорости подставлены по нормативным значениям, расстояния до знаков подставятся при
+            создании проекта. Всё можно исправить под местные условия — здесь или на этапе 2.
+          </p>
+          <div class="fields compact">
+            <label
+              >Разрешённая скорость на подходе, км/ч
+              <input v-model.lazy="approachSpeed" type="text" inputmode="decimal" required />
+            </label>
+            <label v-if="input.location === 'out'"
+              >Первая ступень 3.24
+              <input v-model="input.speedStagesKmh[0]" type="text" inputmode="decimal" required
+            /></label>
+            <label v-if="input.location === 'out'"
+              >Вторая ступень 3.24
+              <input v-model="input.speedStagesKmh[1]" type="text" inputmode="decimal" required
+            /></label>
+            <label
+              >Скорость в зоне работ, км/ч
+              <input v-model="input.speedStagesKmh[2]" type="text" inputmode="decimal" required
+            /></label>
+          </div>
+        </template>
         <label class="checkbox">
           <input v-model="input.yellowTemporarySigns" type="checkbox" />
           Жёлтый фон временных знаков
         </label>
         <p v-if="error" class="error" role="alert">{{ error }}</p>
-        <button type="submit" class="primary" :disabled="!card">Создать проект</button>
+        <button type="submit" class="primary" :disabled="!card || !input.location">
+          Создать проект
+        </button>
       </fieldset>
     </form>
   </section>
@@ -283,6 +375,7 @@ fieldset {
 }
 .fields.compact {
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  align-items: end;
 }
 label {
   display: block;
@@ -356,6 +449,20 @@ button.secondary {
 }
 .preview dd {
   margin: 0;
+}
+.location {
+  margin: 1rem 0 0.6rem;
+}
+.location legend {
+  margin-bottom: 0.4rem;
+  font-weight: 600;
+}
+.radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-right: 1.4rem;
+  font-weight: 400;
 }
 input[readonly] {
   background: #eef2f6;

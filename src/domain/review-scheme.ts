@@ -4,6 +4,12 @@ import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import { templateLabel } from './registry'
 import { anchorCoordinates, placementCoordinates } from './placement-workspace'
 import { usesTwoRegulators } from './template-placements'
+import {
+  distanceTitles,
+  largestSpeedStep,
+  normativeDeviations,
+  warningDistanceProblem,
+} from './normative-defaults'
 
 export type ReviewFinding = {
   id: string
@@ -11,7 +17,10 @@ export type ReviewFinding = {
   title: string
   detail: string
   target: '#details-title' | '#placements-title' | '#pu66-link-title' | '#imported-title'
-  /** Путь первого незаполненного поля формы (`data-field`), к которому переходит «Перейти». */
+  /**
+   * Поле формы (`data-field`), к которому переходит «Перейти»: у пунктов «Нужно заполнить» —
+   * первое незаполненное, у пунктов «Проверить вручную» — первое проверяемое.
+   */
   field?: string
   /**
    * Данные, которые проверяет составитель в пункте «Проверить вручную». Не показываются, но
@@ -145,6 +154,19 @@ export function reviewScheme(
     }
   }
 
+  // Без местоположения не подставляются и не сверяются расстояния и скорости (старые проекты).
+  if (parameters.location === 'auto') {
+    findings.push({
+      id: 'location',
+      kind: 'fill',
+      title: 'Местоположение',
+      detail:
+        'Не указано, находится ли место работ в населённом пункте. От этого зависят расстояния до знаков, ступени скорости и их проверка; без выбора шаблон не собирается, а лист не выпускается.',
+      target: '#details-title',
+      field: 'parameters.location',
+    })
+  }
+
   if (!placements.length) {
     findings.push({
       id: 'placements',
@@ -166,7 +188,7 @@ export function reviewScheme(
       findings.push({
         id: `distance-${name}`,
         kind: 'fill',
-        title: `Расстояние ${name}`,
+        title: `Расстояние «${distanceTitles[name]}»`,
         detail: `Маркер {${name}} указан на стойках № ${postIds.join(', ')}, а расстояние не введено.`,
         target: '#details-title',
         field: `parameters.signDistancesMetres.${name}`,
@@ -203,6 +225,52 @@ export function reviewScheme(
       placements,
     ]),
   })
+
+  const deviations = normativeDeviations(parameters, rules)
+  if (deviations.length) {
+    findings.push({
+      id: 'normative-values',
+      kind: 'verify',
+      title: 'Расстояния и скорости не по нормативным значениям',
+      detail: `Отличаются от значений по умолчанию: ${deviations
+        .map(
+          (item) =>
+            `${item.title} — ${item.value === null ? 'не указано' : item.value} (по нормативу ${item.normative}, ${item.source})`,
+        )
+        .join('; ')}. Исправление под местные условия допустимо — проверьте его обоснование.`,
+      target: '#details-title',
+      field: deviations[0]!.field,
+      basis: JSON.stringify(
+        deviations.map(({ field, value, normative }) => [field, value, normative]),
+      ),
+    })
+  }
+
+  const warning = warningDistanceProblem(parameters, rules)
+  if (warning) {
+    findings.push({
+      id: 'warning-distance',
+      kind: 'verify',
+      title: 'Расстояние до знака 1.25 вне диапазона',
+      detail: `Знак 1.25 стоит в ${warning.value} м до начала работ, а диапазон — от ${warning.range[0]} до ${warning.range[1]} м (${warning.source}). Иное расстояние допускается, но указывается на табличке 8.1.1 — проверьте её на стойках со знаком 1.25.`,
+      target: '#details-title',
+      field: `parameters.signDistancesMetres.${parameters.location === 'in' ? 'n100' : 'd300'}`,
+      basis: JSON.stringify([warning.value, warning.range]),
+    })
+  }
+
+  const step = largestSpeedStep(parameters)
+  if (step !== null && step > rules.speedStepKmh) {
+    findings.push({
+      id: 'speed-step',
+      kind: 'verify',
+      title: 'Шаг ступеней скорости',
+      detail: `Между соседними ступенями (от разрешённой скорости ${parameters.approachSpeedKmh} км/ч до скорости в зоне) перепад ${step} км/ч — больше ${rules.speedStepKmh} км/ч (${rules.sources['gost-speed-step']}). Проверьте ступени на этапе 2.`,
+      target: '#details-title',
+      field: 'parameters.approachSpeedKmh',
+      basis: JSON.stringify([parameters.approachSpeedKmh, parameters.speedStagesKmh]),
+    })
+  }
 
   const differingDimensions = figureDimensions(scheme, rules).filter(
     (part) => !part.agreesWithFigure,

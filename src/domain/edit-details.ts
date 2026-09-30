@@ -1,4 +1,13 @@
 import { schemeSchema, type Scheme, type WorkZone } from './model'
+import {
+  changeApproachSpeed,
+  resetToNormative,
+  switchLocation,
+  type DefaultsFields,
+  type DistanceField,
+  type SchemeLocation,
+} from './normative-defaults'
+import type { NormativeRules } from './normative-parameters'
 import { PHONE_PLACEHOLDER, phoneComplete } from './title-block'
 
 type WorkZoneDraft = {
@@ -17,7 +26,7 @@ export type SchemeDetailsDraft = {
     yellowTemporarySigns: boolean
     location: Scheme['parameters']['location']
     signSize: Scheme['parameters']['signSize']
-    settlementSpeedKmh: string
+    approachSpeedKmh: string
     lastSettlement: Scheme['parameters']['lastSettlement']
     frontStyle: Scheme['parameters']['frontStyle']
     frontFromPu66: boolean
@@ -71,7 +80,7 @@ export function createSchemeDetailsDraft(scheme: Scheme): SchemeDetailsDraft {
       },
       location: parameters.location,
       signSize: parameters.signSize,
-      settlementSpeedKmh: String(parameters.settlementSpeedKmh),
+      approachSpeedKmh: parameters.approachSpeedKmh?.toString() ?? '',
       lastSettlement: parameters.lastSettlement,
       frontStyle: parameters.frontStyle,
       frontFromPu66: parameters.frontFromPu66,
@@ -114,6 +123,83 @@ function requiredMetres(value: string, field: string): number {
   return parsed
 }
 
+function positiveOrEmpty(value: string, field: string): number | null {
+  if (!value.trim()) return null
+  return requiredMetres(value, field)
+}
+
+/** Число из поля формы; пустое или неразборчивое — null. */
+function draftValue(value: string): number | null {
+  const input = value.trim().replace(',', '.')
+  return /^\d+(?:\.\d+)?$/.test(input) ? Number(input) : null
+}
+
+const distanceKeys = ['d300', 'd250', 'd150', 'd50', 'n100', 'n50'] as const
+
+/** Значения формы в числах для сравнения с нормативными; неразборчивая ступень — NaN. */
+export function draftDefaultsFields(draft: SchemeDetailsDraft): DefaultsFields {
+  const { parameters } = draft
+  return {
+    location: parameters.location,
+    approachSpeedKmh: draftValue(parameters.approachSpeedKmh),
+    signDistancesMetres: Object.fromEntries(
+      distanceKeys.map((key) => [key, draftValue(parameters.signDistancesMetres[key])]),
+    ) as Record<DistanceField, number | null>,
+    speedStagesKmh: parameters.speedStagesKmh.map((value) => draftValue(value) ?? Number.NaN) as [
+      number,
+      number,
+      number,
+    ],
+  }
+}
+
+/** Переносит в форму только изменившиеся значения, чтобы не стирать ввод вида «50,0». */
+function writeDefaults(draft: SchemeDetailsDraft, before: DefaultsFields, after: DefaultsFields) {
+  const { parameters } = draft
+  parameters.location = after.location
+  if (after.approachSpeedKmh !== before.approachSpeedKmh)
+    parameters.approachSpeedKmh = after.approachSpeedKmh?.toString() ?? ''
+  for (const key of distanceKeys) {
+    const value = after.signDistancesMetres[key]
+    if (value !== before.signDistancesMetres[key])
+      parameters.signDistancesMetres[key] = value?.toString() ?? ''
+  }
+  after.speedStagesKmh.forEach((value, index) => {
+    if (!Object.is(value, before.speedStagesKmh[index]))
+      parameters.speedStagesKmh[index] = Number.isNaN(value) ? '' : String(value)
+  })
+}
+
+/** Смена местоположения в форме: см. {@link switchLocation}. */
+export function changeDraftLocation(
+  draft: SchemeDetailsDraft,
+  previous: Scheme['parameters']['location'],
+  rules: NormativeRules,
+): void {
+  const to = draft.parameters.location
+  if (to === 'auto' || to === previous) return
+  const before = { ...draftDefaultsFields(draft), location: previous }
+  writeDefaults(draft, before, switchLocation(before, to as SchemeLocation, rules))
+}
+
+/** Смена разрешённой скорости в форме: см. {@link changeApproachSpeed}. */
+export function changeDraftApproach(
+  draft: SchemeDetailsDraft,
+  previous: string,
+  rules: NormativeRules,
+): void {
+  const current = draftDefaultsFields(draft)
+  const before = { ...current, approachSpeedKmh: draftValue(previous) }
+  const after = changeApproachSpeed(before, current.approachSpeedKmh, rules)
+  writeDefaults(draft, current, after)
+}
+
+/** «Вернуть нормативные значения» в форме. */
+export function resetDraftToNormative(draft: SchemeDetailsDraft, rules: NormativeRules): void {
+  const before = draftDefaultsFields(draft)
+  writeDefaults(draft, before, resetToNormative(before, rules))
+}
+
 function parseZone(zone: WorkZoneDraft | null, name: string): WorkZone | null {
   if (!zone) return null
   return {
@@ -149,9 +235,9 @@ export function applySchemeDetails(scheme: Scheme, draft: SchemeDetailsDraft): S
       },
       location: parameters.location,
       signSize: parameters.signSize,
-      settlementSpeedKmh: requiredMetres(
-        parameters.settlementSpeedKmh,
-        'скорость в населённом пункте',
+      approachSpeedKmh: positiveOrEmpty(
+        parameters.approachSpeedKmh,
+        'разрешённая скорость на подходе',
       ),
       lastSettlement: parameters.lastSettlement,
       frontStyle: parameters.frontStyle,

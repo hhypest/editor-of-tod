@@ -14,9 +14,22 @@ export function oldTitleBlock(scheme: Scheme) {
   }
 }
 
+/**
+ * Снимок формата v6 (до 01.10.2026): вместо скорости на подходе — «скорость в населённом
+ * пункте». Вне населённого пункта поле не использовалось, там записывается значение прототипа.
+ */
+export function v6Snapshot(scheme: Scheme) {
+  const { approachSpeedKmh, ...parameters } = scheme.parameters
+  return {
+    ...scheme,
+    schemaVersion: 6 as const,
+    parameters: { ...parameters, settlementSpeedKmh: approachSpeedKmh ?? 60 },
+  }
+}
+
 /** Снимок формата v5 (до 30.09.2026): те же поля, кроме реквизитов и отметок проверки. */
 export function v5Snapshot(scheme: Scheme) {
-  const { reviewMarks: _marks, ...rest } = scheme
+  const { reviewMarks: _marks, ...rest } = v6Snapshot(scheme)
   void _marks
   return { ...rest, schemaVersion: 5 as const, titleBlock: oldTitleBlock(scheme) }
 }

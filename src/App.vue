@@ -21,12 +21,34 @@ import ProjectDataInspector from './components/ProjectDataInspector.vue'
 import { reviewScheme, type ReviewFinding } from './domain/review-scheme'
 import { usedSignCodes } from './domain/sign-images'
 import { useProjectSession } from './composables/useProjectSession'
+import { listLocalProjects } from './services/local-projects'
 import { useNormativeRules } from './composables/useNormativeRules'
 
 type View = 'projects' | 'source' | 'geometry' | 'objects' | 'review' | 'registries' | 'help'
 const stages = ['source', 'geometry', 'objects', 'review'] as const
 const activeView = ref<View>('projects')
 const projectTab = ref<'new' | 'file' | 'local'>('new')
+/** Вкладку выбрал сам составитель — после этого стартовая вкладка не переключается. */
+const projectTabChosen = ref(false)
+function chooseProjectTab(tab: 'new' | 'file' | 'local'): void {
+  projectTab.value = tab
+  projectTabChosen.value = true
+}
+
+function openMyProjects(): void {
+  chooseProjectTab('local')
+  showView('projects')
+}
+
+/** При запуске открываем «Мои проекты», если на компьютере уже есть сохранённые проекты. */
+async function chooseStartTab(): Promise<void> {
+  try {
+    const projects = await listLocalProjects()
+    if (projects.length && !projectTabChosen.value) projectTab.value = 'local'
+  } catch {
+    // Без локальной базы остаётся «Новый проект»: там показана причина.
+  }
+}
 const { reload: reloadNormativeRules, rules: normativeRules } = useNormativeRules()
 const registryTab = ref<'imports' | 'documents' | 'parameters' | 'entries' | 'diagnostics'>(
   'imports',
@@ -81,6 +103,7 @@ const signCatalogVersion = ref(0)
 onMounted(() => {
   void refreshSetupStatus()
   void reloadNormativeRules()
+  void chooseStartTab()
 })
 const saveState = computed(() => {
   if (recoveryStatus.value === 'error') return 'Копия восстановления не записана'
@@ -94,7 +117,7 @@ const saveState = computed(() => {
     return recoveryStatus.value === 'saved'
       ? 'Копия восстановления записана · сохраните редакцию'
       : 'Есть несохранённые правки'
-  return localRevision.value === null ? 'Не сохранён в SQLite' : 'Черновик сохранён'
+  return localRevision.value === null ? 'Не сохранён' : 'Сохранён'
 })
 
 async function refreshSetupStatus(): Promise<void> {
@@ -189,8 +212,10 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
     view = 'registries'
     registryTab.value = 'imports'
   } else if (
+    // Поля параметров схемы (кроме места работ) стоят на этапе 2 «Схема движения».
+    finding.field?.startsWith('parameters.') ||
     finding.id.startsWith('distance-') ||
-    ['figure-dimensions', 'variant-front', 'boundary-30'].includes(finding.id)
+    ['figure-dimensions', 'variant-front', 'boundary-30', 'legacy-visibility'].includes(finding.id)
   )
     view = 'geometry'
   showView(view)
@@ -264,7 +289,7 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
           :disabled="editorDirty || localBusy"
           @click="saveLocally"
         >
-          Сохранить локально
+          Сохранить проект
         </button>
       </div>
     </header>
@@ -322,8 +347,8 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
           <p class="sidebar-caption">Рабочее место</p>
           <button
             type="button"
-            :class="{ selected: activeView === 'projects' }"
-            @click="showView('projects')"
+            :class="{ selected: activeView === 'projects' && projectTab === 'local' }"
+            @click="openMyProjects"
           >
             Мои проекты
           </button>
@@ -353,15 +378,15 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
             <p class="eyebrow">Рабочее место</p>
             <h1 id="projects-heading">Проекты схем</h1>
             <p>
-              Начните новую схему по карточке ПУ-66, откройте сохранённую редакцию или загрузите
-              прежний JSON-проект.
+              Продолжите сохранённый проект, начните новую схему по карточке ПУ-66 или откройте файл
+              проекта (JSON), полученный от коллеги или из прежней версии программы.
             </p>
           </div>
           <section v-if="recoveryCopies.length" class="module" aria-labelledby="recovery-heading">
             <h2 id="recovery-heading">Копии восстановления</h2>
             <p class="hint">
-              Здесь остаётся неприменённый ввод и правки после закрытия окна. Копия записана в
-              локальную SQLite отдельно от сохранённых редакций.
+              Здесь остаются правки, которые не успели сохранить до закрытия окна. Копия хранится на
+              этом компьютере отдельно от сохранённых версий проекта.
             </p>
             <ul>
               <li v-for="copy in recoveryCopies" :key="copy.sessionId">
@@ -437,22 +462,26 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
           </section>
           <p v-if="setupError" class="feedback error" role="alert">{{ setupError }}</p>
           <div class="tabs" role="group" aria-label="Способ открытия проекта">
-            <button type="button" :aria-pressed="projectTab === 'new'" @click="projectTab = 'new'">
+            <button
+              type="button"
+              :aria-pressed="projectTab === 'local'"
+              @click="chooseProjectTab('local')"
+            >
+              Мои проекты
+            </button>
+            <button
+              type="button"
+              :aria-pressed="projectTab === 'new'"
+              @click="chooseProjectTab('new')"
+            >
               Новый проект
             </button>
             <button
               type="button"
-              :aria-pressed="projectTab === 'local'"
-              @click="projectTab = 'local'"
-            >
-              Черновики SQLite
-            </button>
-            <button
-              type="button"
               :aria-pressed="projectTab === 'file'"
-              @click="projectTab = 'file'"
+              @click="chooseProjectTab('file')"
             >
-              Открыть JSON
+              Открыть файл
             </button>
           </div>
           <NewScheme
@@ -472,6 +501,7 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
             :locked="localBusy || loading"
             @open="openLocal"
             @restore="restoreLocal"
+            @create="chooseProjectTab('new')"
           />
           <section v-show="projectTab === 'file'" class="module" aria-labelledby="import-title">
             <h2 id="import-title">Открыть файл проекта</h2>
@@ -484,8 +514,9 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
               @change="onFileSelected"
             />
             <p class="hint">
-              Поддерживаются v1 и schemaVersion 2–6 размером до 32 МБ. Открытие само по себе не
-              записывает файл в SQLite.
+              Файл проекта скачивается кнопкой «Скачать файл проекта (JSON)». Подходят файлы всех
+              прежних версий программы (v1 и schemaVersion 2–7) размером до 32 МБ. Открытый файл не
+              попадает в «Мои проекты», пока вы не нажмёте «Сохранить проект».
             </p>
             <p v-if="loading" class="hint" role="status">Проверяем файл…</p>
             <p v-if="errorMessage" class="error" role="alert">{{ errorMessage }}</p>
@@ -591,10 +622,10 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
               <summary>Действия с проектом</summary>
               <div class="more-buttons">
                 <button type="button" :disabled="editorDirty || localBusy" @click="saveAsNew">
-                  Сохранить как новый черновик
+                  Сохранить как новый проект
                 </button>
                 <button type="button" :disabled="editorDirty || localBusy" @click="saveV5">
-                  Скачать JSON v6
+                  Скачать файл проекта (JSON)
                 </button>
                 <button
                   v-if="imported.scheme.source.kind === 'legacy-html-v1'"
