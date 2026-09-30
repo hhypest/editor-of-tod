@@ -455,6 +455,32 @@ test('confirms a normative parameter from the text of an attached document', asy
   await expect(box).toContainText('Подтверждено 1 из 8')
 })
 
+test('opens help for the current screen, searches it and jumps by contents', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Реестры', exact: true }).click()
+  await page.getByRole('button', { name: 'Нормативные параметры' }).click()
+  await page.getByRole('button', { name: 'Справка', exact: true }).first().click()
+  await expect(page.getByRole('heading', { name: 'Справка', level: 1 })).toBeVisible()
+  const parameters = page.locator('[data-help="parameters"]')
+  await expect(parameters).toHaveClass(/current/)
+  await expect(parameters.locator('.ui', { hasText: 'Подтвердить значение' })).toBeVisible()
+
+  const help = page.locator('.help')
+  await help.getByLabel('Поиск по справке').fill('сверки 30 января')
+  await expect(help.getByRole('status')).toContainText('Найдено разделов')
+  await expect(help.locator('[data-help="pu66"]')).toBeVisible()
+  await expect(help.locator('[data-help="signs"]')).toHaveCount(0)
+  await help
+    .getByRole('navigation', { name: 'Оглавление справки' })
+    .getByRole('button', { name: 'Этап 4. Проверка и лист A4' })
+    .click()
+  await expect(help.getByLabel('Поиск по справке')).toHaveValue('')
+  await expect(help.locator('[data-help="stage-review"]')).toHaveClass(/current/)
+  expect(errors).toEqual([])
+})
+
 test('A4 print contains exactly one page', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Открыть JSON' }).click()
