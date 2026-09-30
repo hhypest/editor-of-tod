@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DiagnosticsPanel from './components/DiagnosticsPanel.vue'
 import { templateLabel } from './domain/registry'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import LocalRegistries from './components/LocalRegistries.vue'
@@ -27,7 +28,9 @@ const stages = ['source', 'geometry', 'objects', 'review'] as const
 const activeView = ref<View>('projects')
 const projectTab = ref<'new' | 'file' | 'local'>('new')
 const { reload: reloadNormativeRules, rules: normativeRules } = useNormativeRules()
-const registryTab = ref<'imports' | 'documents' | 'parameters' | 'entries'>('imports')
+const registryTab = ref<'imports' | 'documents' | 'parameters' | 'entries' | 'diagnostics'>(
+  'imports',
+)
 const registriesVisited = ref(false)
 const setupStatus = ref<{ cards: number; signs: number } | null>(null)
 const setupError = ref('')
@@ -532,6 +535,13 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
             >
               Карточки и нормативы
             </button>
+            <button
+              type="button"
+              :aria-pressed="registryTab === 'diagnostics'"
+              @click="registryTab = 'diagnostics'"
+            >
+              Диагностика
+            </button>
           </div>
           <ImportedData
             v-show="registryTab === 'imports'"
@@ -554,6 +564,12 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
             :refresh-key="signCatalogVersion"
           />
           <LocalRegistries v-show="registryTab === 'entries'" class="module" />
+          <DiagnosticsPanel
+            v-if="registryTab === 'diagnostics'"
+            class="module"
+            :scheme="imported?.scheme ?? null"
+            :view="activeView"
+          />
         </section>
 
         <HelpPage v-if="activeView === 'help'" :section="helpSection" :open-key="helpOpenKey" />

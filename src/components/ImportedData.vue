@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { timed } from '../services/diagnostics'
 import { computed, onMounted, ref, watch } from 'vue'
 import {
   annualPu66ReviewStatus,
@@ -178,7 +179,9 @@ async function previewSigns(): Promise<void> {
   signNotice.value = ''
   signPlan.value = null
   try {
-    signPlan.value = await previewSignFiles(signArchive.value, signSource())
+    signPlan.value = await timed('Просмотр ZIP знаков', () =>
+      previewSignFiles(signArchive.value!, signSource()),
+    )
   } catch (cause) {
     signError.value = cause instanceof Error ? cause.message : 'Не удалось проверить архив.'
   } finally {
@@ -191,7 +194,9 @@ async function applySigns(): Promise<void> {
   signBusy.value = true
   signError.value = ''
   try {
-    const result = await applySignFiles(signArchive.value, signSource(), signPlan.value.fingerprint)
+    const result = await timed('Запись ZIP знаков', () =>
+      applySignFiles(signArchive.value!, signSource(), signPlan.value!.fingerprint),
+    )
     signPlan.value = null
     signArchive.value = null
     signPdf.value = null
@@ -222,7 +227,9 @@ async function previewImport(): Promise<void> {
   error.value = ''
   notice.value = ''
   try {
-    importPlan.value = await previewPu66Files(importFiles.value)
+    importPlan.value = await timed('Просмотр импорта ПУ-66', () =>
+      previewPu66Files(importFiles.value),
+    )
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Не удалось проверить книги ПУ-66.'
   } finally {
@@ -236,7 +243,9 @@ async function applyImport(): Promise<void> {
   error.value = ''
   notice.value = ''
   try {
-    const result = await applyPu66Files(importFiles.value, importPlan.value.fingerprint)
+    const result = await timed('Импорт ПУ-66', () =>
+      applyPu66Files(importFiles.value, importPlan.value!.fingerprint),
+    )
     importPlan.value = null
     importFiles.value = []
     if (importInput.value) importInput.value.value = ''

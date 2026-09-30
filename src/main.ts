@@ -1,4 +1,7 @@
 import { createApp } from 'vue'
 import App from './App.vue'
+import { installDiagnostics } from './services/diagnostics'
 
-createApp(App).mount('#app')
+const app = createApp(App)
+installDiagnostics(app)
+app.mount('#app')

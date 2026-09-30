@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { timed } from '../services/diagnostics'
 import { useNormativeRules } from '../composables/useNormativeRules'
 import { unmarkedChecks } from '../domain/review-marks'
 import { reviewScheme } from '../domain/review-scheme'
@@ -272,7 +273,9 @@ async function exportPng(): Promise<void> {
     const schemeAtStart = props.scheme
     const releaseAtStart = release.value
     const name = fileName('png')
-    const blob = await sheetToPng(paper.value, SHEET_WIDTH, SHEET_HEIGHT)
+    const blob = await timed('Выгрузка листа PNG', () =>
+      sheetToPng(paper.value!, SHEET_WIDTH, SHEET_HEIGHT),
+    )
     if (props.scheme !== schemeAtStart || release.value !== releaseAtStart) {
       printError.value = 'Лист изменился во время выгрузки PNG. Проверьте его и повторите.'
       return

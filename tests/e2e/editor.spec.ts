@@ -534,6 +534,28 @@ test('opens help for the current screen, searches it and jumps by contents', asy
   expect(errors).toEqual([])
 })
 
+test('downloads a diagnostics file without card data', async ({ page, request }) => {
+  await importSampleCards(request)
+  await page.goto('/')
+  await fillNewProject(page, '24 км 7 пк', '90002:24:7')
+  await page.getByRole('button', { name: 'Создать проект' }).click()
+  await page.getByRole('button', { name: 'Реестры', exact: true }).click()
+  await page.getByRole('button', { name: 'Диагностика' }).click()
+  const panel = page.locator('.diagnostics')
+  await expect(panel).toContainText('карточек ПУ-66')
+  const download = page.waitForEvent('download')
+  await panel.getByRole('button', { name: 'Скачать диагностику' }).click()
+  const file = await download
+  const report = JSON.parse(readFileSync((await file.path())!, 'utf8'))
+  expect(report.kind).toBe('editor-of-tod-diagnostics')
+  expect(report.interface.project).toMatchObject({ open: true, template: 'Б.34' })
+  expect(report.browser.userAgent).toBeTruthy()
+  const text = JSON.stringify(report)
+  for (const secret of ['90002', 'Учебная дорога', 'Условная станция']) {
+    expect(text).not.toContain(secret)
+  }
+})
+
 test('A4 print contains exactly one page', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Открыть JSON' }).click()

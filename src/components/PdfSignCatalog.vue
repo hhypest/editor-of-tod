@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { timed } from '../services/diagnostics'
 import { computed, ref, watch } from 'vue'
 import { documentLabel, documentStatuses, type DocumentRecord } from '../domain/normative-documents'
 import { localCalendarDate } from '../domain/pu66-review'
@@ -75,8 +76,9 @@ async function preview(): Promise<void> {
   error.value = ''
   notice.value = ''
   const overrides = { ...edits.value }
+  const id = documentId.value
   try {
-    plan.value = await previewPdfSigns(documentId.value, overrides)
+    plan.value = await timed('Извлечение знаков из PDF', () => previewPdfSigns(id, overrides))
     planned.value = overrides
     if (!plan.value.images.some(needsAttention)) filter.value = 'all'
   } catch (cause) {
@@ -98,8 +100,12 @@ async function apply(): Promise<void> {
     return
   busy.value = true
   error.value = ''
+  const id = documentId.value
+  const fingerprint = plan.value.fingerprint
   try {
-    const result = await applyPdfSigns(documentId.value, planned.value, plan.value.fingerprint)
+    const result = await timed('Запись каталога знаков из PDF', () =>
+      applyPdfSigns(id, planned.value, fingerprint),
+    )
     reset()
     emit('applied')
     notice.value = `Каталог знаков записан по ${result.source.documentCode}-${result.source.edition}: новых ${result.added}, изменено изображений ${result.changedCodes.length}, сменилась только редакция источника у ${result.relabelled}, исключено из текущего набора ${result.retired}. ${result.backup ? `Копия SQLite: private-data/backups/${result.backup}.` : 'Изменений нет.'}`
