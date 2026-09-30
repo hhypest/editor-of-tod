@@ -30,6 +30,7 @@ import {
   previewDocumentUpload,
 } from './document-web-import.ts'
 import { applyPdfSigns, pdfSignImage, previewPdfSigns } from './sign-pdf-import.ts'
+import { confirmParameter, InvalidParameter, listParameterStates } from './normative-parameters.ts'
 import { documentMetaSchema } from '../src/domain/normative-documents.ts'
 import {
   InvalidPu66Verification,
@@ -220,6 +221,15 @@ export function createRegistryServer(
       } else if (
         req.method === 'GET' &&
         pathname.startsWith('/api/pu66/') &&
+        pathname.endsWith('/norms')
+      ) {
+        const key = decodeKey(pathname.slice('/api/pu66/'.length, -'/norms'.length))
+        const norms = store.getPu66Norms(key)
+        if (!norms) throw new RequestError(404, 'Карточка ПУ-66 не найдена.')
+        json(res, 200, norms)
+      } else if (
+        req.method === 'GET' &&
+        pathname.startsWith('/api/pu66/') &&
         pathname.endsWith('/scheme')
       ) {
         const encodedKey = pathname.slice('/api/pu66/'.length, -'/scheme'.length)
@@ -257,6 +267,14 @@ export function createRegistryServer(
         json(res, 200, previewSignUpload(store, await readJson(req, SIGN_UPLOAD_REQUEST_BYTES)))
       } else if (req.method === 'POST' && pathname === '/api/signs/import/apply') {
         json(res, 200, await applySignUpload(store, await readJson(req, SIGN_UPLOAD_REQUEST_BYTES)))
+      } else if (req.method === 'GET' && pathname === '/api/normative-parameters') {
+        json(res, 200, await listParameterStates(store))
+      } else if (
+        req.method === 'POST' &&
+        /^\/api\/normative-parameters\/[a-z0-9-]{1,80}\/confirm$/.test(pathname)
+      ) {
+        const id = pathname.split('/')[3]!
+        json(res, 200, await confirmParameter(store, id, await readJson(req)))
       } else if (req.method === 'GET' && pathname === '/api/documents') {
         json(res, 200, store.listDocuments())
       } else if (req.method === 'POST' && pathname === '/api/documents/preview') {
@@ -382,6 +400,7 @@ export function createRegistryServer(
       else if (error instanceof InvalidDocumentUpload)
         json(res, error.status, { error: error.message })
       else if (error instanceof DocumentInUse) json(res, 409, { error: error.message })
+      else if (error instanceof InvalidParameter) json(res, error.status, { error: error.message })
       else if (error instanceof ProjectTooLarge) json(res, 413, { error: error.message })
       else if (error instanceof ZodError) {
         const issue = error.issues[0]

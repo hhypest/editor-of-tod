@@ -8,6 +8,8 @@ import {
 } from '../domain/edit-details'
 import type { Scheme } from '../domain/model'
 import { adviseRegulation, regulationModeLabels } from '../domain/regulation-advice'
+import { useNormativeRules } from '../composables/useNormativeRules'
+import Pu66NormsPanel from './Pu66NormsPanel.vue'
 
 const props = defineProps<{
   scheme: Scheme
@@ -73,21 +75,39 @@ function draftNumber(value: string | undefined): number | null {
   return /^\d+(?:\.\d+)?$/.test(input) ? Number(input) : null
 }
 
+const { rules: normativeRules } = useNormativeRules()
+
 /** Рекомендация ОДМ по введённым, ещё не применённым данным формы. */
 const advice = computed(() => {
   const { regulation, speedStagesKmh, workZones } = draft.value.parameters
-  return adviseRegulation({
-    hourly: regulation.hourly,
-    limitedVisibility: regulation.vis,
-    straight: regulation.straight,
-    zoneSpeedKmh: draftNumber(speedStagesKmh[2]),
-    taperMetres: draftNumber(workZones.b34?.taperMetres),
-  })
+  return adviseRegulation(
+    {
+      hourly: regulation.hourly,
+      limitedVisibility: regulation.vis,
+      straight: regulation.straight,
+      zoneSpeedKmh: draftNumber(speedStagesKmh[2]),
+      taperMetres: draftNumber(workZones.b34?.taperMetres),
+      frontMetres: draftNumber(workZones.b34?.workMetres),
+    },
+    normativeRules.value,
+  )
 })
 
 function applyAdvice(): void {
   if (props.locked || !advice.value.mode || !advice.value.verified) return
   draft.value.parameters.regulation.mode = advice.value.mode
+  markDirty()
+}
+
+function useHourly(value: string): void {
+  if (props.locked) return
+  draft.value.parameters.regulation.hourly = value
+  markDirty()
+}
+
+function useTypesize(value: 'I' | 'II' | 'III'): void {
+  if (props.locked) return
+  draft.value.parameters.signSize = value
   markDirty()
 }
 
@@ -293,6 +313,15 @@ function applyDraft(): void {
           ><input v-model="draft.parameters.regulation.straight" type="checkbox" />
           Прямой участок дороги
         </label>
+        <Pu66NormsPanel
+          v-if="scheme.crossing.source === 'local-pu66'"
+          :reference-id="scheme.crossing.referenceId"
+          :pinned-revision="scheme.crossing.snapshot.revision"
+          :location="draft.parameters.location"
+          :locked="locked"
+          @hourly="useHourly"
+          @typesize="useTypesize"
+        />
         <section
           v-if="scheme.template.code === 'b34'"
           class="advice"
@@ -303,8 +332,8 @@ function applyDraft(): void {
           <h3 id="regulation-advice-title">
             {{
               advice.verified
-                ? 'Рекомендация по ОДМ 218.6.019-2016'
-                : 'Подсказка по правилам прототипа (не проверены)'
+                ? 'Рекомендация по подтверждённым нормативным параметрам'
+                : 'Подсказка с неподтверждёнными параметрами'
             }}:
             {{ advice.mode ? regulationModeLabels[advice.mode] : 'нет данных' }}
           </h3>
@@ -324,7 +353,7 @@ function applyDraft(): void {
             {{
               advice.verified
                 ? 'Рекомендация считается по введённым данным и ничего не выбирает сама; решение и его обоснование остаются за составителем.'
-                : 'Пороги 250/500 авт./ч, условия и расстояния взяты из локального редактора и ещё не проверены специалистом (docs/standards.md). Подсказка только объясняет расчёт прототипа: способ пропуска выберите сами в поле «Регулирование Б.34».'
+                : `Не подтверждены: ${advice.unconfirmed.join('; ')}. Для них действуют значения прототипа. Подтвердите их по тексту ОДМ в «Реестры» → «Нормативные параметры»; до этого способ пропуска выберите сами в поле «Регулирование Б.34».`
             }}
           </p>
         </section>

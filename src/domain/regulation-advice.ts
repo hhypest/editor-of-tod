@@ -1,29 +1,22 @@
+import {
+  PROTOTYPE_RULES,
+  REGULATION_PARAMETERS,
+  parameterDefinition,
+  regulationVerified,
+  type NormativeRules,
+} from './normative-parameters.ts'
+
 /**
- * Объяснимая подсказка способа пропуска транспорта для схемы Б.34 по правилам локального
- * редактора со ссылками на ОДМ 218.6.019-2016. Пороги, условия и таблица 5 ещё не прошли
- * предметную проверку (docs/standards.md, «Профиль способа пропуска Б.34»), поэтому подсказка
- * не применяется из интерфейса, пока профиль не отмечен проверенным.
+ * Объяснимая подсказка способа пропуска транспорта для схемы Б.34. Пороги, протяжённость,
+ * отгон и таблица расстояний берутся из нормативных параметров («Реестры» → «Нормативные
+ * параметры»): составитель подтверждает их по тексту действующей редакции ОДМ 218.6.019.
+ * Пока хотя бы один параметр не подтверждён, подсказка только объясняет расчёт и не
+ * применяется из интерфейса.
  */
 export type RegulationMode = 'signs' | 'one' | 'two'
 
-/**
- * Статус профиля правил. Меняется только PR с записью проверки в docs/standards.md:
- * дата, ответственный специалист, редакция ОДМ и проверенные значения.
- */
-export const REGULATION_PROFILE: {
-  readonly id: string
-  readonly status: 'unverified' | 'verified'
-  readonly verifiedAt: string | null
-  readonly verifiedBy: string | null
-} = {
-  id: 'b34-regulation-prototype-1',
-  status: 'unverified',
-  verifiedAt: null,
-  verifiedBy: null,
-}
-
 export type RegulationInput = {
-  /** Часовая интенсивность в двух направлениях, как её ввёл составитель (фактический подсчёт). */
+  /** Часовая интенсивность в двух направлениях, как её ввёл составитель. */
   hourly: string
   /** Видимость встречного автомобиля на участке ограничена. */
   limitedVisibility: boolean
@@ -33,6 +26,8 @@ export type RegulationInput = {
   zoneSpeedKmh: number | null
   /** Отгон перед местом работ для Б.34, м; null — не введён. */
   taperMetres: number | null
+  /** Протяжённость участка работ (фронт), м; null — не введена. */
+  frontMetres: number | null
 }
 
 export type RegulationAdvice = {
@@ -41,24 +36,13 @@ export type RegulationAdvice = {
   hourly: number | null
   reasons: string[]
   warnings: string[]
-  /** Расстояние от регулировщика до места работ по табл. 5 ОДМ, м; null — скорость вне таблицы. */
+  /** Расстояние от регулировщика до начала рабочей зоны по таблице, м; null — скорость вне таблицы. */
   regulatorDistanceMetres: number | null
-  /** Профиль правил проверен специалистом: только тогда подсказку можно применять из интерфейса. */
+  /** Все параметры подсказки подтверждены по действующей редакции: её можно применять. */
   verified: boolean
+  /** Названия неподтверждённых параметров. */
+  unconfirmed: string[]
 }
-
-/** Значения локального редактора со ссылкой на табл. 5 ОДМ 218.6.019-2016; не проверены. */
-export const REGULATOR_DISTANCE_BY_SPEED: Readonly<Record<number, number>> = {
-  30: 10,
-  40: 15,
-  50: 30,
-  60: 45,
-  70: 65,
-  80: 85,
-}
-
-const SIGNS_LIMIT = 250
-const ALTERNATE_PASSAGE_LIMIT = 500
 
 /** Разбор введённой интенсивности: только неотрицательное число, иначе «нет данных». */
 export function parseHourly(value: string): number | null {
@@ -68,73 +52,93 @@ export function parseHourly(value: string): number | null {
   return Number.isFinite(number) ? number : null
 }
 
-export function adviseRegulation(input: RegulationInput): RegulationAdvice {
+export function adviseRegulation(
+  input: RegulationInput,
+  rules: NormativeRules = PROTOTYPE_RULES,
+): RegulationAdvice {
   const hourly = parseHourly(input.hourly)
   const reasons: string[] = []
   const warnings: string[] = []
+  const signsSource = rules.sources['odm-signs-hourly']
   let mode: RegulationMode | null
 
+  const tooLong =
+    input.frontMetres !== null && input.frontMetres >= rules.signsLengthMetres
+      ? `протяжённость участка работ ${input.frontMetres} м — ${rules.signsLengthMetres} м и более`
+      : null
   if (hourly === null) {
     mode = null
     reasons.push(
-      'Интенсивность не введена: без фактического часового подсчёта рекомендация не даётся. Коэффициент перевода суточной интенсивности в часовую не подставляется.',
+      'Интенсивность не введена: без часовой интенсивности рекомендация не даётся. Её можно подсчитать или пересчитать из суточной по ПУ-66 с подтверждённой долей часа пик.',
     )
-  } else if (hourly < SIGNS_LIMIT && !input.limitedVisibility) {
+  } else if (hourly < rules.signsHourly && !input.limitedVisibility && !tooLong) {
     mode = 'signs'
     reasons.push(
-      `Интенсивность ${hourly} авт./ч в двух направлениях — менее ${SIGNS_LIMIT} авт./ч, видимость встречного автомобиля не ограничена: очерёдность можно установить знаками 2.6 и 2.7 (ОДМ, пп. 5.4.4, 8.1.3.1).`,
+      `Интенсивность ${hourly} авт./ч в двух направлениях — менее ${rules.signsHourly} авт./ч, ${
+        input.frontMetres === null
+          ? 'протяжённость участка не введена'
+          : `участок ${input.frontMetres} м — менее ${rules.signsLengthMetres} м`
+      }, видимость встречного автомобиля не ограничена: очерёдность можно установить знаками 2.6 и 2.7 (${signsSource}).`,
     )
+    if (input.frontMetres === null)
+      warnings.push(
+        `Укажите протяжённость участка работ: знаки 2.6 и 2.7 допускаются при участке менее ${rules.signsLengthMetres} м (${rules.sources['odm-signs-length']}).`,
+      )
   } else {
     const cause =
-      hourly >= SIGNS_LIMIT
-        ? `интенсивность ${hourly} авт./ч — ${SIGNS_LIMIT} авт./ч и более`
-        : 'видимость встречного автомобиля ограничена'
+      hourly >= rules.signsHourly
+        ? `интенсивность ${hourly} авт./ч — ${rules.signsHourly} авт./ч и более`
+        : (tooLong ?? 'видимость встречного автомобиля ограничена')
     if (input.straight && !input.limitedVisibility) {
       mode = 'one'
       reasons.push(
-        `Знаки 2.6/2.7 не подходят: ${cause} (ОДМ, пп. 5.4.4, 8.1.3.1). Участок прямой, регулировщик виден с обоих концов места работ — возможен один регулировщик (ОДМ, п. 12.7.3).`,
+        `Знаки 2.6/2.7 не подходят: ${cause} (${signsSource}). Участок прямой, регулировщик виден с обоих концов места работ — возможен один регулировщик (ОДМ 218.6.019, п. 12.7.3).`,
       )
     } else {
       mode = 'two'
       reasons.push(
-        `Знаки 2.6/2.7 не подходят: ${cause} (ОДМ, пп. 5.4.4, 8.1.3.1). ${
+        `Знаки 2.6/2.7 не подходят: ${cause} (${signsSource}). ${
           input.limitedVisibility
             ? 'При ограниченной видимости'
             : 'Участок не отмечен как прямой, и'
-        } один регулировщик не виден с обоих концов места работ — нужны два регулировщика у начала и конца (ОДМ, пп. 12.7.2–12.7.3).`,
+        } один регулировщик не виден с обоих концов места работ — нужны два регулировщика у начала и конца (ОДМ 218.6.019, пп. 12.7.2–12.7.3).`,
       )
     }
   }
 
-  if (hourly !== null && hourly > ALTERNATE_PASSAGE_LIMIT)
+  if (hourly !== null && hourly > rules.alternateHourly)
     warnings.push(
-      `Интенсивность выше ${ALTERNATE_PASSAGE_LIMIT} авт./ч — верхней границы поочерёдного пропуска по одной полосе (ОДМ, п. 5.4.2). Проверьте допустимость такого пропуска, время работ и другие способы организации движения; число регулировщиков из этого порога не выводится.`,
+      `Интенсивность выше ${rules.alternateHourly} авт./ч — верхней границы поочерёдного пропуска по одной полосе (${rules.sources['odm-alternate-hourly']}). Проверьте допустимость такого пропуска, время работ и другие способы организации движения; число регулировщиков из этого порога не выводится.`,
     )
-  if (mode === 'signs' && input.taperMetres !== 15)
+  if (mode === 'signs' && input.taperMetres !== rules.signsTaperMetres)
     warnings.push(
-      `Для знаков 2.6/2.7 черновая сборка требует отгон 15 м (ОДМ, п. 4.1.8.3); сейчас ${
+      `Для знаков 2.6/2.7 отгон ${rules.signsTaperMetres} м (${rules.sources['odm-signs-taper']}); сейчас ${
         input.taperMetres === null ? 'он не введён' : `${input.taperMetres} м`
       }.`,
     )
 
   const regulatorDistanceMetres =
     mode !== 'signs' && input.zoneSpeedKmh !== null
-      ? (REGULATOR_DISTANCE_BY_SPEED[input.zoneSpeedKmh] ?? null)
+      ? (rules.regulatorDistance[input.zoneSpeedKmh] ?? null)
       : null
   if (mode && mode !== 'signs')
     reasons.push(
       regulatorDistanceMetres === null
-        ? 'Расстояние от регулировщика до места работ для введённой скорости в правилах прототипа не задано — уточните по табл. 5 ОДМ.'
-        : `В правилах прототипа регулировщик — не ближе ${regulatorDistanceMetres} м до места работ при скорости ${input.zoneSpeedKmh} км/ч (ссылка на табл. 5 ОДМ; значение не проверено).`,
+        ? `Расстояние от регулировщика до начала рабочей зоны для введённой скорости в таблице не задано — уточните (${rules.sources['odm-regulator-distance']}).`
+        : `Регулировщик — на расстоянии ${regulatorDistanceMetres} м до начала рабочей зоны при скорости ${input.zoneSpeedKmh} км/ч (${rules.sources['odm-regulator-distance']}).`,
     )
 
+  const unconfirmed = REGULATION_PARAMETERS.filter((id) => !rules.confirmed[id]).map(
+    (id) => parameterDefinition(id)!.title,
+  )
   return {
     mode,
     hourly,
     reasons,
     warnings,
     regulatorDistanceMetres,
-    verified: REGULATION_PROFILE.status === 'verified',
+    verified: regulationVerified(rules),
+    unconfirmed,
   }
 }
 
