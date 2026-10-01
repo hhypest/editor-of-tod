@@ -254,6 +254,7 @@ test('cancelled JSON download retains recovery and warns before leaving', async 
       if (!this.download.endsWith('.json')) click.call(this)
     }
   })
+  await page.locator('.more-actions summary').click()
   await page.getByRole('button', { name: 'Скачать файл проекта (JSON)', exact: true }).click()
   await expect(page.locator('.save-state')).toContainText(/копия восстановления записана/i)
   const stillThere = await request.get(`${api}/api/recovery/${copy.sessionId}`)
