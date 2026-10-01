@@ -3,6 +3,7 @@ import { timed } from '../services/diagnostics'
 import { useNormativeRules } from '../composables/useNormativeRules'
 import { unmarkedChecks } from '../domain/review-marks'
 import { reviewScheme } from '../domain/review-scheme'
+import { releaseProblems } from '../domain/release-readiness'
 import { templateLabel } from '../domain/registry'
 import { computed, nextTick, onMounted, ref, useId, watch } from 'vue'
 import type { Scheme } from '../domain/model'
@@ -132,18 +133,19 @@ const blockers = computed(() => {
 const uncheckedItems = computed(() =>
   unmarkedChecks(props.scheme, reviewScheme(props.scheme, normativeRules.value)),
 )
-/**
- * Без местоположения (старые проекты) расстояния и скорости не сверены с нормативами: черновик
- * печатается, а выпускной лист — нет.
- */
-const locationMissing = computed(() => props.scheme.parameters.location === 'auto')
+const releaseErrors = computed(() => releaseProblems(props.scheme))
+/** Повторная проверка непосредственно перед печатью/PNG и при Ctrl+P. */
+const outputBlockers = computed(() => [
+  ...blockers.value,
+  ...(releaseConfirmed.value ? releaseErrors.value : []),
+])
 /** Выпускной лист только после подтверждения, отметки всех проверок и без блокирующих замечаний. */
 const release = computed(
   () =>
     releaseConfirmed.value &&
     !blockers.value.length &&
     !uncheckedItems.value.length &&
-    !locationMissing.value,
+    !releaseErrors.value.length,
 )
 const drawing = computed(() =>
   release.value
@@ -221,8 +223,8 @@ function imageFailed(code: string): void {
 /** PNG знаков загружаются заранее: лист не должен уйти в печать или файл с пустыми местами. */
 async function prepareSheet(): Promise<boolean> {
   printError.value = ''
-  if (blockers.value.length) {
-    printError.value = blockers.value[0]!
+  if (outputBlockers.value.length) {
+    printError.value = outputBlockers.value[0]!
     return false
   }
   const schemeAtStart = props.scheme
@@ -245,6 +247,10 @@ async function prepareSheet(): Promise<boolean> {
     }),
   )
   await nextTick()
+  if (outputBlockers.value.length) {
+    printError.value = outputBlockers.value[0]!
+    return false
+  }
   if (missingSigns.value.length) {
     printError.value = `Не удалось загрузить PNG: ${missingSigns.value.join(', ')}.`
     return false
@@ -350,7 +356,7 @@ async function exportPng(): Promise<void> {
             :disabled="
               Boolean(blockers.length) ||
               Boolean(uncheckedItems.length) ||
-              locationMissing ||
+              Boolean(releaseErrors.length) ||
               exporting
             "
           />
@@ -360,8 +366,8 @@ async function exportPng(): Promise<void> {
           {{
             blockers.length
               ? 'Выпуск недоступен, пока есть замечания ниже.'
-              : locationMissing
-                ? 'Выпуск недоступен: на этапе 2 укажите, находится ли место работ в населённом пункте, — без этого расстояния до знаков и скорости не сверены с нормативами.'
+              : releaseErrors.length
+                ? `Выпуск недоступен: ${releaseErrors.join(' ')}`
                 : uncheckedItems.length
                   ? `Выпуск недоступен: не отмечены пункты «Проверить вручную» (${uncheckedItems.length}): ${uncheckedItems.map((item) => item.title).join('; ')}.`
                   : release
@@ -370,6 +376,10 @@ async function exportPng(): Promise<void> {
           }}
         </p>
       </fieldset>
+      <p class="hint">
+        Пустые текстовые реквизиты допускается заполнить от руки на бумажном листе. Это не
+        распространяется на расстояния, местоположение, типоразмер и объекты схемы.
+      </p>
       <p v-if="hasPendingInput" class="hint" role="status">
         Сначала примените или отмените изменения в форме.
       </p>
@@ -408,13 +418,13 @@ async function exportPng(): Promise<void> {
       <p v-if="printError" class="error" role="alert">{{ printError }}</p>
     </div>
 
-    <div v-if="!previewOnly && blockers.length" class="print-blocked-note">
+    <div v-if="!previewOnly && outputBlockers.length" class="print-blocked-note">
       <strong>Печать остановлена.</strong>
-      <p v-for="reason in blockers" :key="reason">{{ reason }}</p>
+      <p v-for="reason in outputBlockers" :key="reason">{{ reason }}</p>
     </div>
     <div
       class="preview-scroll screen-preview"
-      :class="{ blocked: blockers.length }"
+      :class="{ blocked: outputBlockers.length }"
       aria-label="Просмотр листа A4"
     >
       <div class="preview-space" :style="previewSize">

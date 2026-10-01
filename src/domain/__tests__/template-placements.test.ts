@@ -44,6 +44,33 @@ function example(
 }
 
 describe('preliminary B.33/B.34 layout', () => {
+  it('requires exactly one regulator on each approach after manual moves', () => {
+    for (const front of [18, 40]) {
+      const built = rebuildTemplatePlacements(example(front, 'out', 'two')).scheme
+      const anchors = anchorCoordinates(built)
+      const regulators = built.placements.filter(
+        (p) => p.kind === 'element' && p.elementKind === 'reg',
+      )
+      const left = regulators[0]!
+      const right = regulators[1]!
+      const leftX = placementCoordinates(left, anchors).x
+      const rightX = placementCoordinates(right, anchors).x
+      const bothLeft = movePlacement(built, right.id, leftX - rightX - 40, 0)
+      const bothRight = movePlacement(built, left.id, rightX - leftX + 40, 0)
+      const inZone = movePlacement(built, right.id, (anchors.Z0 + anchors.Z1) / 2 - rightX, 0)
+      const three = {
+        ...built,
+        placements: [...built.placements, { ...right, id: built.nextPlacementId }],
+      }
+      const finding = (scheme: Scheme) =>
+        reviewScheme(scheme).find((p) => p.id === 'regulator-distance')
+      expect(finding(built)).toBeUndefined()
+      expect(finding(bothLeft)?.detail).toContain('конца работ (Z1): 0 вместо 1')
+      expect(finding(bothRight)?.detail).toContain('начала работ (Z0): 0 вместо 1')
+      expect(finding(inZone)?.detail).toContain('стоит над рабочей зоной')
+      expect(finding(three)?.detail).toContain('3 из 2')
+    }
+  })
   it('refuses to place two regulators when the zone speed is not in table 5', () => {
     for (const front of [18, 40]) {
       const base = example(front, 'out', 'two')
