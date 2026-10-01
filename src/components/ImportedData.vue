@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { signImageUrl } from '../services/sign-image-url'
 import { timed } from '../services/diagnostics'
 import { computed, onMounted, ref, watch } from 'vue'
 import {
@@ -311,7 +312,7 @@ async function onPdfSignsApplied(): Promise<void> {
 }
 
 function imageUrl(sign: Sign): string {
-  return `/api/signs/${encodeURIComponent(sign.code)}/image`
+  return signImageUrl(sign.code)
 }
 
 onMounted(load)
@@ -544,7 +545,7 @@ onMounted(load)
             <ul class="sign-compare">
               <li v-for="item in signPlan.changedPreviews" :key="item.code">
                 <strong>{{ item.code }}</strong>
-                <img :src="`/api/signs/${encodeURIComponent(item.code)}/image`" alt="Сейчас" />
+                <img :src="signImageUrl(item.code)" alt="Сейчас" />
                 <span aria-hidden="true">→</span>
                 <img :src="item.image" alt="В новом архиве" />
               </li>

@@ -2,8 +2,9 @@
 // Запускает локальный API и интерфейс на 127.0.0.1 и открывает браузер.
 // Без упаковки запускается командой `npm run desktop` и берёт интерфейс из `dist/`.
 import { exec } from 'node:child_process'
-import { get } from 'node:http'
+import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { databaseIdentity, startDesktopServer } from './desktop-instance.ts'
 import { getAsset, isSea } from 'node:sea'
 import { resolveDataDirectory, resolvePort } from './app-paths.ts'
 import { DiagnosticsLog } from './diagnostics.ts'
@@ -41,32 +42,9 @@ function fail(message: string): void {
   }
 }
 
-function alreadyRunning(url: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const request = get(new URL('api/status', url), { timeout: 1500 }, (response) => {
-      let body = ''
-      response.setEncoding('utf8')
-      response.on('data', (chunk: string) => (body += chunk))
-      response.on('end', () =>
-        resolve(response.statusCode === 200 && body.includes('"ready":true')),
-      )
-    })
-    request.on('timeout', () => request.destroy())
-    request.on('error', () => resolve(false))
-  })
-}
-
 async function main(): Promise<void> {
-  const port = resolvePort(process.env.TOD_PORT, DEFAULT_PORT)
-  const url = `http://127.0.0.1:${port}/`
+  const preferredPort = resolvePort(process.env.TOD_PORT, DEFAULT_PORT)
   console.log(`Редактор схем ОДД ${version}`)
-
-  if (await alreadyRunning(url)) {
-    console.log(`Редактор уже запущен: ${url}\nОткрываю его в браузере.`)
-    openBrowser(url)
-    setTimeout(() => process.exit(0), 1500)
-    return
-  }
 
   process.umask(0o077)
   let databasePath = process.env.TOD_DATABASE_PATH
@@ -80,12 +58,38 @@ async function main(): Promise<void> {
     }
   }
 
-  const store = new RegistryStore(databasePath)
+  mkdirSync(dirname(databasePath), { recursive: true, mode: 0o700 })
+  const databaseId = databaseIdentity(databasePath)
+  const state: { store?: RegistryStore } = {}
   const diagnostics = new DiagnosticsLog(join(dirname(databasePath), 'diagnostics.jsonl'), {
     version,
     mode: isSea() ? 'exe' : 'npm run desktop',
   })
-  const server = createRegistryServer(store, port, isSea() ? seaFiles() : undefined, diagnostics)
+  const result = await startDesktopServer(preferredPort, databaseId, (port) => {
+    state.store ??= new RegistryStore(databasePath)
+    return createRegistryServer(
+      state.store,
+      port,
+      isSea() ? seaFiles() : undefined,
+      diagnostics,
+      databaseId,
+    )
+  }).catch((error: unknown) => {
+    state.store?.close()
+    throw error
+  })
+  const { port } = result
+  const url = `http://127.0.0.1:${port}/`
+  if (result.reused) {
+    state.store?.close()
+    console.log(`Редактор с этой базой уже запущен: ${url}\nДанные: ${databasePath}`)
+    openBrowser(url)
+    setTimeout(() => process.exit(0), 1500)
+    return
+  }
+  const server = result.server
+  const activeStore = state.store
+  if (!activeStore) throw new Error('Локальная база не открыта.')
 
   let closing = false
   const shutdown = () => {
@@ -94,7 +98,7 @@ async function main(): Promise<void> {
     server.close()
     server.closeAllConnections()
     try {
-      store.close()
+      activeStore.close()
     } finally {
       process.exit(0)
     }
@@ -106,7 +110,7 @@ async function main(): Promise<void> {
 
   server.once('error', (error: NodeJS.ErrnoException) => {
     try {
-      store.close()
+      activeStore.close()
     } catch {
       // база уже закрыта
     }
@@ -117,13 +121,15 @@ async function main(): Promise<void> {
     )
   })
 
-  server.listen(port, '127.0.0.1', () => {
-    console.log(`Адрес: ${url}`)
-    console.log(`Данные: ${databasePath}`)
-    if (portableNote) console.log(portableNote)
-    console.log('Не закрывайте это окно во время работы. Чтобы остановить редактор, закройте его.')
-    openBrowser(url)
-  })
+  if (port !== preferredPort)
+    console.log(
+      `Порт ${preferredPort} занят другим экземпляром или программой; используется ${port}.`,
+    )
+  console.log(`Адрес: ${url}`)
+  console.log(`Данные: ${databasePath}`)
+  if (portableNote) console.log(portableNote)
+  console.log('Не закрывайте это окно во время работы. Чтобы остановить редактор, закройте его.')
+  openBrowser(url)
 }
 
 main().catch((error: unknown) => {

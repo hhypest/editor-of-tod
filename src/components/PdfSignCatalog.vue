@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { signImageUrl } from '../services/sign-image-url'
 import { timed } from '../services/diagnostics'
 import { computed, ref, watch } from 'vue'
 import { documentLabel, documentStatuses, type DocumentRecord } from '../domain/normative-documents'
@@ -315,7 +316,7 @@ function statusLabel(status: string): string {
         <ul class="sign-compare">
           <li v-for="code in changedShown" :key="code">
             <strong>{{ code }}</strong>
-            <img :src="`/api/signs/${encodeURIComponent(code)}/image`" alt="Сейчас" />
+            <img :src="signImageUrl(code)" alt="Сейчас" />
             <span aria-hidden="true">→</span>
             <img v-if="newImage(code)" :src="newImage(code)!" alt="Из PDF" />
           </li>

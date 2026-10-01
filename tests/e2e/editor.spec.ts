@@ -181,6 +181,7 @@ test('restores applied edits and unapplied fields after the window closes', asyn
     ),
   ).toBe(false)
 
+  page.once('dialog', (dialog) => dialog.accept())
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Копии восстановления' })).toBeVisible()
   await page
@@ -227,6 +228,45 @@ test('newer v1 JSON retains the zone fraction and resolves settlement markers', 
   await expect(page.locator('.print-host .object-caption').first()).toContainText('100 м')
   await expect(page.locator('.print-host')).not.toContainText('{n100}')
   expect(errors).toEqual([])
+})
+
+test('cancelled JSON download retains recovery and warns before leaving', async ({
+  page,
+  request,
+}) => {
+  await importSampleCards(request)
+  const previous = new Set(
+    (await (await request.get(`${api}/api/recovery`)).json()).map(
+      (copy: { sessionId: string }) => copy.sessionId,
+    ),
+  )
+  await page.goto('/')
+  await fillNewProject(page, '12 км 3 пк', '90001:12:3')
+  await page.getByRole('button', { name: 'Создать проект' }).click()
+  await expect(page.locator('.save-state')).toContainText('копия восстановления записана')
+  const copy = (await (await request.get(`${api}/api/recovery`)).json()).find(
+    (item: { sessionId: string }) => !previous.has(item.sessionId),
+  )
+  expect(copy).toBeTruthy()
+  await page.evaluate(() => {
+    const click = HTMLAnchorElement.prototype.click
+    HTMLAnchorElement.prototype.click = function () {
+      if (!this.download.endsWith('.json')) click.call(this)
+    }
+  })
+  await page.getByRole('button', { name: 'Скачать файл проекта (JSON)', exact: true }).click()
+  await expect(page.locator('.save-state')).toContainText('Не сохранён')
+  const stillThere = await request.get(`${api}/api/recovery/${copy.sessionId}`)
+  expect(stillThere.ok()).toBe(true)
+  const warning = page.waitForEvent('dialog')
+  await page.close({ runBeforeUnload: true })
+  const dialog = await warning
+  expect(dialog.type()).toBe('beforeunload')
+  await dialog.dismiss()
+  expect(page.isClosed()).toBe(false)
+  await page.getByRole('button', { name: 'Сохранить проект', exact: true }).click()
+  await expect(page.locator('.save-state')).toHaveText('Сохранён')
+  expect((await request.get(`${api}/api/recovery/${copy.sessionId}`)).status()).toBe(404)
 })
 
 test('imports synthetic station PU-66 and a generated PNG ZIP through the local API', async ({
@@ -406,7 +446,7 @@ test('release requires distances, objects, location and type size but allows pap
   await page.route('**/api/signs/catalog', (route) =>
     route.fulfill({ json: { documentCode: 'УЧЕБНЫЙ', edition: 'демо', id: 1 } }),
   )
-  await page.route('**/api/signs/1.25/image?rev=1', (route) =>
+  await page.route('**/api/signs/1.25/image?*', (route) =>
     route.fulfill({ contentType: 'image/png', body: PNG.sync.write(png) }),
   )
   const base = importSchemeJson(

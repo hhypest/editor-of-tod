@@ -237,7 +237,56 @@ describe('local API', () => {
     ])
     const pinned = await fetch(`${base}/1.25/image?rev=1`)
     expect(pinned.status).toBe(200)
-    expect(pinned.headers.get('cache-control')).toContain('immutable')
+    expect(pinned.headers.get('cache-control')).toBe('private, no-cache')
+    expect(pinned.headers.get('etag')).toMatch(/^"[0-9a-f]{64}"$/)
+  })
+
+  it('revalidates the same sign revision after changing the database on the same origin', async () => {
+    const makeStore = (colour: number) => {
+      const png = new PNG({ width: 8, height: 8 })
+      png.data.fill(colour)
+      const bytes = PNG.sync.write(png)
+      const store = new RegistryStore(':memory:')
+      store.importSigns(
+        parseSignArchive(
+          Buffer.from(
+            zipSync({
+              'PNG с номером/1.25.png': bytes,
+              'PNG без номера/1.25.png': bytes,
+            }),
+          ),
+        ),
+      )
+      stores.push(store)
+      return { store, bytes }
+    }
+    const first = makeStore(255)
+    const second = makeStore(128)
+    const server = createRegistryServer(first.store, 0)
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Missing address')
+    const base = `http://127.0.0.1:${address.port}/api/signs/1.25/image`
+    const oldTags = new Map<string, string>()
+    for (const suffix of ['', '?rev=1', '?rev=1&numbered=1']) {
+      const response = await fetch(base + suffix)
+      oldTags.set(suffix, response.headers.get('etag')!)
+      const unchanged = await fetch(base + suffix, {
+        headers: { 'If-None-Match': response.headers.get('etag')! },
+      })
+      expect(unchanged.status).toBe(304)
+      expect(await unchanged.text()).toBe('')
+    }
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+    const restored = createRegistryServer(second.store, address.port)
+    servers.push(restored)
+    await new Promise<void>((resolve) => restored.listen(address.port, '127.0.0.1', resolve))
+    for (const [suffix, etag] of oldTags) {
+      const response = await fetch(base + suffix, { headers: { 'If-None-Match': etag } })
+      expect(response.status).toBe(200)
+      expect(response.headers.get('etag')).not.toBe(etag)
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(second.bytes)
+    }
   })
 
   it('accepts a same-origin write and rejects missing origin, invalid input, and stale revisions', async () => {
