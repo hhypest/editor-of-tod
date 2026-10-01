@@ -269,10 +269,11 @@ describe('local API', () => {
     const base = `http://127.0.0.1:${address.port}/api/signs/1.25/image`
     const oldTags = new Map<string, string>()
     for (const suffix of ['', '?rev=1', '?rev=1&numbered=1']) {
-      const response = await fetch(base + suffix)
+      const response = await fetch(base + suffix, { headers: { Connection: 'close' } })
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(first.bytes)
       oldTags.set(suffix, response.headers.get('etag')!)
       const unchanged = await fetch(base + suffix, {
-        headers: { 'If-None-Match': response.headers.get('etag')! },
+        headers: { 'If-None-Match': response.headers.get('etag')!, Connection: 'close' },
       })
       expect(unchanged.status).toBe(304)
       expect(await unchanged.text()).toBe('')
@@ -282,7 +283,9 @@ describe('local API', () => {
     servers.push(restored)
     await new Promise<void>((resolve) => restored.listen(address.port, '127.0.0.1', resolve))
     for (const [suffix, etag] of oldTags) {
-      const response = await fetch(base + suffix, { headers: { 'If-None-Match': etag } })
+      const response = await fetch(base + suffix, {
+        headers: { 'If-None-Match': etag, Connection: 'close' },
+      })
       expect(response.status).toBe(200)
       expect(response.headers.get('etag')).not.toBe(etag)
       expect(Buffer.from(await response.arrayBuffer())).toEqual(second.bytes)
