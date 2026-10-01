@@ -60,18 +60,19 @@ async function main(): Promise<void> {
 
   mkdirSync(dirname(databasePath), { recursive: true, mode: 0o700 })
   const databaseId = databaseIdentity(databasePath)
-  const state: { store?: RegistryStore } = {}
-  const diagnostics = new DiagnosticsLog(join(dirname(databasePath), 'diagnostics.jsonl'), {
-    version,
-    mode: isSea() ? 'exe' : 'npm run desktop',
-  })
+  const state: { store?: RegistryStore; diagnostics?: DiagnosticsLog } = {}
   const result = await startDesktopServer(preferredPort, databaseId, (port) => {
     state.store ??= new RegistryStore(databasePath)
+    // Повторный запуск не должен переписывать журнал работающего экземпляра.
+    state.diagnostics ??= new DiagnosticsLog(join(dirname(databasePath), 'diagnostics.jsonl'), {
+      version,
+      mode: isSea() ? 'exe' : 'npm run desktop',
+    })
     return createRegistryServer(
       state.store,
       port,
       isSea() ? seaFiles() : undefined,
-      diagnostics,
+      state.diagnostics,
       databaseId,
     )
   }).catch((error: unknown) => {

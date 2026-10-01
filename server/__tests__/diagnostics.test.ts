@@ -1,10 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import type { Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createSampleWorkbook, sampleCards } from '../../scripts/generate-pu66-samples'
-import { DiagnosticsLog, redact, routeOf } from '../diagnostics'
+import { DiagnosticsLog, routeOf } from '../diagnostics'
 import { createRegistryServer } from '../index'
 import { RegistryStore } from '../store'
 
@@ -22,14 +22,45 @@ afterEach(async () => {
 })
 
 describe('diagnostics without confidential data', () => {
-  it('removes PU-66 keys, phones and full names from messages', () => {
-    const text = redact(
-      'Карточка 90002:24:7 и ст.Озёрная:53:2; тел. 8 910 123-45-67; Учебный А.Б., В.Г. Учебная, Учебный Иван Петрович',
+  it('drops free text, paths and unknown fields from new and legacy logs', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-private-diagnostics-'))
+    directories.push(directory)
+    const file = join(directory, 'diagnostics.jsonl')
+    const secrets = ['Станция-Синтетическая', 'Тестовая-книга.xlsx', 'C:\\Данные', '/srv/private']
+    const error = new TypeError(secrets.join(' '))
+    error.stack = `${error.name}: ${error.message}\n    at imported (C:\\Данные\\server\\store.ts:123:4)\n    at /srv/private/Тестовая-книга.xlsx:10:20`
+    writeFileSync(
+      file,
+      JSON.stringify({
+        at: new Date().toISOString(),
+        source: 'server',
+        kind: 'error',
+        name: 'GET /api/Станция-Синтетическая',
+        message: error.stack,
+        unknownSecret: secrets.join(' '),
+      }) + '\n',
     )
-    expect(text).not.toMatch(/90002|Озёрная|910|Учебн/u)
-    expect(text).toContain('<ключ ПУ-66>')
-    expect(text).toContain('<телефон>')
-    expect(text).toContain('<ФИО>')
+    const log = new DiagnosticsLog(file, { version: 'test', mode: 'test' })
+    log.serverError('GET /api/pu66/Станция-Синтетическая/norms', error)
+    log.record({ source: 'client', kind: 'error', name: secrets.join(' '), message: error.stack })
+    log.request('GET /api/Станция-Синтетическая', 404, 10)
+    const store = new RegistryStore(join(directory, 'Станция-Синтетическая.sqlite'))
+    stores.push(store)
+    const report = log.report(store)
+    for (const text of [readFileSync(file, 'utf8'), JSON.stringify(report)]) {
+      for (const secret of [...secrets, 'unknownSecret', directory])
+        expect(text).not.toContain(secret)
+      expect(text).toContain('TypeError')
+      expect(text).toContain('server/store.ts:123:4')
+    }
+    const reopened = new DiagnosticsLog(file, { version: 'test', mode: 'test' })
+    expect(reopened.report(store).events).toEqual(report.events)
+    expect(report.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'GET /api/pu66/:key/norms' }),
+        expect.objectContaining({ name: 'Событие интерфейса' }),
+      ]),
+    )
   })
 
   it('generalises request paths so keys and ids never reach the log', () => {
@@ -40,6 +71,7 @@ describe('diagnostics without confidential data', () => {
     )
     expect(routeOf('GET', '/api/documents/4/pdf')).toBe('GET /api/documents/:id/pdf')
     expect(routeOf('GET', '/assets/index.js')).toBe('GET (интерфейс)')
+    expect(routeOf('GET', '/api/pu66/Станция/norms/книга.xlsx')).toBe('GET (неизвестный маршрут)')
   })
 
   it('keeps the log in a file across restarts and rotates it', () => {

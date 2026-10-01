@@ -1,3 +1,4 @@
+import { describeDiagnosticError } from '../src/domain/diagnostic-errors.ts'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
@@ -441,7 +442,7 @@ export function createRegistryServer(
       } else {
         json(res, 500, { error: 'Внутренняя ошибка локального реестра.' })
         diagnostics.serverError(route, error)
-        console.error('Ошибка локального реестра:', error)
+        console.error('Ошибка локального реестра:', describeDiagnosticError(error))
       }
     }
   })
