@@ -122,7 +122,7 @@ export const recoveryRecordSchema = recoveryWriteSchema.omit({ expectedVersion: 
 })
 export const recoverySummarySchema = recoveryRecordSchema
   .omit({ scheme: true, detailsDraft: true, placementDraft: true })
-  .extend({ referenceId: z.string() })
+  .extend({ referenceId: z.string(), active: z.boolean() })
 export const recoveryDeleteSchema = z.strictObject({ expectedVersion: z.number().int().positive() })
 
 export type RecoveryWrite = z.infer<typeof recoveryWriteSchema>

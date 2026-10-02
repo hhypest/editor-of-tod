@@ -97,6 +97,8 @@ const programFiles = new Set([
   'src/components/SheetSign.vue',
   'src/components/SignPreview.vue',
   'src/components/TemplateChoice.vue',
+  'src/application/recovery-session.ts',
+  'src/application/recovery-contract.ts',
   'src/composables/useNormativeRules.ts',
   'src/composables/usePu66Status.ts',
   'src/composables/useProjectSession.ts',

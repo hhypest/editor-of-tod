@@ -264,7 +264,7 @@ describe('private import formats', () => {
       original.close()
       const old = new DatabaseSync(path)
       old.exec(
-        'DROP TABLE project_sources; DROP TABLE pu66_verifications; PRAGMA user_version = 4;',
+        'DROP TABLE project_recovery; DROP TABLE project_sources; DROP TABLE pu66_verifications; PRAGMA user_version = 4;',
       )
       old.close()
       const migrated = new RegistryStore(path)
@@ -272,7 +272,7 @@ describe('private import formats', () => {
       expect(migrated.listPu66()[0]?.verification).toBeNull()
       migrated.close()
       const current = new DatabaseSync(path)
-      expect(current.prepare('PRAGMA user_version').get()).toEqual({ user_version: 12 })
+      expect(current.prepare('PRAGMA user_version').get()).toEqual({ user_version: 13 })
       current.close()
     } finally {
       rmSync(directory, { recursive: true, force: true })
@@ -391,6 +391,7 @@ describe('private import formats', () => {
       store.close()
       const old = new DatabaseSync(path)
       old.exec(`
+        DROP TABLE project_recovery;
         DROP TABLE project_sources;
         DROP TABLE pu66_verifications;
         DROP TABLE project_revisions;
@@ -415,7 +416,7 @@ describe('private import formats', () => {
       migrated.close()
 
       const database = new DatabaseSync(path)
-      expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 12 })
+      expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 13 })
       expect(
         (database.prepare('PRAGMA table_info(signs)').all() as { name: string }[]).map(
           (column) => column.name,
@@ -467,7 +468,9 @@ describe('private import formats', () => {
       store.importPu66([entry(stationCard('21', 'ст.Учебная:0:2'), 'single')])
       store.close()
       const database = new DatabaseSync(path)
-      database.exec('DROP TABLE pu66_key_aliases; PRAGMA user_version = 8;')
+      database.exec(
+        'ALTER TABLE project_recovery DROP COLUMN owner_id; ALTER TABLE project_recovery DROP COLUMN owner_until; DROP TABLE pu66_key_aliases; PRAGMA user_version = 8;',
+      )
       database.close()
 
       const reopened = new RegistryStore(path)
@@ -487,7 +490,7 @@ describe('private import formats', () => {
         reopened.close()
       }
       const check = new DatabaseSync(path)
-      expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 12 })
+      expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 13 })
       expect(check.prepare('PRAGMA foreign_key_check').all()).toEqual([])
       check.close()
     } finally {

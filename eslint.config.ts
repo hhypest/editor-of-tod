@@ -22,5 +22,71 @@ export default defineConfigWithVueTs(
 
   ...pluginOxlint.buildFromOxlintConfigFile('.oxlintrc.json'),
 
+  {
+    name: 'app/core-boundaries',
+    files: ['src/domain/**/*.ts', 'src/application/**/*.ts'],
+    ignores: ['**/__tests__/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                'vue',
+                'vue/**',
+                'node:*',
+                '**/components/**',
+                '**/composables/**',
+                '**/services/**',
+                '**/server/**',
+              ],
+              message:
+                'Предметные правила и сценарии зависят от данных и узких интерфейсов, а не от UI, HTTP или SQLite (ADR-0006).',
+            },
+          ],
+        },
+      ],
+      'no-restricted-globals': [
+        'error',
+        'window',
+        'document',
+        'navigator',
+        'fetch',
+        'localStorage',
+        'sessionStorage',
+        'indexedDB',
+      ],
+    },
+  },
+
+  {
+    name: 'app/domain-direction',
+    files: ['src/domain/**/*.ts'],
+    ignores: ['**/__tests__/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                'vue',
+                'vue/**',
+                'node:*',
+                '**/components/**',
+                '**/composables/**',
+                '**/services/**',
+                '**/server/**',
+                '**/application/**',
+              ],
+              message: 'Предметная модель не зависит от сценариев и адаптеров (ADR-0006).',
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   skipFormatting,
 )

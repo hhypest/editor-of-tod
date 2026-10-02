@@ -10,10 +10,10 @@ import type { Scheme } from '../domain/model'
 import {
   recoveryRecordSchema,
   recoverySummarySchema,
-  type RecoveryRecord,
   type RecoverySummary,
-  type RecoveryWrite,
 } from '../domain/recovery'
+import { recoveryReceiptSchema } from '../application/recovery-contract'
+import type { RecoveryRepository } from '../application/recovery-session'
 import { localJson } from './json-response'
 
 async function request(url: string, options?: RequestInit): Promise<unknown> {
@@ -85,27 +85,58 @@ export async function listRecoveryDrafts(): Promise<RecoverySummary[]> {
   return recoverySummarySchema.array().parse(await request('/api/recovery'))
 }
 
-export async function getRecoveryDraft(sessionId: string): Promise<RecoveryRecord> {
-  return recoveryRecordSchema.parse(await request(`/api/recovery/${encodeURIComponent(sessionId)}`))
-}
-
-export async function saveRecoveryDraft(input: RecoveryWrite): Promise<RecoveryRecord> {
-  return recoveryRecordSchema.parse(
-    await request(`/api/recovery/${encodeURIComponent(input.sessionId)}`, {
-      method: 'PUT',
+/** Each editor window gets an independent owner; source references remain local to a copy. */
+export function createRecoveryRepository(ownerId: string): RecoveryRepository & {
+  releaseOnExit(sessionId: string): void
+} {
+  const endpoint = (id: string) => `/api/recovery/${encodeURIComponent(id)}`
+  const post = (id: string, action: string, fields = {}) =>
+    request(`${endpoint(id)}/${action}`, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
-    }),
-  )
-}
-
-export async function deleteRecoveryDraft(
-  sessionId: string,
-  expectedVersion: number,
-): Promise<void> {
-  await request(`/api/recovery/${encodeURIComponent(sessionId)}`, {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ expectedVersion }),
-  })
+      body: JSON.stringify({ ownerId, ...fields }),
+    })
+  return {
+    async save(input, sourceSha256) {
+      const scheme =
+        sourceSha256 && input.scheme.source.kind === 'legacy-html-v1'
+          ? {
+              ...input.scheme,
+              source: {
+                kind: input.scheme.source.kind,
+                importedAt: input.scheme.source.importedAt,
+              },
+            }
+          : input.scheme
+      return recoveryReceiptSchema.parse(
+        await request(endpoint(input.sessionId), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...input, scheme, ownerId, sourceSha256 }),
+        }),
+      )
+    },
+    async claim(id, expectedVersion) {
+      return recoveryRecordSchema.parse(await post(id, 'claim', { expectedVersion }))
+    },
+    async remove(id, expectedVersion) {
+      await request(endpoint(id), {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ownerId, expectedVersion }),
+      })
+    },
+    async heartbeat(id) {
+      await post(id, 'heartbeat')
+    },
+    async release(id) {
+      await post(id, 'release')
+    },
+    releaseOnExit(id) {
+      navigator.sendBeacon(
+        `${endpoint(id)}/release`,
+        new Blob([JSON.stringify({ ownerId })], { type: 'application/json' }),
+      )
+    },
+  }
 }

@@ -310,10 +310,12 @@ describe('PU-66 lifecycle and preserved data', () => {
     const snapshot = store.getPu66Scheme(first)
     store.close()
     const raw = new DatabaseSync(path)
-    raw.exec('DROP TABLE pu66_lifecycle; PRAGMA user_version = 11')
+    raw.exec(
+      'ALTER TABLE project_recovery DROP COLUMN owner_id; ALTER TABLE project_recovery DROP COLUMN owner_until; DROP TABLE pu66_lifecycle; PRAGMA user_version = 11',
+    )
     raw.close()
     store = new RegistryStore(path, now)
-    expect(store.schemaVersion()).toBe(12)
+    expect(store.schemaVersion()).toBe(13)
     expect(store.getPu66Scheme(first)).toEqual(snapshot)
     expect(store.listPu66()).toHaveLength(3)
     expect(store.getPu66Status(first)).toMatchObject({ excluded: false, event: null })

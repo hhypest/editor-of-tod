@@ -401,16 +401,17 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
                 <strong>{{ copy.referenceId }}</strong> · {{ copy.fileName }} ·
                 {{ new Date(copy.updatedAt).toLocaleString('ru-RU') }}
                 <span v-if="copy.sessionId === activeRecoveryId"> · открыта сейчас</span>
+                <span v-else-if="copy.active"> · открыта в другом окне</span>
                 <button
                   type="button"
-                  :disabled="localBusy || loading"
+                  :disabled="localBusy || loading || copy.active"
                   @click="openRecovery(copy.sessionId)"
                 >
                   Восстановить
                 </button>
                 <button
                   type="button"
-                  :disabled="localBusy || copy.sessionId === activeRecoveryId"
+                  :disabled="localBusy || copy.active || copy.sessionId === activeRecoveryId"
                   @click="discardRecovery(copy.sessionId, copy.version)"
                 >
                   Удалить копию
