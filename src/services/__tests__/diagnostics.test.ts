@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { flush, reportError, timed } from '../diagnostics'
+import { flush, installDiagnostics, reportError, timed } from '../diagnostics'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -34,15 +34,37 @@ describe('client diagnostics never log the text of file operation errors', () =>
     expect(sent).not.toContain('.xlsx')
   })
 
-  it('keeps the text only when explicitly allowed for code errors', async () => {
+  it('removes text and absolute paths for global window, rejection and Vue errors', async () => {
     const bodies = captureRequests()
-    reportError('Операция с локальной базой', new Error('Карточка ст.Учебная:1:1'), {
-      withText: false,
+    const listeners = new Map<string, (event: unknown) => void>()
+    vi.stubGlobal('window', {
+      addEventListener: (name: string, callback: (event: unknown) => void) =>
+        listeners.set(name, callback),
     })
-    reportError('Ошибка Vue (render)', new TypeError('x is undefined'))
-    await flush()
-    const sent = bodies.join('\n')
-    expect(sent).not.toContain('Учебная')
-    expect(sent).toContain('x is undefined')
+    const app = { config: { errorHandler: undefined as unknown } }
+    installDiagnostics(app as Parameters<typeof installDiagnostics>[0])
+    const error = new TypeError('Станция-Синтетическая /srv/private/Тестовая-книга.xlsx')
+    error.stack = `${error.name}: ${error.message}\n    at render (C:\\Данные\\src\\components\\App.vue:10:20)\n    at /srv/private/Тестовая-книга.xlsx:30:40\n    at load (/srv/private/src/services/diagnostics.ts:50:60)`
+    listeners.get('error')!({ error })
+    listeners.get('unhandledrejection')!({ reason: error })
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      ;(app.config.errorHandler as (error: unknown) => void)(error)
+      reportError('Операция с локальной базой', error)
+      await flush()
+      const sent = bodies.join('\n')
+      for (const secret of [
+        'Станция-Синтетическая',
+        'Тестовая-книга.xlsx',
+        '/srv/private',
+        'Данные',
+      ])
+        expect(sent).not.toContain(secret)
+      expect(sent).toContain('TypeError')
+      expect(sent).toContain('src/services/diagnostics.ts:50:60')
+      expect(sent).toContain('Ошибка Vue')
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 })
