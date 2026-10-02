@@ -436,15 +436,22 @@ function regulatorDistanceFinding(scheme: Scheme, rules: NormativeRules): Review
     }
   const anchors = anchorCoordinates(scheme)
   const unitsPerMetre = (anchors.Z1 - anchors.Z0) / zone.workMetres
-  const middle = (anchors.Z0 + anchors.Z1) / 2
   const regulators = scheme.placements.filter(
     (placement) => placement.kind === 'element' && placement.elementKind === 'reg',
   )
   const problems: string[] = []
-  if (regulators.length < 2) problems.push(`на листе регулировщиков: ${regulators.length} из 2`)
+  if (regulators.length !== 2) problems.push(`на листе регулировщиков: ${regulators.length} из 2`)
+  let leftCount = 0
+  let rightCount = 0
   for (const regulator of regulators) {
     const { x } = placementCoordinates(regulator, anchors)
-    const metres = (x <= middle ? anchors.Z0 - x : x - anchors.Z1) / unitsPerMetre
+    if (x >= anchors.Z0 && x <= anchors.Z1) {
+      problems.push(`№ ${regulator.id} стоит над рабочей зоной`)
+      continue
+    }
+    if (x < anchors.Z0) leftCount++
+    else rightCount++
+    const metres = (x < anchors.Z0 ? anchors.Z0 - x : x - anchors.Z1) / unitsPerMetre
     if (metres < required - 0.5)
       problems.push(
         metres <= 0
@@ -452,6 +459,8 @@ function regulatorDistanceFinding(scheme: Scheme, rules: NormativeRules): Review
           : `№ ${regulator.id} — примерно ${Math.round(metres)} м до рабочей зоны`,
       )
   }
+  if (leftCount !== 1) problems.push(`со стороны начала работ (Z0): ${leftCount} вместо 1`)
+  if (rightCount !== 1) problems.push(`со стороны конца работ (Z1): ${rightCount} вместо 1`)
   if (!problems.length) return null
   return {
     ...base,

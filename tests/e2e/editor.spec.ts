@@ -4,6 +4,9 @@ import { zipSync } from 'fflate'
 import { PNG } from 'pngjs'
 import { createSampleWorkbook, sampleCards } from '../../scripts/generate-pu66-samples'
 import { fictionalMethodology, fictionalSignStandard } from '../../server/__tests__/pdf-fixture'
+import { importSchemeJson } from '../../src/domain/import'
+import { reviewScheme } from '../../src/domain/review-scheme'
+import { setMark } from '../../src/domain/review-marks'
 
 const api = 'http://127.0.0.1:4100'
 const origin = 'http://127.0.0.1:5173'
@@ -358,6 +361,9 @@ test('release sheet drops the draft mark and downloads a PNG', async ({ page, re
   await page.goto('/')
   await fillNewProject(page, '12 км 3 пк', '90001:12:3')
   await page.getByRole('button', { name: 'Создать проект' }).click()
+  await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
+  await page.getByRole('button', { name: 'Добавить конус' }).click()
+  await page.getByRole('button', { name: 'Применить объект' }).click()
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   const host = page.locator('.print-host')
   await expect(host.locator('.draft-mark')).toHaveCount(1)
@@ -387,6 +393,88 @@ test('release sheet drops the draft mark and downloads a PNG', async ({ page, re
   const bytes = readFileSync((await file.path())!)
   expect(bytes.subarray(1, 4).toString('latin1')).toBe('PNG')
   expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([3528, 2495])
+})
+
+test('release requires distances, objects, location and type size but allows paper requisites', async ({
+  page,
+}) => {
+  const png = new PNG({ width: 8, height: 8 })
+  png.data.fill(255)
+  await page.route('**/api/signs', (route) =>
+    route.fulfill({ json: [{ code: '1.25', width: 8, height: 8, revision: 1 }] }),
+  )
+  await page.route('**/api/signs/catalog', (route) =>
+    route.fulfill({ json: { documentCode: 'УЧЕБНЫЙ', edition: 'демо', id: 1 } }),
+  )
+  await page.route('**/api/signs/1.25/image?rev=1', (route) =>
+    route.fulfill({ contentType: 'image/png', body: PNG.sync.write(png) }),
+  )
+  const base = importSchemeJson(
+    readFileSync('tests/fixtures/legacy-b34-manual.json', 'utf8'),
+  ).scheme
+  const originalPost = base.placements.find((p) => p.kind === 'sign-post')!
+  for (const variant of ['distance', 'objects', 'location', 'type-out', 'type-in', 'ready']) {
+    let scheme = {
+      ...base,
+      parameters: {
+        ...base.parameters,
+        location:
+          variant === 'location'
+            ? ('auto' as const)
+            : variant === 'type-in'
+              ? ('in' as const)
+              : ('out' as const),
+        signSize: variant.startsWith('type-') ? ('auto' as const) : ('II' as const),
+        signDistancesMetres: {
+          ...base.parameters.signDistancesMetres,
+          d50: variant === 'distance' ? null : 50,
+        },
+      },
+      placements:
+        variant === 'objects'
+          ? []
+          : [
+              {
+                ...originalPost,
+                signIds: ['1.25'],
+                distanceLabel: '{d50}',
+                position: { ...originalPost.position, anchor: 'abs' as const, offsetXSvg: 300 },
+              },
+            ],
+      signImages: {
+        catalog: { documentCode: 'УЧЕБНЫЙ', edition: 'демо', id: 1 },
+        revisions: { '1.25': 1 },
+      },
+      reviewMarks: {},
+    }
+    const findings = reviewScheme(scheme)
+    for (const finding of findings.filter((f) => f.kind === 'verify'))
+      scheme = setMark(scheme, findings, finding.id, true) as typeof scheme
+    await page.goto('/')
+    await page
+      .getByRole('group', { name: 'Способ открытия проекта' })
+      .getByRole('button', { name: 'Открыть файл' })
+      .click()
+    await page.locator('#scheme-file').setInputFiles({
+      name: 'synthetic-release.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(scheme)),
+    })
+    await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+    const host = page.locator('.print-host')
+    const release = host.getByLabel(/Я проверил лист/)
+    if (variant === 'ready') {
+      await expect(release).toBeEnabled()
+      await release.check()
+      await expect(host.locator('.draft-mark')).toHaveCount(0)
+      const download = page.waitForEvent('download')
+      await host.getByRole('button', { name: 'Скачать PNG' }).click()
+      expect((await download).suggestedFilename()).not.toContain('черновик')
+    } else {
+      await expect(release).toBeDisabled()
+      await expect(host.locator('.draft-mark')).toHaveCount(1)
+    }
+  }
 })
 
 test('attaches standards, switches the sign catalog to a new edition and flags the old one', async ({
