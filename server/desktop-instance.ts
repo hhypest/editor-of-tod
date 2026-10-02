@@ -59,7 +59,10 @@ export async function startDesktopInstance(
       await listen(server, port)
       return { server, port }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error
+      const code = (error as NodeJS.ErrnoException).code
+      // Windows может резервировать порт без слушающего процесса (EACCES).
+      if (code === 'EACCES') continue
+      if (code !== 'EADDRINUSE') throw error
       if (await servesDatabase(port, databaseId)) return { server: null, port }
     }
   }

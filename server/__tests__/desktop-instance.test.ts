@@ -1,8 +1,8 @@
 import { mkdtempSync, rmSync } from 'node:fs'
-import { createServer, type Server } from 'node:http'
+import { createServer, Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { startDesktopInstance } from '../desktop-instance'
 import { RegistryStore } from '../store'
 
@@ -14,6 +14,7 @@ afterEach(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()))
   for (const store of stores.splice(0)) store.close()
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
+  vi.restoreAllMocks()
 })
 
 function database() {
@@ -24,8 +25,36 @@ function database() {
   return store
 }
 
-async function start(store: RegistryStore, port = 0) {
-  const instance = await startDesktopInstance(store, port)
+/** Свободный порт из ОС не гарантирует доступности соседнего: Windows резервирует диапазоны. */
+async function availablePair(): Promise<number> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const first = createServer()
+    const next = createServer()
+    try {
+      await new Promise<void>((resolve, reject) => {
+        first.once('error', reject)
+        first.listen(0, '127.0.0.1', resolve)
+      })
+      const address = first.address()
+      if (!address || typeof address === 'string') throw new Error('Server address missing')
+      await new Promise<void>((resolve, reject) => {
+        next.once('error', reject)
+        next.listen(address.port + 1, '127.0.0.1', resolve)
+      })
+      return address.port
+    } catch (error) {
+      if (!['EADDRINUSE', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? ''))
+        throw error
+    } finally {
+      for (const server of [first, next])
+        if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  }
+  throw new Error('No available neighbouring ports for the test')
+}
+
+async function start(store: RegistryStore, port?: number) {
+  const instance = await startDesktopInstance(store, port ?? (await availablePair()))
   if (instance.server) {
     servers.push(instance.server)
     const address = instance.server.address()
@@ -36,6 +65,19 @@ async function start(store: RegistryStore, port = 0) {
 }
 
 describe('desktop instances preserve the selected database', () => {
+  it('skips a port reserved by the operating system', async () => {
+    const port = await availablePair()
+    vi.spyOn(Server.prototype, 'listen').mockImplementationOnce(function (this: Server) {
+      queueMicrotask(() =>
+        this.emit('error', Object.assign(new Error('Reserved port'), { code: 'EACCES' })),
+      )
+      return this
+    })
+    const instance = await start(database(), port)
+    expect(instance.server).not.toBeNull()
+    expect(instance.port).toBe(port + 1)
+  })
+
   it('reuses the server for the same canonical file without exposing its path', async () => {
     const store = database()
     const first = await start(store)
@@ -65,7 +107,8 @@ describe('desktop instances preserve the selected database', () => {
   it('does not reuse an unrelated server that happens to report ready', async () => {
     const foreign = createServer((_req, res) => res.end('{"ready":true}'))
     servers.push(foreign)
-    await new Promise<void>((resolve) => foreign.listen(0, '127.0.0.1', resolve))
+    const port = await availablePair()
+    await new Promise<void>((resolve) => foreign.listen(port, '127.0.0.1', resolve))
     const address = foreign.address()
     if (!address || typeof address === 'string') throw new Error('Server address missing')
     const instance = await start(database(), address.port)
