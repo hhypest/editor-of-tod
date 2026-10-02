@@ -9,7 +9,12 @@ import {
   projectRestoreSchema,
   projectWriteSchema,
 } from '../src/domain/local-projects.ts'
-import { recoveryDeleteSchema, recoveryWriteSchema } from '../src/domain/recovery.ts'
+import { recoveryDeleteSchema } from '../src/domain/recovery.ts'
+import {
+  recoveryClaimSchema,
+  recoveryOwnerSchema,
+  recoveryTransferSchema,
+} from '../src/application/recovery-contract.ts'
 import { crossingWriteSchema, normativeWriteSchema } from '../src/domain/registry.ts'
 import { pu66VerificationWriteSchema } from '../src/domain/pu66-review.ts'
 import { pu66LifecycleWriteSchema } from '../src/domain/pu66-lifecycle.ts'
@@ -43,6 +48,7 @@ import {
   ProjectTooLarge,
   RegistryStore,
   RevisionConflict,
+  RecoveryOwned,
   AmbiguousPu66Key,
   DocumentInUse,
 } from './store.ts'
@@ -197,6 +203,7 @@ export function createRegistryServer(
       const revisionPath = /^\/api\/projects\/([^/]+)\/revisions\/(\d+)$/.exec(pathname)
       const restorePath = /^\/api\/projects\/([^/]+)\/restore$/.exec(pathname)
       const recoveryPath = /^\/api\/recovery\/([^/]+)$/.exec(pathname)
+      const recoveryAction = /^\/api\/recovery\/([^/]+)\/(claim|heartbeat|release)$/.exec(pathname)
       const documentPath =
         /^\/api\/documents\/(\d+)(\/pdf|\/signs\/preview|\/signs\/apply|\/signs\/image)?$/.exec(
           pathname,
@@ -252,7 +259,15 @@ export function createRegistryServer(
       } else if (req.method === 'GET' && pathname === '/api/recovery') {
         json(res, 200, store.listRecoveries())
       } else if (req.method === 'GET' && recoveryPath) {
-        const record = store.getRecovery(projectId(recoveryPath[1]!))
+        const id = projectId(recoveryPath[1]!)
+        const ownerId = z
+          .uuid()
+          .optional()
+          .parse(
+            new URL(req.url!, `http://127.0.0.1:${actualPort}`).searchParams.get('ownerId') ??
+              undefined,
+          )
+        const record = store.getRecovery(id, { ownerId })
         if (!record) throw new RequestError(404, 'Копия восстановления не найдена.')
         json(res, 200, record)
       } else if (req.method === 'GET' && revisionPath) {
@@ -435,18 +450,44 @@ export function createRegistryServer(
         if (scheme.id !== id)
           throw new RequestError(400, 'ID проекта в адресе и файле не совпадают.')
         json(res, 200, store.saveProject(scheme, expectedRevision))
+      } else if (req.method === 'POST' && recoveryAction) {
+        const id = projectId(recoveryAction[1]!)
+        if (recoveryAction[2] === 'claim') {
+          const { ownerId, expectedVersion } = recoveryClaimSchema.parse(await readJson(req))
+          json(res, 200, store.claimRecovery(id, ownerId, expectedVersion))
+        } else {
+          const { ownerId } = recoveryOwnerSchema.parse(await readJson(req))
+          if (recoveryAction[2] === 'heartbeat') store.heartbeatRecovery(id, ownerId)
+          else store.releaseRecovery(id, ownerId)
+          json(res, 200, { ok: true })
+        }
       } else if (req.method === 'PUT' && recoveryPath) {
         const id = projectId(recoveryPath[1]!)
-        const input = recoveryWriteSchema.parse(
+        const { ownerId, sourceSha256, ...transfer } = recoveryTransferSchema.parse(
           await readJson(req, MAX_LOCAL_PROJECT_BYTES + 64 * 1024),
         )
-        if (input.sessionId !== id)
+        if (transfer.sessionId !== id)
           throw new RequestError(400, 'ID копии восстановления в адресе и запросе не совпадают.')
-        json(res, 200, store.saveRecovery(input))
+        store.assertRecoveryAvailable(id, ownerId)
+        const scheme = store.resolveRecoveryScheme(id, transfer.scheme, sourceSha256)
+        const record = store.saveRecovery({ ...transfer, scheme }, ownerId)
+        json(res, 200, {
+          version: record.version,
+          updatedAt: record.updatedAt,
+          ...(scheme.source.kind === 'legacy-html-v1'
+            ? {
+                sourceSha256: createHash('sha256')
+                  .update(scheme.source.originalJson, 'utf8')
+                  .digest('hex'),
+              }
+            : {}),
+        })
       } else if (req.method === 'DELETE' && recoveryPath) {
         const id = projectId(recoveryPath[1]!)
-        const { expectedVersion } = recoveryDeleteSchema.parse(await readJson(req))
-        store.deleteRecovery(id, expectedVersion)
+        const { expectedVersion, ownerId } = recoveryDeleteSchema
+          .extend({ ownerId: z.uuid() })
+          .parse(await readJson(req))
+        store.deleteRecovery(id, expectedVersion, ownerId)
         json(res, 200, { deleted: true })
       } else if (req.method === 'POST' && restorePath) {
         const id = projectId(restorePath[1]!)
@@ -463,7 +504,11 @@ export function createRegistryServer(
       }
     } catch (error) {
       if (error instanceof RequestError) json(res, error.status, { error: error.message })
-      else if (error instanceof RevisionConflict || error instanceof AmbiguousPu66Key)
+      else if (
+        error instanceof RevisionConflict ||
+        error instanceof AmbiguousPu66Key ||
+        error instanceof RecoveryOwned
+      )
         json(res, 409, { error: error.message })
       else if (error instanceof InvalidPu66Verification || error instanceof InvalidPu66Lifecycle)
         json(res, 400, { error: error.message })

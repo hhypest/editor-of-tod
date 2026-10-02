@@ -7,8 +7,20 @@ const local = vi.hoisted(() => ({
   listRecoveryDrafts: vi.fn(async () => []),
   saveRecoveryDraft: vi.fn(async () => ({ version: 1 })),
   deleteRecoveryDraft: vi.fn(async () => undefined),
+  heartbeat: vi.fn(async () => undefined),
+  releaseOnExit: vi.fn(),
 }))
-vi.mock('../../services/local-projects', () => local)
+vi.mock('../../services/local-projects', () => ({
+  ...local,
+  createRecoveryRepository: () => ({
+    save: local.saveRecoveryDraft,
+    remove: local.deleteRecoveryDraft,
+    claim: vi.fn(),
+    heartbeat: local.heartbeat,
+    release: vi.fn(async () => undefined),
+    releaseOnExit: local.releaseOnExit,
+  }),
+}))
 vi.mock('../useNormativeRules', async () => {
   const { ref } = await import('vue')
   const { PROTOTYPE_RULES } = await import('../../domain/normative-parameters')
@@ -35,11 +47,15 @@ beforeEach(() => {
   vi.useFakeTimers()
   vi.clearAllMocks()
   local.saveRecoveryDraft.mockResolvedValue({ version: 1 })
+  local.heartbeat.mockResolvedValue(undefined)
   vi.stubGlobal('window', Object.assign(new EventTarget(), { setTimeout }))
-  vi.stubGlobal('document', {
-    body: { append: vi.fn() },
-    createElement: () => ({ click: vi.fn(), remove: vi.fn() }),
-  })
+  vi.stubGlobal(
+    'document',
+    Object.assign(new EventTarget(), {
+      body: { append: vi.fn() },
+      createElement: () => ({ click: vi.fn(), remove: vi.fn() }),
+    }),
+  )
 })
 afterEach(() => {
   unmount?.()
@@ -97,5 +113,28 @@ describe('JSON export does not acknowledge a database save', () => {
     window.dispatchEvent(event)
     expect(event.defaultPrevented).toBe(true)
     expect(local.deleteRecoveryDraft).not.toHaveBeenCalled()
+  })
+
+  it('retains open edits and the unload warning when another window has taken ownership', async () => {
+    const session = await openEditedSession()
+    const scheme = session.imported.value!.scheme
+    local.heartbeat.mockRejectedValue(new Error('Копия открыта в другом окне.'))
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(session.recoveryStatus.value).toBe('error')
+    expect(session.imported.value!.scheme).toBe(scheme)
+    expect(session.hasUnsavedWork.value).toBe(true)
+    expect(session.localError.value).toContain('другом окне')
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(local.deleteRecoveryDraft).not.toHaveBeenCalled()
+  })
+
+  it('releases the owner on pagehide without sending a new snapshot', async () => {
+    const session = await openEditedSession()
+    const writes = local.saveRecoveryDraft.mock.calls.length
+    window.dispatchEvent(new Event('pagehide'))
+    expect(local.releaseOnExit).toHaveBeenCalledWith(session.activeRecoveryId.value)
+    expect(local.saveRecoveryDraft).toHaveBeenCalledTimes(writes)
   })
 })

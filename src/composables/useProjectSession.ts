@@ -13,16 +13,15 @@ import { rebuildTemplatePlacements, TemplateBuildError } from '../domain/templat
 import { useNormativeRules } from './useNormativeRules'
 import { clearPinsAfterSignChange, pinSignImages, usedSignCodes } from '../domain/sign-images'
 import {
-  deleteRecoveryDraft,
   getLocalProject,
-  getRecoveryDraft,
   listRecoveryDrafts,
   restoreLocalRevision,
   saveLocalProject,
-  saveRecoveryDraft,
+  createRecoveryRepository,
 } from '../services/local-projects'
 import type { SchemeDetailsDraft } from '../domain/edit-details'
 import type { PlacementDraft } from '../domain/edit-placements'
+import { RecoverySession, RECOVERY_HEARTBEAT_MS } from '../application/recovery-session'
 import type { RecoverySummary } from '../domain/recovery'
 import {
   recordEdit,
@@ -67,10 +66,11 @@ export function useProjectSession(onProjectOpened: () => void) {
   const pendingPlacement = shallowRef<PlacementDraft | null>(null)
   let recoverySessionId: string = crypto.randomUUID()
   const activeRecoveryId = ref(recoverySessionId)
-  const recoveryVersions = new Map<string, number>()
+  const recoveryRepository = createRecoveryRepository(crypto.randomUUID())
+  const recovery = new RecoverySession(recoveryRepository)
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null
   let recoveryTimer: ReturnType<typeof setTimeout> | null = null
   let recoveryChanges = 0
-  let recoveryQueue: Promise<void> = Promise.resolve()
 
   async function refreshRecoveries(): Promise<void> {
     try {
@@ -85,11 +85,12 @@ export function useProjectSession(onProjectOpened: () => void) {
     recoveryTimer = null
   }
 
-  function beginSession(sessionId: string = crypto.randomUUID(), version = 0): void {
+  function beginSession(sessionId: string = crypto.randomUUID()): void {
     cancelRecoveryTimer()
+    if (sessionId !== recoverySessionId)
+      void recovery.release(recoverySessionId).catch(showLocalError)
     recoverySessionId = sessionId
     activeRecoveryId.value = sessionId
-    recoveryVersions.set(sessionId, version)
     recoverySeed.value = null
     pendingDetails.value = null
     pendingPlacement.value = null
@@ -97,14 +98,7 @@ export function useProjectSession(onProjectOpened: () => void) {
   }
 
   async function clearRecovery(sessionId: string): Promise<void> {
-    const clear = recoveryQueue.then(async () => {
-      const version = recoveryVersions.get(sessionId) ?? 0
-      if (!version) return
-      await deleteRecoveryDraft(sessionId, version)
-      recoveryVersions.delete(sessionId)
-    })
-    recoveryQueue = clear.catch(() => undefined)
-    await clear
+    await recovery.remove(sessionId)
     if (sessionId === recoverySessionId) recoveryStatus.value = 'idle'
     await refreshRecoveries()
   }
@@ -123,14 +117,7 @@ export function useProjectSession(onProjectOpened: () => void) {
       fileName: selectedFileName.value,
     }
     recoveryStatus.value = 'saving'
-    const write = recoveryQueue.then(async () => {
-      const record = await saveRecoveryDraft({
-        ...snapshot,
-        expectedVersion: recoveryVersions.get(sessionId) ?? 0,
-      })
-      recoveryVersions.set(sessionId, record.version)
-    })
-    recoveryQueue = write.catch(() => undefined)
+    const write = recovery.save(snapshot)
     try {
       await write
       if (sessionId === recoverySessionId) {
@@ -152,7 +139,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     recoveryChanges++
     cancelRecoveryTimer()
     if (!imported.value || !hasUnsavedWork.value) {
-      if ((recoveryVersions.get(recoverySessionId) ?? 0) > 0) {
+      if (recovery.version(recoverySessionId) > 0) {
         void clearRecovery(recoverySessionId).catch(showLocalError)
       } else recoveryStatus.value = 'idle'
       return
@@ -178,12 +165,42 @@ export function useProjectSession(onProjectOpened: () => void) {
     if (hasUnsavedWork.value && recoveryStatus.value !== 'saved') event.preventDefault()
   }
 
+  function releaseOnExit(): void {
+    if (recovery.version(recoverySessionId)) recoveryRepository.releaseOnExit(recoverySessionId)
+  }
+
+  async function heartbeat(): Promise<void> {
+    const id = recoverySessionId
+    try {
+      await recovery.heartbeat(id)
+    } catch (cause) {
+      if (id === recoverySessionId) {
+        recoveryStatus.value = 'error'
+        showLocalError(cause)
+      }
+    }
+    await refreshRecoveries()
+  }
+
+  function onVisible(): void {
+    if (document.visibilityState === 'visible') void heartbeat()
+  }
+
   onMounted(() => {
     window.addEventListener('beforeunload', beforeUnload)
+    window.addEventListener('pagehide', releaseOnExit)
+    window.addEventListener('pageshow', onVisible)
+    document.addEventListener('visibilitychange', onVisible)
+    heartbeatTimer = setInterval(() => void heartbeat(), RECOVERY_HEARTBEAT_MS)
     void refreshRecoveries()
   })
   onUnmounted(() => {
     window.removeEventListener('beforeunload', beforeUnload)
+    window.removeEventListener('pagehide', releaseOnExit)
+    window.removeEventListener('pageshow', onVisible)
+    document.removeEventListener('visibilitychange', onVisible)
+    if (heartbeatTimer) clearInterval(heartbeatTimer)
+    void recovery.release(recoverySessionId).catch(showLocalError)
     cancelRecoveryTimer()
   })
 
@@ -545,8 +562,10 @@ export function useProjectSession(onProjectOpened: () => void) {
     localBusy.value = true
     localError.value = ''
     try {
-      const record = await getRecoveryDraft(sessionId)
-      beginSession(record.sessionId, record.version)
+      const version = recoveryCopies.value.find((copy) => copy.sessionId === sessionId)?.version
+      if (!version) throw new Error('Обновите список копий восстановления.')
+      const record = await recovery.claim(sessionId, version)
+      beginSession(record.sessionId)
       imported.value = {
         scheme: record.scheme,
         format: 'scheme-v7',
@@ -578,7 +597,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     localBusy.value = true
     localError.value = ''
     try {
-      await deleteRecoveryDraft(sessionId, version)
+      await recovery.remove(sessionId, version)
       await refreshRecoveries()
     } catch (cause) {
       showLocalError(cause)

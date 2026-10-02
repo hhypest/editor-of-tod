@@ -39,6 +39,7 @@ describe('local SQLite registries', () => {
     const path = join(directory, 'registry.sqlite')
     const scheme = importSchemeJson(fixture).scheme
     const sessionId = randomUUID()
+    const ownerId = randomUUID()
     const detailsDraft = createSchemeDetailsDraft(scheme)
     detailsDraft.parameters.locationText = 'Неприменённое значение'
     const input = {
@@ -52,12 +53,12 @@ describe('local SQLite registries', () => {
     }
     const store = new RegistryStore(path)
     try {
-      expect(store.saveRecovery(input).version).toBe(1)
+      expect(store.saveRecovery(input, ownerId).version).toBe(1)
       expect(store.listProjects()).toEqual([])
       expect(store.listProjectRevisions(scheme.id)).toEqual([])
       expect(store.listRecoveries()).toMatchObject([{ sessionId, referenceId: 'TEST-001' }])
-      expect(() => store.saveRecovery(input)).toThrow(RevisionConflict)
-      expect(store.saveRecovery({ ...input, expectedVersion: 1 }).version).toBe(2)
+      expect(() => store.saveRecovery(input, ownerId)).toThrow(RevisionConflict)
+      expect(store.saveRecovery({ ...input, expectedVersion: 1 }, ownerId).version).toBe(2)
     } finally {
       store.close()
     }
@@ -68,8 +69,8 @@ describe('local SQLite registries', () => {
         detailsDraft,
         version: 2,
       })
-      expect(() => reopened.deleteRecovery(sessionId, 1)).toThrow(RevisionConflict)
-      reopened.deleteRecovery(sessionId, 2)
+      expect(() => reopened.deleteRecovery(sessionId, 1, ownerId)).toThrow(RevisionConflict)
+      reopened.deleteRecovery(sessionId, 2, ownerId)
       expect(reopened.getRecovery(sessionId)).toBeNull()
       expect(reopened.listProjects()).toEqual([])
     } finally {
@@ -448,7 +449,7 @@ describe('local SQLite registries', () => {
     }
     const check = new DatabaseSync(path)
     try {
-      expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 12 })
+      expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 13 })
       const rows = check
         .prepare('SELECT scheme_json FROM project_revisions ORDER BY revision')
         .all() as { scheme_json: string }[]
@@ -502,7 +503,7 @@ describe('local SQLite registries', () => {
       migrated.close()
     }
     const database = new DatabaseSync(path)
-    expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 12 })
+    expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 13 })
     database.close()
   })
 })

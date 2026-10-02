@@ -210,6 +210,78 @@ test('restores applied edits and unapplied fields after the window closes', asyn
   ).toMatchObject({ n100: 90, n50: 45 })
 })
 
+test('two windows protect a live copy, transfer it after closing and send the legacy source only once', async ({
+  page,
+  context,
+  request,
+}) => {
+  const scheme = importSchemeJson(readFileSync('tests/fixtures/manual-v1.json', 'utf8')).scheme
+  const fileName = `two-windows-${randomUUID()}.json`
+  const writes: Array<Record<string, unknown>> = []
+  page.on('request', (call) => {
+    if (call.method() === 'PUT' && call.url().includes('/api/recovery/'))
+      writes.push(call.postDataJSON())
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Открыть файл', exact: true }).click()
+  await page.locator('#scheme-file').setInputFiles({
+    name: fileName,
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(scheme)),
+  })
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  const field = page.locator('[data-field="parameters.approachSpeedKmh"]')
+  await field.fill('45')
+  await field.blur()
+  await expect(page.locator('.save-state')).toContainText('копия восстановления записана')
+  await field.fill('46')
+  await field.blur()
+  await expect.poll(() => writes.length).toBe(2)
+  await expect(page.locator('.save-state')).toContainText('копия восстановления записана')
+  const firstScheme = writes[0]!.scheme as typeof scheme
+  expect(firstScheme.source).toHaveProperty('originalJson')
+  expect(writes[1]!.sourceSha256).toMatch(/^[a-f0-9]{64}$/)
+  expect((writes[1]!.scheme as typeof scheme).source).not.toHaveProperty('originalJson')
+  const list = await (await request.get(`${api}/api/recovery`)).json()
+  const copy = list.find((item: { fileName: string }) => item.fileName === fileName)
+  const second = await context.newPage()
+  await second.goto('/')
+  const row = second.locator('li', { hasText: fileName })
+  await expect(row).toContainText('открыта в другом окне')
+  await expect(row.getByRole('button', { name: 'Восстановить', exact: true })).toBeDisabled()
+  await expect(row.getByRole('button', { name: 'Удалить копию', exact: true })).toBeDisabled()
+  expect((await request.get(`${api}/api/recovery/${copy.sessionId}`)).status()).toBe(409)
+  expect(
+    (
+      await request.post(`${api}/api/recovery/${copy.sessionId}/claim`, {
+        headers: { Origin: origin },
+        data: { ownerId: randomUUID(), expectedVersion: copy.version },
+      })
+    ).status(),
+  ).toBe(409)
+  // Navigation closes the old editor lifecycle and sends the same release as a normal reload.
+  await page.reload()
+  await expect
+    .poll(async () => {
+      const records = await (await request.get(`${api}/api/recovery`)).json()
+      return records.find((item: { sessionId: string }) => item.sessionId === copy.sessionId)
+        ?.active
+    })
+    .toBe(false)
+  await second.reload()
+  await row.getByRole('button', { name: 'Восстановить', exact: true }).click()
+  await second.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  await expect(second.locator('[data-field="parameters.approachSpeedKmh"]')).toHaveValue('46')
+  await expect(second.locator('.save-state')).toContainText('копия восстановления записана')
+  await page.reload()
+  const transferred = page.locator('li', { hasText: fileName })
+  await expect(transferred).toContainText('открыта в другом окне')
+  await expect(
+    transferred.getByRole('button', { name: 'Восстановить', exact: true }),
+  ).toBeDisabled()
+  await second.close()
+})
+
 test('cancelled JSON download retains the recovery copy and unsaved state', async ({
   page,
   request,
