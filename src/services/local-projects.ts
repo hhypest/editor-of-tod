@@ -14,21 +14,39 @@ import {
 } from '../domain/recovery'
 import { recoveryReceiptSchema } from '../application/recovery-contract'
 import type { RecoveryRepository } from '../application/recovery-session'
+import { ProjectRevisionError } from '../application/project-revisions'
 import { localJson } from './json-response'
 
-async function request(url: string, options?: RequestInit): Promise<unknown> {
+async function request(
+  url: string,
+  options?: RequestInit,
+  revisionWrite = false,
+): Promise<unknown> {
   let response: Response
   try {
     response = await fetch(url, options)
   } catch {
+    if (revisionWrite)
+      throw new ProjectRevisionError(
+        'unavailable',
+        'Локальная база недоступна. Повторите сохранение после восстановления связи.',
+      )
     throw new Error('Локальная база недоступна. Запустите npm run dev или npm run local.')
   }
-  const body = await localJson(response)
+  let body: unknown
+  try {
+    body = await localJson(response)
+  } catch (cause) {
+    if (revisionWrite) throw new ProjectRevisionError('invalid-response', (cause as Error).message)
+    throw cause
+  }
   if (!response.ok) {
     const message =
       typeof body === 'object' && body !== null && 'error' in body && typeof body.error === 'string'
         ? body.error
         : `Ошибка локальной базы (${response.status}).`
+    if (revisionWrite)
+      throw new ProjectRevisionError(response.status === 409 ? 'conflict' : 'failed', message)
     throw new Error(message)
   }
   return body
@@ -58,12 +76,16 @@ export async function saveLocalProject(
   scheme: Scheme,
   expectedRevision: number,
 ): Promise<ProjectRecord> {
-  return projectRecordSchema.parse(
-    await request(url(scheme.id), {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scheme, expectedRevision }),
-    }),
+  return revisionRecord(
+    await request(
+      url(scheme.id),
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheme, expectedRevision }),
+      },
+      true,
+    ),
   )
 }
 
@@ -72,13 +94,27 @@ export async function restoreLocalRevision(
   sourceRevision: number,
   expectedRevision: number,
 ): Promise<ProjectRecord> {
-  return projectRecordSchema.parse(
-    await request(`${url(id)}/restore`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sourceRevision, expectedRevision }),
-    }),
+  return revisionRecord(
+    await request(
+      `${url(id)}/restore`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceRevision, expectedRevision }),
+      },
+      true,
+    ),
   )
+}
+
+function revisionRecord(body: unknown): ProjectRecord {
+  const parsed = projectRecordSchema.safeParse(body)
+  if (!parsed.success)
+    throw new ProjectRevisionError(
+      'invalid-response',
+      'Не удалось проверить ответ локальной базы. Обновите список проектов перед повторным сохранением.',
+    )
+  return parsed.data
 }
 
 export async function listRecoveryDrafts(): Promise<RecoverySummary[]> {
