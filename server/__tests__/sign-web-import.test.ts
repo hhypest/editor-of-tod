@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { zipSync } from 'fflate'
 import { PNG } from 'pngjs'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { applySignUpload, previewSignUpload } from '../sign-web-import'
-import { RegistryStore } from '../store'
+import { RegistryStore, RevisionConflict } from '../store'
 
 function request(code: string) {
   const image = new PNG({ width: 12, height: 12 })
@@ -26,6 +26,82 @@ function request(code: string) {
 }
 
 describe('local sign archive preview and apply', () => {
+  it.each(['rules', 'methodology', 'other'] as const)(
+    'rejects ZIP attachment to %s documents before writing',
+    async (kind) => {
+      const store = new RegistryStore(':memory:')
+      try {
+        const document = store.addDocument(
+          {
+            code: 'УЧЕБНЫЙ',
+            edition: '2024',
+            title: '',
+            kind,
+            effectiveFrom: '',
+            amendsId: null,
+            note: '',
+            actualCheckedAt: '',
+          },
+          'fake.pdf',
+          Buffer.from('%PDF-1.4'),
+          '1'.repeat(64),
+        )
+        const body = { ...request('1.25'), documentId: document.id }
+        expect(() => previewSignUpload(store, body)).toThrow('вида «Изображения знаков»')
+        await expect(
+          applySignUpload(store, { ...body, expectedFingerprint: '0'.repeat(64) }),
+        ).rejects.toThrow('вида «Изображения знаков»')
+        expect(store.latestSignCatalog()).toBeNull()
+        expect(store.listSigns()).toEqual([])
+      } finally {
+        store.close()
+      }
+    },
+  )
+
+  it.each(['kind', 'edition', 'deleted'] as const)(
+    'revalidates the selected ZIP document during backup: %s',
+    async (change) => {
+      const store = new RegistryStore(':memory:')
+      try {
+        const meta = {
+          code: 'УЧЕБНЫЙ',
+          edition: '2024',
+          title: '',
+          kind: 'signs' as const,
+          effectiveFrom: '',
+          amendsId: null,
+          note: '',
+          actualCheckedAt: '',
+        }
+        const document = store.addDocument(
+          meta,
+          'fake.pdf',
+          Buffer.from('%PDF-1.4'),
+          '1'.repeat(64),
+        )
+        const body = { ...request('1.25'), documentId: document.id }
+        const preview = previewSignUpload(store, body)
+        vi.spyOn(store, 'createBackup').mockImplementation(async () => {
+          if (change === 'deleted') store.deleteDocument(document.id)
+          else
+            store.updateDocument(document.id, {
+              ...meta,
+              ...(change === 'kind' ? { kind: 'rules' as const } : { edition: '2026' }),
+            })
+          return 'synthetic-backup.sqlite'
+        })
+        await expect(
+          applySignUpload(store, { ...body, expectedFingerprint: preview.fingerprint }),
+        ).rejects.toBeInstanceOf(RevisionConflict)
+        expect(store.latestSignCatalog()).toBeNull()
+        expect(store.listSigns()).toEqual([])
+      } finally {
+        store.close()
+      }
+    },
+  )
+
   it('requires the reviewed fingerprint and keeps the source and PNG in private SQLite', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-sign-web-'))
     const store = new RegistryStore(join(directory, 'registry.sqlite'))

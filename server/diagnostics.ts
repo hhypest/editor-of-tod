@@ -95,6 +95,7 @@ const dynamicRoutes: Array<[RegExp, string]> = [
     '/api/documents/:id$1',
   ],
   [/^\/api\/signs\/[^/]+\/image$/, '/api/signs/:code/image'],
+  [/^\/api\/signs\/[^/]+\/metadata$/, '/api/signs/:code/metadata'],
   [/^\/api\/crossings\/[^/]+$/, '/api/crossings/:key'],
   [/^\/api\/normative-parameters\/[^/]+(\/confirm)?$/, '/api/normative-parameters/:id$1'],
 ]

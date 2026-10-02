@@ -95,6 +95,7 @@ describe('diagnostics without confidential data', () => {
     expect(routeOf('GET', `/api/projects/${crypto.randomUUID()}/revisions/3`)).toBe(
       'GET /api/projects/:id/revisions/:n',
     )
+    expect(routeOf('GET', '/api/signs/1.25/metadata')).toBe('GET /api/signs/:code/metadata')
     expect(routeOf('GET', '/api/documents/4/pdf')).toBe('GET /api/documents/:id/pdf')
     expect(routeOf('GET', '/assets/index.js')).toBe('GET (интерфейс)')
   })

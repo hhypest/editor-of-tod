@@ -1536,6 +1536,26 @@ export class RegistryStore {
     }))
   }
 
+  /** Размеры именно выбранного PNG; история не подменяется активным каталогом. */
+  getSignMetadata(
+    code: string,
+    revision: number,
+  ): { code: string; revision: number; width: number; height: number } | null {
+    const asset = this.getSignPng(code, false, revision)
+    if (!asset) return null
+    const png = Buffer.from(asset)
+    if (
+      png.length < 24 ||
+      !png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ||
+      png.toString('ascii', 12, 16) !== 'IHDR'
+    )
+      return null
+    const width = png.readUInt32BE(16)
+    const height = png.readUInt32BE(20)
+    if (!width || !height) return null
+    return { code, revision, width, height }
+  }
+
   getSignPng(code: string, numbered: boolean, revision?: number): Uint8Array | null {
     const column = numbered ? 'numbered_png' : 'plain_png'
     const row = this.db

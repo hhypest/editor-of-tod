@@ -1,13 +1,15 @@
+import type { Server } from 'node:http'
+import { createRegistryServer } from '../index'
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { zipSync } from 'fflate'
 import { PNG } from 'pngjs'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DocumentMeta } from '../../src/domain/normative-documents'
 import { applyDocumentUpload, previewDocumentUpload } from '../document-web-import'
 import { applySignUpload, previewSignUpload } from '../sign-web-import'
-import { DocumentInUse, RegistryStore } from '../store'
+import { DocumentInUse, RegistryStore, RevisionConflict } from '../store'
 
 const directories: string[] = []
 function store() {
@@ -58,6 +60,118 @@ function signs(color: number, documentId: number | null) {
 const today = new Date('2026-09-29T12:00:00')
 
 describe('normative document library', () => {
+  it.each([
+    { code: 'ГОСТ Р 90001' },
+    { edition: '2025' },
+    { title: 'Изменённое название' },
+    { kind: 'rules' as const },
+    { effectiveFrom: '2027-01-01' },
+    { amendsId: 1 },
+    { note: 'Новое примечание' },
+    { actualCheckedAt: '2026-09-29' },
+  ])('rejects stale PDF previews after library metadata changes: %j', async (change) => {
+    const { store: registry } = store()
+    try {
+      registry.addDocument(meta({ edition: '2020' }), 'parent.pdf', pdf('parent'), '1'.repeat(64))
+      const existing = registry.addDocument(
+        meta({ edition: '2022' }),
+        'existing.pdf',
+        pdf('existing'),
+        '2'.repeat(64),
+      )
+      const body = upload('candidate')
+      const preview = previewDocumentUpload(registry, body, today)
+      registry.updateDocument(existing.id, meta({ edition: '2022', ...change }))
+      await expect(
+        applyDocumentUpload(registry, { ...body, expectedFingerprint: preview.fingerprint }, today),
+      ).rejects.toBeInstanceOf(RevisionConflict)
+      expect(registry.listDocuments()).toHaveLength(2)
+      expect(registry.findDocumentBySha(preview.sha256)).toBeNull()
+    } finally {
+      registry.close()
+    }
+  })
+
+  it('rechecks PDF metadata during backup and rejects a preview from another date', async () => {
+    const { store: registry } = store()
+    try {
+      const existing = registry.addDocument(
+        meta({ edition: '2022' }),
+        'existing.pdf',
+        pdf('existing'),
+        '2'.repeat(64),
+      )
+      const body = upload('candidate')
+      const preview = previewDocumentUpload(registry, body, today)
+      await expect(
+        applyDocumentUpload(
+          registry,
+          { ...body, expectedFingerprint: preview.fingerprint },
+          new Date('2026-09-30T12:00:00'),
+        ),
+      ).rejects.toBeInstanceOf(RevisionConflict)
+      const backup = vi.spyOn(registry, 'createBackup').mockImplementation(async () => {
+        registry.updateDocument(existing.id, meta({ edition: '2022', effectiveFrom: '2027-01-01' }))
+        return 'synthetic-backup.sqlite'
+      })
+      await expect(
+        applyDocumentUpload(registry, { ...body, expectedFingerprint: preview.fingerprint }, today),
+      ).rejects.toBeInstanceOf(RevisionConflict)
+      expect(backup).toHaveBeenCalledOnce()
+      expect(registry.listDocuments()).toHaveLength(1)
+      expect(registry.findDocumentBySha(preview.sha256)).toBeNull()
+    } finally {
+      registry.close()
+    }
+  })
+
+  it('returns HTTP 409 without storing the PDF after metadata changes, and HTTP 400 for a ZIP linked to rules', async () => {
+    const { store: registry } = store()
+    let server: Server | undefined
+    try {
+      const existing = registry.addDocument(
+        meta({ edition: '2022' }),
+        'existing.pdf',
+        pdf('existing'),
+        '2'.repeat(64),
+      )
+      server = createRegistryServer(registry, 0)
+      await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve))
+      const address = server.address()
+      if (!address || typeof address === 'string') throw new Error('Missing server address')
+      const base = `http://127.0.0.1:${address.port}`
+      const post = (path: string, body: unknown) =>
+        fetch(base + path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:5173' },
+          body: JSON.stringify(body),
+        })
+      const body = upload('http-candidate')
+      const response = await post('/api/documents/preview', body)
+      expect(response.status).toBe(200)
+      const preview = (await response.json()) as { fingerprint: string; sha256: string }
+      registry.updateDocument(
+        existing.id,
+        meta({ edition: '2022', kind: 'rules', effectiveFrom: '2027-01-01' }),
+      )
+      expect(
+        (
+          await post('/api/documents/apply', {
+            ...body,
+            expectedFingerprint: preview.fingerprint,
+          })
+        ).status,
+      ).toBe(409)
+      expect(registry.findDocumentBySha(preview.sha256)).toBeNull()
+      expect(registry.listDocuments()).toHaveLength(1)
+      expect((await post('/api/signs/import/preview', signs(255, existing.id))).status).toBe(400)
+      expect(registry.latestSignCatalog()).toBeNull()
+    } finally {
+      if (server?.listening) await new Promise<void>((resolve) => server!.close(() => resolve()))
+      registry.close()
+    }
+  })
+
   it('stores attached PDFs privately and reports which edition becomes current', async () => {
     const { directory, store: registry } = store()
     try {

@@ -48,18 +48,17 @@ function decode(data: string): Buffer {
 }
 
 /** Что изменится в библиотеке после добавления: какая редакция станет действующей. */
-function effect(store: RegistryStore, candidate: DocumentRecord, today: string) {
-  const documents = [...store.listDocuments(), candidate]
+function effect(existing: DocumentRecord[], candidate: DocumentRecord, today: string) {
+  const documents = [...existing, candidate]
   const status = documentStatuses(documents, today).get(candidate.id)!
   const key = normalizeDocumentCode(candidate.code)
-  const previousCurrent = store
-    .listDocuments()
-    .filter(
-      (document) =>
-        document.amendsId === null &&
-        normalizeDocumentCode(document.code) === key &&
-        documentStatuses(store.listDocuments(), today).get(document.id)?.kind === 'current',
-    )
+  const previousStatuses = documentStatuses(existing, today)
+  const previousCurrent = existing.filter(
+    (document) =>
+      document.amendsId === null &&
+      normalizeDocumentCode(document.code) === key &&
+      previousStatuses.get(document.id)?.kind === 'current',
+  )
   return {
     status,
     replaces:
@@ -77,7 +76,8 @@ function plan(store: RegistryStore, body: z.infer<typeof requestSchema>, today: 
   const pdf = decode(body.file.data)
   const sha256 = createHash('sha256').update(pdf).digest('hex')
   const filename = body.file.name.split(/[\\/]/).at(-1) ?? body.file.name
-  const duplicate = store.findDocumentBySha(sha256)
+  const documents = store.listDocuments()
+  const duplicate = documents.find((document) => document.sha256 === sha256) ?? null
   const candidate: DocumentRecord = {
     ...body.meta,
     id: Number.MAX_SAFE_INTEGER,
@@ -90,8 +90,10 @@ function plan(store: RegistryStore, body: z.infer<typeof requestSchema>, today: 
     .update(
       JSON.stringify({
         sha256,
+        filename,
+        today,
         meta: body.meta,
-        documents: store.listDocuments().map((document) => [document.id, document.sha256]),
+        documents,
       }),
     )
     .digest('hex')
@@ -103,7 +105,7 @@ function plan(store: RegistryStore, body: z.infer<typeof requestSchema>, today: 
       sizeBytes: pdf.byteLength,
       filename,
       duplicate,
-      effect: effect(store, candidate, today),
+      effect: effect(documents, candidate, today),
       fingerprint,
     },
   }
@@ -113,15 +115,15 @@ export function previewDocumentUpload(store: RegistryStore, body: unknown, now =
   return plan(store, requestSchema.parse(body), localCalendarDate(now)).preview
 }
 
-export async function applyDocumentUpload(store: RegistryStore, body: unknown, now = new Date()) {
+export async function applyDocumentUpload(store: RegistryStore, body: unknown, now?: Date) {
   const { expectedFingerprint, ...request } = applySchema.parse(body)
-  const today = localCalendarDate(now)
-  const first = plan(store, request, today)
+  const today = () => localCalendarDate(now ?? new Date())
+  const first = plan(store, request, today())
   if (first.preview.fingerprint !== expectedFingerprint) throw new RevisionConflict()
   if (first.preview.duplicate)
     throw new InvalidDocumentUpload('Этот PDF уже есть в библиотеке.', 409)
   const backup = await store.createBackup()
-  if (plan(store, request, today).preview.fingerprint !== expectedFingerprint)
+  if (plan(store, request, today()).preview.fingerprint !== expectedFingerprint)
     throw new RevisionConflict()
   const document = store.addDocument(request.meta, first.filename, first.pdf, first.preview.sha256)
   return { document, backup }

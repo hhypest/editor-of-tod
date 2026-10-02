@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 import { zipSync } from 'fflate'
@@ -492,6 +493,9 @@ test('release requires distances, objects, location and type size but allows pap
   await page.route('**/api/signs/1.25/image?rev=1', (route) =>
     route.fulfill({ contentType: 'image/png', body: PNG.sync.write(png) }),
   )
+  await page.route('**/api/signs/1.25/metadata?rev=1', (route) =>
+    route.fulfill({ json: { code: '1.25', revision: 1, width: 8, height: 8 } }),
+  )
   const base = importSchemeJson(
     readFileSync('tests/fixtures/legacy-b34-manual.json', 'utf8'),
   ).scheme
@@ -560,6 +564,111 @@ test('release requires distances, objects, location and type size but allows pap
   }
 })
 
+test('pinned PNG proportions follow each project and ignore an older delayed response', async ({
+  page,
+}) => {
+  page.on('dialog', (dialog) => dialog.accept())
+  let activeRevision = 2
+  await page.route('**/api/signs', (route) =>
+    route.fulfill({ json: [{ code: '1.25', width: 10, height: 10, revision: activeRevision }] }),
+  )
+  await page.route('**/api/signs/catalog', (route) =>
+    route.fulfill({ json: { id: 2, documentCode: 'УЧЕБНЫЙ', edition: '2026' } }),
+  )
+  await page.route('**/api/signs/1.25/metadata?rev=1', (route) =>
+    route.fulfill({ json: { code: '1.25', revision: 1, width: 16, height: 8 } }),
+  )
+  await page.route('**/api/signs/1.25/metadata?rev=2', (route) =>
+    route.fulfill({ json: { code: '1.25', revision: 2, width: 8, height: 16 } }),
+  )
+  await page.route('**/api/signs/1.25/metadata?rev=99', (route) =>
+    route.fulfill({ status: 404, json: { error: 'Нет редакции' } }),
+  )
+  const releaseOld: Array<() => void> = []
+  await page.route('**/api/signs/1.25/metadata?rev=3', async (route) => {
+    await new Promise<void>((resolve) => {
+      releaseOld.push(resolve)
+    })
+    await route.fulfill({ json: { code: '1.25', revision: 3, width: 200, height: 1 } })
+  })
+  await page.route('**/api/signs/1.25/image?*', (route) => {
+    const revision = Number(new URL(route.request().url()).searchParams.get('rev'))
+    const image = new PNG({ width: revision === 1 ? 16 : 8, height: revision === 1 ? 8 : 16 })
+    image.data.fill(200)
+    return route.fulfill({ contentType: 'image/png', body: PNG.sync.write(image) })
+  })
+  const base = importSchemeJson(
+    readFileSync('tests/fixtures/legacy-b34-manual.json', 'utf8'),
+  ).scheme
+  const post = base.placements.find((item) => item.kind === 'sign-post')!
+  const open = async (revision: number) => {
+    const scheme = {
+      ...base,
+      id: randomUUID(),
+      placements: [
+        { ...post, signIds: ['1.25'], position: { anchor: 'abs', offsetXSvg: 300, offsetYSvg: 0 } },
+      ],
+      signImages: {
+        catalog: { documentCode: 'УЧЕБНЫЙ', edition: '2024', id: 1 },
+        revisions: { '1.25': revision },
+      },
+    }
+    await page.getByRole('button', { name: 'Мои проекты', exact: true }).first().click()
+    await page
+      .getByRole('group', { name: 'Способ открытия проекта' })
+      .getByRole('button', { name: 'Открыть файл' })
+      .click()
+    await page.locator('#scheme-file').setInputFiles({
+      name: `history-${revision}.json`,
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(scheme)),
+    })
+    await expect(page.getByText(`history-${revision}.json`, { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  }
+  await page.goto('/')
+  await open(1)
+  const host = page.locator('.print-host:not(.thumbnail)')
+  const ratio = () =>
+    host
+      .locator('image[data-sign-code="1.25"]')
+      .first()
+      .evaluate(
+        (image) => Number(image.getAttribute('width')) / Number(image.getAttribute('height')),
+      )
+  await expect.poll(ratio).toBeCloseTo(2)
+  await host.evaluate((element) => {
+    ;(element as HTMLElement).dataset.continuity = 'same-component'
+  })
+  const repin = async (revision: number) => {
+    activeRevision = revision
+    await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
+    await page.getByRole('button', { name: 'Закрепить редакции PNG' }).click()
+    await expect(page.getByText('Закреплены редакции 1 кодов PNG. Сохраните проект.')).toBeVisible()
+    await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  }
+  await repin(2)
+  await expect(host).toHaveAttribute('data-continuity', 'same-component')
+  await expect.poll(ratio).toBeCloseTo(0.5)
+  await open(2)
+  await expect.poll(ratio).toBeCloseTo(0.5)
+  await repin(3)
+  await expect.poll(() => releaseOld.length).toBeGreaterThan(0)
+  await repin(2)
+  await expect.poll(ratio).toBeCloseTo(0.5)
+  const oldResponse = page.waitForResponse('**/api/signs/1.25/metadata?rev=3')
+  releaseOld.splice(0).forEach((resolve) => resolve())
+  await oldResponse
+  await expect.poll(ratio).toBeCloseTo(0.5)
+  await open(99)
+  await expect(host.locator('[data-missing-sign="1.25"]')).toBeVisible()
+  const downloads: string[] = []
+  page.on('download', (download) => downloads.push(download.suggestedFilename()))
+  await host.getByRole('button', { name: 'Скачать PNG' }).click()
+  await expect(host.getByRole('alert')).toContainText('нет PNG: 1.25')
+  expect(downloads).toEqual([])
+})
+
 test('attaches standards, switches the sign catalog to a new edition and flags the old one', async ({
   page,
 }) => {
@@ -568,25 +677,32 @@ test('attaches standards, switches the sign catalog to a new edition and flags t
   await page.getByRole('button', { name: 'Реестры', exact: true }).click()
   await page.getByRole('button', { name: 'Нормативные документы' }).click()
   const library = page.locator('.library')
-  const addEdition = async (filename: string, text: string, effective: string) => {
+  const addEdition = async (filename: string, text: string, effective: string, kind = 'signs') => {
     await library
       .locator('input[type="file"]')
       .setInputFiles({ name: filename, mimeType: 'application/pdf', buffer: pdf(text) })
+    await library.getByLabel('Назначение').selectOption(kind)
     await library.getByLabel('Дата введения в действие').fill(effective)
     await library.getByRole('button', { name: 'Проверить документ' }).click()
   }
+  await addEdition('GOST-R-99289-2024.pdf', 'rules only', '2024-01-01', 'rules')
+  await library.getByRole('button', { name: /Добавить в библиотеку/ }).click()
+  await expect(library).toContainText('ГОСТ Р 99289-2024 добавлен в библиотеку')
   await addEdition('GOST-R-99290-2024.pdf', 'edition 2024', '2024-06-01')
   await expect(library.getByLabel('Обозначение', { exact: true })).toHaveValue('ГОСТ Р 99290')
   await expect(library.getByLabel('Редакция', { exact: true })).toHaveValue('2024')
   await expect(library).toContainText('Станет действующей редакцией этого документа.')
   await library.getByRole('button', { name: /Добавить в библиотеку/ }).click()
   await expect(library).toContainText('ГОСТ Р 99290-2024 добавлен в библиотеку')
-  await expect(library.locator('.status-current')).toContainText('Редакция 2024')
+  await expect(
+    library.locator('.status-current').filter({ hasText: 'Изображения знаков' }),
+  ).toContainText('Редакция 2024')
 
   // Каталог знаков по редакции 2024 из библиотеки.
   await page.getByRole('button', { name: 'Импорт Excel и знаков' }).click()
   await page.getByText('Загрузка знаков из ZIP (прежний способ)').click()
   const source = page.getByLabel('Документ из библиотеки')
+  await expect(source.locator('option', { hasText: 'ГОСТ Р 99289-2024' })).toHaveCount(0)
   const option = await source
     .locator('option', { hasText: 'ГОСТ Р 99290-2024' })
     .getAttribute('value')
@@ -615,7 +731,11 @@ test('attaches standards, switches the sign catalog to a new edition and flags t
   )
   const [popup] = await Promise.all([
     page.waitForEvent('popup'),
-    library.locator('.status-current').getByRole('link', { name: 'Открыть PDF' }).click(),
+    library
+      .locator('.status-current')
+      .filter({ hasText: 'Изображения знаков' })
+      .getByRole('link', { name: 'Открыть PDF' })
+      .click(),
   ])
   await popup.close()
 })

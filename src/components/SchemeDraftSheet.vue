@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { signImageUrl } from '../services/local-signs'
+import { getSignMetadata, signImageUrl } from '../services/local-signs'
 import { timed } from '../services/diagnostics'
 import { useNormativeRules } from '../composables/useNormativeRules'
 import { unmarkedChecks } from '../domain/review-marks'
@@ -190,17 +190,19 @@ const previewSize = computed(() => ({
   height: `${793.7 * zoom.value}px`,
 }))
 
+let signLoadGeneration = 0
 async function loadSigns(): Promise<void> {
+  const generation = ++signLoadGeneration
+  const selectedScheme = props.scheme
   catalogState.value = 'loading'
-  // Библиотека документов необязательна: без неё лист работает как раньше.
-  listDocuments()
-    .then((list) => (documents.value = list))
-    .catch(() => (documents.value = []))
+  signSizes.value = new Map()
   brokenImages.value = new Set()
+  catalogSource.value = null
   try {
-    const [response, sourceResponse] = await Promise.all([
+    const [response, sourceResponse, library] = await Promise.all([
       fetch('/api/signs'),
       fetch('/api/signs/catalog'),
+      listDocuments().catch(() => []),
     ])
     if (!response.ok || !sourceResponse.ok) throw new Error('Каталог недоступен')
     const list = (await response.json()) as Array<{ code: string; width: number; height: number }>
@@ -212,36 +214,36 @@ async function loadSigns(): Promise<void> {
     const sizes = new Map(
       list.map((sign) => [sign.code, { width: sign.width, height: sign.height }]),
     )
-    // Закреплённые редакции доступны из истории, даже если код исключён из активного архива.
-    // Их пропорции берутся из самого исторического PNG, а не из текущего каталога.
-    const historic = Object.entries(props.scheme.signImages.revisions).filter(
-      ([code]) => !sizes.has(code),
-    )
     const broken = new Set<string>()
+    // Каждый закреплённый код получает размеры своей редакции, включая активные коды.
     await Promise.all(
-      historic.map(async ([code, revision]) => {
-        const probe = new Image()
-        probe.src = signImageUrl(code, revision)
+      Object.entries(selectedScheme.signImages.revisions).map(async ([code, revision]) => {
+        sizes.delete(code)
         try {
-          await probe.decode()
-          sizes.set(code, { width: probe.naturalWidth, height: probe.naturalHeight })
+          const metadata = await getSignMetadata(code, revision)
+          sizes.set(code, { width: metadata.width, height: metadata.height })
         } catch {
           broken.add(code)
         }
       }),
     )
+    if (generation !== signLoadGeneration) return
     signSizes.value = sizes
     brokenImages.value = broken
-    catalogSource.value = props.scheme.signImages.catalog ?? currentCatalog
+    documents.value = library
+    catalogSource.value = selectedScheme.signImages.catalog ?? currentCatalog
     catalogState.value = list.length === 2_000 ? 'partial' : 'ready'
   } catch {
+    if (generation !== signLoadGeneration) return
     signSizes.value = new Map()
     catalogSource.value = null
     catalogState.value = 'unavailable'
   }
 }
 
-onMounted(loadSigns)
+watch(() => JSON.stringify([props.scheme.id, props.scheme.signImages]), loadSigns, {
+  immediate: true,
+})
 
 function signUrl(code: string): string | null {
   if (!signSizes.value.has(code) || brokenImages.value.has(code)) return null

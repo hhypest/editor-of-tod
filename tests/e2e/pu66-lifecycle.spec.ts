@@ -113,6 +113,11 @@ test('excludes and restores a card through the registry, shows the old snapshot 
       })
     })
     await linker.getByRole('button', { name: `Сравнить с преемником ${successor}` }).click()
+    // Do not remove the route while the status refresh is still in flight.
+    await expect(linker.getByRole('button', { name: 'Обновить список' })).toBeEnabled()
+    await expect(
+      linker.getByRole('button', { name: `Сравнить с преемником ${successor}` }),
+    ).toHaveCount(0)
     await expect(linker.locator('table')).toHaveCount(0)
     await expect(linker.getByLabel('Локальная карточка')).toHaveValue('')
     await page.unroute(statusURL)
