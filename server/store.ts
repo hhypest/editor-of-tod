@@ -38,6 +38,12 @@ import {
 } from './pu66.ts'
 import { type SignImport } from './signs.ts'
 import {
+  pu66LifecycleWriteSchema,
+  type Pu66LifecycleWrite,
+  type Pu66Status,
+  type Pu66ImportRestore,
+} from '../src/domain/pu66-lifecycle.ts'
+import {
   documentMetaSchema,
   type DocumentMeta,
   type DocumentRecord,
@@ -86,6 +92,8 @@ export class RevisionConflict extends Error {
     super('Запись изменилась после открытия. Обновите реестр и повторите правку.')
   }
 }
+
+export class InvalidPu66Lifecycle extends Error {}
 
 export class ProjectTooLarge extends Error {
   constructor() {
@@ -209,7 +217,8 @@ export class RegistryStore {
         version !== 8 &&
         version !== 9 &&
         version !== 10 &&
-        version !== 11
+        version !== 11 &&
+        version !== 12
       ) {
         throw new Error(`Неизвестная версия локальной базы: ${version}. Файл не изменён.`)
       }
@@ -466,6 +475,27 @@ export class RegistryStore {
         PRAGMA user_version = 11;
         COMMIT;
       `)
+      }
+      if (version < 12) {
+        this.db.exec(`
+          BEGIN;
+          CREATE TABLE IF NOT EXISTS pu66_lifecycle (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key TEXT NOT NULL,
+            card_revision INTEGER NOT NULL,
+            action TEXT NOT NULL CHECK (action IN ('exclude', 'restore')),
+            date TEXT NOT NULL,
+            actor TEXT NOT NULL,
+            reason TEXT,
+            comment TEXT NOT NULL,
+            successor_key TEXT REFERENCES pu66_cards(key),
+            recorded_at TEXT NOT NULL,
+            FOREIGN KEY (key, card_revision) REFERENCES pu66_revisions(key, revision)
+          );
+          CREATE INDEX IF NOT EXISTS pu66_lifecycle_by_card ON pu66_lifecycle(key, id);
+          PRAGMA user_version = 12;
+          COMMIT;
+        `)
       }
       if (this.listNormative().length === 0) {
         for (const entry of initialNormativeEntries) this.saveNormative(entry, 0)
@@ -901,6 +931,122 @@ export class RegistryStore {
     return alias.new_key
   }
 
+  getPu66Status(requestedKey: string): Pu66Status | null {
+    const key = this.resolvePu66Key(requestedKey)
+    if (!key) return null
+    const event = this.listPu66Lifecycle(key)?.[0] ?? null
+    return {
+      referenceId: key,
+      excluded: event?.action === 'exclude',
+      event,
+      successorKey: event?.action === 'exclude' ? event.successorKey : null,
+    }
+  }
+
+  listPu66Lifecycle(requestedKey: string): Array<NonNullable<Pu66Status['event']>> | null {
+    const key = this.resolvePu66Key(requestedKey)
+    if (!key) return null
+    const rows = this.db
+      .prepare(
+        `SELECT id, action, date, actor, reason, comment,
+      successor_key, card_revision, recorded_at FROM pu66_lifecycle WHERE key = ? ORDER BY id DESC`,
+      )
+      .all(key) as Array<{
+      id: number
+      action: 'exclude' | 'restore'
+      date: string
+      actor: string
+      reason: NonNullable<Pu66Status['event']>['reason']
+      comment: string
+      successor_key: string | null
+      card_revision: number
+      recorded_at: string
+    }>
+    return rows.map((row) => ({
+      id: row.id,
+      action: row.action,
+      date: row.date,
+      actor: row.actor,
+      reason: row.reason,
+      comment: row.comment,
+      successorKey: row.successor_key,
+      cardRevision: row.card_revision,
+      recordedAt: row.recorded_at,
+    }))
+  }
+
+  planPu66Lifecycle(raw: Pu66LifecycleWrite) {
+    const input = pu66LifecycleWriteSchema.parse(raw)
+    if (input.date > localCalendarDate(new Date(this.now())))
+      throw new InvalidPu66Lifecycle('Дата действия не может быть в будущем.')
+    const cards = this.listPu66(true)
+    const items = input.keys.map((key) => {
+      const card = cards.find((card) => card.referenceId === key)
+      const status = this.getPu66Status(key)
+      if (!card || !status) throw new InvalidPu66Lifecycle('Карточка не найдена. Обновите список.')
+      if (status.excluded !== (input.action === 'restore')) throw new RevisionConflict()
+      return {
+        referenceId: key,
+        location: card.location,
+        roadName: card.roadName,
+        revision: card.revision,
+        status,
+      }
+    })
+    let successor: (typeof items)[number] | null = null
+    if (input.action === 'exclude' && input.successorKey) {
+      const status = this.getPu66Status(input.successorKey)
+      const card = cards.find((card) => card.referenceId === input.successorKey)
+      if (!status || !card || status.excluded || input.keys.includes(status.referenceId))
+        throw new InvalidPu66Lifecycle('Преемник должен быть другой действующей карточкой.')
+      // A new link is recorded explicitly; legacy key aliases keep their original meaning.
+      const key = status.referenceId
+      if (key !== input.successorKey)
+        throw new InvalidPu66Lifecycle('Выберите текущий ключ карточки-преемника.')
+      successor = {
+        referenceId: key,
+        location: card.location,
+        roadName: card.roadName,
+        revision: card.revision,
+        status,
+      }
+    }
+    const fingerprint = createHash('sha256')
+      .update(JSON.stringify({ input, items, successor }))
+      .digest('hex')
+    return { fingerprint, items, successor }
+  }
+
+  recordPu66Lifecycle(input: Pu66LifecycleWrite, expectedFingerprint: string): number {
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const plan = this.planPu66Lifecycle(input)
+      if (plan.fingerprint !== expectedFingerprint) throw new RevisionConflict()
+      const insert = this.db.prepare(`INSERT INTO pu66_lifecycle
+        (key, card_revision, action, date, actor, reason, comment, successor_key, recorded_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      const now = this.now()
+      for (const item of plan.items) {
+        insert.run(
+          item.referenceId,
+          item.revision,
+          input.action,
+          input.date,
+          input.actor,
+          input.action === 'exclude' ? input.reason : null,
+          input.comment,
+          input.action === 'exclude' ? input.successorKey : null,
+          now,
+        )
+      }
+      this.db.exec('COMMIT')
+      return plan.items.length
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
   planPu66(entries: Pu66Import[]): { added: number; updated: number; unchanged: number } {
     const result = { added: 0, updated: 0, unchanged: 0 }
     for (const entry of this.inspectPu66(entries)) {
@@ -919,6 +1065,7 @@ export class RegistryStore {
     action: 'add' | 'update' | 'unchanged'
     currentRevision: number
     sourceSha256: string
+    status: Pu66Status | null
   }> {
     const seen = new Set<string>()
     const existing = this.db.prepare('SELECT revision, source_sha256 FROM pu66_cards WHERE key = ?')
@@ -940,15 +1087,28 @@ export class RegistryStore {
             : 'update',
         currentRevision: previous?.revision ?? 0,
         sourceSha256: entry.sha256,
+        status: this.getPu66Status(entry.card.key),
       })
     }
     return result
   }
 
-  importPu66(entries: Pu66Import[]): { added: number; updated: number; unchanged: number } {
+  importPu66(
+    entries: Pu66Import[],
+    restoration: Pu66ImportRestore | null = null,
+  ): { added: number; updated: number; unchanged: number } {
     const result = this.planPu66(entries)
     this.db.exec('BEGIN IMMEDIATE')
     try {
+      if (restoration) {
+        if (restoration.keys.some((key) => !entries.some((entry) => entry.card.key === key)))
+          throw new InvalidPu66Lifecycle('Карточка для возврата отсутствует в пакете импорта.')
+        this.planPu66Lifecycle({
+          ...restoration,
+          action: 'restore',
+          comment: 'Возврат при импорте XLSX.',
+        })
+      }
       const source = this.db.prepare(
         'INSERT OR IGNORE INTO pu66_sources (sha256, original_name, workbook) VALUES (?, ?, ?)',
       )
@@ -976,6 +1136,14 @@ export class RegistryStore {
         current.run(entry.card.key, revision, payload, entry.sha256, updatedAt)
         revisionInsert.run(entry.card.key, revision, payload, entry.sha256, updatedAt)
       }
+      if (restoration) {
+        const insert = this.db.prepare(`INSERT INTO pu66_lifecycle
+          (key, card_revision, action, date, actor, reason, comment, successor_key, recorded_at)
+          SELECT key, revision, 'restore', ?, ?, NULL, 'Возврат при импорте XLSX.', NULL, ?
+          FROM pu66_cards WHERE key = ?`)
+        for (const key of restoration.keys)
+          insert.run(restoration.date, restoration.actor, this.now(), key)
+      }
       this.db.exec('COMMIT')
       return result
     } catch (error) {
@@ -984,7 +1152,7 @@ export class RegistryStore {
     }
   }
 
-  listPu66(): Array<
+  listPu66(includeExcluded = false): Array<
     ReturnType<typeof localCardSummary> & {
       revision: number
       updatedAt: string
@@ -1001,6 +1169,12 @@ export class RegistryStore {
            WHERE key = c.key AND card_revision = c.revision
            ORDER BY verified_at DESC, id DESC LIMIT 1
          )
+         ${
+           includeExcluded
+             ? ''
+             : `WHERE COALESCE((SELECT action FROM pu66_lifecycle
+           WHERE key = c.key ORDER BY id DESC LIMIT 1), 'restore') <> 'exclude'`
+         }
          ORDER BY c.key`,
       )
       .all() as Array<
@@ -1044,6 +1218,10 @@ export class RegistryStore {
         return null
       }
       if (current.revision !== expectedRevision) throw new RevisionConflict()
+      if (this.getPu66Status(key)?.excluded)
+        throw new InvalidPu66Lifecycle(
+          'Карточка исключена: верните её в действующие перед сверкой.',
+        )
       this.db
         .prepare(
           `INSERT INTO pu66_verifications (key, card_revision, verified_at, verified_by, recorded_at)

@@ -12,6 +12,8 @@ import HelpPage from './components/HelpPage.vue'
 import { helpSectionFor } from './help/help-content'
 import PlacementEditor from './components/PlacementEditor.vue'
 import Pu66Linker from './components/Pu66Linker.vue'
+import Pu66Lifecycle from './components/Pu66Lifecycle.vue'
+import { invalidatePu66Status } from './composables/usePu66Status'
 import SchemeDraftSheet from './components/SchemeDraftSheet.vue'
 import SchemeReview from './components/SchemeReview.vue'
 import SchemeWorkspace from './components/SchemeWorkspace.vue'
@@ -100,6 +102,12 @@ const {
 } = useProjectSession(() => showView('source'))
 
 const signCatalogVersion = ref(0)
+const pu66CatalogVersion = ref(0)
+function onPu66Updated(): void {
+  pu66CatalogVersion.value++
+  invalidatePu66Status()
+  void refreshSetupStatus()
+}
 onMounted(() => {
   void refreshSetupStatus()
   void reloadNormativeRules()
@@ -579,9 +587,9 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
             class="module"
             :referenced-sign-ids="referencedSignIds"
             :locked="editorDirty"
-            :refresh-key="signCatalogVersion"
+            :refresh-key="signCatalogVersion + pu66CatalogVersion"
             @signs-updated="onSignsUpdated"
-            @pu66-updated="refreshSetupStatus"
+            @pu66-updated="onPu66Updated"
           />
           <NormativeDocuments
             v-if="registryTab === 'documents'"
@@ -593,6 +601,13 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
             v-if="registryTab === 'parameters'"
             class="module"
             :refresh-key="signCatalogVersion"
+          />
+          <Pu66Lifecycle
+            v-show="registryTab === 'entries'"
+            class="module"
+            :locked="localBusy"
+            :refresh-key="pu66CatalogVersion"
+            @changed="onPu66Updated"
           />
           <LocalRegistries v-show="registryTab === 'entries'" class="module" />
           <DiagnosticsPanel
@@ -679,6 +694,7 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
               class="module"
               :scheme="imported.scheme"
               :locked="editorDirty || localBusy"
+              :refresh-key="pu66CatalogVersion"
               @apply="onPu66Linked"
             />
           </section>

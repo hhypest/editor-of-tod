@@ -26,6 +26,7 @@ import {
 } from '../services/local-signs'
 import { listDocuments } from '../services/local-documents'
 import PdfSignCatalog from './PdfSignCatalog.vue'
+import { exclusionReasons, type Pu66ImportRestore } from '../domain/pu66-lifecycle'
 import {
   catalogEditionStatus,
   documentLabel,
@@ -64,6 +65,22 @@ const importFiles = ref<File[]>([])
 const importInput = ref<HTMLInputElement | null>(null)
 const importPlan = ref<Pu66ImportPlan | null>(null)
 const importBusy = ref(false)
+const restoreKeys = ref<string[]>([])
+const restoreActor = ref('')
+const restoreDate = ref(localCalendarDate(new Date()))
+const importReady = ref(false)
+const restoration = computed<Pu66ImportRestore | null>(() =>
+  restoreKeys.value.length
+    ? { keys: [...restoreKeys.value], actor: restoreActor.value, date: restoreDate.value }
+    : null,
+)
+watch(
+  [restoreKeys, restoreActor, restoreDate],
+  () => {
+    importReady.value = false
+  },
+  { deep: true },
+)
 const signArchive = ref<File | null>(null)
 const signPdf = ref<File | null>(null)
 /** Документ библиотеки, с которым сверен архив; пусто — код и редакция вводятся вручную. */
@@ -217,6 +234,8 @@ function selectImportFiles(event: Event): void {
   const input = event.target as HTMLInputElement
   importFiles.value = Array.from(input.files ?? [])
   importPlan.value = null
+  restoreKeys.value = []
+  importReady.value = false
   error.value = ''
   notice.value = ''
 }
@@ -226,10 +245,12 @@ async function previewImport(): Promise<void> {
   importPlan.value = null
   error.value = ''
   notice.value = ''
+  importReady.value = false
   try {
     importPlan.value = await timed('Просмотр импорта ПУ-66', () =>
-      previewPu66Files(importFiles.value),
+      previewPu66Files(importFiles.value, restoration.value),
     )
+    importReady.value = true
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Не удалось проверить книги ПУ-66.'
   } finally {
@@ -238,20 +259,25 @@ async function previewImport(): Promise<void> {
 }
 
 async function applyImport(): Promise<void> {
-  if (!importPlan.value || !importFiles.value.length) return
+  if (!importPlan.value || !importReady.value || !importFiles.value.length) return
   importBusy.value = true
   error.value = ''
   notice.value = ''
   try {
     const result = await timed('Импорт ПУ-66', () =>
-      applyPu66Files(importFiles.value, importPlan.value!.fingerprint),
+      applyPu66Files(importFiles.value, importPlan.value!.fingerprint, restoration.value),
     )
     importPlan.value = null
     importFiles.value = []
+    restoreKeys.value = []
+    importReady.value = false
     if (importInput.value) importInput.value.value = ''
     await load()
     emit('pu66Updated')
-    notice.value = `ПУ-66: добавлено ${result.added}, обновлено ${result.updated}. Резервная копия: private-data/backups/${result.backup}. Импорт не подтверждает сверку.`
+    notice.value =
+      `ПУ-66: добавлено ${result.added}, обновлено ${result.updated}, возвращено ${result.restored}. ` +
+      (result.backup ? `Резервная копия: private-data/backups/${result.backup}. ` : '') +
+      'Импорт не подтверждает сверку.'
   } catch (cause) {
     importPlan.value = null
     error.value = `${cause instanceof Error ? cause.message : 'Не удалось импортировать ПУ-66.'} Выполните просмотр заново перед повторной записью.`
@@ -355,7 +381,7 @@ onMounted(load)
       <div v-if="importPlan" class="import-plan">
         <p>
           Новых: {{ importPlan.added }}; обновлений: {{ importPlan.updated }}; без изменений:
-          {{ importPlan.unchanged }}.
+          {{ importPlan.unchanged }}. Возврат в действующие: {{ importPlan.restored }}.
         </p>
         <ul>
           <li v-for="item in importPlan.items" :key="item.referenceId">
@@ -367,11 +393,47 @@ onMounted(load)
                   ? `обновление редакции ${item.currentRevision}`
                   : `редакция ${item.currentRevision} без изменений`
             }}.
+            <template v-if="item.status?.excluded && item.status.event">
+              <p>
+                Исключена {{ item.status.event.date }}:
+                {{ item.status.event.reason ? exclusionReasons[item.status.event.reason] : '' }}.
+                {{ item.status.event.comment }} Обновление книги сохраняет статус исключения.
+              </p>
+              <label
+                ><input
+                  v-model="restoreKeys"
+                  type="checkbox"
+                  :value="item.referenceId"
+                  :disabled="importBusy"
+                />
+                Вернуть эту карточку в действующие при импорте</label
+              >
+            </template>
           </li>
         </ul>
+        <div v-if="restoreKeys.length">
+          <label
+            >Дата возврата
+            <input
+              v-model="restoreDate"
+              type="date"
+              :max="localCalendarDate(new Date())"
+              :disabled="importBusy"
+          /></label>
+          <label
+            >Кто возвращает <input v-model="restoreActor" maxlength="240" :disabled="importBusy"
+          /></label>
+        </div>
+        <p v-if="!importReady">
+          Параметры возврата изменились. Нажмите «Просмотреть изменения» ещё раз перед записью.
+        </p>
         <button
           type="button"
-          :disabled="importBusy || importPlan.added + importPlan.updated === 0"
+          :disabled="
+            importBusy ||
+            !importReady ||
+            importPlan.added + importPlan.updated + importPlan.restored === 0
+          "
           @click="applyImport"
         >
           Подтвердить импорт и создать копию SQLite

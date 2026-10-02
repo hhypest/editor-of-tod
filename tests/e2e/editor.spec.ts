@@ -419,6 +419,24 @@ test('release sheet drops the draft mark and downloads a PNG', async ({ page, re
   await host.getByLabel(/Я проверил лист/).check()
   await expect(host.getByRole('heading', { name: 'Выпускной лист A4' })).toBeVisible()
   await expect(host.locator('.draft-mark')).toHaveCount(0)
+  await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')))
+  await expect(host).toHaveClass(/native-print-blocked/)
+  await page.emulateMedia({ media: 'print' })
+  await expect(host.locator('.preview-scroll')).toBeHidden()
+  await expect(host.locator('.native-print-note')).toBeVisible()
+  await page.evaluate(() => window.dispatchEvent(new Event('afterprint')))
+  await page.emulateMedia({ media: 'screen' })
+  // The checked print button obtains a one-use permit; subsequent native print has none.
+  await page.evaluate(() => {
+    window.print = () => {
+      window.dispatchEvent(new Event('beforeprint'))
+    }
+  })
+  await host.getByRole('button', { name: 'Печать листа A4' }).click()
+  await expect(host).not.toHaveClass(/native-print-blocked/)
+  await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')))
+  await expect(host).toHaveClass(/native-print-blocked/)
+  await page.evaluate(() => window.dispatchEvent(new Event('afterprint')))
   const download = page.waitForEvent('download')
   await host.getByRole('button', { name: 'Скачать PNG' }).click()
   const file = await download
@@ -427,6 +445,37 @@ test('release sheet drops the draft mark and downloads a PNG', async ({ page, re
   const bytes = readFileSync((await file.path())!)
   expect(bytes.subarray(1, 4).toString('latin1')).toBe('PNG')
   expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([3528, 2495])
+  // Another process excluded the source after this page loaded. Output must recheck it,
+  // cancel the release download and show the same new status in the shared checklist.
+  await page.route('**/api/pu66/**/status', (route) =>
+    route.fulfill({
+      json: {
+        referenceId: '90001:12:3',
+        excluded: true,
+        successorKey: null,
+        event: {
+          id: 901,
+          action: 'exclude',
+          date: '2026-10-02',
+          actor: 'Учебный составитель',
+          reason: 'closed',
+          comment: 'Учебное исключение перед выпуском',
+          successorKey: null,
+          cardRevision: 1,
+          recordedAt: '2026-10-02T10:00:00.000Z',
+        },
+      },
+    }),
+  )
+  let unexpectedDownloads = 0
+  page.on('download', () => unexpectedDownloads++)
+  await host.getByRole('button', { name: 'Скачать PNG' }).click()
+  await expect(host.getByRole('alert')).toContainText('Статус карточки изменился')
+  await expect(page.locator('[data-check="pu66-status"]')).toContainText(
+    'Учебное исключение перед выпуском',
+  )
+  await expect(host.locator('.draft-mark')).toHaveCount(1)
+  expect(unexpectedDownloads).toBe(0)
 })
 
 test('release requires distances, objects, location and type size but allows paper requisites', async ({

@@ -6,8 +6,16 @@ import type { Pu66SchemeRecord } from '../domain/pu66-snapshot'
 import { annualPu66ReviewStatus, localCalendarDate } from '../domain/pu66-review'
 import { getPu66SchemeRecord, listPu66Cards, type Pu66ListEntry } from '../services/local-pu66'
 import Pu66CardPicker from './Pu66CardPicker.vue'
+import { usePu66Status } from '../composables/usePu66Status'
+import { exclusionReasons } from '../domain/pu66-lifecycle'
 
-const props = defineProps<{ scheme: Scheme; locked?: boolean }>()
+const props = defineProps<{ scheme: Scheme; locked?: boolean; refreshKey?: number }>()
+const currentKey = computed(() => props.scheme.crossing.referenceId)
+const {
+  status: currentStatus,
+  unavailable: statusUnavailable,
+  reload: reloadStatus,
+} = usePu66Status(currentKey)
 const emit = defineEmits<{ apply: [scheme: Scheme] }>()
 const cards = ref<Pu66ListEntry[]>([])
 const key = ref('')
@@ -51,6 +59,7 @@ async function load(): Promise<void> {
   notice.value = ''
   preview.value = null
   try {
+    await reloadStatus()
     cards.value = await listPu66Cards()
   } catch (cause) {
     cards.value = []
@@ -58,6 +67,27 @@ async function load(): Promise<void> {
   } finally {
     busy.value = false
   }
+}
+
+watch(
+  () => props.refreshKey,
+  () => void load(),
+)
+async function chooseSuccessor(): Promise<void> {
+  if (!currentStatus.value?.successorKey || busy.value || props.locked) return
+  const openScheme = props.scheme
+  await load()
+  const successor = currentStatus.value?.successorKey
+  if (
+    props.scheme !== openScheme ||
+    props.locked ||
+    !successor ||
+    statusUnavailable.value ||
+    !cards.value.some((card) => card.referenceId === successor)
+  )
+    return
+  key.value = successor
+  await choose()
 }
 
 async function choose(): Promise<void> {
@@ -112,6 +142,25 @@ onMounted(load)
 <template>
   <section aria-labelledby="pu66-link-title">
     <h2 id="pu66-link-title">Карточка переезда для схемы</h2>
+    <div v-if="currentStatus?.excluded && currentStatus.event" class="warning" role="status">
+      <p>
+        Карточка исключена {{ currentStatus.event.date }}:
+        {{ currentStatus.event.reason ? exclusionReasons[currentStatus.event.reason] : '' }}.
+        {{ currentStatus.event.comment }} Сохранённый снимок проекта остаётся прежним. На этапе 4
+        требуется ручная проверка перед выпуском.
+      </p>
+      <button
+        v-if="currentStatus.successorKey"
+        type="button"
+        :disabled="busy || locked"
+        @click="chooseSuccessor"
+      >
+        Сравнить с преемником {{ currentStatus.successorKey }}
+      </button>
+    </div>
+    <p v-if="statusUnavailable" role="alert">
+      Статус карточки недоступен. Обновите список перед выпуском.
+    </p>
     <p class="hint">
       Выберите карточку из локального реестра и проверьте её данные перед закреплением. В JSON
       попадут только показанные ниже поля, номер редакции и время обновления записи. Выбор карточки
