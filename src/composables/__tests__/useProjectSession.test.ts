@@ -191,6 +191,23 @@ describe('project revision contracts', () => {
     expect(local.deleteRecoveryDraft).not.toHaveBeenCalled()
   })
 
+  it('rechecks edits at the UI boundary after the workflow has already received its response', async () => {
+    const session = await openEditedSession()
+    const before = session.imported.value!.scheme
+    const response = deferred<ProjectRecord>()
+    local.saveLocalProject.mockReturnValue(response.promise)
+    const saving = session.saveLocally()
+    // This callback runs after the workflow's await but before the Vue adapter's await.
+    const editing = response.promise.then(() => edit(session, 'Правка между обработчиками ответа'))
+    response.resolve(record(before))
+    await Promise.all([saving, editing])
+    expect(session.imported.value!.scheme.parameters.locationText).toBe(
+      'Правка между обработчиками ответа',
+    )
+    expect(session.hasUnsavedWork.value).toBe(true)
+    expect(local.deleteRecoveryDraft).not.toHaveBeenCalled()
+  })
+
   it('keeps the document, revision and history when restore conflicts', async () => {
     const session = await openEditedSession()
     session.localRevision.value = 3

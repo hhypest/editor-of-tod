@@ -75,10 +75,12 @@ export function useProjectRevisionActions(
         },
         editor.cursor,
       )
+      // Another microtask can edit or switch sessions after the workflow returns.
+      const delivery = revisionDelivery(cursor, editor.cursor())
       editor.projectsRefreshKey.value++
-      if (result.delivery === 'switched') return
+      if (delivery === 'switched') return
       if (copy) {
-        if (result.delivery === 'edited') {
+        if (delivery === 'edited') {
           editor.localNotice.value =
             'Отдельная копия сохранена в «Мои проекты». Более новые правки остались в открытом исходном проекте; сохраните их отдельно.'
           return
@@ -91,13 +93,13 @@ export function useProjectRevisionActions(
           'Создана отдельная копия проекта — она появилась в «Мои проекты».'
       } else {
         editor.localNotice.value = `Проект сохранён на этом компьютере (версия ${result.record.revision}). Он есть в списке «Мои проекты».`
-        if (result.delivery === 'edited')
+        if (delivery === 'edited')
           editor.localNotice.value +=
             ' Более новые правки остались открытыми; сохраните их отдельно.'
       }
       editor.localRevision.value = result.record.revision
-      editor.modifiedSinceLocalSave.value = result.delivery === 'edited'
-      if (result.delivery === 'current') await cleanRecovery(recoveryId, editor.cursor())
+      editor.modifiedSinceLocalSave.value = delivery === 'edited'
+      if (delivery === 'current') await cleanRecovery(recoveryId, editor.cursor())
     } catch (cause) {
       showError(cause, cursor)
     } finally {
@@ -132,16 +134,18 @@ export function useProjectRevisionActions(
         { id, sourceRevision, expectedRevision, cursor },
         editor.cursor,
       )
+      // Another microtask can edit or switch sessions after the workflow returns.
+      const delivery = revisionDelivery(cursor, editor.cursor())
       editor.projectsRefreshKey.value++
-      if (result.delivery === 'switched') return
-      if (result.delivery === 'current')
+      if (delivery === 'switched') return
+      if (delivery === 'current')
         editor.openProjectRecord(result.record.scheme, result.record.revision)
       else {
         editor.localRevision.value = result.record.revision
         editor.modifiedSinceLocalSave.value = true
       }
       editor.localNotice.value = `Проект возвращён к версии ${sourceRevision} и сохранён как версия ${result.record.revision}.`
-      if (result.delivery === 'edited')
+      if (delivery === 'edited')
         editor.localNotice.value +=
           ' Более новые правки остались открытыми; сохраните их отдельно или откройте восстановленную версию из «Мои проекты».'
     } catch (cause) {
