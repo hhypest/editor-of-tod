@@ -1,0 +1,16 @@
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0.25rem 0 1rem;
+}
+.tabs button {
+  background: transparent;
+  border: 1px solid #cfdbd4;
+  font-size: 0.86rem;
+}
+.tabs button[aria-pressed='true'] {
+  background: #e1f0e5;
+  border-color: #7aae92;
+  color: #154e3d;
+}

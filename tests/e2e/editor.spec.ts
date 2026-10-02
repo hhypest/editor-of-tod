@@ -1083,3 +1083,206 @@ test('help shows the author, the MIT license and third-party components', async 
     await expect(about.getByRole('cell', { name: 'pdfjs-dist' })).toBeVisible()
   }
 })
+
+test('revision save locks input, restore creates history and a conflict preserves undo', async ({
+  page,
+  request,
+}) => {
+  const scheme = importSchemeJson(readFileSync('tests/fixtures/manual-v1.json', 'utf8')).scheme
+  scheme.parameters.location = 'out'
+  const id = scheme.id
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Открыть файл', exact: true }).click()
+  await page.locator('#scheme-file').setInputFiles({
+    name: `revisions-${id}.json`,
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(scheme)),
+  })
+  await page.getByRole('button', { name: 'Сохранить проект', exact: true }).click()
+  await expect(page.locator('.save-state')).toHaveText('Сохранён')
+  await page.getByRole('button', { name: 'Сохранить проект', exact: true }).click()
+  await expect(page.locator('.feedback.notice')).toContainText('версия 1')
+  await expect(page.locator('.feedback.error')).toHaveCount(0)
+  expect((await (await request.get(`${api}/api/projects/${id}`)).json()).revision).toBe(1)
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  const field = page.locator('[data-field="parameters.signDistancesMetres.d300"]')
+  await field.fill('280')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+
+  let release!: () => void
+  const delivery = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let written = false
+  await page.route(`**/api/projects/${id}`, async (route) => {
+    if (route.request().method() !== 'PUT') return route.continue()
+    const response = await route.fetch()
+    written = true
+    await delivery
+    await route.fulfill({ response })
+  })
+  await page.getByRole('button', { name: 'Сохранить проект', exact: true }).click()
+  await expect.poll(() => written).toBe(true)
+  await expect(field).toBeDisabled()
+  release()
+  await expect(page.locator('.save-state')).toHaveText('Сохранён')
+  await page.unroute(`**/api/projects/${id}`)
+  await expect(field).toHaveValue('280')
+  await page.getByText('Действия с проектом', { exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Отменить действие', exact: true })).toBeEnabled()
+
+  await page.getByRole('button', { name: 'Мои проекты', exact: true }).first().click()
+  const activeCard = page
+    .locator('#local-projects-title ~ .project-list > li')
+    .filter({ hasText: 'открыт сейчас' })
+  await expect(activeCard).toHaveCount(1)
+  await activeCard.getByRole('button', { name: 'Версии', exact: true }).click()
+  page.once('dialog', (dialog) => dialog.accept())
+  await activeCard.getByRole('button', { name: 'Вернуться к этой версии', exact: true }).click()
+  await expect(page.locator('.feedback.notice')).toContainText('сохранён как версия 3')
+  const restored = await (await request.get(`${api}/api/projects/${id}`)).json()
+  expect(restored.revision).toBe(3)
+  expect(restored.scheme.parameters.signDistancesMetres.d300).toBe(
+    scheme.parameters.signDistancesMetres.d300,
+  )
+  const revisions = await (await request.get(`${api}/api/projects/${id}/revisions`)).json()
+  expect(revisions.map((item: { revision: number }) => item.revision)).toEqual([3, 2, 1])
+
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  await expect(field).toHaveValue(String(scheme.parameters.signDistancesMetres.d300))
+  await expect(page.getByRole('button', { name: 'Отменить действие', exact: true })).toBeDisabled()
+  await field.fill('270')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  // Another local client advances the database while this editor keeps revision 3.
+  const concurrent = await request.put(`${api}/api/projects/${id}`, {
+    headers: { Origin: origin },
+    data: {
+      scheme: {
+        ...restored.scheme,
+        parameters: { ...restored.scheme.parameters, locationText: 'Правка другого окна' },
+      },
+      expectedRevision: 3,
+    },
+  })
+  expect(concurrent.ok()).toBe(true)
+  expect((await concurrent.json()).revision).toBe(4)
+  await page.getByRole('button', { name: 'Сохранить проект', exact: true }).click()
+  await expect(page.locator('.feedback.error')).toContainText('Ваши правки остались открытыми')
+  await expect(field).toHaveValue('270')
+  await expect(page.getByRole('button', { name: 'Отменить действие', exact: true })).toBeEnabled()
+  await page.getByRole('button', { name: 'Отменить действие', exact: true }).click()
+  await expect(field).toHaveValue(String(scheme.parameters.signDistancesMetres.d300))
+  await expect(page.getByRole('button', { name: 'Повторить действие', exact: true })).toBeEnabled()
+  expect((await (await request.get(`${api}/api/projects/${id}`)).json()).revision).toBe(4)
+})
+
+test('editor shell keeps one recovery session, form input and history across screens', async ({
+  page,
+  request,
+}) => {
+  const scheme = importSchemeJson(readFileSync('tests/fixtures/manual-v1.json', 'utf8')).scheme
+  scheme.parameters.location = 'out'
+  const filename = `shell-details-${scheme.id}.json`
+  let ownerId = ''
+  page.on('request', (call) => {
+    if (call.method() === 'PUT' && call.url().includes('/api/recovery/')) {
+      const body = call.postDataJSON()
+      if (body.fileName === filename) ownerId = body.ownerId
+    }
+  })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Открыть файл', exact: true }).click()
+  await page.locator('#scheme-file').setInputFiles({
+    name: filename,
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(scheme)),
+  })
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  const d300 = page.locator('[data-field="parameters.signDistancesMetres.d300"]')
+  await d300.fill('280')
+  await expect(page.locator('.save-state')).toContainText(
+    'Неприменённый ввод · копия восстановления записана',
+  )
+  const copies = (await (await request.get(`${api}/api/recovery`)).json()).filter(
+    (copy: { fileName: string }) => copy.fileName === filename,
+  )
+  expect(copies).toHaveLength(1)
+  const sessionId = copies[0].sessionId
+  for (const name of [
+    /Исходные данные.*Переезд и ПУ-66/,
+    /Знаки и объекты.*Поле и свойства/,
+    /^Проекты$/,
+    /^Справка$/,
+    /^Реестры$/,
+  ]) {
+    await page.getByRole('button', { name }).first().click()
+  }
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  await expect(d300).toHaveValue('280')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  const d250 = page.locator('[data-field="parameters.signDistancesMetres.d250"]')
+  await d250.fill('260')
+  await page.getByRole('button', { name: 'Справка', exact: true }).first().click()
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  await expect(d250).toHaveValue('260')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await page.getByText('Действия с проектом', { exact: true }).click()
+  await page.getByRole('button', { name: 'Отменить действие', exact: true }).click()
+  await expect(d300).toHaveValue('280')
+  await expect(d250).toHaveValue(String(scheme.parameters.signDistancesMetres.d250))
+  await page.getByRole('button', { name: 'Повторить действие', exact: true }).click()
+  await expect(d250).toHaveValue('260')
+  await expect(page.locator('.save-state')).toContainText('Копия восстановления записана')
+  const after = (await (await request.get(`${api}/api/recovery`)).json()).filter(
+    (copy: { fileName: string }) => copy.fileName === filename,
+  )
+  expect(after.map((copy: { sessionId: string }) => copy.sessionId)).toEqual([sessionId])
+  const snapshot = await (
+    await request.get(`${api}/api/recovery/${sessionId}?ownerId=${ownerId}`)
+  ).json()
+  expect(snapshot.scheme.id).toBe(scheme.id)
+  expect(snapshot.scheme.parameters.signDistancesMetres).toMatchObject({ d300: 280, d250: 260 })
+})
+
+test('editor shell keeps a selected object and unapplied object input across screens', async ({
+  page,
+  request,
+}) => {
+  const scheme = importSchemeJson(readFileSync('tests/fixtures/manual-v1.json', 'utf8')).scheme
+  const filename = `shell-object-${scheme.id}.json`
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Открыть файл', exact: true }).click()
+  await page.locator('#scheme-file').setInputFiles({
+    name: filename,
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(scheme)),
+  })
+  await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
+  const selected = page
+    .getByRole('navigation', { name: 'Объекты открытого проекта' })
+    .getByRole('button', { name: /^№ 2/ })
+  await selected.click()
+  const text = page.getByLabel('Текст надписи', { exact: true })
+  await text.fill('Неприменённая правка объекта')
+  await expect(page.locator('.save-state')).toContainText(
+    'Неприменённый ввод · копия восстановления записана',
+  )
+  for (const name of [/Схема движения.*Размеры и вариант/, /^Проекты$/, /^Реестры$/, /^Справка$/]) {
+    await page.getByRole('button', { name }).first().click()
+  }
+  await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
+  await expect(selected).toHaveAttribute('aria-pressed', 'true')
+  await expect(text).toHaveValue('Неприменённая правка объекта')
+  await expect(page.getByRole('button', { name: 'Сохранить проект', exact: true })).toBeDisabled()
+  await page.getByRole('button', { name: 'Применить объект', exact: true }).click()
+  await page.getByText('Действия с проектом', { exact: true }).click()
+  await page.getByRole('button', { name: 'Отменить действие', exact: true }).click()
+  await expect(text).toHaveValue('Ручная правка')
+  await page.getByRole('button', { name: 'Повторить действие', exact: true }).click()
+  await expect(text).toHaveValue('Неприменённая правка объекта')
+  await expect(page.locator('.save-state')).toContainText('Копия восстановления записана')
+  const copies = (await (await request.get(`${api}/api/recovery`)).json()).filter(
+    (copy: { fileName: string }) => copy.fileName === filename,
+  )
+  expect(copies).toHaveLength(1)
+})

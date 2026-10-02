@@ -7,7 +7,6 @@ import {
   type ImportResult,
 } from '../domain/import'
 import type { Scheme } from '../domain/model'
-import { schemeSchema } from '../domain/model'
 import { reportError } from '../services/diagnostics'
 import { rebuildTemplatePlacements, TemplateBuildError } from '../domain/template-placements'
 import { useNormativeRules } from './useNormativeRules'
@@ -22,6 +21,8 @@ import {
 import type { SchemeDetailsDraft } from '../domain/edit-details'
 import type { PlacementDraft } from '../domain/edit-placements'
 import { RecoverySession, RECOVERY_HEARTBEAT_MS } from '../application/recovery-session'
+import { useProjectRevisionActions } from './useProjectRevisionActions'
+import type { RevisionCursor } from '../application/project-revisions'
 import type { RecoverySummary } from '../domain/recovery'
 import {
   recordEdit,
@@ -71,6 +72,15 @@ export function useProjectSession(onProjectOpened: () => void) {
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
   let recoveryTimer: ReturnType<typeof setTimeout> | null = null
   let recoveryChanges = 0
+  let revisionSession = 0
+  let revisionEdit = 0
+  const revisionCursor = (): RevisionCursor => ({ session: revisionSession, edit: revisionEdit })
+  // Synchronous tracking also sees input changed before Vue's next render/watch batch.
+  watch(
+    [() => imported.value?.scheme, detailsDirty, placementDirty, pendingDetails, pendingPlacement],
+    () => revisionEdit++,
+    { flush: 'sync' },
+  )
 
   async function refreshRecoveries(): Promise<void> {
     try {
@@ -86,6 +96,7 @@ export function useProjectSession(onProjectOpened: () => void) {
   }
 
   function beginSession(sessionId: string = crypto.randomUUID()): void {
+    revisionSession++
     cancelRecoveryTimer()
     if (sessionId !== recoverySessionId)
       void recovery.release(recoverySessionId).catch(showLocalError)
@@ -99,7 +110,7 @@ export function useProjectSession(onProjectOpened: () => void) {
 
   async function clearRecovery(sessionId: string): Promise<void> {
     await recovery.remove(sessionId)
-    if (sessionId === recoverySessionId) recoveryStatus.value = 'idle'
+    if (sessionId === recoverySessionId && !hasUnsavedWork.value) recoveryStatus.value = 'idle'
     await refreshRecoveries()
   }
 
@@ -195,6 +206,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     void refreshRecoveries()
   })
   onUnmounted(() => {
+    revisionSession++
     window.removeEventListener('beforeunload', beforeUnload)
     window.removeEventListener('pagehide', releaseOnExit)
     window.removeEventListener('pageshow', onVisible)
@@ -326,62 +338,30 @@ export function useProjectSession(onProjectOpened: () => void) {
     }
   }
 
-  async function saveLocally(): Promise<void> {
-    if (!imported.value || editorDirty.value || localBusy.value) return
-    localBusy.value = true
-    localError.value = ''
-    localNotice.value = ''
-    try {
-      const schemeAtSave = imported.value.scheme
-      const saved = await saveLocalProject(schemeAtSave, localRevision.value ?? 0)
-      localRevision.value = saved.revision
-      if (imported.value.scheme === schemeAtSave) modifiedSinceLocalSave.value = false
-      projectsRefreshKey.value++
-      localNotice.value = `Проект сохранён на этом компьютере (версия ${saved.revision}). Он есть в списке «Мои проекты».`
-      if (imported.value.scheme === schemeAtSave) {
-        // Редакция уже записана: сбой удаления копии восстановления не должен выглядеть как сбой сохранения.
-        try {
-          await clearRecovery(recoverySessionId)
-        } catch {
-          localNotice.value +=
-            ' Копию восстановления удалить не удалось — её можно удалить в разделе «Проекты».'
-        }
-      }
-    } catch (cause) {
-      showLocalError(cause)
-    } finally {
-      localBusy.value = false
-    }
-  }
-
-  async function saveAsNew(): Promise<void> {
-    if (!imported.value || editorDirty.value || localBusy.value) return
-    localBusy.value = true
-    localError.value = ''
-    localNotice.value = ''
-    try {
-      const previousSessionId = recoverySessionId
-      const copy = schemeSchema.parse({
-        ...imported.value.scheme,
-        id: crypto.randomUUID(),
-        createdAt: new Date().toISOString(),
-      })
-      const saved = await saveLocalProject(copy, 0)
-      beginSession()
-      imported.value = { ...imported.value, scheme: saved.scheme }
-      history.value = startHistory(saved.scheme)
-      localRevision.value = saved.revision
-      modifiedSinceLocalSave.value = false
-      selectedFileName.value = `Сохранённый проект · версия ${saved.revision}`
-      projectsRefreshKey.value++
-      localNotice.value = 'Создана отдельная копия проекта — она появилась в «Мои проекты».'
-      void clearRecovery(previousSessionId).catch(showLocalError)
-    } catch (cause) {
-      showLocalError(cause)
-    } finally {
-      localBusy.value = false
-    }
-  }
+  const { saveLocally, saveAsNew, restoreLocal } = useProjectRevisionActions(
+    {
+      imported,
+      history,
+      localRevision,
+      localBusy,
+      loading,
+      editorDirty,
+      hasUnsavedWork,
+      modifiedSinceLocalSave,
+      selectedFileName,
+      localError,
+      localNotice,
+      projectsRefreshKey,
+      cursor: revisionCursor,
+      recoveryId: () => recoverySessionId,
+      beginSession,
+      openProjectRecord,
+      flushRecovery,
+      clearRecovery,
+      showLocalError,
+    },
+    { save: saveLocalProject, restore: restoreLocalRevision },
+  )
 
   function openProjectRecord(scheme: Scheme, revision: number): void {
     beginSession()
@@ -414,39 +394,6 @@ export function useProjectSession(onProjectOpened: () => void) {
     try {
       const record = await getLocalProject(id)
       openProjectRecord(record.scheme, record.revision)
-    } catch (cause) {
-      showLocalError(cause)
-    } finally {
-      localBusy.value = false
-    }
-  }
-
-  async function restoreLocal(
-    id: string,
-    sourceRevision: number,
-    expectedRevision: number,
-  ): Promise<void> {
-    if (
-      localBusy.value ||
-      imported.value?.scheme.id !== id ||
-      localRevision.value !== expectedRevision
-    )
-      return
-    if (
-      !window.confirm(
-        `Вернуться к версии ${sourceRevision}? Она сохранится как новая версия проекта. Несохранённые правки в открытой вкладке будут заменены; текущая версия останется в списке версий.`,
-      )
-    )
-      return
-    if (hasUnsavedWork.value && !(await flushRecovery())) return
-    localBusy.value = true
-    localError.value = ''
-    localNotice.value = ''
-    try {
-      const record = await restoreLocalRevision(id, sourceRevision, expectedRevision)
-      openProjectRecord(record.scheme, record.revision)
-      projectsRefreshKey.value++
-      localNotice.value = `Проект возвращён к версии ${sourceRevision} и сохранён как версия ${record.revision}.`
     } catch (cause) {
       showLocalError(cause)
     } finally {
@@ -650,3 +597,6 @@ export function useProjectSession(onProjectOpened: () => void) {
     stepForward,
   }
 }
+
+/** Shared refs and commands for the one editor window; child views never construct a session. */
+export type ProjectSession = ReturnType<typeof useProjectSession>
