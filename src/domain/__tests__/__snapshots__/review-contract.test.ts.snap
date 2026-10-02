@@ -1,0 +1,275 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`review and drawing baseline before A3 > preserves findings, acknowledgment fingerprints and sheet nodes: ../../../tests/fixtures/legacy-b34-manual.json 1`] = `
+{
+  "drawingSha256": "75e455b41e659e98ef2f3118632caa4994d4797b345028a8a25da581730facef",
+  "findings": [
+    {
+      "fingerprint": "3e6242d83c21d40b",
+      "id": "developer",
+      "kind": "fill",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "c4351a9910e04a27",
+      "id": "responsible",
+      "kind": "fill",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "074fefc95f6fbff5",
+      "id": "location",
+      "kind": "fill",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "3677485a95341a21",
+      "id": "crossing",
+      "kind": "verify",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "7989824e8aea9aca",
+      "id": "template",
+      "kind": "verify",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "9277498026bc99b2",
+      "id": "typesize",
+      "kind": "fill",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "a4b56b5a54d05ebd",
+      "id": "b34-traffic",
+      "kind": "verify",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "927cb50662f1963e",
+      "id": "signs",
+      "kind": "verify",
+      "markBlocked": "Сначала закрепите редакции PNG на этапе 3 («Закрепить редакции PNG»): без закрепления изображения знаков меняются вместе с каталогом.",
+    },
+  ],
+}
+`;
+
+exports[`review and drawing baseline before A3 > preserves findings, acknowledgment fingerprints and sheet nodes: ../../../tests/fixtures/legacy-v1-new-fields.json 1`] = `
+{
+  "drawingSha256": "570d59f1f732f03e810f66109a7f407a431553b78f83de5f5ab28069b1787ebb",
+  "findings": [
+    {
+      "fingerprint": "3e6242d83c21d40b",
+      "id": "developer",
+      "kind": "fill",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "c4351a9910e04a27",
+      "id": "responsible",
+      "kind": "fill",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "3677485a95341a21",
+      "id": "crossing",
+      "kind": "verify",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "92bcd6b3ed73fbdc",
+      "id": "template",
+      "kind": "verify",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "7e9eb853673080e5",
+      "id": "b34-traffic",
+      "kind": "verify",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "4864a3e7e7e516a7",
+      "id": "regulator-distance",
+      "kind": "verify",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "6bd20f8a744274e3",
+      "id": "signs",
+      "kind": "verify",
+      "markBlocked": "Сначала закрепите редакции PNG на этапе 3 («Закрепить редакции PNG»): без закрепления изображения знаков меняются вместе с каталогом.",
+    },
+  ],
+}
+`;
+
+exports[`review and drawing baseline before A3 > preserves findings, acknowledgment fingerprints and sheet nodes: ../../../tests/fixtures/manual-v1.json 1`] = `
+{
+  "drawingSha256": "18ebbcce02d204dcd270127b1068a4d6c158ced66712f15a396fa66fcf67c3fe",
+  "findings": [
+    {
+      "fingerprint": "3e6242d83c21d40b",
+      "id": "developer",
+      "kind": "fill",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "c4351a9910e04a27",
+      "id": "responsible",
+      "kind": "fill",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "074fefc95f6fbff5",
+      "id": "location",
+      "kind": "fill",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "d875846edb3360e6",
+      "id": "crossing",
+      "kind": "verify",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "e3f223085c942e06",
+      "id": "template",
+      "kind": "verify",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "9277498026bc99b2",
+      "id": "typesize",
+      "kind": "fill",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "4864a3e7e7e516a7",
+      "id": "regulator-distance",
+      "kind": "verify",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "8876c67ca3fbc438",
+      "id": "signs",
+      "kind": "verify",
+      "markBlocked": "Сначала закрепите редакции PNG на этапе 3 («Закрепить редакции PNG»): без закрепления изображения знаков меняются вместе с каталогом.",
+    },
+  ],
+}
+`;
+
+exports[`review and drawing baseline before A3 > preserves findings, acknowledgment fingerprints and sheet nodes: ../../../tests/fixtures/review-b33-v4.json 1`] = `
+{
+  "drawingSha256": "f2c4b35ad903cb36420588789331a1556ad44cf12b346f5e90f190243e7b5b2e",
+  "findings": [
+    {
+      "fingerprint": "3e6242d83c21d40b",
+      "id": "developer",
+      "kind": "fill",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "c4351a9910e04a27",
+      "id": "responsible",
+      "kind": "fill",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "074fefc95f6fbff5",
+      "id": "location",
+      "kind": "fill",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "f772b96e915d2416",
+      "id": "crossing",
+      "kind": "verify",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "65fb7ef8180054c5",
+      "id": "template",
+      "kind": "verify",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "9277498026bc99b2",
+      "id": "typesize",
+      "kind": "fill",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "5d115d4ff3e3da46",
+      "id": "regulator-distance",
+      "kind": "verify",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "5831e08ac2c62c70",
+      "id": "signs",
+      "kind": "verify",
+      "markBlocked": "Сначала закрепите редакции PNG на этапе 3 («Закрепить редакции PNG»): без закрепления изображения знаков меняются вместе с каталогом.",
+    },
+  ],
+}
+`;
+
+exports[`review and drawing baseline before A3 > preserves findings, acknowledgment fingerprints and sheet nodes: ../../../tests/fixtures/review-b34-v4.json 1`] = `
+{
+  "drawingSha256": "685ff121e4b8c6684f0496111124b04385da89d55b1a442620b7797430a64a23",
+  "findings": [
+    {
+      "fingerprint": "3e6242d83c21d40b",
+      "id": "developer",
+      "kind": "fill",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "c4351a9910e04a27",
+      "id": "responsible",
+      "kind": "fill",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "074fefc95f6fbff5",
+      "id": "location",
+      "kind": "fill",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "4e752e43c9f502f5",
+      "id": "crossing",
+      "kind": "verify",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "db3686498d826a86",
+      "id": "template",
+      "kind": "verify",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "9277498026bc99b2",
+      "id": "typesize",
+      "kind": "fill",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "177654e769579175",
+      "id": "b34-traffic",
+      "kind": "verify",
+      "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "5831e08ac2c62c70",
+      "id": "signs",
+      "kind": "verify",
+      "markBlocked": "Сначала закрепите редакции PNG на этапе 3 («Закрепить редакции PNG»): без закрепления изображения знаков меняются вместе с каталогом.",
+    },
+  ],
+}
+`;

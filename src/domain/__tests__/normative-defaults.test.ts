@@ -215,7 +215,7 @@ describe('review of projects without a location', () => {
     const scheme = project('out')
     const unknown = { ...scheme, parameters: { ...scheme.parameters, location: 'auto' as const } }
     const location = reviewScheme(unknown, rules).find((finding) => finding.id === 'location')
-    expect(location).toMatchObject({ kind: 'fill', field: 'parameters.location' })
+    expect(location).toMatchObject({ kind: 'fill', path: 'parameters.location' })
     expect(reviewScheme(scheme, rules).some((finding) => finding.id === 'location')).toBe(false)
 
     const changed = {
@@ -227,7 +227,7 @@ describe('review of projects without a location', () => {
       },
     }
     const fields = Object.fromEntries(
-      reviewScheme(changed, rules).map((finding) => [finding.id, finding.field]),
+      reviewScheme(changed, rules).map((finding) => [finding.id, finding.path]),
     )
     expect(fields).toMatchObject({
       'normative-values': 'parameters.signDistancesMetres.d300',
@@ -286,7 +286,7 @@ describe('sign size by table 1 and the 8.2.1 plate', () => {
 
     const larger = { ...outside, parameters: { ...outside.parameters, signSize: 'III' as const } }
     const finding = reviewScheme(larger, rules).find((item) => item.id === 'typesize')
-    expect(finding).toMatchObject({ kind: 'verify', field: 'parameters.signSize' })
+    expect(finding).toMatchObject({ kind: 'verify', path: 'parameters.signSize' })
     expect(finding?.detail).toContain('Выбран типоразмер III')
     expect(finding?.detail).toContain('— II')
     // Типоразмер не попадает в общий пункт о нормативных значениях.

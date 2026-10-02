@@ -4,7 +4,7 @@ import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import { templateLabel } from './registry'
 import { anchorCoordinates, placementCoordinates } from './placement-workspace'
 import { dangerousSectionMetres, usesTwoRegulators } from './template-placements'
-import { ZONE_PLATE } from './sheet-drawing'
+import { ZONE_PLATE } from './sign-code'
 import {
   distanceTitles,
   expectedTypesize,
@@ -19,12 +19,8 @@ export type ReviewFinding = {
   kind: 'fill' | 'verify'
   title: string
   detail: string
-  target: '#details-title' | '#placements-title' | '#pu66-link-title' | '#imported-title'
-  /**
-   * Поле формы (`data-field`), к которому переходит «Перейти»: у пунктов «Нужно заполнить» —
-   * первое незаполненное, у пунктов «Проверить вручную» — первое проверяемое.
-   */
-  field?: string
+  /** Semantic path in the project data; presentation decides where to navigate. */
+  path: string
   /**
    * Данные, которые проверяет составитель в пункте «Проверить вручную». Не показываются, но
    * входят в отпечаток отметки: после их изменения отметка «Проверено» перестаёт действовать.
@@ -82,8 +78,7 @@ export function reviewScheme(
       kind: 'fill',
       title: 'Место работ и направления',
       detail: `Не заполнено: ${labels(place)}.`,
-      target: '#details-title',
-      field: place[0]![2],
+      path: place[0]![2],
     })
   }
 
@@ -151,8 +146,7 @@ export function reviewScheme(
         kind: 'fill',
         title: group.title,
         detail: `Не заполнено: ${labels(missing)}. Состав реквизитов проверьте для конкретного листа.`,
-        target: '#details-title',
-        field: missing[0]![2],
+        path: missing[0]![2],
       })
     }
   }
@@ -165,8 +159,7 @@ export function reviewScheme(
       title: 'Местоположение',
       detail:
         'Не указано, находится ли место работ в населённом пункте. От этого зависят расстояния до знаков, ступени скорости и их проверка; без выбора шаблон не собирается, а лист не выпускается.',
-      target: '#details-title',
-      field: 'parameters.location',
+      path: 'parameters.location',
     })
   }
 
@@ -176,7 +169,7 @@ export function reviewScheme(
       kind: 'fill',
       title: 'Объекты схемы',
       detail: 'На координатной области нет объектов. Добавьте их после сверки с условиями работ.',
-      target: '#placements-title',
+      path: 'placements',
     })
   }
 
@@ -193,8 +186,7 @@ export function reviewScheme(
         kind: 'fill',
         title: `Расстояние «${distanceTitles[name]}»`,
         detail: `Маркер {${name}} указан на стойках № ${postIds.join(', ')}, а расстояние не введено.`,
-        target: '#details-title',
-        field: `parameters.signDistancesMetres.${name}`,
+        path: `parameters.signDistancesMetres.${name}`,
       })
     }
   }
@@ -209,7 +201,7 @@ export function reviewScheme(
         : crossing.source === 'legacy-pu66'
           ? 'Идентификатор перенесён из старого проекта; локальная карточка ПУ-66 не закреплена. Сверьте данные перед использованием.'
           : 'Идентификатор введён вручную; локальная карточка ПУ-66 не закреплена. Сверьте данные перед использованием.',
-    target: '#pu66-link-title',
+    path: 'crossing',
     basis: JSON.stringify(crossing),
   })
 
@@ -218,7 +210,7 @@ export function reviewScheme(
     kind: 'verify',
     title: 'Вариант и расстановка',
     detail: `Вариант ${templateLabel(scheme.template.code)} и размещение объектов не прошли предметную проверку. Сверьте геометрию, условия работ, существующие знаки и применимую редакцию ОДМ.`,
-    target: '#placements-title',
+    path: 'placements',
     // Всё, от чего зависит раскладка шаблона: параметры схемы (кроме названия участка и
     // направлений — это подписи листа) и значения нормативных параметров.
     basis: JSON.stringify([
@@ -244,8 +236,7 @@ export function reviewScheme(
             `${item.title} — ${item.value === null ? 'не указано' : item.value} (по нормативу ${item.normative}, ${item.source})`,
         )
         .join('; ')}. Исправление под местные условия допустимо — проверьте его обоснование.`,
-      target: '#details-title',
-      field: deviations[0]!.field,
+      path: deviations[0]!.field,
       basis: JSON.stringify(
         deviations.map(({ field, value, normative }) => [field, value, normative]),
       ),
@@ -262,8 +253,7 @@ export function reviewScheme(
       detail: typesize
         ? `Типоразмер не выбран. По таблице 1 ГОСТ Р 52289 для дороги с двумя и тремя полосами вне населённого пункта — ${typesize} (${typesizeSource(rules)}).`
         : 'Типоразмер не выбран. В населённом пункте он зависит от класса улицы (ГОСТ Р 52289, п. 5.1.16, табл. 1).',
-      target: '#details-title',
-      field: 'parameters.signSize',
+      path: 'parameters.signSize',
     })
   } else if (typesize && parameters.signSize !== typesize) {
     findings.push({
@@ -271,8 +261,7 @@ export function reviewScheme(
       kind: 'verify',
       title: 'Типоразмер знаков не по таблице 1',
       detail: `Выбран типоразмер ${parameters.signSize}, а по таблице 1 для дороги с двумя и тремя полосами вне населённого пункта — ${typesize} (${typesizeSource(rules)}). Схемы Б.33/Б.34 рассчитаны на дорогу с двумя полосами; категория дороги из ПУ-66 описывает дорогу в целом, поэтому число полос у места работ проверьте на месте. Больший типоразмер допускается при необходимости (п. 5.1.16), IV — для работ на дорогах IА и IБ категории; на одной дороге предпочтительно один типоразмер. Проверьте основание или верните ${typesize} на этапе 2.`,
-      target: '#details-title',
-      field: 'parameters.signSize',
+      path: 'parameters.signSize',
       basis: JSON.stringify([parameters.signSize, typesize]),
     })
   }
@@ -284,7 +273,7 @@ export function reviewScheme(
       kind: 'verify',
       title: 'Табличка 8.2.1 у знака 1.25',
       detail: zonePlates,
-      target: '#placements-title',
+      path: 'placements',
       markBlocked:
         'Табличка показывает неверную протяжённость: пересоберите шаблон на этапе 3 или исправьте код таблички у стойки.',
     })
@@ -297,8 +286,7 @@ export function reviewScheme(
       kind: 'verify',
       title: 'Расстояние до знака 1.25 вне диапазона',
       detail: `Знак 1.25 стоит в ${warning.value} м до начала работ, а диапазон — от ${warning.range[0]} до ${warning.range[1]} м (${warning.source}). Иное расстояние допускается, но указывается на табличке 8.1.1 — проверьте её на стойках со знаком 1.25.`,
-      target: '#details-title',
-      field: `parameters.signDistancesMetres.${parameters.location === 'in' ? 'n100' : 'd300'}`,
+      path: `parameters.signDistancesMetres.${parameters.location === 'in' ? 'n100' : 'd300'}`,
       basis: JSON.stringify([warning.value, warning.range]),
     })
   }
@@ -310,8 +298,7 @@ export function reviewScheme(
       kind: 'verify',
       title: 'Шаг ступеней скорости',
       detail: `Между соседними ступенями (от разрешённой скорости ${parameters.approachSpeedKmh} км/ч до скорости в зоне) перепад ${step} км/ч — больше ${rules.speedStepKmh} км/ч (${rules.sources['gost-speed-step']}). Проверьте ступени на этапе 2.`,
-      target: '#details-title',
-      field: 'parameters.approachSpeedKmh',
+      path: 'parameters.approachSpeedKmh',
       basis: JSON.stringify([parameters.approachSpeedKmh, parameters.speedStagesKmh]),
     })
   }
@@ -325,7 +312,7 @@ export function reviewScheme(
       kind: 'verify',
       title: `Размерная цепочка рисунка ${templateLabel(scheme.template.code)}`,
       detail: `Введённые размеры отличаются от ожидаемых: ${differingDimensions.map((part) => `${part.title.toLowerCase()} ${part.enteredMetres} м (${part.basis ?? `на рисунке ${part.figureLabel}`})`).join('; ')}. Сверьте размеры и условия конкретных работ.`,
-      target: '#details-title',
+      path: 'parameters',
     })
   }
 
@@ -336,7 +323,7 @@ export function reviewScheme(
       kind: 'verify',
       title: 'Вариант и длина фронта',
       detail: `В импортированном проекте выбран ${templateLabel(scheme.template.code)} при фронте ${frontMetres} м. По подтверждённому правилу проекта нужен ${frontMetres < 30 ? 'Б.34' : 'Б.33'}. Проверьте исходный лист перед правкой.`,
-      target: '#details-title',
+      path: 'parameters',
     })
   }
 
@@ -349,7 +336,7 @@ export function reviewScheme(
       kind: 'verify',
       title: 'Условия движения для Б.34',
       detail: `На листе размещено регулировщиков: ${regulators}. Подпись к рисунку Б.34 указывает на регулировщика при интенсивности более ${rules.signsHourly} авт./ч в двух направлениях или ограниченной видимости (${rules.sources['odm-signs-hourly']}). Оцените условия на месте и зафиксируйте решение составителя.`,
-      target: '#placements-title',
+      path: 'placements',
       basis: JSON.stringify([parameters.regulation, parameters.location, regulators]),
     })
   }
@@ -364,7 +351,7 @@ export function reviewScheme(
       kind: 'verify',
       title: 'Видимость на участке',
       detail: `В исходном файле HTML-прототипа видимость встречного автомобиля отмечена как ${legacyVisibility ? 'обеспеченная' : 'необеспеченная'}, а в проекте флаг «Видимость ограничена» ${parameters.regulation.vis ? 'установлен' : 'снят'}. Проекты, импортированные до исправления, получили обратное значение. Проверьте флаг на этапе 2 до выбора регулирования.`,
-      target: '#details-title',
+      path: 'parameters',
     })
   }
 
@@ -375,7 +362,7 @@ export function reviewScheme(
       title: 'Фронт работ ровно 30 м',
       detail:
         'Б.33 выбран по подтверждённому правилу проекта. Подпись и размерное обозначение ОДМ различаются; проверьте применимость остальных условий схемы.',
-      target: '#details-title',
+      path: 'parameters',
     })
   }
 
@@ -386,7 +373,7 @@ export function reviewScheme(
       title: 'Знаки на стойках',
       detail:
         'Сверьте коды, изображения PNG и применимость знаков в локальном каталоге. Совпадение кода с каталогом не подтверждает применимость.',
-      target: '#imported-title',
+      path: 'signImages',
       basis: JSON.stringify([
         placements.flatMap((placement) =>
           placement.kind === 'sign-post' ? [placement.signIds] : [],
@@ -426,7 +413,7 @@ function regulatorDistanceFinding(scheme: Scheme, rules: NormativeRules): Review
     id: 'regulator-distance',
     kind: 'verify' as const,
     title: 'Расстояние от регулировщиков',
-    target: '#placements-title' as const,
+    path: 'placements' as const,
   }
   if (required === undefined)
     return {

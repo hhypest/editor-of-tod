@@ -107,7 +107,7 @@ test('new project: form edits apply, review opens, and console stays clean', asy
 test('review findings move focus to the first empty field', async ({ page, request }) => {
   await importSampleCards(request)
   await page.goto('/')
-  await fillNewProject(page, '36 км 1 пк', '90003:36:1')
+  await fillNewProject(page, '36 км 1 пк', '90003:36:1', { taper: '8' })
   await page.getByRole('button', { name: 'Создать проект' }).click()
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   const findings = page.locator('li', { hasText: 'Место работ и направления' })
@@ -119,6 +119,20 @@ test('review findings move focus to the first empty field', async ({ page, reque
     .getByRole('link', { name: 'Перейти' })
     .click()
   await expect(page.locator('[data-field="titleBlock.approver.position"]')).toBeFocused()
+
+  // Group findings have no field: navigation focuses the destination heading.
+  await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  await page
+    .locator('li', { hasText: 'Размерная цепочка рисунка' })
+    .getByRole('link', { name: 'Перейти' })
+    .click()
+  await expect(page.locator('#details-title')).toBeFocused()
+  await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  await page
+    .locator('li', { hasText: 'Условия движения для Б.34' })
+    .getByRole('link', { name: 'Перейти' })
+    .click()
+  await expect(page.locator('#placements-title')).toBeFocused()
 
   // Незавершённая правка объекта блокирует форму: переход объясняет причину и ведёт к правке.
   await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()

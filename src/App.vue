@@ -21,6 +21,7 @@ import SchemeDetailsEditor from './components/SchemeDetailsEditor.vue'
 import TemplateChoice from './components/TemplateChoice.vue'
 import ProjectDataInspector from './components/ProjectDataInspector.vue'
 import { reviewScheme, type ReviewFinding } from './domain/review-scheme'
+import { mapReviewTarget } from './presentation/review/map-review-target'
 import { usedSignCodes } from './domain/sign-images'
 import { useProjectSession } from './composables/useProjectSession'
 import { listLocalProjects } from './services/local-projects'
@@ -213,24 +214,13 @@ watch(placementDirty, (dirty) => {
 
 async function navigateToFinding(finding: ReviewFinding): Promise<void> {
   findingNotice.value = ''
-  let view: View = 'review'
-  if (finding.target === '#pu66-link-title' || finding.id === 'place') view = 'source'
-  else if (finding.target === '#placements-title') view = 'objects'
-  else if (finding.target === '#imported-title') {
-    view = 'registries'
-    registryTab.value = 'imports'
-  } else if (
-    // Поля параметров схемы (кроме места работ) стоят на этапе 2 «Схема движения».
-    finding.field?.startsWith('parameters.') ||
-    finding.id.startsWith('distance-') ||
-    ['figure-dimensions', 'variant-front', 'boundary-30', 'legacy-visibility'].includes(finding.id)
-  )
-    view = 'geometry'
-  showView(view)
+  const target = mapReviewTarget(finding)
+  if (target.registryTab) registryTab.value = target.registryTab
+  showView(target.view)
   await nextTick()
-  const field = finding.field
-    ? [...document.querySelectorAll<HTMLElement>(`[data-field="${finding.field}"]`)].find(
-        (element) => element.offsetParent !== null,
+  const field = target.field
+    ? [...document.querySelectorAll<HTMLElement>('[data-field]')].find(
+        (element) => element.dataset.field === target.field && element.offsetParent !== null,
       )
     : undefined
   if (field?.matches(':disabled')) {
@@ -248,7 +238,12 @@ async function navigateToFinding(finding: ReviewFinding): Promise<void> {
     field.scrollIntoView({ block: 'center' })
     field.focus({ preventScroll: true })
   } else {
-    document.getElementById(finding.target.slice(1))?.scrollIntoView({ block: 'start' })
+    const section = document.getElementById(target.sectionId)
+    if (section) {
+      section.tabIndex = -1
+      section.scrollIntoView({ block: 'start' })
+      section.focus({ preventScroll: true })
+    }
   }
 }
 </script>

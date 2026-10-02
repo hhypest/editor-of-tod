@@ -1,5 +1,5 @@
 import { schemeSchema, type Scheme } from './model'
-import { drawableWithoutImage, drawnSignBase, signImageCode } from './sheet-drawing'
+import { drawableWithoutImage, drawnSignBase, signImageCode } from './sign-code'
 
 export function usedSignCodes(scheme: Scheme): string[] {
   const codes = scheme.placements.flatMap((placement) =>
