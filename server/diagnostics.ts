@@ -65,6 +65,9 @@ const fixedRoutes = new Set([
   '/api/crossings',
   '/api/normative',
   '/api/pu66',
+  '/api/pu66/lifecycle',
+  '/api/pu66/lifecycle/preview',
+  '/api/pu66/lifecycle/apply',
   '/api/pu66/import/preview',
   '/api/pu66/import/apply',
   '/api/projects',
@@ -80,7 +83,10 @@ const fixedRoutes = new Set([
   '/api/backup',
 ])
 const dynamicRoutes: Array<[RegExp, string]> = [
-  [/^\/api\/pu66\/[^/]+\/(norms|scheme|verification|verifications)$/, '/api/pu66/:key/$1'],
+  [
+    /^\/api\/pu66\/[^/]+\/(norms|scheme|verification|verifications|status|lifecycle)$/,
+    '/api/pu66/:key/$1',
+  ],
   [/^\/api\/projects\/[^/]+\/revisions\/(?:\d+|:n)$/, '/api/projects/:id/revisions/:n'],
   [/^\/api\/projects\/[^/]+(\/(?:revisions|restore))?$/, '/api/projects/:id$1'],
   [/^\/api\/recovery\/[^/]+$/, '/api/recovery/:id'],

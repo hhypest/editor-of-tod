@@ -6,6 +6,14 @@ import {
   type Pu66VerificationWrite,
 } from '../domain/pu66-review'
 import { localJson } from './json-response'
+import {
+  pu66StatusSchema,
+  pu66LifecycleEventSchema,
+  pu66LifecyclePlanSchema,
+  pu66LifecycleWriteSchema,
+  type Pu66LifecycleWrite,
+  type Pu66ImportRestore,
+} from '../domain/pu66-lifecycle'
 
 const verificationSchema = z.object({
   cardRevision: z.number().int().positive(),
@@ -35,6 +43,7 @@ const importPlanSchema = z.strictObject({
   added: z.number().int().nonnegative(),
   updated: z.number().int().nonnegative(),
   unchanged: z.number().int().nonnegative(),
+  restored: z.number().int().nonnegative(),
   fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
   items: z.array(
     z.strictObject({
@@ -44,6 +53,7 @@ const importPlanSchema = z.strictObject({
       roadName: z.string(),
       action: z.enum(['add', 'update', 'unchanged']),
       currentRevision: z.number().int().nonnegative(),
+      status: pu66StatusSchema.nullable(),
     }),
   ),
 })
@@ -53,6 +63,7 @@ const importResultSchema = z.strictObject({
   added: z.number().int().nonnegative(),
   updated: z.number().int().nonnegative(),
   unchanged: z.number().int().nonnegative(),
+  restored: z.number().int().nonnegative(),
   backup: z.string().nullable(),
 })
 
@@ -107,6 +118,50 @@ export async function listPu66Cards(): Promise<Pu66ListEntry[]> {
   return pu66ListEntrySchema.array().parse(await request('/api/pu66'))
 }
 
+export async function getPu66Status(key: string) {
+  return pu66StatusSchema
+    .nullable()
+    .parse(await request(`/api/pu66/${encodeURIComponent(key)}/status`))
+}
+
+export async function listPu66LifecycleCards() {
+  return pu66ListEntrySchema
+    .extend({ status: pu66StatusSchema })
+    .array()
+    .parse(await request('/api/pu66/lifecycle'))
+}
+
+export async function listPu66LifecycleHistory(key: string) {
+  return pu66LifecycleEventSchema
+    .array()
+    .parse(await request(`/api/pu66/${encodeURIComponent(key)}/lifecycle`))
+}
+
+export async function previewPu66Lifecycle(input: Pu66LifecycleWrite) {
+  return pu66LifecyclePlanSchema.parse(
+    await request('/api/pu66/lifecycle/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pu66LifecycleWriteSchema.parse(input)),
+    }),
+  )
+}
+
+export async function applyPu66Lifecycle(input: Pu66LifecycleWrite, fingerprint: string) {
+  return z
+    .strictObject({ changed: z.number().int().positive(), backup: z.string().nullable() })
+    .parse(
+      await request('/api/pu66/lifecycle/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          input: pu66LifecycleWriteSchema.parse(input),
+          expectedFingerprint: fingerprint,
+        }),
+      }),
+    )
+}
+
 export async function getPu66SchemeRecord(key: string): Promise<Pu66SchemeRecord> {
   return pu66SchemeRecordSchema.parse(await request(`/api/pu66/${encodeURIComponent(key)}/scheme`))
 }
@@ -130,22 +185,33 @@ export async function recordPu66Verification(
   )
 }
 
-export async function previewPu66Files(files: File[]): Promise<Pu66ImportPlan> {
+export async function previewPu66Files(
+  files: File[],
+  restoration: Pu66ImportRestore | null = null,
+): Promise<Pu66ImportPlan> {
   return importPlanSchema.parse(
     await request('/api/pu66/import/preview', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files: await uploadPayload(files) }),
+      body: JSON.stringify({ files: await uploadPayload(files), restoration }),
     }),
   )
 }
 
-export async function applyPu66Files(files: File[], fingerprint: string) {
+export async function applyPu66Files(
+  files: File[],
+  fingerprint: string,
+  restoration: Pu66ImportRestore | null = null,
+) {
   return importResultSchema.parse(
     await request('/api/pu66/import/apply', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files: await uploadPayload(files), expectedFingerprint: fingerprint }),
+      body: JSON.stringify({
+        files: await uploadPayload(files),
+        expectedFingerprint: fingerprint,
+        restoration,
+      }),
     }),
   )
 }
