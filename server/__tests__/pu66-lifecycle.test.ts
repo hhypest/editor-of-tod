@@ -2,7 +2,7 @@ import { mkdtempSync, readdirSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createSampleWorkbook, sampleCards } from '../../scripts/generate-pu66-samples'
 import { importSchemeJson } from '../../src/domain/import'
 import { linkPu66Card } from '../../src/domain/link-pu66'
@@ -44,15 +44,18 @@ const upload = (entry: Pu66Import) => ({
   data: entry.source.toString('base64'),
 })
 
-beforeEach(async () => {
-  directory = mkdtempSync(join(tmpdir(), 'tod-lifecycle-'))
-  path = join(directory, 'registry.sqlite')
-  store = new RegistryStore(path, now)
+// Generate immutable XLSX inputs once; each test still imports them into a fresh database.
+beforeAll(async () => {
   entries = await Promise.all(
     sampleCards
       .slice(0, 3)
       .map(async (card) => parsePu66(await createSampleWorkbook(card), card.filename)),
   )
+}, 30000)
+beforeEach(() => {
+  directory = mkdtempSync(join(tmpdir(), 'tod-lifecycle-'))
+  path = join(directory, 'registry.sqlite')
+  store = new RegistryStore(path, now)
   store.importPu66(entries)
 })
 afterEach(() => {
