@@ -209,6 +209,40 @@ test('restores applied edits and unapplied fields after the window closes', asyn
   ).toMatchObject({ n100: 90, n50: 45 })
 })
 
+test('cancelled JSON download retains the recovery copy and unsaved state', async ({
+  page,
+  request,
+}) => {
+  await importSampleCards(request)
+  await page.goto('/')
+  await fillNewProject(page, '24 км 7 пк', '90002:24:7')
+  await page.getByRole('button', { name: 'Создать проект' }).click()
+  await expect(page.locator('.save-state')).toContainText('Копия восстановления записана')
+  const before = await (await request.get(`${api}/api/recovery`)).json()
+  await page.getByText('Действия с проектом', { exact: true }).click()
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Скачать файл проекта (JSON)' }).click()
+  await (await download).cancel()
+  await expect(page.locator('.save-state')).toContainText('сохраните редакцию')
+  expect(await (await request.get(`${api}/api/recovery`)).json()).toEqual(before)
+  // Пока копия не записана, даже после экспорта сохраняется предупреждение при закрытии.
+  await page.route('**/api/recovery/**', (route) => route.abort())
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  await page.locator('[data-field="parameters.signDistancesMetres.d50"]').fill('45')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await expect(page.locator('.save-state')).toContainText('Копия восстановления не записана')
+  const secondDownload = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Скачать файл проекта (JSON)' }).click()
+  await (await secondDownload).cancel()
+  expect(
+    await page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true })
+      window.dispatchEvent(event)
+      return event.defaultPrevented
+    }),
+  ).toBe(true)
+})
+
 test('newer v1 JSON retains the zone fraction and resolves settlement markers', async ({
   page,
 }) => {

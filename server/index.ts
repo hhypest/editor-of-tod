@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { dirname, join, extname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -33,6 +34,7 @@ import { applyPdfSigns, pdfSignImage, previewPdfSigns } from './sign-pdf-import.
 import { confirmParameter, InvalidParameter, listParameterStates } from './normative-parameters.ts'
 import { documentMetaSchema } from '../src/domain/normative-documents.ts'
 import { clientEventsSchema, DiagnosticsLog, routeOf } from './diagnostics.ts'
+import { databaseIdentity } from './database-identity.ts'
 import {
   InvalidPu66Verification,
   ProjectTooLarge,
@@ -173,6 +175,7 @@ export function createRegistryServer(
   staticFiles: StaticFiles = defaultStaticFiles(),
   diagnostics: DiagnosticsLog = new DiagnosticsLog(null, { version: 'dev', mode: 'test' }),
 ) {
+  const databaseId = databaseIdentity(store.path)
   const server = createServer(async (req, res) => {
     const started = performance.now()
     let route = routeOf(req.method ?? 'GET', '/api/?')
@@ -196,7 +199,7 @@ export function createRegistryServer(
           pathname,
         )
       if (req.method === 'GET' && pathname === '/api/status') {
-        json(res, 200, { ready: true })
+        json(res, 200, { application: 'editor-of-tod', ready: true, databaseId })
       } else if (req.method === 'GET' && pathname === '/api/diagnostics') {
         json(res, 200, diagnostics.report(store))
       } else if (req.method === 'POST' && pathname === '/api/diagnostics/events') {
@@ -367,14 +370,19 @@ export function createRegistryServer(
           throw new RequestError(400, 'Неверная редакция изображения знака.')
         const asset = store.getSignPng(code, numbered, rev === null ? undefined : Number(rev))
         if (!asset) throw new RequestError(404, 'Изображение знака не найдено.')
-        res.writeHead(200, {
+        const etag = `"${createHash('sha256').update(asset).digest('hex')}"`
+        const unchanged = (req.headers['if-none-match'] ?? '')
+          .split(',')
+          .some((value) => value.trim().replace(/^W\//, '') === etag || value.trim() === '*')
+        res.writeHead(unchanged ? 304 : 200, {
           'Content-Type': 'image/png',
-          'Cache-Control': rev === null ? 'no-store' : 'private, max-age=31536000, immutable',
+          'Cache-Control': 'private, no-cache',
+          ETag: etag,
           'X-Content-Type-Options': 'nosniff',
           'Cross-Origin-Resource-Policy': 'same-origin',
           'Content-Security-Policy': "default-src 'none'; sandbox",
         })
-        res.end(asset)
+        res.end(unchanged ? undefined : asset)
       } else if (req.method === 'PUT' && pathname === '/api/crossings') {
         const { expectedRevision, ...draft } = crossingWriteSchema.parse(await readJson(req))
         json(res, 200, store.saveCrossing(draft, expectedRevision))

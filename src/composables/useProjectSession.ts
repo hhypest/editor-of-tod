@@ -44,7 +44,6 @@ export function useProjectSession(onProjectOpened: () => void) {
   const loading = ref(false)
   const detailsDirty = ref(false)
   const placementDirty = ref(false)
-  const modifiedSinceDownload = ref(false)
   const modifiedSinceLocalSave = ref(false)
   const localRevision = ref<number | null>(null)
   const localBusy = ref(false)
@@ -57,9 +56,7 @@ export function useProjectSession(onProjectOpened: () => void) {
   const templateError = ref('')
   const signPinMessage = ref('')
   const editorDirty = computed(() => detailsDirty.value || placementDirty.value)
-  const hasUnsavedWork = computed(
-    () => editorDirty.value || (modifiedSinceDownload.value && modifiedSinceLocalSave.value),
-  )
+  const hasUnsavedWork = computed(() => editorDirty.value || modifiedSinceLocalSave.value)
   const recoveryCopies = ref<RecoverySummary[]>([])
   const recoveryStatus = ref<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle')
   const recoverySeed = shallowRef<{
@@ -171,7 +168,6 @@ export function useProjectSession(onProjectOpened: () => void) {
       placementDirty,
       pendingDetails,
       pendingPlacement,
-      modifiedSinceDownload,
       modifiedSinceLocalSave,
       localRevision,
     ],
@@ -209,7 +205,6 @@ export function useProjectSession(onProjectOpened: () => void) {
     selectedPlacementId.value = null
     detailsDirty.value = false
     placementDirty.value = false
-    modifiedSinceDownload.value = false
     modifiedSinceLocalSave.value = false
     localRevision.value = null
     localError.value = ''
@@ -259,7 +254,6 @@ export function useProjectSession(onProjectOpened: () => void) {
   function saveV5(): void {
     if (imported.value && !editorDirty.value) {
       downloadJson(exportSchemeJson(imported.value.scheme), 'v7')
-      modifiedSinceDownload.value = false
     }
   }
 
@@ -298,7 +292,6 @@ export function useProjectSession(onProjectOpened: () => void) {
     localRevision.value = null
     detailsDirty.value = false
     placementDirty.value = false
-    modifiedSinceDownload.value = true
     modifiedSinceLocalSave.value = true
     localError.value = ''
     localNotice.value = ''
@@ -365,7 +358,6 @@ export function useProjectSession(onProjectOpened: () => void) {
       history.value = startHistory(saved.scheme)
       localRevision.value = saved.revision
       modifiedSinceLocalSave.value = false
-      modifiedSinceDownload.value = true
       selectedFileName.value = `Сохранённый проект · версия ${saved.revision}`
       projectsRefreshKey.value++
       localNotice.value = 'Создана отдельная копия проекта — она появилась в «Мои проекты».'
@@ -390,7 +382,6 @@ export function useProjectSession(onProjectOpened: () => void) {
     localRevision.value = revision
     detailsDirty.value = false
     placementDirty.value = false
-    modifiedSinceDownload.value = false
     modifiedSinceLocalSave.value = false
     onProjectOpened()
   }
@@ -456,7 +447,6 @@ export function useProjectSession(onProjectOpened: () => void) {
     imported.value = { ...imported.value, scheme }
     detailsDirty.value = false
     placementDirty.value = false
-    modifiedSinceDownload.value = true
     modifiedSinceLocalSave.value = true
   }
 
@@ -536,7 +526,6 @@ export function useProjectSession(onProjectOpened: () => void) {
     if (!imported.value || !history.value || editorDirty.value || !history.value.past.length) return
     history.value = undoEdit(history.value)
     imported.value = { ...imported.value, scheme: history.value.present }
-    modifiedSinceDownload.value = true
     modifiedSinceLocalSave.value = true
   }
 
@@ -545,7 +534,6 @@ export function useProjectSession(onProjectOpened: () => void) {
       return
     history.value = redoEdit(history.value)
     imported.value = { ...imported.value, scheme: history.value.present }
-    modifiedSinceDownload.value = true
     modifiedSinceLocalSave.value = true
   }
 
@@ -572,7 +560,6 @@ export function useProjectSession(onProjectOpened: () => void) {
         record.placementDraft?.id ?? record.scheme.placements[0]?.id ?? null
       selectedFileName.value = record.fileName
       localRevision.value = record.baseRevision
-      modifiedSinceDownload.value = true
       modifiedSinceLocalSave.value = true
       detailsDirty.value = false
       placementDirty.value = false
@@ -610,7 +597,6 @@ export function useProjectSession(onProjectOpened: () => void) {
     loading,
     detailsDirty,
     placementDirty,
-    modifiedSinceDownload,
     modifiedSinceLocalSave,
     localRevision,
     localBusy,
