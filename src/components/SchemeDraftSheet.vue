@@ -28,6 +28,7 @@ import {
 } from '../domain/normative-documents'
 import { localCalendarDate } from '../domain/pu66-review'
 import SheetNodes from './SheetNodes.vue'
+import { usePu66Status } from '../composables/usePu66Status'
 
 const props = defineProps<{
   scheme: Scheme
@@ -37,6 +38,9 @@ const props = defineProps<{
   previewOnly?: boolean
 }>()
 const { rules: normativeRules } = useNormativeRules()
+const { findings: pu66Findings, reload: reloadPu66Status } = usePu66Status(
+  computed(() => props.scheme.crossing.referenceId),
+)
 const sheet = computed(() => projectDraftSheet(props.scheme, normativeRules.value))
 const paper = ref<SVGSVGElement | null>(null)
 const prefix = `sheet-${useId()}`
@@ -132,7 +136,10 @@ const blockers = computed(() => {
 })
 /** Пункты «Проверить вручную» без действующей отметки: выпуск листа недоступен. */
 const uncheckedItems = computed(() =>
-  unmarkedChecks(props.scheme, reviewScheme(props.scheme, normativeRules.value)),
+  unmarkedChecks(props.scheme, [
+    ...reviewScheme(props.scheme, normativeRules.value),
+    ...pu66Findings.value,
+  ]),
 )
 const releaseErrors = computed(() => releaseProblems(props.scheme))
 /** Повторная проверка непосредственно перед печатью/PNG и при Ctrl+P. */
@@ -224,6 +231,18 @@ function imageFailed(code: string): void {
 /** PNG знаков загружаются заранее: лист не должен уйти в печать или файл с пустыми местами. */
 async function prepareSheet(): Promise<boolean> {
   printError.value = ''
+  const requestedRelease = releaseConfirmed.value
+  const openScheme = props.scheme
+  await reloadPu66Status()
+  if (props.scheme !== openScheme) {
+    printError.value = 'Проект изменился во время проверки. Повторите подготовку листа.'
+    return false
+  }
+  if (requestedRelease && !release.value) {
+    printError.value =
+      'Статус карточки изменился или недоступен. Проверьте замечания перед выпуском.'
+    return false
+  }
   if (outputBlockers.value.length) {
     printError.value = outputBlockers.value[0]!
     return false

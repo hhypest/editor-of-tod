@@ -12,6 +12,8 @@ import {
 import { recoveryDeleteSchema, recoveryWriteSchema } from '../src/domain/recovery.ts'
 import { crossingWriteSchema, normativeWriteSchema } from '../src/domain/registry.ts'
 import { pu66VerificationWriteSchema } from '../src/domain/pu66-review.ts'
+import { pu66LifecycleWriteSchema } from '../src/domain/pu66-lifecycle.ts'
+import { applyPu66Lifecycle } from './pu66-lifecycle.ts'
 import {
   applyPu66Upload,
   InvalidPu66Upload,
@@ -37,6 +39,7 @@ import { clientEventsSchema, DiagnosticsLog, routeOf } from './diagnostics.ts'
 import { databaseIdentity } from './database-identity.ts'
 import {
   InvalidPu66Verification,
+  InvalidPu66Lifecycle,
   ProjectTooLarge,
   RegistryStore,
   RevisionConflict,
@@ -215,6 +218,27 @@ export function createRegistryServer(
         json(res, 200, store.listNormative())
       } else if (req.method === 'GET' && pathname === '/api/pu66') {
         json(res, 200, store.listPu66())
+      } else if (req.method === 'GET' && pathname === '/api/pu66/lifecycle') {
+        json(
+          res,
+          200,
+          store.listPu66(true).map((card) => ({
+            ...card,
+            status: store.getPu66Status(card.referenceId),
+          })),
+        )
+      } else if (req.method === 'POST' && pathname === '/api/pu66/lifecycle/preview') {
+        json(res, 200, store.planPu66Lifecycle(pu66LifecycleWriteSchema.parse(await readJson(req))))
+      } else if (req.method === 'POST' && pathname === '/api/pu66/lifecycle/apply') {
+        json(res, 200, await applyPu66Lifecycle(store, await readJson(req)))
+      } else if (req.method === 'GET' && /^\/api\/pu66\/[^/]+\/status$/.test(pathname)) {
+        const key = decodeKey(pathname.slice('/api/pu66/'.length, -'/status'.length))
+        json(res, 200, store.getPu66Status(key))
+      } else if (req.method === 'GET' && /^\/api\/pu66\/[^/]+\/lifecycle$/.test(pathname)) {
+        const key = decodeKey(pathname.slice('/api/pu66/'.length, -'/lifecycle'.length))
+        const history = store.listPu66Lifecycle(key)
+        if (!history) throw new RequestError(404, 'Карточка ПУ-66 не найдена.')
+        json(res, 200, history)
       } else if (req.method === 'POST' && pathname === '/api/pu66/import/preview') {
         json(
           res,
@@ -262,6 +286,8 @@ export function createRegistryServer(
       ) {
         const encodedKey = pathname.slice('/api/pu66/'.length, -'/scheme'.length)
         const key = decodeKey(encodedKey)
+        if (store.getPu66Status(key)?.excluded)
+          throw new InvalidPu66Lifecycle('Карточка ПУ-66 исключена. Выберите действующую карточку.')
         const fields = store.getPu66Scheme(key)
         if (!fields) throw new RequestError(404, 'Карточка ПУ-66 не найдена.')
         json(res, 200, fields)
@@ -427,7 +453,8 @@ export function createRegistryServer(
       if (error instanceof RequestError) json(res, error.status, { error: error.message })
       else if (error instanceof RevisionConflict || error instanceof AmbiguousPu66Key)
         json(res, 409, { error: error.message })
-      else if (error instanceof InvalidPu66Verification) json(res, 400, { error: error.message })
+      else if (error instanceof InvalidPu66Verification || error instanceof InvalidPu66Lifecycle)
+        json(res, 400, { error: error.message })
       else if (error instanceof InvalidPu66Upload) json(res, error.status, { error: error.message })
       else if (error instanceof InvalidSignUpload) json(res, error.status, { error: error.message })
       else if (error instanceof InvalidDocumentUpload)

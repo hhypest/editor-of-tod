@@ -427,6 +427,37 @@ test('release sheet drops the draft mark and downloads a PNG', async ({ page, re
   const bytes = readFileSync((await file.path())!)
   expect(bytes.subarray(1, 4).toString('latin1')).toBe('PNG')
   expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([3528, 2495])
+  // Another process excluded the source after this page loaded. Output must recheck it,
+  // cancel the release download and show the same new status in the shared checklist.
+  await page.route('**/api/pu66/**/status', (route) =>
+    route.fulfill({
+      json: {
+        referenceId: '90001:12:3',
+        excluded: true,
+        successorKey: null,
+        event: {
+          id: 901,
+          action: 'exclude',
+          date: '2026-10-02',
+          actor: 'Учебный составитель',
+          reason: 'closed',
+          comment: 'Учебное исключение перед выпуском',
+          successorKey: null,
+          cardRevision: 1,
+          recordedAt: '2026-10-02T10:00:00.000Z',
+        },
+      },
+    }),
+  )
+  let unexpectedDownloads = 0
+  page.on('download', () => unexpectedDownloads++)
+  await host.getByRole('button', { name: 'Скачать PNG' }).click()
+  await expect(host.getByRole('alert')).toContainText('Статус карточки изменился')
+  await expect(page.locator('[data-check="pu66-status"]')).toContainText(
+    'Учебное исключение перед выпуском',
+  )
+  await expect(host.locator('.draft-mark')).toHaveCount(1)
+  expect(unexpectedDownloads).toBe(0)
 })
 
 test('release requires distances, objects, location and type size but allows paper requisites', async ({

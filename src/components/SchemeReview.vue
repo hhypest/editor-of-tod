@@ -4,11 +4,13 @@ import type { Scheme } from '../domain/model'
 import { reviewScheme, type ReviewFinding } from '../domain/review-scheme'
 import { useNormativeRules } from '../composables/useNormativeRules'
 import { markState, setMark } from '../domain/review-marks'
+import { usePu66Status } from '../composables/usePu66Status'
 
 const props = defineProps<{ scheme: Scheme; hasPendingInput: boolean; locked?: boolean }>()
 const emit = defineEmits<{ navigate: [finding: ReviewFinding]; apply: [scheme: Scheme] }>()
 const { rules } = useNormativeRules()
-const findings = computed(() => reviewScheme(props.scheme, rules.value))
+const { findings: pu66Findings } = usePu66Status(computed(() => props.scheme.crossing.referenceId))
+const findings = computed(() => [...reviewScheme(props.scheme, rules.value), ...pu66Findings.value])
 const toFill = computed(() => findings.value.filter((finding) => finding.kind === 'fill'))
 const toVerify = computed(() =>
   findings.value
