@@ -993,20 +993,28 @@ export class RegistryStore {
         status,
       }
     })
-    let successor = null
+    let successor: (typeof items)[number] | null = null
     if (input.action === 'exclude' && input.successorKey) {
-      successor = this.getPu66Status(input.successorKey)
-      if (!successor || successor.excluded || input.keys.includes(successor.referenceId))
+      const status = this.getPu66Status(input.successorKey)
+      const card = cards.find((card) => card.referenceId === input.successorKey)
+      if (!status || !card || status.excluded || input.keys.includes(status.referenceId))
         throw new InvalidPu66Lifecycle('Преемник должен быть другой действующей карточкой.')
       // A new link is recorded explicitly; legacy key aliases keep their original meaning.
-      const key = successor.referenceId
+      const key = status.referenceId
       if (key !== input.successorKey)
         throw new InvalidPu66Lifecycle('Выберите текущий ключ карточки-преемника.')
+      successor = {
+        referenceId: key,
+        location: card.location,
+        roadName: card.roadName,
+        revision: card.revision,
+        status,
+      }
     }
     const fingerprint = createHash('sha256')
       .update(JSON.stringify({ input, items, successor }))
       .digest('hex')
-    return { fingerprint, items }
+    return { fingerprint, items, successor }
   }
 
   recordPu66Lifecycle(input: Pu66LifecycleWrite, expectedFingerprint: string): number {

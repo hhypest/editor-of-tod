@@ -74,10 +74,18 @@ watch(
   () => void load(),
 )
 async function chooseSuccessor(): Promise<void> {
-  const successor = currentStatus.value?.successorKey
-  if (!successor || busy.value || props.locked) return
+  if (!currentStatus.value?.successorKey || busy.value || props.locked) return
+  const openScheme = props.scheme
   await load()
-  if (props.locked || !cards.value.some((card) => card.referenceId === successor)) return
+  const successor = currentStatus.value?.successorKey
+  if (
+    props.scheme !== openScheme ||
+    props.locked ||
+    !successor ||
+    statusUnavailable.value ||
+    !cards.value.some((card) => card.referenceId === successor)
+  )
+    return
   key.value = successor
   await choose()
 }

@@ -51,17 +51,17 @@ export const pu66LifecycleWriteSchema = z.discriminatedUnion('action', [
   z.strictObject({ ...common, action: z.literal('restore'), comment: z.string().trim().max(2000) }),
 ])
 export type Pu66LifecycleWrite = z.infer<typeof pu66LifecycleWriteSchema>
+const lifecycleCardSchema = z.strictObject({
+  referenceId: z.string(),
+  location: z.string(),
+  roadName: z.string(),
+  revision: z.number().int().positive(),
+  status: pu66StatusSchema,
+})
 export const pu66LifecyclePlanSchema = z.strictObject({
   fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
-  items: z.array(
-    z.strictObject({
-      referenceId: z.string(),
-      location: z.string(),
-      roadName: z.string(),
-      revision: z.number().int().positive(),
-      status: pu66StatusSchema,
-    }),
-  ),
+  items: z.array(lifecycleCardSchema),
+  successor: lifecycleCardSchema.nullable(),
 })
 export type Pu66LifecyclePlan = z.infer<typeof pu66LifecyclePlanSchema>
 

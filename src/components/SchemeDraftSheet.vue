@@ -6,7 +6,7 @@ import { unmarkedChecks } from '../domain/review-marks'
 import { reviewScheme } from '../domain/review-scheme'
 import { releaseProblems } from '../domain/release-readiness'
 import { templateLabel } from '../domain/registry'
-import { computed, nextTick, onMounted, ref, useId, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import type { Scheme } from '../domain/model'
 import { projectDraftSheet } from '../domain/draft-sheet'
 import {
@@ -43,6 +43,31 @@ const { findings: pu66Findings, reload: reloadPu66Status } = usePu66Status(
 )
 const sheet = computed(() => projectDraftSheet(props.scheme, normativeRules.value))
 const paper = ref<SVGSVGElement | null>(null)
+const host = ref<HTMLElement | null>(null)
+let printPermit: { scheme: Scheme; release: boolean } | null = null
+function beforePrint(): void {
+  if (props.previewOnly) return
+  const permitted =
+    printPermit?.scheme === props.scheme &&
+    printPermit.release === release.value &&
+    !outputBlockers.value.length
+  printPermit = null
+  // beforeprint cannot await a network check or Vue's render queue.
+  // Change the print guard synchronously; native draft printing remains available.
+  host.value?.classList.toggle('native-print-blocked', releaseConfirmed.value && !permitted)
+}
+function afterPrint(): void {
+  printPermit = null
+  host.value?.classList.remove('native-print-blocked')
+}
+onMounted(() => {
+  window.addEventListener('beforeprint', beforePrint)
+  window.addEventListener('afterprint', afterPrint)
+})
+onUnmounted(() => {
+  window.removeEventListener('beforeprint', beforePrint)
+  window.removeEventListener('afterprint', afterPrint)
+})
 const prefix = `sheet-${useId()}`
 const zoom = ref(props.previewOnly ? 0.19 : 0.75)
 const signSizes = ref<Map<string, SignSize>>(new Map())
@@ -283,7 +308,14 @@ async function prepareSheet(): Promise<boolean> {
 }
 
 async function printDraft(): Promise<void> {
-  if (await prepareSheet()) window.print()
+  if (await prepareSheet()) {
+    printPermit = { scheme: props.scheme, release: release.value }
+    try {
+      window.print()
+    } finally {
+      printPermit = null
+    }
+  }
 }
 
 function fileName(extension: string): string {
@@ -326,6 +358,7 @@ async function exportPng(): Promise<void> {
 
 <template>
   <section
+    ref="host"
     :class="{ thumbnail: previewOnly }"
     :aria-labelledby="previewOnly ? undefined : 'sheet-title'"
     :aria-hidden="previewOnly ? true : undefined"
@@ -438,6 +471,13 @@ async function exportPng(): Promise<void> {
       <p v-if="printError" class="error" role="alert">{{ printError }}</p>
     </div>
 
+    <div v-if="!previewOnly" class="native-print-note">
+      <strong>Выпускной лист не напечатан.</strong>
+      <p>
+        Для выпуска нужна повторная проверка статуса ПУ-66. Закройте это окно и нажмите «Печать
+        листа A4» в редакторе.
+      </p>
+    </div>
     <div v-if="!previewOnly && outputBlockers.length" class="print-blocked-note">
       <strong>Печать остановлена.</strong>
       <p v-for="reason in outputBlockers" :key="reason">{{ reason }}</p>
@@ -622,10 +662,21 @@ h2 {
   gap: 0.5rem;
   align-items: flex-start;
 }
-.print-blocked-note {
+.print-blocked-note,
+.native-print-note {
   display: none;
 }
 @media print {
+  .native-print-blocked .preview-scroll,
+  .native-print-blocked .print-blocked-note {
+    display: none !important;
+  }
+  .native-print-blocked .native-print-note {
+    display: block;
+    font:
+      14pt/1.4 Arial,
+      sans-serif;
+  }
   .screen-only {
     display: none !important;
   }

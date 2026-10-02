@@ -419,6 +419,24 @@ test('release sheet drops the draft mark and downloads a PNG', async ({ page, re
   await host.getByLabel(/Я проверил лист/).check()
   await expect(host.getByRole('heading', { name: 'Выпускной лист A4' })).toBeVisible()
   await expect(host.locator('.draft-mark')).toHaveCount(0)
+  await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')))
+  await expect(host).toHaveClass(/native-print-blocked/)
+  await page.emulateMedia({ media: 'print' })
+  await expect(host.locator('.preview-scroll')).toBeHidden()
+  await expect(host.locator('.native-print-note')).toBeVisible()
+  await page.evaluate(() => window.dispatchEvent(new Event('afterprint')))
+  await page.emulateMedia({ media: 'screen' })
+  // The checked print button obtains a one-use permit; subsequent native print has none.
+  await page.evaluate(() => {
+    window.print = () => {
+      window.dispatchEvent(new Event('beforeprint'))
+    }
+  })
+  await host.getByRole('button', { name: 'Печать листа A4' }).click()
+  await expect(host).not.toHaveClass(/native-print-blocked/)
+  await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')))
+  await expect(host).toHaveClass(/native-print-blocked/)
+  await page.evaluate(() => window.dispatchEvent(new Event('afterprint')))
   const download = page.waitForEvent('download')
   await host.getByRole('button', { name: 'Скачать PNG' }).click()
   const file = await download

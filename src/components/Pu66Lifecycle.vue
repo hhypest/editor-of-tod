@@ -270,9 +270,10 @@ onMounted(load)
         {{ plannedInput.action === 'exclude' ? exclusionReasons[plannedInput.reason] : '' }}
         {{ plannedInput.comment }}
       </p>
-      <p v-if="plannedInput.action === 'exclude' && plannedInput.successorKey">
-        Преемник: {{ plannedInput.successorKey }}. Проекты перепривязываются вручную после сравнения
-        данных.
+      <p v-if="plan.successor">
+        Преемник: {{ plan.successor.referenceId }} · {{ plan.successor.location }} ·
+        {{ plan.successor.roadName }} · редакция {{ plan.successor.revision }}. Проекты
+        перепривязываются вручную после сравнения данных.
       </p>
       <ul>
         <li v-for="card in plan.items" :key="card.referenceId">

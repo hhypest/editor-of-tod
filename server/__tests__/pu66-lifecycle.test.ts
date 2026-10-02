@@ -62,6 +62,34 @@ afterEach(() => {
 })
 
 describe('PU-66 lifecycle and preserved data', () => {
+  it.each([false, true])(
+    'rejects an updated successor, including during backup (%s)',
+    async (duringBackup) => {
+      const first = entries[0]!.card.key
+      const successor = entries[2]!.card.key
+      const input = exclude([first], successor)
+      const plan = store.planPu66Lifecycle(input)
+      expect(plan.successor).toMatchObject({ referenceId: successor, revision: 1 })
+      const changed = await parsePu66(
+        await createSampleWorkbook({ ...sampleCards[2]!, road: 'Новая учебная дорога преемника' }),
+        entries[2]!.filename,
+      )
+      if (duringBackup) {
+        const backup = store.createBackup.bind(store)
+        vi.spyOn(store, 'createBackup').mockImplementation(async () => {
+          const filename = await backup()
+          store.importPu66([changed])
+          return filename
+        })
+      } else store.importPu66([changed])
+      await expect(
+        applyPu66Lifecycle(store, { input, expectedFingerprint: plan.fingerprint }),
+      ).rejects.toThrow(RevisionConflict)
+      expect(store.getPu66Status(first)?.excluded).toBe(false)
+      expect(store.listPu66Lifecycle(first)).toEqual([])
+      expect(store.getPu66Scheme(successor)?.revision).toBe(2)
+    },
+  )
   it('excludes a batch after backup, preserves project snapshots, books and verification history, then restores', async () => {
     const first = entries[0]!.card.key
     const second = entries[1]!.card.key

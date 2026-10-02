@@ -103,6 +103,20 @@ test('excludes and restores a card through the registry, shows the old snapshot 
     const linker = page.locator('section[aria-labelledby="pu66-link-title"]')
     await expect(linker).toContainText('Карточка исключена')
     await expect(linker.locator('p').filter({ hasText: 'Сейчас:' })).toContainText(key)
+    // The registry can change after the button appears; refresh must cancel the old successor.
+    const statusURL = `**/api/pu66/${encodeURIComponent(key)}/status`
+    await page.route(statusURL, async (route) => {
+      const original = await route.fetch()
+      const status = await original.json()
+      await route.fulfill({
+        json: { ...status, successorKey: null, event: { ...status.event, successorKey: null } },
+      })
+    })
+    await linker.getByRole('button', { name: `Сравнить с преемником ${successor}` }).click()
+    await expect(linker.locator('table')).toHaveCount(0)
+    await expect(linker.getByLabel('Локальная карточка')).toHaveValue('')
+    await page.unroute(statusURL)
+    await linker.getByRole('button', { name: 'Обновить список' }).click()
     await linker.getByRole('button', { name: `Сравнить с преемником ${successor}` }).click()
     await expect(linker.locator('table')).toContainText(successor)
     await expect(linker.locator('p').filter({ hasText: 'Сейчас:' })).toContainText(key)
