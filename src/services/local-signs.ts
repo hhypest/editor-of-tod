@@ -178,3 +178,8 @@ export async function applyPdfSigns(
 export function pdfSignImageUrl(documentId: number, key: string, yellow = false): string {
   return `/api/documents/${documentId}/signs/image?key=${encodeURIComponent(key)}${yellow ? '&yellow=1' : ''}`
 }
+
+/** Новый адрес обходит годовой immutable-кэш прежних версий; дальше действует ETag. */
+export function signImageUrl(code: string, revision?: number): string {
+  return `/api/signs/${encodeURIComponent(code)}/image?cache=2${revision ? `&rev=${revision}` : ''}`
+}

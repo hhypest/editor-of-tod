@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { signImageUrl } from '../services/local-signs'
 import { timed } from '../services/diagnostics'
 import { useNormativeRules } from '../composables/useNormativeRules'
 import { unmarkedChecks } from '../domain/review-marks'
@@ -188,7 +189,7 @@ async function loadSigns(): Promise<void> {
     await Promise.all(
       historic.map(async ([code, revision]) => {
         const probe = new Image()
-        probe.src = `/api/signs/${encodeURIComponent(code)}/image?rev=${revision}`
+        probe.src = signImageUrl(code, revision)
         try {
           await probe.decode()
           sizes.set(code, { width: probe.naturalWidth, height: probe.naturalHeight })
@@ -213,7 +214,7 @@ onMounted(loadSigns)
 function signUrl(code: string): string | null {
   if (!signSizes.value.has(code) || brokenImages.value.has(code)) return null
   const revision = props.scheme.signImages.revisions[code]
-  return `/api/signs/${encodeURIComponent(code)}/image${revision ? `?rev=${revision}` : ''}`
+  return signImageUrl(code, revision)
 }
 
 function imageFailed(code: string): void {

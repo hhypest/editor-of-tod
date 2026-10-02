@@ -237,7 +237,8 @@ describe('local API', () => {
     ])
     const pinned = await fetch(`${base}/1.25/image?rev=1`)
     expect(pinned.status).toBe(200)
-    expect(pinned.headers.get('cache-control')).toContain('immutable')
+    expect(pinned.headers.get('cache-control')).toBe('private, no-cache')
+    expect(pinned.headers.get('etag')).toMatch(/^"[a-f0-9]{64}"$/)
   })
 
   it('accepts a same-origin write and rejects missing origin, invalid input, and stale revisions', async () => {

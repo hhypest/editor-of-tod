@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { signImageUrl } from '../services/local-signs'
 const props = defineProps<{
   kind: 'reg' | 'cone' | 'car' | 'complex' | 'pit'
   width: number
@@ -9,7 +10,7 @@ const props = defineProps<{
 
 function signUrl(code: string): string {
   const revision = props.revisions?.[code]
-  return `/api/signs/${encodeURIComponent(code)}/image${revision ? `?rev=${revision}` : ''}`
+  return signImageUrl(code, revision)
 }
 </script>
 

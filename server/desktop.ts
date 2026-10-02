@@ -2,12 +2,12 @@
 // Запускает локальный API и интерфейс на 127.0.0.1 и открывает браузер.
 // Без упаковки запускается командой `npm run desktop` и берёт интерфейс из `dist/`.
 import { exec } from 'node:child_process'
-import { get } from 'node:http'
 import { dirname, join } from 'node:path'
 import { getAsset, isSea } from 'node:sea'
 import { resolveDataDirectory, resolvePort } from './app-paths.ts'
 import { DiagnosticsLog } from './diagnostics.ts'
-import { createRegistryServer, DEFAULT_PORT, type StaticFiles } from './index.ts'
+import { DEFAULT_PORT, type StaticFiles } from './index.ts'
+import { startDesktopInstance } from './desktop-instance.ts'
 import { RegistryStore } from './store.ts'
 
 declare const __TOD_VERSION__: string | undefined
@@ -41,32 +41,9 @@ function fail(message: string): void {
   }
 }
 
-function alreadyRunning(url: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const request = get(new URL('api/status', url), { timeout: 1500 }, (response) => {
-      let body = ''
-      response.setEncoding('utf8')
-      response.on('data', (chunk: string) => (body += chunk))
-      response.on('end', () =>
-        resolve(response.statusCode === 200 && body.includes('"ready":true')),
-      )
-    })
-    request.on('timeout', () => request.destroy())
-    request.on('error', () => resolve(false))
-  })
-}
-
 async function main(): Promise<void> {
-  const port = resolvePort(process.env.TOD_PORT, DEFAULT_PORT)
-  const url = `http://127.0.0.1:${port}/`
+  const initialPort = resolvePort(process.env.TOD_PORT, DEFAULT_PORT)
   console.log(`Редактор схем ОДД ${version}`)
-
-  if (await alreadyRunning(url)) {
-    console.log(`Редактор уже запущен: ${url}\nОткрываю его в браузере.`)
-    openBrowser(url)
-    setTimeout(() => process.exit(0), 1500)
-    return
-  }
 
   process.umask(0o077)
   let databasePath = process.env.TOD_DATABASE_PATH
@@ -85,7 +62,33 @@ async function main(): Promise<void> {
     version,
     mode: isSea() ? 'exe' : 'npm run desktop',
   })
-  const server = createRegistryServer(store, port, isSea() ? seaFiles() : undefined, diagnostics)
+  let instance: Awaited<ReturnType<typeof startDesktopInstance>>
+  try {
+    instance = await startDesktopInstance(
+      store,
+      initialPort,
+      isSea() ? seaFiles() : undefined,
+      diagnostics,
+    )
+  } catch (error) {
+    store.close()
+    throw error
+  }
+  const { server, port } = instance
+  const url = `http://127.0.0.1:${port}/`
+  if (!server) {
+    store.close()
+    console.log(`Эта база уже открыта: ${url}\nОткрываю её в браузере.`)
+    openBrowser(url)
+    return
+  }
+  console.log(`Адрес: ${url}`)
+  console.log(`Данные: ${databasePath}`)
+  if (port !== initialPort)
+    console.log(`Порт ${initialPort} занят; выбран порт ${port} для этой базы.`)
+  if (portableNote) console.log(portableNote)
+  console.log('Не закрывайте это окно во время работы. Чтобы остановить редактор, закройте его.')
+  openBrowser(url)
 
   let closing = false
   const shutdown = () => {
@@ -115,14 +118,6 @@ async function main(): Promise<void> {
         ? `Порт ${port} занят другой программой. Закройте её или запустите редактор с другим портом, например: set TOD_PORT=4101 и затем editor-of-tod.exe`
         : `Не удалось запустить локальный сервер: ${error.message}`,
     )
-  })
-
-  server.listen(port, '127.0.0.1', () => {
-    console.log(`Адрес: ${url}`)
-    console.log(`Данные: ${databasePath}`)
-    if (portableNote) console.log(portableNote)
-    console.log('Не закрывайте это окно во время работы. Чтобы остановить редактор, закройте его.')
-    openBrowser(url)
   })
 }
 
