@@ -95,6 +95,8 @@ export class RecoverySession {
   release(sessionId: string): Promise<void> {
     return this.enqueue(async () => {
       if (this.version(sessionId)) await this.repository.release(sessionId)
+      // A source can be 10 MB; closed projects must not accumulate in this window's cache.
+      this.sources.delete(sessionId)
     })
   }
 }
