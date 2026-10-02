@@ -1,7 +1,43 @@
 import { describe, expect, it } from 'vitest'
-import { architectureProblems } from '../check-architecture'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { architectureProblems, readArchitectureSources } from '../check-architecture'
 
 describe('resolved architecture checks', () => {
+  it('collects TSX/MTS modules and rejects resolved server, adapter and cycle imports', () => {
+    const root = mkdtempSync(join(tmpdir(), 'tod-architecture-'))
+    try {
+      const files = new Map([
+        ['src/domain/a.mts', 'import "../presentation"; import "./b"'],
+        ['src/domain/b.tsx', 'import "./a"; export const view = <div />'],
+        ['src/presentation/index.tsx', 'import "../../server/store"'],
+        ['server/store.mts', 'export const store = {}'],
+        ['src/ignored.d.mts', 'import "@/missing"'],
+        ['src/ignored.d.ts', 'import "@/missing"'],
+        ['src/__tests__/ignored.tsx', 'import "@/missing"'],
+      ])
+      for (const [path, content] of files) {
+        mkdirSync(join(root, path, '..'), { recursive: true })
+        writeFileSync(join(root, path), content)
+      }
+      const sources = readArchitectureSources(root)
+      expect([...sources.keys()].sort()).toEqual([
+        'server/store.mts',
+        'src/domain/a.mts',
+        'src/domain/b.tsx',
+        'src/presentation/index.tsx',
+      ])
+      expect(architectureProblems(sources)).toEqual([
+        'Import cycle: src/domain/a.mts -> src/domain/b.tsx -> src/domain/a.mts',
+        'src/domain/a.mts: core imports adapter src/presentation/index.tsx',
+        'src/presentation/index.tsx: client imports server module server/store.mts',
+      ])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('rejects server imports after alias and relative path normalization, including Vue', () => {
     const sources = new Map([
       ['src/App.vue', '<script setup lang="ts">import store from "@/../server/store.ts"</script>'],

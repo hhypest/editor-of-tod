@@ -25,7 +25,7 @@ JSON проекта остаётся v7, SQLite — v13. А3 не меняет �
 
 ## Автоматические границы
 
-`npm run check:architecture` входит в `npm run check`. Скрипт читает рабочие TS/Vue-модули клиента и сервера, исключая тесты и декларации. Он разрешает относительные пути и алиас `@/`, проверяет import, type import, re-export и строковый dynamic import:
+`npm run check:architecture` входит в `npm run check`. Скрипт читает рабочие TS/TSX/MTS/Vue/MJS-модули клиента и сервера, исключая тесты и декларации. Он разрешает относительные пути и алиас `@/`, проверяет import, type import, re-export и строковый dynamic import:
 
 - клиент не импортирует `server/`;
 - domain/application не импортируют компоненты, composables, HTTP-services и presentation;

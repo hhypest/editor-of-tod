@@ -3,6 +3,9 @@ import { posix } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import ts from 'typescript'
 
+const moduleExtensions = ['.ts', '.tsx', '.mts', '.vue', '.mjs']
+const isModule = (path: string) => moduleExtensions.some((extension) => path.endsWith(extension))
+
 /** Analyze resolved local imports, including type imports, re-exports and literal import(). */
 export function architectureProblems(sources: ReadonlyMap<string, string>): string[] {
   const problems: string[] = []
@@ -39,11 +42,13 @@ export function architectureProblems(sources: ReadonlyMap<string, string>): stri
         const base = posix.normalize(
           clean.startsWith('@/') ? `src/${clean.slice(2)}` : posix.join(posix.dirname(path), clean),
         )
-        const target = [base, `${base}.ts`, `${base}.vue`, `${base}.mjs`, `${base}/index.ts`].find(
-          (candidate) => sources.has(candidate),
-        )
+        const target = [
+          base,
+          ...moduleExtensions.map((extension) => `${base}${extension}`),
+          ...moduleExtensions.map((extension) => `${base}/index${extension}`),
+        ].find((candidate) => sources.has(candidate))
         // Raw text assets (licenses, etc.) have no module dependency graph.
-        if (!target && specifier.includes('?raw') && !/\.(?:ts|vue|mjs)$/.test(base)) return
+        if (!target && specifier.includes('?raw') && !isModule(base)) return
         if (!target) problems.push(`${path}: unresolved local import ${specifier}`)
         else {
           edges.add(target)
@@ -56,7 +61,7 @@ export function architectureProblems(sources: ReadonlyMap<string, string>): stri
           if (path.startsWith('src/domain/') && target.startsWith('src/application/'))
             problems.push(`${path}: domain imports application ${target}`)
           if (
-            /^src\/domain\/review[^/]*\.ts$/.test(path) &&
+            /^src\/domain\/review[^/]*\.(?:ts|tsx|mts)$/.test(path) &&
             target === 'src/domain/sheet-drawing.ts'
           )
             problems.push(`${path}: review imports sheet drawing`)
@@ -91,7 +96,7 @@ export function readArchitectureSources(root: string): Map<string, string> {
     for (const entry of readdirSync(`${root}/${directory}`, { withFileTypes: true })) {
       const path = `${directory}/${entry.name}`
       if (entry.isDirectory() && entry.name !== '__tests__') walk(path)
-      else if (entry.isFile() && /\.(?:ts|vue|mjs)$/.test(path) && !path.endsWith('.d.ts'))
+      else if (entry.isFile() && isModule(path) && !/\.d\.(?:ts|mts)$/.test(path))
         sources.set(path, readFileSync(`${root}/${path}`, 'utf8'))
     }
   }

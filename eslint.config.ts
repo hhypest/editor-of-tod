@@ -24,7 +24,7 @@ export default defineConfigWithVueTs(
 
   {
     name: 'app/core-boundaries',
-    files: ['src/domain/**/*.ts', 'src/application/**/*.ts'],
+    files: ['src/domain/**/*.{ts,tsx,mts}', 'src/application/**/*.{ts,tsx,mts}'],
     ignores: ['**/__tests__/**'],
     rules: {
       'no-restricted-imports': [
@@ -63,7 +63,7 @@ export default defineConfigWithVueTs(
 
   {
     name: 'app/domain-direction',
-    files: ['src/domain/**/*.ts'],
+    files: ['src/domain/**/*.{ts,tsx,mts}'],
     ignores: ['**/__tests__/**'],
     rules: {
       'no-restricted-imports': [
