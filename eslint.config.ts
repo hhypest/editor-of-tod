@@ -39,6 +39,7 @@ export default defineConfigWithVueTs(
                 '**/components/**',
                 '**/composables/**',
                 '**/services/**',
+                '**/presentation/**',
                 '**/server/**',
               ],
               message:
@@ -77,6 +78,7 @@ export default defineConfigWithVueTs(
                 '**/components/**',
                 '**/composables/**',
                 '**/services/**',
+                '**/presentation/**',
                 '**/server/**',
                 '**/application/**',
               ],

@@ -37,7 +37,8 @@
     "test:e2e": "playwright test",
     "check:public": "node scripts/check-public-files.mjs",
     "check:runtime": "node scripts/check-node-entrypoints.mjs",
-    "check": "run-s check:public format:check lint type-check check:runtime test build-only"
+    "check:architecture": "node scripts/check-architecture.ts",
+    "check": "run-s check:architecture check:public format:check lint type-check check:runtime test build-only"
   },
   "dependencies": {
     "exceljs": "^4.4.0",

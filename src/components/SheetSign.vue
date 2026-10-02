@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { drawnSignBase, ZONE_PLATE, type SheetNode } from '../domain/sheet-drawing'
+import { drawnSignBase, ZONE_PLATE } from '../domain/sign-code'
+import type { SheetNode } from '../domain/sheet-drawing'
 
 const props = defineProps<{
   node: Extract<SheetNode, { t: 'sign' }>

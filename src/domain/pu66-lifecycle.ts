@@ -74,7 +74,7 @@ export function pu66StatusFinding(status: Pu66Status | null, unavailable = false
         kind: 'verify',
         title: 'Статус карточки ПУ-66',
         detail: 'Не удалось проверить локальный статус карточки. Обновите реестр перед выпуском.',
-        target: '#pu66-link-title',
+        path: 'crossing',
         markBlocked: 'Локальный статус карточки недоступен.',
       },
     ]
@@ -89,7 +89,7 @@ export function pu66StatusFinding(status: Pu66Status | null, unavailable = false
         `Исключена ${event.date}: ${event.reason ? exclusionReasons[event.reason] : ''}. ${event.comment}` +
         (status.successorKey ? ` Преемник: ${status.successorKey}.` : '') +
         ' Проверьте допустимость использования сохранённого снимка или перепривяжите проект.',
-      target: '#pu66-link-title',
+      path: 'crossing',
       basis: JSON.stringify(status),
     },
   ]

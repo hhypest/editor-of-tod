@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { Scheme } from '../domain/model'
 import { reviewScheme, type ReviewFinding } from '../domain/review-scheme'
+import { mapReviewTarget } from '../presentation/review/map-review-target'
 import { useNormativeRules } from '../composables/useNormativeRules'
 import { markState, setMark } from '../domain/review-marks'
 import { usePu66Status } from '../composables/usePu66Status'
@@ -49,7 +50,11 @@ function when(iso: string): string {
     <ul v-else>
       <li v-for="finding in toFill" :key="finding.id">
         <strong>{{ finding.title }}</strong> — {{ finding.detail }}
-        <a :href="finding.target" @click.prevent="emit('navigate', finding)">Перейти</a>
+        <a
+          :href="`#${mapReviewTarget(finding).sectionId}`"
+          @click.prevent="emit('navigate', finding)"
+          >Перейти</a
+        >
       </li>
     </ul>
 
@@ -79,7 +84,11 @@ function when(iso: string): string {
         </label>
         <div>
           <strong>{{ finding.title }}</strong> — {{ finding.detail }}
-          <a :href="finding.target" @click.prevent="emit('navigate', finding)">Перейти</a>
+          <a
+            :href="`#${mapReviewTarget(finding).sectionId}`"
+            @click.prevent="emit('navigate', finding)"
+            >Перейти</a
+          >
           <small v-if="state.status === 'marked'" class="mark-note">
             Отмечено {{ when(state.markedAt) }}.
           </small>
