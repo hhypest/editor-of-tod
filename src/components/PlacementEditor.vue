@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { signImageUrl } from '../services/sign-image-url'
 import { computed, onMounted, ref, watch } from 'vue'
 import {
   createPlacementDraft,
@@ -360,11 +361,7 @@ function removeSelected(): void {
                 type="button"
                 @click="appendCode(sign.code)"
               >
-                <img
-                  :src="`/api/signs/${encodeURIComponent(sign.code)}/image`"
-                  :alt="`Знак ${sign.code}`"
-                  loading="lazy"
-                />
+                <img :src="signImageUrl(sign.code)" :alt="`Знак ${sign.code}`" loading="lazy" />
                 {{ sign.code }}
               </button>
             </div>

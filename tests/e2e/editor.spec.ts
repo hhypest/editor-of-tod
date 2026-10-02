@@ -168,7 +168,7 @@ test('restores applied edits and unapplied fields after the window closes', asyn
   await n100.fill('90')
   await page.getByRole('button', { name: 'Применить правки' }).click()
   await n50.fill('45')
-  await expect(page.locator('.save-state')).toContainText('копия восстановления записана')
+  await expect(page.locator('.save-state')).toContainText(/копия восстановления записана/i)
 
   const recovery = await (await request.get(`${api}/api/recovery`)).json()
   const sessionId = recovery.find(
@@ -181,6 +181,7 @@ test('restores applied edits and unapplied fields after the window closes', asyn
     ),
   ).toBe(false)
 
+  page.once('dialog', (dialog) => dialog.accept())
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Копии восстановления' })).toBeVisible()
   await page
@@ -227,6 +228,46 @@ test('newer v1 JSON retains the zone fraction and resolves settlement markers', 
   await expect(page.locator('.print-host .object-caption').first()).toContainText('100 м')
   await expect(page.locator('.print-host')).not.toContainText('{n100}')
   expect(errors).toEqual([])
+})
+
+test('cancelled JSON download retains recovery and warns before leaving', async ({
+  page,
+  request,
+}) => {
+  await importSampleCards(request)
+  const previous = new Set(
+    (await (await request.get(`${api}/api/recovery`)).json()).map(
+      (copy: { sessionId: string }) => copy.sessionId,
+    ),
+  )
+  await page.goto('/')
+  await fillNewProject(page, '12 км 3 пк', '90001:12:3')
+  await page.getByRole('button', { name: 'Создать проект' }).click()
+  await expect(page.locator('.save-state')).toContainText(/копия восстановления записана/i)
+  const copy = (await (await request.get(`${api}/api/recovery`)).json()).find(
+    (item: { sessionId: string }) => !previous.has(item.sessionId),
+  )
+  expect(copy).toBeTruthy()
+  await page.evaluate(() => {
+    const click = HTMLAnchorElement.prototype.click
+    HTMLAnchorElement.prototype.click = function () {
+      if (!this.download.endsWith('.json')) click.call(this)
+    }
+  })
+  await page.locator('.more-actions summary').click()
+  await page.getByRole('button', { name: 'Скачать файл проекта (JSON)', exact: true }).click()
+  await expect(page.locator('.save-state')).toContainText(/копия восстановления записана/i)
+  const stillThere = await request.get(`${api}/api/recovery/${copy.sessionId}`)
+  expect(stillThere.ok()).toBe(true)
+  const warning = page.waitForEvent('dialog')
+  await page.close({ runBeforeUnload: true })
+  const dialog = await warning
+  expect(dialog.type()).toBe('beforeunload')
+  await dialog.dismiss()
+  expect(page.isClosed()).toBe(false)
+  await page.getByRole('button', { name: 'Сохранить проект', exact: true }).click()
+  await expect(page.locator('.save-state')).toHaveText('Сохранён')
+  expect((await request.get(`${api}/api/recovery/${copy.sessionId}`)).status()).toBe(404)
 })
 
 test('imports synthetic station PU-66 and a generated PNG ZIP through the local API', async ({
@@ -317,7 +358,10 @@ test('creates a project from a PU-66 card found by kilometre and picket', async 
   await expect(page.getByLabel('Первая ступень 3.24')).toHaveValue('70')
   await expect(page.getByLabel('Вторая ступень 3.24')).toHaveValue('50')
   await page.getByRole('button', { name: 'Создать проект' }).click()
-  await expect(page.getByText(/локальная редакция № 1/)).toBeVisible()
+  const linked = await (await request.get(`${api}/api/pu66/90002%3A24%3A7/scheme`)).json()
+  await expect(
+    page.getByText(`локальная редакция № ${linked.revision}`, { exact: false }),
+  ).toBeVisible()
   await expect(page.locator('.opening-notes')).toContainText('Локальная карточка ПУ-66 закреплена')
   await expect(page.locator('.opening-notes')).not.toContainText('введён вручную')
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
@@ -406,7 +450,7 @@ test('release requires distances, objects, location and type size but allows pap
   await page.route('**/api/signs/catalog', (route) =>
     route.fulfill({ json: { documentCode: 'УЧЕБНЫЙ', edition: 'демо', id: 1 } }),
   )
-  await page.route('**/api/signs/1.25/image?rev=1', (route) =>
+  await page.route('**/api/signs/1.25/image?*', (route) =>
     route.fulfill({ contentType: 'image/png', body: PNG.sync.write(png) }),
   )
   const base = importSchemeJson(

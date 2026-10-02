@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { dirname, join, extname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -172,6 +173,7 @@ export function createRegistryServer(
   listenPort = port,
   staticFiles: StaticFiles = defaultStaticFiles(),
   diagnostics: DiagnosticsLog = new DiagnosticsLog(null, { version: 'dev', mode: 'test' }),
+  databaseId?: string,
 ) {
   const server = createServer(async (req, res) => {
     const started = performance.now()
@@ -196,7 +198,7 @@ export function createRegistryServer(
           pathname,
         )
       if (req.method === 'GET' && pathname === '/api/status') {
-        json(res, 200, { ready: true })
+        json(res, 200, { ready: true, ...(databaseId ? { databaseId } : {}) })
       } else if (req.method === 'GET' && pathname === '/api/diagnostics') {
         json(res, 200, diagnostics.report(store))
       } else if (req.method === 'POST' && pathname === '/api/diagnostics/events') {
@@ -367,14 +369,20 @@ export function createRegistryServer(
           throw new RequestError(400, 'Неверная редакция изображения знака.')
         const asset = store.getSignPng(code, numbered, rev === null ? undefined : Number(rev))
         if (!asset) throw new RequestError(404, 'Изображение знака не найдено.')
-        res.writeHead(200, {
+        const etag = `"${createHash('sha256').update(asset).digest('hex')}"`
+        const matches = req.headers['if-none-match']
+          ?.split(',')
+          .some((value) => value.trim() === '*' || value.trim().replace(/^W\//, '') === etag)
+        res.writeHead(matches ? 304 : 200, {
           'Content-Type': 'image/png',
-          'Cache-Control': rev === null ? 'no-store' : 'private, max-age=31536000, immutable',
+          // Номер редакции локален для базы: после её восстановления байты могут измениться.
+          'Cache-Control': 'private, no-cache',
+          ETag: etag,
           'X-Content-Type-Options': 'nosniff',
           'Cross-Origin-Resource-Policy': 'same-origin',
           'Content-Security-Policy': "default-src 'none'; sandbox",
         })
-        res.end(asset)
+        res.end(matches ? undefined : asset)
       } else if (req.method === 'PUT' && pathname === '/api/crossings') {
         const { expectedRevision, ...draft } = crossingWriteSchema.parse(await readJson(req))
         json(res, 200, store.saveCrossing(draft, expectedRevision))

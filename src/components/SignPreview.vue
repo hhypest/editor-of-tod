@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { signImageUrl } from '../services/sign-image-url'
 import { computed } from 'vue'
 import { drawableWithoutImage, drawnSignBase, signImageCode } from '../domain/sheet-drawing'
 import SheetSign from './SheetSign.vue'
@@ -18,7 +19,7 @@ const props = defineProps<{
 function url(code: string): string | null {
   if (!props.known.has(code)) return null
   const revision = props.revisions?.[code]
-  return `/api/signs/${encodeURIComponent(code)}/image${revision ? `?rev=${revision}` : ''}`
+  return signImageUrl(code, revision)
 }
 
 const view = computed(() => {

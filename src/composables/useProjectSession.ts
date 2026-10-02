@@ -57,9 +57,9 @@ export function useProjectSession(onProjectOpened: () => void) {
   const templateError = ref('')
   const signPinMessage = ref('')
   const editorDirty = computed(() => detailsDirty.value || placementDirty.value)
-  const hasUnsavedWork = computed(
-    () => editorDirty.value || (modifiedSinceDownload.value && modifiedSinceLocalSave.value),
-  )
+  // link.click() не подтверждает запись JSON на диск. Только успешная запись в SQLite
+  // разрешает удалить recovery и перестать предупреждать о несохранённых правках.
+  const hasUnsavedWork = computed(() => editorDirty.value || modifiedSinceLocalSave.value)
   const recoveryCopies = ref<RecoverySummary[]>([])
   const recoveryStatus = ref<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle')
   const recoverySeed = shallowRef<{
@@ -179,7 +179,7 @@ export function useProjectSession(onProjectOpened: () => void) {
   )
 
   function beforeUnload(event: BeforeUnloadEvent): void {
-    if (hasUnsavedWork.value && recoveryStatus.value !== 'saved') event.preventDefault()
+    if (hasUnsavedWork.value) event.preventDefault()
   }
 
   onMounted(() => {
