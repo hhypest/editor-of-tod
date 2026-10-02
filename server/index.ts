@@ -356,6 +356,18 @@ export function createRegistryServer(
           if (!store.deleteDocument(id)) throw new RequestError(404, 'Документ не найден.')
           json(res, 200, { deleted: id })
         } else throw new RequestError(405, 'Метод не поддерживается.')
+      } else if (req.method === 'GET' && /^\/api\/signs\/[^/]+\/metadata$/.test(pathname)) {
+        const code = decodeKey(pathname.slice('/api/signs/'.length, -'/metadata'.length))
+        if (!/^[0-9][0-9A-Za-z._-]*ж?$/.test(code))
+          throw new RequestError(400, 'Неверный код знака.')
+        const rev = new URL(req.url ?? '/', `http://127.0.0.1:${actualPort}`).searchParams.get(
+          'rev',
+        )
+        if (rev === null || !/^[1-9]\d*$/.test(rev) || !Number.isSafeInteger(Number(rev)))
+          throw new RequestError(400, 'Укажите редакцию изображения знака.')
+        const metadata = store.getSignMetadata(code, Number(rev))
+        if (!metadata) throw new RequestError(404, 'Редакция изображения знака не найдена.')
+        json(res, 200, metadata)
       } else if (req.method === 'GET' && /^\/api\/signs\/[^/]+\/image$/.test(pathname)) {
         const code = decodeKey(pathname.slice('/api/signs/'.length, -'/image'.length))
         if (!/^[0-9][0-9A-Za-z._-]*ж?$/.test(code))

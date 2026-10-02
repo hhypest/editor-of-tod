@@ -35,10 +35,42 @@ async function catalog(value: number) {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('Server address missing')
-  return { url: `http://127.0.0.1:${address.port}/api/signs/1.25/image`, png }
+  return { store, url: `http://127.0.0.1:${address.port}/api/signs/1.25/image`, png }
 }
 
 describe('sign images are revalidated by content, including pinned revisions', () => {
+  it('returns the dimensions of each revision, including retired codes, and rejects missing revisions', async () => {
+    const original = await catalog(255)
+    const image = new PNG({ width: 24, height: 12 })
+    image.data.fill(128)
+    const png = PNG.sync.write(image)
+    const entries = (code: string) =>
+      parseSignArchive(
+        Buffer.from(
+          zipSync({ [`PNG с номером/${code}.png`]: png, [`PNG без номера/${code}.png`]: png }),
+        ),
+      )
+    original.store.importSigns(entries('1.25'))
+    const url = original.url.replace('/image', '/metadata')
+    expect(await (await fetch(url + '?rev=1')).json()).toEqual({
+      code: '1.25',
+      revision: 1,
+      width: 8,
+      height: 8,
+    })
+    expect(await (await fetch(url + '?rev=2')).json()).toEqual({
+      code: '1.25',
+      revision: 2,
+      width: 24,
+      height: 12,
+    })
+    original.store.importSigns(entries('1.20.2'))
+    expect(await (await fetch(url + '?rev=1')).json()).toMatchObject({ width: 8, height: 8 })
+    for (const suffix of ['', '?rev=0', '?rev=-1', '?rev=1.5', '?rev=9007199254740992'])
+      expect((await fetch(url + suffix)).status).toBe(400)
+    expect((await fetch(url + '?rev=3')).status).toBe(404)
+  })
+
   it('returns 304 only for matching bytes and fresh images after a database replacement', async () => {
     const original = await catalog(255)
     const restored = await catalog(128)

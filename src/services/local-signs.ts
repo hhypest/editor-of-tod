@@ -183,3 +183,20 @@ export function pdfSignImageUrl(documentId: number, key: string, yellow = false)
 export function signImageUrl(code: string, revision?: number): string {
   return `/api/signs/${encodeURIComponent(code)}/image?cache=2${revision ? `&rev=${revision}` : ''}`
 }
+
+const signMetadataSchema = z.strictObject({
+  code: z.string(),
+  revision: z.number().int().positive(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+})
+
+/** Размеры закреплённой редакции из истории локального каталога. */
+export async function getSignMetadata(code: string, revision: number) {
+  const response = await fetch(`/api/signs/${encodeURIComponent(code)}/metadata?rev=${revision}`)
+  if (!response.ok) throw new Error('Не удалось прочитать закреплённую редакцию знака.')
+  const metadata = signMetadataSchema.parse(await localJson(response))
+  if (metadata.code !== code || metadata.revision !== revision)
+    throw new Error('Получена другая редакция знака.')
+  return metadata
+}

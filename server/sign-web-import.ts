@@ -70,25 +70,34 @@ function parse(store: RegistryStore, body: z.infer<typeof requestSchema>) {
       cause instanceof Error ? cause.message : 'Не удалось прочитать архив знаков.',
     )
   }
-  let source: SignCatalogSource = {
-    documentCode: body.documentCode,
-    edition: body.edition,
-    pdfSha256: pdf ? createHash('sha256').update(pdf).digest('hex') : null,
-    documentId: null,
-  }
+  return { entries, source: sourceFor(store, body, pdf) }
+}
+
+function sourceFor(
+  store: RegistryStore,
+  body: z.infer<typeof requestSchema>,
+  pdf: Buffer | null,
+): SignCatalogSource {
   if (body.documentId) {
     const document = store.getDocument(body.documentId)
     if (!document) throw new InvalidSignUpload('Выбранный документ не найден в библиотеке.')
+    if (document.kind !== 'signs')
+      throw new InvalidSignUpload('Для ZIP знаков выберите документ вида «Изображения знаков».')
     if (document.amendsId !== null)
       throw new InvalidSignUpload('Выберите основной документ, а не изменение к нему.')
-    source = {
+    return {
       documentCode: normalizeDocumentCode(document.code),
       edition: document.edition,
       pdfSha256: document.sha256,
       documentId: document.id,
     }
   }
-  return { entries, source }
+  return {
+    documentCode: body.documentCode,
+    edition: body.edition,
+    pdfSha256: pdf ? createHash('sha256').update(pdf).digest('hex') : null,
+    documentId: null,
+  }
 }
 
 function plan(store: RegistryStore, parsed: ReturnType<typeof parse>) {
@@ -98,6 +107,7 @@ function plan(store: RegistryStore, parsed: ReturnType<typeof parse>) {
     .update(
       JSON.stringify({
         source: parsed.source,
+        document: parsed.source.documentId ? store.getDocument(parsed.source.documentId) : null,
         archive: parsed.entries[0]?.zipSha256,
         codes: parsed.entries.map((entry) => [entry.code, entry.numberedSha256, entry.plainSha256]),
         counts,
@@ -152,6 +162,17 @@ export async function applySignUpload(store: RegistryStore, body: unknown) {
     return { ...withoutPreview(preview), backup: null, catalog: store.latestSignCatalog() }
   }
   const backup = await store.createBackup()
+  // Повторная проверка документа после асинхронной резервной копии, до синхронной записи.
+  try {
+    parsed.source = sourceFor(
+      store,
+      request,
+      request.pdf ? decode(request.pdf.data, MAX_PDF_BYTES, 'PDF ГОСТ') : null,
+    )
+  } catch (cause) {
+    if (cause instanceof InvalidSignUpload) throw new RevisionConflict()
+    throw cause
+  }
   if (plan(store, parsed).fingerprint !== expectedFingerprint) throw new RevisionConflict()
   const counts = store.importSigns(parsed.entries, parsed.source)
   return {

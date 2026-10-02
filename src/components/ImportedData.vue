@@ -74,20 +74,26 @@ const today = localCalendarDate(new Date())
 const signDocuments = computed(() => {
   const statuses = documentStatuses(documents.value, today)
   return documents.value
-    .filter((document) => document.amendsId === null)
+    .filter((document) => document.kind === 'signs' && document.amendsId === null)
     .map((document) => ({ document, status: statuses.get(document.id)?.kind ?? 'undated' }))
-    .sort(
-      (a, b) =>
-        Number(b.status === 'current') - Number(a.status === 'current') ||
-        Number(b.document.kind === 'signs') - Number(a.document.kind === 'signs'),
-    )
+    .sort((a, b) => Number(b.status === 'current') - Number(a.status === 'current'))
 })
+
 const catalogStatus = computed(() =>
   catalogEditionStatus(signCatalog.value, documents.value, today),
 )
 const signDocumentCode = ref('ГОСТ Р 52290-2024')
 const signEdition = ref('2024')
 const signPlan = ref<SignImportPlan | null>(null)
+watch(signDocuments, (options) => {
+  if (
+    signDocumentId.value !== '' &&
+    !options.some(({ document }) => document.id === signDocumentId.value)
+  ) {
+    signDocumentId.value = ''
+    signPlan.value = null
+  }
+})
 const signCatalog = ref<SignCatalog | null>(null)
 const signBusy = ref(false)
 const signNotice = ref('')
