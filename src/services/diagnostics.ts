@@ -1,17 +1,23 @@
 import type { App } from 'vue'
+import {
+  diagnosticError,
+  diagnosticOperation,
+  type DiagnosticErrorType,
+} from '../shared/diagnostic-data'
 
 /**
  * Диагностика в браузере: ошибки интерфейса и время долгих операций отправляются в локальный
  * журнал (`/api/diagnostics/events`) пачками. Ничего не уходит за пределы компьютера. В
- * события передаются только названия операций, длительность и текст ошибки — сервер
- * дополнительно очищает его от ключей ПУ-66, телефонов и ФИО.
+ * события передаются только известные названия операций, длительность, тип ошибки и места
+ * в коде программы. Свободный текст ошибки и абсолютные пути не передаются.
  */
 
 type ClientEvent = {
   kind: 'error' | 'timing' | 'event'
   name: string
   durationMs?: number
-  message?: string
+  errorType?: DiagnosticErrorType
+  frames?: string[]
 }
 
 declare const __APP_BUILD__: { version: string; commit: string; builtAt: string } | undefined
@@ -50,51 +56,26 @@ export async function flush(): Promise<void> {
 }
 
 function push(event: ClientEvent): void {
-  const key = `${event.kind}|${event.name}|${event.message ?? ''}`
+  const name = diagnosticOperation(event.name)
+  const key = `${event.kind}|${name}|${event.errorType ?? ''}|${event.frames?.join(',') ?? ''}`
   const now = Date.now()
   if (event.kind === 'error' && now - (recent.get(key) ?? 0) < 10_000) return
   recent.set(key, now)
   queue.push({
     ...event,
-    name: event.name.slice(0, 120),
-    ...(event.message === undefined ? {} : { message: event.message.slice(0, 2_000) }),
+    name,
   })
   if (queue.length > 200) queue.splice(0, queue.length - 200)
   schedule()
 }
 
-/**
- * Описание ошибки для журнала. `withText: false` — только тип и стек: текст ошибок операций с
- * файлами и базой может содержать имя книги ПУ-66, название станции или ключ переезда, а
- * серверная очистка распознаёт лишь ключи, телефоны и ФИО. Первая строка стека V8 повторяет
- * сообщение, поэтому она отбрасывается.
- */
-function describe(error: unknown, withText: boolean): string {
-  if (error instanceof Error) {
-    const frames = (error.stack ?? '')
-      .split('\n')
-      .filter((line) => /^\s*at\s|@/.test(line))
-      .slice(0, 4)
-      .join('\n')
-    return withText ? `${error.name}: ${error.message}\n${frames}` : `${error.name}\n${frames}`
-  }
-  return withText ? String(error) : typeof error
+/** Все ошибки, включая Vue и глобальные, описываются без сообщения пользователя. */
+export function reportError(name: string, error: unknown): void {
+  push({ kind: 'error', name, ...diagnosticError(error) })
 }
 
-/**
- * Ошибка в журнал. Для ошибок кода (окно, Vue) текст полезен и записывается; для ошибок
- * операций с пользовательскими данными передайте `{ withText: false }`.
- */
-export function reportError(
-  name: string,
-  error: unknown,
-  options: { withText?: boolean } = {},
-): void {
-  push({ kind: 'error', name, message: describe(error, options.withText ?? true) })
-}
-
-export function reportEvent(name: string, message?: string): void {
-  push({ kind: 'event', name, ...(message ? { message } : {}) })
+export function reportEvent(name: string): void {
+  push({ kind: 'event', name })
 }
 
 /**
@@ -112,8 +93,7 @@ export async function timed<T>(name: string, operation: () => Promise<T>): Promi
       kind: 'error',
       name,
       durationMs: Math.round(performance.now() - started),
-      // Операции работают с файлами пользователя: текст ошибки не записывается.
-      message: describe(error, false),
+      ...diagnosticError(error),
     })
     throw error
   }
