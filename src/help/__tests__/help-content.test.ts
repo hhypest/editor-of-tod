@@ -9,7 +9,7 @@ import {
 } from '../help-content'
 
 /** Тексты интерфейса: исходники App.vue и компонентов. */
-const sources = import.meta.glob(['../../App.vue', '../../components/*.vue'], {
+const sources = import.meta.glob(['../../App.vue', '../../components/**/*.vue'], {
   query: '?raw',
   import: 'default',
   eager: true,
