@@ -1,10 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import type { Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSampleWorkbook, sampleCards } from '../../scripts/generate-pu66-samples'
-import { DiagnosticsLog, redact, routeOf } from '../diagnostics'
+import { DiagnosticsLog, routeOf } from '../diagnostics'
 import { createRegistryServer } from '../index'
 import { RegistryStore } from '../store'
 
@@ -12,6 +12,7 @@ const servers: Server[] = []
 const stores: RegistryStore[] = []
 const directories: string[] = []
 afterEach(async () => {
+  vi.restoreAllMocks()
   await Promise.all(
     servers
       .splice(0)
@@ -22,14 +23,70 @@ afterEach(async () => {
 })
 
 describe('diagnostics without confidential data', () => {
-  it('removes PU-66 keys, phones and full names from messages', () => {
-    const text = redact(
-      'Карточка 90002:24:7 и ст.Озёрная:53:2; тел. 8 910 123-45-67; Учебный А.Б., В.Г. Учебная, Учебный Иван Петрович',
+  it('never persists free error text, absolute paths, function names or arbitrary event names', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-private-diagnostics-'))
+    directories.push(directory)
+    const file = join(directory, 'diagnostics.jsonl')
+    const store = new RegistryStore(join(directory, 'private-database.sqlite'))
+    stores.push(store)
+    const log = new DiagnosticsLog(file, { version: 'test', mode: 'test' })
+    const secret = 'Переезд Учебная станция.xlsx C:\\Рабочие\\ПУ66 /srv/private/Учебная'
+    const error = new TypeError(secret)
+    error.stack = `${secret}\n at ЧастноеИмя (C:\\Рабочие\\server\\store.ts:23:7)\n at ЧастноеИмя (file:///srv/private/server/index.ts:45:8)\n at ЧастноеИмя (/srv/private/Учебная.ts:1:1)`
+    log.serverError(routeOf('GET', '/api/pu66/Учебная/scheme'), error)
+    log.record({
+      source: 'client',
+      kind: 'error',
+      name: secret,
+      message: secret,
+      errorType: 'Error',
+      frames: [secret],
+    })
+    log.request(routeOf('GET', '/api/pu66/Учебная/секретный-суффикс'), 404, 1)
+    const report = log.report(store)
+    const text = readFileSync(file, 'utf8') + JSON.stringify(report)
+    for (const value of [
+      'Учебная',
+      '.xlsx',
+      'Рабочие',
+      '/srv/private',
+      'ЧастноеИмя',
+      directory,
+      'секретный-суффикс',
+    ])
+      expect(text).not.toContain(value)
+    expect(report.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          errorType: 'TypeError',
+          frames: ['server/store.ts:23:7', 'server/index.ts:45:8'],
+        }),
+      ]),
     )
-    expect(text).not.toMatch(/90002|Озёрная|910|Учебн/u)
-    expect(text).toContain('<ключ ПУ-66>')
-    expect(text).toContain('<телефон>')
-    expect(text).toContain('<ФИО>')
+    expect(report.database).toMatchObject({ location: 'локальная база', documents: 0 })
+  })
+
+  it('sanitises legacy journal entries on load and rewrites them without their messages', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-legacy-diagnostics-'))
+    directories.push(directory)
+    const file = join(directory, 'diagnostics.jsonl')
+    writeFileSync(
+      file,
+      JSON.stringify({
+        at: '2026-10-02T00:00:00.000Z',
+        source: 'server',
+        kind: 'error',
+        name: 'GET /api/private/Учебная',
+        message: 'Учебная станция.xlsx /srv/private/card.sqlite',
+        extra: 'Учебная',
+      }) + '\n',
+    )
+    const log = new DiagnosticsLog(file, { version: 'test', mode: 'test' })
+    const store = new RegistryStore(':memory:')
+    stores.push(store)
+    const text = readFileSync(file, 'utf8') + JSON.stringify(log.report(store))
+    expect(text).not.toMatch(/Учебная|xlsx|srv|card.sqlite/)
+    expect(log.report(store).eventsTotal).toBe(1)
   })
 
   it('generalises request paths so keys and ids never reach the log', () => {
@@ -96,6 +153,11 @@ describe('diagnostics without confidential data', () => {
     })
     await fetch(`${base}/api/pu66/${encodeURIComponent('90002:24:7')}/norms`)
     await fetch(`${base}/api/pu66/${encodeURIComponent('90002:99:9')}/scheme`)
+    const failure = vi.spyOn(store, 'listSigns').mockImplementationOnce(() => {
+      throw new Error('Учебный переезд.xlsx /srv/private/Учебный C:\\Рабочие\\Учебный.sqlite')
+    })
+    expect((await fetch(`${base}/api/signs`)).status).toBe(500)
+    failure.mockRestore()
 
     const accepted = await fetch(`${base}/api/diagnostics/events`, {
       method: 'POST',
@@ -119,7 +181,15 @@ describe('diagnostics without confidential data', () => {
     }
     expect(report.database).toMatchObject({ pu66Cards: 1, projects: 0 })
     const text = JSON.stringify(report)
-    for (const secret of ['90002', 'Учебная дорога', 'Условная станция', 'Учебный'])
+    for (const secret of [
+      '90002',
+      'Учебная дорога',
+      'Условная станция',
+      'Учебный',
+      '/srv/private',
+      'Рабочие',
+      directory,
+    ])
       expect(text).not.toContain(secret)
     expect(report.requests).toEqual(
       expect.arrayContaining([
