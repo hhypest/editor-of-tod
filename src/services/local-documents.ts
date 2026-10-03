@@ -5,6 +5,10 @@ import {
   type DocumentRecord,
 } from '../domain/normative-documents'
 import { localJson } from './json-response'
+import {
+  documentIdentificationSchema,
+  type DocumentIdentification,
+} from '../domain/document-identification'
 
 export const MAX_DOCUMENT_BYTES = 40 * 1024 * 1024
 
@@ -57,10 +61,20 @@ async function base64(file: File): Promise<string> {
   return btoa(text)
 }
 
-async function payload(file: File, meta: DocumentMeta) {
+async function filePayload(file: File) {
   if (!/\.pdf$/i.test(file.name)) throw new Error('Выберите файл PDF.')
   if (file.size > MAX_DOCUMENT_BYTES) throw new Error('PDF больше 40 МБ.')
-  return { file: { name: file.name, data: await base64(file) }, meta }
+  return { file: { name: file.name, data: await base64(file) } }
+}
+
+async function payload(file: File, meta: DocumentMeta) {
+  return { ...(await filePayload(file)), meta }
+}
+
+export async function identifyDocument(file: File): Promise<DocumentIdentification> {
+  return documentIdentificationSchema.parse(
+    await send('/api/documents/identify', 'POST', await filePayload(file)),
+  )
 }
 
 export async function listDocuments(): Promise<DocumentRecord[]> {

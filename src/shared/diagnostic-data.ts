@@ -104,6 +104,7 @@ const programFiles = new Set([
   'src/composables/useProjectSession.ts',
   'src/domain/create-scheme.ts',
   'src/domain/document-text.ts',
+  'src/domain/document-identification.ts',
   'src/domain/draft-sheet.ts',
   'src/domain/edit-details.ts',
   'src/domain/edit-history.ts',

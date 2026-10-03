@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { timed } from '../services/diagnostics'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   actualityCheckDue,
   catalogEditionStatus,
@@ -13,12 +13,14 @@ import {
   type DocumentRecord,
   type DocumentStatus,
 } from '../domain/normative-documents'
+import type { DocumentCandidate, DocumentIdentification } from '../domain/document-identification'
 import { localCalendarDate } from '../domain/pu66-review'
 import {
   applyDocument,
   deleteDocument,
   documentPdfUrl,
   listDocuments,
+  identifyDocument,
   MAX_DOCUMENT_BYTES,
   previewDocument,
   updateDocument,
@@ -26,7 +28,7 @@ import {
 } from '../services/local-documents'
 import { getSignCatalog, type SignCatalog } from '../services/local-signs'
 
-defineProps<{ locked?: boolean }>()
+const props = defineProps<{ locked?: boolean }>()
 const emit = defineEmits<{ changed: [] }>()
 
 const today = localCalendarDate(new Date())
@@ -52,6 +54,20 @@ const file = ref<File | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const form = reactive<DocumentMeta>(emptyMeta())
 const preview = ref<DocumentPreview | null>(null)
+const identification = ref<DocumentIdentification | null>(null)
+const identifying = ref(false)
+const identificationError = ref('')
+const filenameSuggestion = computed(() => suggestFromFilename(file.value?.name ?? ''))
+const identificationChoice = ref<'candidate' | 'manual' | null>(null)
+const selectedType = ref<DocumentCandidate['documentType'] | null>(null)
+const manualFields = new Set<keyof DocumentMeta>()
+let identificationRequest = 0
+onBeforeUnmount(() => {
+  identificationRequest++
+})
+watch(form, () => {
+  preview.value = null
+})
 const editingId = ref<number | null>(null)
 const editForm = reactive<DocumentMeta>(emptyMeta())
 
@@ -114,33 +130,103 @@ async function load(): Promise<void> {
 }
 onMounted(load)
 
-function chooseFile(event: Event): void {
+async function chooseFile(event: Event): Promise<void> {
+  const request = ++identificationRequest
   const chosen = (event.target as HTMLInputElement).files?.[0] ?? null
   file.value = chosen
   preview.value = null
   notice.value = ''
   error.value = ''
+  identification.value = null
+  identificationError.value = ''
+  identificationChoice.value = null
+  selectedType.value = null
+  identifying.value = false
+  const empty = emptyMeta()
+  for (const key of ['code', 'edition', 'title', 'kind', 'amendsId'] as const) {
+    if (!manualFields.has(key)) Object.assign(form, { [key]: empty[key] })
+  }
   if (!chosen) return
+  if (!/\.pdf$/i.test(chosen.name)) {
+    error.value = 'Выберите файл PDF.'
+    return
+  }
   if (chosen.size > MAX_DOCUMENT_BYTES) {
     error.value = 'PDF больше 40 МБ.'
     return
   }
-  // Подсказка по имени файла заполняет только пустые поля.
-  const suggestion = suggestFromFilename(chosen.name)
-  if (!form.code) form.code = suggestion.code
-  if (!form.edition) form.edition = suggestion.edition
-  if (form.kind === 'other') form.kind = suggestion.kind
+  identifying.value = true
+  try {
+    const result = await identifyDocument(chosen)
+    if (request === identificationRequest) identification.value = result
+  } catch (cause) {
+    if (request === identificationRequest)
+      identificationError.value =
+        cause instanceof Error ? cause.message : 'Не удалось определить документ.'
+  } finally {
+    if (request === identificationRequest) identifying.value = false
+  }
+}
+
+function metaEdited(key: keyof DocumentMeta): void {
+  manualFields.add(key)
+  preview.value = null
+}
+
+function useCandidate(candidate: DocumentCandidate): void {
+  Object.assign(form, {
+    code: candidate.code,
+    edition: candidate.edition,
+    title: candidate.title,
+    kind: candidate.kind,
+  })
+  const parents = baseDocuments.value.filter(
+    (item) =>
+      normalizeDocumentCode(item.code) === candidate.code &&
+      item.edition.trim() === candidate.baseEdition,
+  )
+  form.amendsId = candidate.documentType !== 'base' && parents.length === 1 ? parents[0]!.id : null
+  for (const key of ['code', 'edition', 'title', 'kind', 'amendsId'] as const)
+    manualFields.delete(key)
+  selectedType.value = candidate.documentType
+  identificationChoice.value = 'candidate'
+  error.value = ''
+}
+
+function useManualMeta(): void {
+  identificationChoice.value = 'manual'
+  selectedType.value = null
+  error.value = ''
+}
+
+function useFilenameMeta(): void {
+  Object.assign(form, filenameSuggestion.value)
+  for (const key of ['code', 'edition', 'kind'] as const) manualFields.delete(key)
+  useManualMeta()
 }
 
 function resetForm(): void {
+  identificationRequest++
+  manualFields.clear()
   Object.assign(form, emptyMeta())
   file.value = null
   preview.value = null
+  identification.value = null
+  identificationError.value = ''
+  identificationChoice.value = null
+  selectedType.value = null
+  identifying.value = false
   if (fileInput.value) fileInput.value.value = ''
 }
 
 async function check(): Promise<void> {
-  if (!file.value) return
+  if (busy.value || props.locked || !file.value || identifying.value || !identificationChoice.value)
+    return
+  if (selectedType.value && selectedType.value !== 'base' && form.amendsId === null) {
+    error.value =
+      'Выберите основной документ в поле «Изменение к документу». Если его нет, сначала добавьте основной PDF.'
+    return
+  }
   busy.value = true
   error.value = ''
   notice.value = ''
@@ -397,35 +483,108 @@ function megabytes(bytes: number): string {
           @change="chooseFile"
         />
       </label>
+      <div class="wide identification" aria-live="polite">
+        <p v-if="identifying" role="status">Определение документа по тексту первых страниц PDF…</p>
+        <p v-if="identificationError" class="warning">{{ identificationError }}</p>
+        <template v-if="identification">
+          <p v-if="identification.status === 'ambiguous'" class="warning">
+            Найдено несколько обозначений. Выберите нужное или заполните сведения вручную.
+          </p>
+          <p v-if="identification.filenameConflict" class="warning">
+            Обозначение в имени файла не совпадает с текстом PDF. Сверьте сведения перед
+            добавлением.
+          </p>
+          <p v-if="identification.status === 'no-text'" class="warning">
+            На первых {{ identification.pagesRead }} страницах нет текстового слоя. Для скана
+            заполните сведения вручную.
+          </p>
+          <p v-else-if="identification.status === 'unrecognized'" class="warning">
+            На первых {{ identification.pagesRead }} страницах заголовок документа не определён.
+            Заполните сведения вручную.
+          </p>
+          <article
+            v-for="candidate in identification.candidates"
+            :key="`${candidate.code}/${candidate.edition}`"
+            class="candidate"
+          >
+            <strong>{{ candidate.code }} — {{ candidate.edition }}</strong>
+            <p v-if="candidate.title">{{ candidate.title }}</p>
+            <p class="meta">
+              {{
+                candidate.documentType === 'base'
+                  ? 'Основной документ'
+                  : candidate.documentType === 'amendment'
+                    ? `Изменение к редакции ${candidate.baseEdition}`
+                    : `Поправка к редакции ${candidate.baseEdition}`
+              }}
+              · стр. PDF {{ candidate.page }} · {{ documentKinds[candidate.kind] }}
+            </p>
+            <button type="button" :disabled="busy || locked" @click="useCandidate(candidate)">
+              Использовать сведения
+            </button>
+          </article>
+        </template>
+        <template v-if="file && !identifying">
+          <p v-if="filenameSuggestion.code" class="meta">
+            По имени файла: {{ filenameSuggestion.code }} {{ filenameSuggestion.edition }}. Имя
+            файла не подтверждает содержание или актуальность редакции.
+          </p>
+          <button
+            v-if="filenameSuggestion.code"
+            type="button"
+            :disabled="busy || locked"
+            @click="useFilenameMeta"
+          >
+            Использовать сведения из имени файла
+          </button>
+          <button type="button" :disabled="busy || locked" @click="useManualMeta">
+            Заполнить вручную
+          </button>
+          <p v-if="identificationChoice === 'candidate'" class="hint">
+            Сведения подставлены. Проверьте поля, дату введения и связь изменения с основным
+            документом.
+          </p>
+          <p v-else-if="identificationChoice === 'manual'" class="hint">
+            Используются сведения, введённые вручную. Сверьте их по PDF.
+          </p>
+          <p v-else class="hint">
+            Примите найденные сведения или выберите ручное заполнение. Введённые вручную поля
+            сохранены.
+          </p>
+        </template>
+      </div>
       <label
         >Обозначение
         <input
           v-model="form.code"
+          :disabled="busy || locked"
           required
           maxlength="120"
           placeholder="ГОСТ Р 52290"
-          @input="preview = null"
+          @input="metaEdited('code')"
       /></label>
       <label
         >Редакция
         <input
           v-model="form.edition"
+          :disabled="busy || locked"
           required
           maxlength="60"
           placeholder="2024 или «Изменение № 1»"
-          @input="preview = null"
+          @input="metaEdited('edition')"
       /></label>
       <label class="wide"
         >Название
         <input
           v-model="form.title"
+          :disabled="busy || locked"
           maxlength="500"
           placeholder="Технические средства организации дорожного движения. Знаки дорожные…"
-          @input="preview = null"
+          @input="metaEdited('title')"
       /></label>
       <label
         >Назначение
-        <select v-model="form.kind" @change="preview = null">
+        <select v-model="form.kind" :disabled="busy || locked" @change="metaEdited('kind')">
           <option v-for="(label, kind) in documentKinds" :key="kind" :value="kind">
             {{ label }}
           </option>
@@ -433,11 +592,16 @@ function megabytes(bytes: number): string {
       </label>
       <label
         >Дата введения в действие
-        <input v-model="form.effectiveFrom" type="date" @input="preview = null" />
+        <input
+          v-model="form.effectiveFrom"
+          type="date"
+          :disabled="busy || locked"
+          @input="preview = null"
+        />
       </label>
       <label
         >Изменение к документу
-        <select v-model="form.amendsId" @change="preview = null">
+        <select v-model="form.amendsId" :disabled="busy || locked" @change="metaEdited('amendsId')">
           <option :value="null">— основной документ (новая редакция) —</option>
           <option v-for="base in baseDocuments" :key="base.id" :value="base.id">
             {{ documentLabel(base) }}
@@ -446,18 +610,24 @@ function megabytes(bytes: number): string {
       </label>
       <label
         >Актуальность проверена
-        <input v-model="form.actualCheckedAt" type="date" />
+        <input v-model="form.actualCheckedAt" type="date" :disabled="busy || locked" />
       </label>
       <label class="wide"
         >Примечание
         <textarea
           v-model="form.note"
+          :disabled="busy || locked"
           rows="2"
           placeholder="Откуда получен документ, приказ о введении и т. п."
         />
       </label>
       <div class="wide">
-        <button type="submit" :disabled="busy || locked || !file">Проверить документ</button>
+        <button
+          type="submit"
+          :disabled="busy || locked || !file || identifying || !identificationChoice"
+        >
+          Проверить документ
+        </button>
       </div>
     </form>
     <div v-if="preview" class="preview" role="status">
@@ -609,5 +779,11 @@ button:disabled {
 }
 .preview code {
   overflow-wrap: anywhere;
+}
+.candidate {
+  margin: 0.7rem 0;
+  padding: 0.8rem;
+  border: 1px solid #93a5b8;
+  border-radius: 0.4rem;
 }
 </style>

@@ -35,10 +35,17 @@ import {
   applyDocumentUpload,
   DOCUMENT_UPLOAD_REQUEST_BYTES,
   InvalidDocumentUpload,
+  identifyDocumentUpload,
   previewDocumentUpload,
 } from './document-web-import.ts'
 import { applyPdfSigns, pdfSignImage, previewPdfSigns } from './sign-pdf-import.ts'
-import { confirmParameter, InvalidParameter, listParameterStates } from './normative-parameters.ts'
+import {
+  confirmParameter,
+  InvalidParameter,
+  listParameterStates,
+  ParameterConfirmationConflict,
+} from './normative-parameters.ts'
+import type { ParameterRejectionReason } from '../src/domain/normative-parameters.ts'
 import { documentMetaSchema } from '../src/domain/normative-documents.ts'
 import { clientEventsSchema, DiagnosticsLog, routeOf } from './diagnostics.ts'
 import { databaseIdentity } from './database-identity.ts'
@@ -188,9 +195,11 @@ export function createRegistryServer(
   const server = createServer(async (req, res) => {
     const started = performance.now()
     let route = routeOf(req.method ?? 'GET', '/api/?')
+    let parameterId: string | undefined
+    let rejection: { parameterId: string; rejectionReason: ParameterRejectionReason } | undefined
     res.on('finish', () => {
       if (route !== 'GET /api/diagnostics')
-        diagnostics.request(route, res.statusCode, performance.now() - started)
+        diagnostics.request(route, res.statusCode, performance.now() - started, rejection)
     })
     try {
       const address = server.address()
@@ -343,9 +352,16 @@ export function createRegistryServer(
         /^\/api\/normative-parameters\/[a-z0-9-]{1,80}\/confirm$/.test(pathname)
       ) {
         const id = pathname.split('/')[3]!
+        parameterId = id
         json(res, 200, await confirmParameter(store, id, await readJson(req)))
       } else if (req.method === 'GET' && pathname === '/api/documents') {
         json(res, 200, store.listDocuments())
+      } else if (req.method === 'POST' && pathname === '/api/documents/identify') {
+        json(
+          res,
+          200,
+          await identifyDocumentUpload(await readJson(req, DOCUMENT_UPLOAD_REQUEST_BYTES)),
+        )
       } else if (req.method === 'POST' && pathname === '/api/documents/preview') {
         json(
           res,
@@ -503,7 +519,14 @@ export function createRegistryServer(
         throw new RequestError(404, 'Адрес не найден.')
       }
     } catch (error) {
+      if (
+        (error instanceof InvalidParameter || error instanceof ParameterConfirmationConflict) &&
+        parameterId
+      )
+        rejection = { parameterId, rejectionReason: error.reason }
       if (error instanceof RequestError) json(res, error.status, { error: error.message })
+      else if (error instanceof ParameterConfirmationConflict)
+        json(res, 409, { error: error.message, reason: error.reason, field: error.field })
       else if (
         error instanceof RevisionConflict ||
         error instanceof AmbiguousPu66Key ||
@@ -517,7 +540,8 @@ export function createRegistryServer(
       else if (error instanceof InvalidDocumentUpload)
         json(res, error.status, { error: error.message })
       else if (error instanceof DocumentInUse) json(res, 409, { error: error.message })
-      else if (error instanceof InvalidParameter) json(res, error.status, { error: error.message })
+      else if (error instanceof InvalidParameter)
+        json(res, error.status, { error: error.message, reason: error.reason, field: error.field })
       else if (error instanceof ProjectTooLarge) json(res, 413, { error: error.message })
       else if (error instanceof ZodError) {
         const issue = error.issues[0]

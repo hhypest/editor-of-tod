@@ -8,12 +8,14 @@ import {
 } from '../src/domain/normative-documents.ts'
 import { localCalendarDate } from '../src/domain/pu66-review.ts'
 import { RegistryStore, RevisionConflict } from './store.ts'
+import { identifyDocument } from '../src/domain/document-identification.ts'
+import { extractPdfText } from './pdf-text.ts'
 
 export const MAX_DOCUMENT_BYTES = 40 * 1024 * 1024
 /** base64 PDF до 40 МБ и сведения о документе. */
 export const DOCUMENT_UPLOAD_REQUEST_BYTES = 56 * 1024 * 1024
 
-const requestSchema = z.strictObject({
+const fileSchema = z.strictObject({
   file: z.strictObject({
     name: z
       .string()
@@ -22,8 +24,8 @@ const requestSchema = z.strictObject({
       .regex(/\.pdf$/i),
     data: z.string().min(1),
   }),
-  meta: documentMetaSchema,
 })
+const requestSchema = fileSchema.extend({ meta: documentMetaSchema })
 const applySchema = requestSchema.extend({
   expectedFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
 })
@@ -45,6 +47,21 @@ function decode(data: string): Buffer {
   if (!bytes.subarray(0, 5).equals(Buffer.from('%PDF-')))
     throw new InvalidDocumentUpload('Выбранный файл не является PDF.')
   return bytes
+}
+
+/** Чтение первых восьми страниц без записи документа или резервной копии. */
+export async function identifyDocumentUpload(body: unknown) {
+  const input = fileSchema.parse(body)
+  const pdf = decode(input.file.data)
+  let pages: string[]
+  try {
+    pages = await extractPdfText(pdf, 8)
+  } catch {
+    throw new InvalidDocumentUpload(
+      'Не удалось прочитать PDF. Проверьте файл; сведения можно заполнить вручную.',
+    )
+  }
+  return identifyDocument(pages, input.file.name)
 }
 
 /** Что изменится в библиотеке после добавления: какая редакция станет действующей. */

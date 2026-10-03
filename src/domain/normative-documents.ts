@@ -56,7 +56,7 @@ export function normalizeDocumentCode(code: string): string {
 const knownKinds: Array<[RegExp, DocumentKind]> = [
   [/^ГОСТ Р 52290\b/u, 'signs'],
   [/^ГОСТ Р (52289|58350|50597)\b/u, 'rules'],
-  [/^ОДМ\b/u, 'methodology'],
+  [/^ОДМ(?:\s|$)/u, 'methodology'],
 ]
 
 export function kindForCode(code: string): DocumentKind {
@@ -71,14 +71,18 @@ export function kindForCode(code: string): DocumentKind {
 export function suggestFromFilename(
   filename: string,
 ): Pick<DocumentMeta, 'code' | 'edition' | 'kind'> {
-  const name = filename.replace(/\.pdf$/i, '').replace(/_/g, '-')
+  const name = filename.replace(/\.pdf$/i, '').replace(/[_–—−‑]/g, '-')
   const year = (value: string | undefined) => (value && /^(19|20)\d{2}$/.test(value) ? value : '')
-  const gost = /gost[-\s]*(r)?[-\s]*(\d{4,6}(?:\.\d+)*)(?:[-\s]+(\d{4}))?/i.exec(name)
+  const gost =
+    /(?<![\p{L}\d])(?:gost|гост)[-\s]*([rр])?[-\s]*(\d{4,6}(?:\.\d+)*)(?:[-\s]+((?:19|20)\d{2})(?!\d))?/iu.exec(
+      name,
+    )
   if (gost) {
     const code = `ГОСТ${gost[1] ? ' Р' : ''} ${gost[2]}`
     return { code, edition: year(gost[3]), kind: kindForCode(code) }
   }
-  const odm = /odm[-\s]*(\d{3}\.\d+\.\d+)(?:[-\s]+(\d{4}))?/i.exec(name)
+  const odm =
+    /(?<![\p{L}\d])(?:odm|одм)[-\s]*(\d{3}\.\d+\.\d+)(?:[-\s]+((?:19|20)\d{2})(?!\d))?/iu.exec(name)
   if (odm) {
     const code = `ОДМ ${odm[1]}`
     return { code, edition: year(odm[2]), kind: 'methodology' }

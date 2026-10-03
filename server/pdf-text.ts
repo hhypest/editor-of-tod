@@ -7,7 +7,7 @@ type Item = { str: string; x: number; y: number; width: number; height: number }
  * направо, строки — сверху вниз. Отсканированные страницы без текстового слоя дают пустую
  * строку.
  */
-export async function extractPdfText(pdf: Uint8Array): Promise<string[]> {
+export async function extractPdfText(pdf: Uint8Array, maxPages = Infinity): Promise<string[]> {
   const { getDocument } = await loadPdfJs()
   const task = getDocument({
     data: Uint8Array.from(pdf),
@@ -21,7 +21,7 @@ export async function extractPdfText(pdf: Uint8Array): Promise<string[]> {
   const document = await task.promise
   try {
     const pages: string[] = []
-    for (let number = 1; number <= document.numPages; number++) {
+    for (let number = 1; number <= Math.min(document.numPages, maxPages); number++) {
       const page = await document.getPage(number)
       const content = await page.getTextContent()
       const items: Item[] = content.items.flatMap((raw) => {
