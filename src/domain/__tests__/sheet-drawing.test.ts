@@ -198,6 +198,7 @@ describe('vector A4 sheet', () => {
       axisLabel: '24 км 7 пк',
       roadName: 'Учебная дорога Б',
       crossingWidthMetres: '6,10',
+      crossingRoadLengthMetres: 40,
       revision: 1,
       updatedAt: '2026-09-28T10:00:00.000Z',
     })

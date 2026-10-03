@@ -58,12 +58,14 @@ const typesize = computed(() =>
   typesizeRow.value ? (rules.value.typesize[typesizeRow.value] ?? null) : null,
 )
 const selectable = computed(() =>
-  typesize.value === 'I' ||
-  typesize.value === 'II' ||
-  typesize.value === 'III' ||
-  typesize.value === 'IV'
-    ? typesize.value
-    : null,
+  typesizeRow.value !== TWO_LANE_TYPESIZE_ROW
+    ? null
+    : typesize.value === 'I' ||
+        typesize.value === 'II' ||
+        typesize.value === 'III' ||
+        typesize.value === 'IV'
+      ? typesize.value
+      : null,
 )
 
 /**
@@ -138,7 +140,8 @@ function show(value: string | number | null): string {
             <strong v-if="rowConflict" class="conflict">
               Схемы Б.33/Б.34 рассчитаны на дорогу с двумя полосами (одна закрыта, по другой пропуск
               встречных направлений) — для неё типоразмер {{ twoLaneTypesize }}. Категория описывает
-              дорогу в целом; если у места работ две полосы, оставьте {{ twoLaneTypesize }}.
+              дорогу в целом; проверьте число полос у места работ. При двух полосах используйте
+              {{ twoLaneTypesize }}; при другом числе полос требуется отдельная схема.
             </strong>
             <button
               v-if="selectable"

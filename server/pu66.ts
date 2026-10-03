@@ -184,6 +184,7 @@ export function schemeFields(card: Pu66Card) {
     axisLabel: `${card.kilometre} км ${card.picket} пк`,
     roadName: card.roadName === '0' ? '' : card.roadName,
     crossingWidthMetres: technical('7'),
+    crossingRoadLengthMetres: technical('8'),
   }
 }
 

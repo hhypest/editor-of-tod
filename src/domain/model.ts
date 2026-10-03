@@ -349,17 +349,41 @@ const { settlementSpeedKmh: _settlementSpeed, ...parametersV7Fields } =
 void _settlementSpeed
 
 /**
- * Текущий формат проекта v7: вместо «скорости в населённом пункте» — разрешённая скорость на
+ * Прежний формат проекта v7: вместо «скорости в населённом пункте» — разрешённая скорость на
  * подходе к месту работ для обоих вариантов местоположения. От неё считаются ступени 3.24 по
  * умолчанию; null — скорость не указана (проекты вне населённого пункта до v7).
  */
-export const schemeSchema = z
+export const schemeV7Schema = z
   .strictObject({
     ...schemeV6Fields,
     schemaVersion: z.literal(7),
     parameters: z.strictObject({
       ...parametersV7Fields,
       approachSpeedKmh: finite.positive().nullable(),
+    }),
+  })
+  .superRefine(checkModernScheme)
+
+export const workConditionsSchema = z.strictObject({
+  kind: z.enum(['unknown', 'short', 'long']).default('unknown'),
+  durationHours: finite.positive().nullable().default(null),
+  daylight: z.enum(['unknown', 'day', 'night']).default('unknown'),
+  regulatorsPresent: z.boolean().default(false),
+  sectionMetres: finite.positive().nullable().default(null),
+})
+/** v8 adds explicit work conditions; missing historical conditions remain unknown. */
+export const schemeSchema = z
+  .strictObject({
+    ...schemeV7Schema.shape,
+    schemaVersion: z.literal(8),
+    parameters: schemeV7Schema.shape.parameters.extend({
+      workConditions: workConditionsSchema.default({
+        kind: 'unknown',
+        durationHours: null,
+        daylight: 'unknown',
+        regulatorsPresent: false,
+        sectionMetres: null,
+      }),
     }),
   })
   .superRefine(checkModernScheme)
@@ -431,7 +455,7 @@ export function upgradeSchemeV5(value: unknown): Scheme {
 export function upgradeSchemeV6(value: unknown): Scheme {
   const previous = schemeV6Schema.parse(value)
   const { settlementSpeedKmh, ...parameters } = previous.parameters
-  return schemeSchema.parse({
+  return upgradeSchemeV7({
     ...previous,
     schemaVersion: 7,
     parameters: {
@@ -439,6 +463,11 @@ export function upgradeSchemeV6(value: unknown): Scheme {
       approachSpeedKmh: parameters.location === 'out' ? null : settlementSpeedKmh,
     },
   })
+}
+
+export function upgradeSchemeV7(value: unknown): Scheme {
+  const previous = schemeV7Schema.parse(value)
+  return schemeSchema.parse({ ...previous, schemaVersion: 8 })
 }
 
 export function parseStoredScheme(value: unknown): Scheme {
@@ -457,5 +486,7 @@ export function parseStoredScheme(value: unknown): Scheme {
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 6) {
     return upgradeSchemeV6(value)
   }
+  if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 7)
+    return upgradeSchemeV7(value)
   return schemeSchema.parse(value)
 }

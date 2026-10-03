@@ -62,6 +62,7 @@ export type DraftSheet = {
   axisX: number
   anchors: ReturnType<typeof anchorCoordinates>
   regulationMode: Scheme['parameters']['regulation']['mode']
+  workConditions: Scheme['parameters']['workConditions']
   /**
    * Расстояние от регулировщика до рабочей зоны по табл. 5 ОДМ для скорости в зоне и его
    * источник; null — скорости нет в таблице.
@@ -164,6 +165,7 @@ export function projectDraftSheet(
     axisX: anchors.AX,
     anchors,
     regulationMode: scheme.parameters.regulation.mode,
+    workConditions: { ...scheme.parameters.workConditions },
     regulatorDistance: (() => {
       const metres = rules.regulatorDistance[scheme.parameters.speedStagesKmh[2]]
       return metres === undefined

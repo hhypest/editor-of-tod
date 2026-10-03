@@ -97,7 +97,7 @@ describe('public examples for manual migration checks', () => {
   it('preserves modern v1 settings, zone fractions, settlement distances and warns about unknown keys', () => {
     const imported = importSchemeJson(currentV1, { id, now })
     const scheme = imported.scheme
-    expect(scheme.schemaVersion).toBe(7)
+    expect(scheme.schemaVersion).toBe(8)
     expect(scheme.parameters).toMatchObject({
       location: 'in',
       signSize: 'II',

@@ -51,6 +51,14 @@ export type ParameterDefinition = NumberParameter | TableParameter
 
 export const ODM = 'ОДМ 218.6.019'
 export const GOST_RULES = 'ГОСТ Р 52289'
+export const GOST_WORKS = 'ГОСТ Р 58350'
+
+export const WORK_TRAFFIC_KEYS = {
+  signsLength: 'Протяжённость участка для знаков, менее, м',
+  signsHourly: 'Интенсивность для знаков, менее, авт/ч',
+  alternateLength: 'Наибольшая протяжённость участка со светофором, м',
+  alternateHourly: 'Наибольшая интенсивность на коротком участке, авт/ч',
+} as const
 
 /** Строки таблиц расстояний по умолчанию → поля проекта (подписи видит составитель). */
 export const OUTSIDE_DISTANCE_KEYS = {
@@ -70,11 +78,45 @@ export const WARNING_RANGE_KEYS = {
 
 export const parameterDefinitions: readonly ParameterDefinition[] = [
   {
+    id: 'gost-short-term-hours',
+    title: 'Наибольшая продолжительность краткосрочных работ',
+    unit: 'ч',
+    usedIn: 'Применимость Б.33/Б.34 и замена светофора регулировщиками; один день переведён в часы',
+    source: { kind: 'clause', documentCode: GOST_WORKS, clause: '3.5' },
+    type: 'number',
+    fallback: 24,
+    min: 1,
+    max: 24,
+  },
+  {
+    id: 'gost-work-traffic',
+    title: 'Условия поочерёдного пропуска в местах работ',
+    unit: '',
+    usedIn:
+      'Подсказка и проверка применимости знаков и регулировщиков; строки таблицы проверяются вручную с учётом сносок',
+    source: {
+      kind: 'table',
+      documentCode: GOST_WORKS,
+      table: 'Д.1',
+      clause: 'п. 6.1.3, таблица Д.1 и сноски',
+    },
+    type: 'table',
+    keyLabel: 'Условие',
+    valueLabel: 'Граница',
+    fallback: {
+      [WORK_TRAFFIC_KEYS.signsLength]: '50',
+      [WORK_TRAFFIC_KEYS.signsHourly]: '250',
+      [WORK_TRAFFIC_KEYS.alternateLength]: '300',
+      [WORK_TRAFFIC_KEYS.alternateHourly]: '500',
+    },
+    valuePattern: /^\d{1,4}$/,
+  },
+  {
     id: 'odm-signs-hourly',
     title: 'Интенсивность, до которой встречный разъезд регулируют знаками 2.6 и 2.7',
     unit: 'авт/ч',
     usedIn: 'Подсказка способа пропуска Б.34; сборка шаблона со знаками 2.6/2.7',
-    source: { kind: 'clause', documentCode: ODM, clause: '5.4.4' },
+    source: { kind: 'clause', documentCode: ODM, clause: '6.4.4' },
     type: 'number',
     fallback: 250,
     min: 1,
@@ -86,7 +128,7 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
     title: 'Протяжённость участка работ, до которой допускаются знаки 2.6 и 2.7',
     unit: 'м',
     usedIn: 'Подсказка способа пропуска Б.34',
-    source: { kind: 'clause', documentCode: ODM, clause: '5.4.4' },
+    source: { kind: 'clause', documentCode: ODM, clause: '6.4.4' },
     type: 'number',
     fallback: 50,
     min: 1,
@@ -98,7 +140,7 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
     title: 'Верхняя граница интенсивности при поочерёдном пропуске по одной полосе',
     unit: 'авт/ч',
     usedIn: 'Предупреждение подсказки способа пропуска',
-    source: { kind: 'clause', documentCode: ODM, clause: '5.4.2' },
+    source: { kind: 'clause', documentCode: ODM, clause: '6.4.2' },
     type: 'number',
     fallback: 500,
     min: 1,
@@ -110,12 +152,17 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
     title: 'Длина отгона при регулировании знаками 2.6 и 2.7',
     unit: 'м',
     usedIn: 'Подсказка способа пропуска; сборка шаблона со знаками 2.6/2.7',
-    source: { kind: 'clause', documentCode: ODM, clause: '4.1.8.3' },
+    source: {
+      kind: 'table',
+      documentCode: GOST_WORKS,
+      table: 'И.1',
+      clause: 'таблица И.1, примечание 3',
+    },
     type: 'number',
     fallback: 15,
     min: 1,
     max: 200,
-    pattern: /(\d+) м-с помощью знаков 2\.6/u,
+    pattern: /(\d+) м(?:\s*-\s*с помощью| при регулировании с помощью) знаков 2\.6/u,
   },
   {
     id: 'odm-regulator-distance',
@@ -298,6 +345,18 @@ export function valueProblem(
     return null
   }
   if (typeof value === 'number') return 'Нужна таблица значений.'
+  if (definition.id === 'gost-work-traffic') {
+    const keys = Object.values(WORK_TRAFFIC_KEYS)
+    if (keys.some((key) => !/^\d{1,4}$/.test(value[key] ?? '') || Number(value[key]) <= 0))
+      return 'Заполните все четыре условия таблицы Д.1 положительными числами; подписи строк должны сохраняться.'
+    if (
+      Number(value[WORK_TRAFFIC_KEYS.signsLength]) >
+        Number(value[WORK_TRAFFIC_KEYS.alternateLength]) ||
+      Number(value[WORK_TRAFFIC_KEYS.signsHourly]) >
+        Number(value[WORK_TRAFFIC_KEYS.alternateHourly])
+    )
+      return 'Границы для знаков не должны превышать границы таблицы Д.1.'
+  }
   const rows = Object.entries(value)
   if (!rows.length) return 'Таблица пуста.'
   const bad = rows.find(([, cell]) => !definition.valuePattern.test(cell))
@@ -390,7 +449,14 @@ export type ParameterState = z.infer<typeof parameterStateSchema>
 
 /** Значения, которыми пользуются расчёты, и их происхождение. */
 export type NormativeRules = {
+  shortTermHours: number
   signsHourly: number
+  workTraffic: Readonly<{
+    signsLength: number
+    signsHourly: number
+    alternateLength: number
+    alternateHourly: number
+  }>
   signsLengthMetres: number
   alternateHourly: number
   signsTaperMetres: number
@@ -418,12 +484,32 @@ export type NormativeRules = {
   peakHourShare: number | null
   /** Параметр подтверждён для действующей редакции. */
   confirmed: Readonly<Record<string, boolean>>
-  /** Ссылка для текста подсказок: «ОДМ 218.6.019-2016, п. 5.4.4». */
+  /** Основание ручной проверки: редакция, изменения и конкретная запись подтверждения. */
+  evidence: Readonly<Record<string, string>>
+  /** Ссылка для текста подсказок: «ОДМ 218.6.019-2016, п. 6.4.4». */
   sources: Readonly<Record<string, string>>
 }
 
 function fallbackValue(definition: ParameterDefinition): ParameterValue | null {
   return definition.fallback
+}
+
+/** A confirmation belongs to its original document and clause, including after a rule correction. */
+export function confirmationMatchesDefinition(
+  definition: ParameterDefinition,
+  confirmation: ParameterConfirmation | null | undefined,
+): boolean {
+  if (!confirmation) return false
+  const source = definition.source
+  if (source.kind === 'decision')
+    return confirmation.documentId === null && confirmation.clause === ''
+  const clause = source.kind === 'table' ? source.clause : `п. ${source.clause}`
+  return (
+    confirmation.documentId !== null &&
+    confirmation.clause === clause &&
+    (confirmation.documentLabel === source.documentCode ||
+      confirmation.documentLabel.startsWith(`${source.documentCode}-`))
+  )
 }
 
 function sourceLabel(definition: ParameterDefinition, documentLabel?: string): string {
@@ -442,13 +528,25 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
   const values: Record<string, ParameterValue | null> = {}
   const confirmed: Record<string, boolean> = {}
   const sources: Record<string, string> = {}
+  const evidence: Record<string, string> = {}
   for (const definition of parameterDefinitions) {
     const state = byId.get(definition.id)
-    values[definition.id] = state?.confirmation?.value ?? fallbackValue(definition)
-    confirmed[definition.id] = state?.status.kind === 'confirmed'
+    const matches = confirmationMatchesDefinition(definition, state?.confirmation)
+    values[definition.id] = matches ? state!.confirmation!.value : fallbackValue(definition)
+    confirmed[definition.id] = matches && state?.status.kind === 'confirmed'
+    evidence[definition.id] =
+      state && (state.document || state.confirmation || state.amendments.length)
+        ? JSON.stringify([
+            state.status.kind,
+            state.document,
+            state.amendments,
+            state.confirmation?.id ?? null,
+            state.confirmation?.fragment ?? null,
+          ])
+        : ''
     sources[definition.id] = sourceLabel(
       definition,
-      state?.confirmation?.documentLabel || state?.document?.label,
+      (matches ? state?.confirmation?.documentLabel : undefined) || state?.document?.label,
     )
   }
   const number = (id: string) => values[id] as number
@@ -468,7 +566,9 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
     ) as Record<K, number>
   }
   return {
+    shortTermHours: number('gost-short-term-hours'),
     signsHourly: number('odm-signs-hourly'),
+    workTraffic: tableNumbers('gost-work-traffic', WORK_TRAFFIC_KEYS),
     signsLengthMetres: number('odm-signs-length'),
     alternateHourly: number('odm-alternate-hourly'),
     signsTaperMetres: number('odm-signs-taper'),
@@ -492,6 +592,7 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
     },
     peakHourShare: (values['peak-hour-share'] as number | null) ?? null,
     confirmed,
+    evidence,
     sources,
   }
 }
@@ -510,6 +611,8 @@ export const PROTOTYPE_RULES: NormativeRules = rulesFrom()
 
 /** Параметры, от которых зависит подсказка способа пропуска. */
 export const REGULATION_PARAMETERS = [
+  'gost-short-term-hours',
+  'gost-work-traffic',
   'odm-signs-hourly',
   'odm-signs-length',
   'odm-alternate-hourly',

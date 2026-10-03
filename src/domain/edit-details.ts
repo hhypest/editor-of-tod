@@ -9,6 +9,8 @@ import {
 } from './normative-defaults'
 import type { NormativeRules } from './normative-parameters'
 import { PHONE_PLACEHOLDER, phoneComplete } from './title-block'
+import { selectTemplateByWorkFront } from './registry'
+import { frontLimit } from './work-conditions'
 
 type WorkZoneDraft = {
   taperMetres: string
@@ -31,6 +33,10 @@ export type SchemeDetailsDraft = {
     frontStyle: Scheme['parameters']['frontStyle']
     frontFromPu66: boolean
     regulation: Scheme['parameters']['regulation']
+    workConditions: Omit<
+      Scheme['parameters']['workConditions'],
+      'durationHours' | 'sectionMetres'
+    > & { durationHours: string; sectionMetres: string }
     workZones: { b33: WorkZoneDraft | null; b34: WorkZoneDraft | null }
   }
   titleBlock: Scheme['titleBlock']
@@ -85,6 +91,11 @@ export function createSchemeDetailsDraft(scheme: Scheme): SchemeDetailsDraft {
       frontStyle: parameters.frontStyle,
       frontFromPu66: parameters.frontFromPu66,
       regulation: { ...parameters.regulation },
+      workConditions: {
+        ...parameters.workConditions,
+        durationHours: parameters.workConditions.durationHours?.toString() ?? '',
+        sectionMetres: parameters.workConditions.sectionMetres?.toString() ?? '',
+      },
       speedStagesKmh: [
         String(parameters.speedStagesKmh[0]),
         String(parameters.speedStagesKmh[1]),
@@ -245,6 +256,17 @@ export function applySchemeDetails(scheme: Scheme, draft: SchemeDetailsDraft): S
       frontStyle: parameters.frontStyle,
       frontFromPu66: parameters.frontFromPu66,
       regulation: { ...parameters.regulation },
+      workConditions: {
+        ...parameters.workConditions,
+        durationHours: positiveOrEmpty(
+          parameters.workConditions.durationHours,
+          'продолжительность работ',
+        ),
+        sectionMetres: positiveOrEmpty(
+          parameters.workConditions.sectionMetres,
+          'участок между устройствами',
+        ),
+      },
       speedStagesKmh: [
         requiredMetres(parameters.speedStagesKmh[0], 'первая ступень скорости'),
         requiredMetres(parameters.speedStagesKmh[1], 'вторая ступень скорости'),
@@ -263,6 +285,24 @@ export function applySchemeDetails(scheme: Scheme, draft: SchemeDetailsDraft): S
         phone: person.phone.trim(),
       })) as Scheme['titleBlock']['responsible'],
     },
+  }
+  const zone = candidate.parameters.workZones[scheme.template.code]
+  const maximum = frontLimit(scheme)
+  if (zone && maximum !== null && maximum > 0 && zone.workMetres > maximum)
+    throw new SchemeEditError(
+      `Фронт ${zone.workMetres} м превышает длину ${maximum} м из п. 8 ПУ-66. Отгон и буфер вводятся отдельно.`,
+    )
+  if (zone) {
+    const { code } = selectTemplateByWorkFront(zone.workMetres)
+    if (code !== scheme.template.code) {
+      candidate.template = { ...scheme.template, code, reviewStatus: 'not-verified' }
+      candidate.parameters.workZones = {
+        b33: code === 'b33' ? zone : null,
+        b34: code === 'b34' ? zone : null,
+      }
+      // Keep hand placed objects, but invalidate all earlier manual acceptance after the switch.
+      candidate.reviewMarks = {}
+    }
   }
   const checked = schemeSchema.safeParse(candidate)
   if (!checked.success) {

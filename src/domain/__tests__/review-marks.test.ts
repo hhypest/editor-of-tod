@@ -6,7 +6,7 @@ import { exportSchemeJson, importSchemeJson } from '../import'
 import { findingFingerprint, markState, setMark, unmarkedChecks } from '../review-marks'
 import { reviewScheme } from '../review-scheme'
 import { pinSignImages } from '../sign-images'
-import { PROTOTYPE_RULES } from '../normative-parameters'
+import { PROTOTYPE_RULES, REGULATION_PARAMETERS } from '../normative-parameters'
 
 function project() {
   const scheme = createUnlinkedScheme({
@@ -21,7 +21,15 @@ function project() {
     location: 'out',
     approachSpeedKmh: '90',
     yellowTemporarySigns: false,
+    workConditions: {
+      kind: 'short',
+      durationHours: 5,
+      daylight: 'day',
+      regulatorsPresent: true,
+      sectionMetres: null,
+    },
   })
+  scheme.parameters.regulation = { ...scheme.parameters.regulation, mode: 'two', hourly: '300' }
   const post = newSignDraft()
   if (post.kind !== 'sign-post') throw new Error('Expected sign post')
   post.signCodes = '1.25'
@@ -39,6 +47,51 @@ function project() {
 const now = '2026-09-30T10:00:00.000Z'
 
 describe('manual review marks', () => {
+  it.each(REGULATION_PARAMETERS)(
+    'invalidates the traffic mark when %s needs reconfirmation',
+    (id) => {
+      const rules = {
+        ...PROTOTYPE_RULES,
+        confirmed: Object.fromEntries(REGULATION_PARAMETERS.map((parameter) => [parameter, true])),
+      }
+      const scheme = setMark(project(), reviewScheme(project(), rules), 'b34-traffic', true, now)
+      const amended = { ...rules, confirmed: { ...rules.confirmed, [id]: false } }
+      const findings = reviewScheme(scheme, amended)
+      expect(
+        markState(
+          scheme,
+          findings.find((finding) => finding.id === 'b34-traffic')!,
+        ).status,
+      ).toBe('stale')
+      expect(unmarkedChecks(scheme, findings).map((finding) => finding.id)).toContain('b34-traffic')
+    },
+  )
+
+  it('blocks incompatible imported conditions and invalidates marks when a bound changes', () => {
+    let scheme = project()
+    scheme = setMark(scheme, reviewScheme(scheme), 'b34-traffic', true, now)
+    const rules = { ...PROTOTYPE_RULES, signsHourly: 240 }
+    const changed = reviewScheme(scheme, rules).find((item) => item.id === 'b34-traffic')!
+    expect(markState(scheme, changed).status).toBe('stale')
+    for (const variant of ['auto', 'taper', 'visibility', 'long', 'intensity'] as const) {
+      const imported = structuredClone(scheme)
+      if (variant === 'auto') imported.parameters.regulation.mode = 'auto'
+      if (variant === 'taper') {
+        imported.parameters.regulation.mode = 'signs'
+        imported.parameters.regulation.hourly = '180'
+      }
+      if (variant === 'visibility') {
+        imported.parameters.regulation.mode = 'one'
+        imported.parameters.regulation.straight = false
+      }
+      if (variant === 'long') imported.parameters.workZones.b34!.workMetres = 30
+      if (variant === 'intensity') imported.parameters.regulation.hourly = '501'
+      const findings = reviewScheme(imported)
+      const finding = findings.find((item) => item.id === 'b34-traffic')!
+      expect(markState(imported, finding).status).toBe('blocked')
+      expect(() => setMark(imported, findings, finding.id, true, now)).toThrow('не соответствуют')
+    }
+  })
   it('marks every manual check and keeps marks in the saved project', () => {
     let scheme = project()
     const findings = reviewScheme(scheme)

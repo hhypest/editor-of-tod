@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   parameterDefinitions,
+  confirmationMatchesDefinition,
   valueProblem,
   type ParameterDefinition,
   type ParameterState,
@@ -103,7 +104,9 @@ function inUse(
   definition: ParameterDefinition,
   state: ParameterState | null,
 ): ParameterValue | null {
-  return state?.confirmation?.value ?? definition.fallback
+  return confirmationMatchesDefinition(definition, state?.confirmation)
+    ? state!.confirmation!.value
+    : definition.fallback
 }
 
 function open(definition: ParameterDefinition, state: ParameterState | null): void {
@@ -115,7 +118,11 @@ function open(definition: ParameterDefinition, state: ParameterState | null): vo
     return
   }
   openId.value = definition.id
-  const initial = state?.suggestion ?? state?.confirmation?.value ?? definition.fallback
+  const initial =
+    state?.suggestion ??
+    (confirmationMatchesDefinition(definition, state?.confirmation)
+      ? state!.confirmation!.value
+      : definition.fallback)
   form.note = ''
   if (definition.type === 'number') {
     form.number = typeof initial === 'number' ? String(initial) : ''

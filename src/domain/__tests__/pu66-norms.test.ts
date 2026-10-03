@@ -110,7 +110,7 @@ describe('PU-66 norm column', () => {
     expect(typesizeRowForCategory('IВ')).toBe('четыре и более полос')
     expect(typesizeRowForCategory('4')).toBe('две и три полосы')
     expect(typesizeRowForCategory('V')).toBe('одна полоса')
-    expect(typesizeRowForCategory('2')).toBeNull()
+    expect(typesizeRowForCategory('2')).toBe('две и три полосы')
     expect(typesizeRowForCategory(null)).toBeNull()
   })
 })

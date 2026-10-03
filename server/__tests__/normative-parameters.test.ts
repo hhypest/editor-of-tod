@@ -3,11 +3,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { DocumentMeta } from '../../src/domain/normative-documents'
-import { rulesFrom } from '../../src/domain/normative-parameters'
+import { parameterDefinitions, rulesFrom } from '../../src/domain/normative-parameters'
 import { applyDocumentUpload, previewDocumentUpload } from '../document-web-import'
 import { confirmParameter, listParameterStates } from '../normative-parameters'
 import { DocumentInUse, RegistryStore, RevisionConflict } from '../store'
 import { fictionalMethodology as methodology, textPdf } from './pdf-fixture'
+import { createUnlinkedScheme } from '../../src/domain/create-scheme'
+import { reviewScheme } from '../../src/domain/review-scheme'
+import { markState, setMark, unmarkedChecks } from '../../src/domain/review-marks'
 
 const directories: string[] = []
 const stores: RegistryStore[] = []
@@ -52,6 +55,156 @@ const state = (states: Awaited<ReturnType<typeof listParameterStates>>, id: stri
   states.find((item) => item.id === id)!
 
 describe('normative parameters from library documents', () => {
+  it('requires a new traffic check after a relevant amendment, even after reconfirming the same value', async () => {
+    const store = library()
+    const document = await add(store, methodology(520), {})
+    const who = { confirmedBy: 'Учебный составитель', note: '', expectedDocumentId: document.id }
+    await confirmParameter(store, 'odm-signs-hourly', { ...who, value: 260 }, now)
+    let scheme = createUnlinkedScheme({
+      referenceId: 'TEST-AMENDMENT',
+      locationText: 'Учебный участок',
+      directionLeft: 'А',
+      directionRight: 'Б',
+      frontMetres: '18',
+      taperMetres: '10',
+      bufferMetres: '10',
+      speedStagesKmh: ['70', '50', '40'],
+      location: 'out',
+      approachSpeedKmh: '90',
+      yellowTemporarySigns: false,
+      workConditions: {
+        kind: 'short',
+        durationHours: 5,
+        daylight: 'day',
+        regulatorsPresent: true,
+        sectionMetres: null,
+      },
+    })
+    scheme.parameters.regulation = { ...scheme.parameters.regulation, mode: 'two', hourly: '300' }
+    const original = rulesFrom(await listParameterStates(store, now))
+    scheme = setMark(scheme, reviewScheme(scheme, original), 'b34-traffic', true, now.toISOString())
+    const traffic = (rules: typeof original) =>
+      reviewScheme(scheme, rules).find((finding) => finding.id === 'b34-traffic')!
+
+    await add(store, textPdf([['Учебное изменение: пункт 6.4.4 требует повторной сверки.']]), {
+      code: 'Изменение № 1 к ОДМ 218.6.019',
+      edition: '2031',
+      effectiveFrom: '2031-01-01',
+      amendsId: document.id,
+    })
+    const amended = rulesFrom(await listParameterStates(store, now))
+    expect(amended.signsHourly).toBe(original.signsHourly)
+    expect(amended.sources).toEqual(original.sources)
+    expect(amended.confirmed['odm-signs-hourly']).toBe(false)
+    expect(markState(scheme, traffic(amended)).status).toBe('stale')
+    expect(
+      unmarkedChecks(scheme, reviewScheme(scheme, amended)).map((finding) => finding.id),
+    ).toContain('b34-traffic')
+
+    await confirmParameter(store, 'odm-signs-hourly', { ...who, value: 260 }, now)
+    const reconfirmed = rulesFrom(await listParameterStates(store, now))
+    expect(reconfirmed.confirmed['odm-signs-hourly']).toBe(true)
+    expect(markState(scheme, traffic(reconfirmed)).status).toBe('stale')
+    scheme = setMark(
+      scheme,
+      reviewScheme(scheme, reconfirmed),
+      'b34-traffic',
+      true,
+      now.toISOString(),
+    )
+    expect(markState(scheme, traffic(reconfirmed)).status).toBe('marked')
+    await confirmParameter(
+      store,
+      'peak-hour-share',
+      {
+        value: 0.1,
+        confirmedBy: who.confirmedBy,
+        note: 'Учебный подсчёт',
+        expectedDocumentId: null,
+      },
+      now,
+    )
+    expect(
+      markState(scheme, traffic(rulesFrom(await listParameterStates(store, now)))).status,
+    ).toBe('marked')
+  })
+
+  it('requires reconfirmation for an old clause in the same library document', async () => {
+    const store = library()
+    const document = await add(store, methodology(520), {})
+    store.addParameterConfirmation({
+      parameterId: 'odm-signs-hourly',
+      documentId: document.id,
+      documentLabel: 'ОДМ 218.6.019-2016',
+      clause: 'п. 5.4.4',
+      page: 2,
+      quote: '',
+      fragment: '',
+      value: 999,
+      confirmedBy: 'Учебный составитель',
+      confirmedAt: '2030-01-01',
+      note: 'Учебное старое основание',
+    })
+    const states = await listParameterStates(store, now)
+    expect(state(states, 'odm-signs-hourly').status.kind).toBe('changed')
+    expect(state(states, 'odm-signs-hourly').confirmation?.value).toBe(999)
+    expect(rulesFrom(states).signsHourly).toBe(250)
+  })
+  it('quotes the GOST tables and invalidates confirmation when a relevant amendment takes effect', async () => {
+    const store = library()
+    const document = await add(
+      store,
+      textPdf([
+        [
+          'Таблица Д.1 - Учебная таблица сочетаний.',
+          'Учебные строки проверяются составителем вручную.',
+        ],
+        ['Таблица И.1 - Учебный отгон.', 'На учебной дороге 14 м - с помощью знаков 2.6 и 2.7.'],
+      ]),
+      { code: 'ГОСТ Р 58350', kind: 'rules', edition: '2019', effectiveFrom: '2019-07-01' },
+    )
+    let states = await listParameterStates(store, now)
+    expect(state(states, 'gost-work-traffic').quote?.page).toBe(1)
+    expect(state(states, 'gost-work-traffic').suggestion).toBeNull()
+    expect(state(states, 'odm-signs-taper').suggestion).toBe(14)
+    const who = {
+      confirmedBy: 'Учебный составитель',
+      note: 'Сверены учебные сноски',
+      expectedDocumentId: document.id,
+    }
+    await confirmParameter(store, 'odm-signs-taper', { ...who, value: 14 }, now)
+    await add(store, textPdf([['Учебное изменение к таблице И.1.']]), {
+      code: 'Изменение № 1 к ГОСТ Р 58350',
+      edition: '2031',
+      effectiveFrom: '2031-01-01',
+      amendsId: document.id,
+    })
+    states = await listParameterStates(store, now)
+    expect(state(states, 'odm-signs-taper').status.kind).toBe('changed')
+    expect(rulesFrom(states).confirmed['odm-signs-taper']).toBe(false)
+    await confirmParameter(store, 'odm-signs-taper', { ...who, value: 16 }, now)
+    expect(state(await listParameterStates(store, now), 'odm-signs-taper').status.kind).toBe(
+      'confirmed',
+    )
+    const traffic = parameterDefinitions.find((item) => item.id === 'gost-work-traffic')!
+    await confirmParameter(store, traffic.id, { ...who, value: traffic.fallback }, now)
+    await add(store, textPdf([['Учебное изменение пункта 6.1.3.']]), {
+      code: 'Изменение № 2 к ГОСТ Р 58350',
+      edition: '2033',
+      effectiveFrom: '2031-02-01',
+      amendsId: document.id,
+    })
+    expect(state(await listParameterStates(store, now), traffic.id).status.kind).toBe('changed')
+    await add(store, textPdf([['Учебная поправка к пункту 4.1.']]), {
+      code: 'Поправка к ГОСТ Р 58350',
+      edition: '2032',
+      effectiveFrom: '2031-02-01',
+      amendsId: document.id,
+    })
+    expect(state(await listParameterStates(store, now), 'odm-signs-taper').status.kind).toBe(
+      'confirmed',
+    )
+  })
   it('quotes clauses of the current edition and suggests values from their text', async () => {
     const store = library()
     const document = await add(store, methodology(520), {})
@@ -65,7 +218,7 @@ describe('normative parameters from library documents', () => {
     expect(state(states, 'odm-signs-hourly').quote!.text).toContain('менее 45 м')
     expect(state(states, 'odm-signs-length').suggestion).toBe(45)
     expect(state(states, 'odm-alternate-hourly').suggestion).toBe(520)
-    expect(state(states, 'odm-signs-taper').suggestion).toBe(14)
+    expect(state(states, 'odm-signs-taper').status).toEqual({ kind: 'no-document' })
     expect(state(states, 'odm-regulator-distance').suggestion).toEqual({ '30': '12', '50': '34' })
     expect(state(states, 'gost-speed-step').status).toEqual({ kind: 'no-document' })
     expect(state(states, 'peak-hour-share').status).toEqual({ kind: 'unconfirmed' })
@@ -92,7 +245,7 @@ describe('normative parameters from library documents', () => {
     )
     expect(confirmation).toMatchObject({
       documentLabel: 'ОДМ 218.6.019-2016',
-      clause: 'п. 5.4.4',
+      clause: 'п. 6.4.4',
       page: 2,
       value: 260,
       confirmedAt: '2031-03-01',
@@ -129,7 +282,7 @@ describe('normative parameters from library documents', () => {
     const who = { confirmedBy: 'Учебный составитель', note: '', expectedDocumentId: old.id }
     await confirmParameter(store, 'odm-signs-hourly', { ...who, value: 260 }, now)
     await confirmParameter(store, 'odm-alternate-hourly', { ...who, value: 520 }, now)
-    // Новая редакция: условие 5.4.4 то же (изменено только другое предложение), 5.4.2 другое.
+    // Новая редакция: условие 6.4.4 то же (изменено только другое предложение), 6.4.2 другое.
     const next = await add(store, methodology(610, ' Учебное дополнение.'), {
       edition: '2030',
       effectiveFrom: '2030-01-01',
@@ -147,8 +300,8 @@ describe('normative parameters from library documents', () => {
     expect(rules.alternateHourly).toBe(520)
     expect(rules.confirmed['odm-alternate-hourly']).toBe(false)
 
-    // Действующее изменение к новой редакции упоминает пункт 5.4.4.
-    await add(store, textPdf([['Изменение учебное. Пункт 5.4.4 изложить в новой редакции.']]), {
+    // Действующее изменение к новой редакции упоминает пункт 6.4.4.
+    await add(store, textPdf([['Изменение учебное. Пункт 6.4.4 изложить в новой редакции.']]), {
       code: 'Изменение № 1 к ОДМ 218.6.019',
       edition: '2031',
       effectiveFrom: '2031-01-01',

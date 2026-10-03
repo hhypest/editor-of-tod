@@ -201,6 +201,7 @@ describe('local API', () => {
       axisLabel: '88 км 3 пк',
       roadName: 'Вымышленная дорога',
       crossingWidthMetres: 8,
+      crossingRoadLengthMetres: 9,
       revision: 1,
       updatedAt: expect.any(String),
     })

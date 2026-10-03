@@ -409,6 +409,21 @@ function titleSuffix(sheet: DraftSheet): string {
  */
 function notes(sheet: DraftSheet): string[] {
   const list: string[] = []
+  if (sheet.workConditions.kind !== 'unknown') {
+    list.push(
+      `Работы: ${sheet.workConditions.kind === 'short' ? 'краткосрочные' : 'долгосрочные'}, ${sheet.workConditions.durationHours ?? 'уточнить'} ч; ${sheet.workConditions.daylight === 'day' ? 'в светлое время' : sheet.workConditions.daylight === 'night' ? 'включая тёмное время' : 'время суток уточнить'}.`,
+    )
+    if (
+      sheet.template === 'b33' ||
+      sheet.regulationMode === 'one' ||
+      sheet.regulationMode === 'two'
+    )
+      list.push(
+        sheet.workConditions.regulatorsPresent
+          ? 'Постоянное присутствие регулировщиков обеспечивать в течение всего срока работ (ОДМ, п. 6.4.3).'
+          : 'Постоянное присутствие регулировщиков не подтверждено — требуется проверка.',
+      )
+  }
   if (sheet.template === 'b34') {
     if (sheet.regulationMode === 'signs')
       list.push('Очерёдность проезда — знаки 2.6 и 2.7 (решение составителя).')

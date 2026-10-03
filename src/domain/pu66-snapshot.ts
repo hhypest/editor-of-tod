@@ -9,6 +9,8 @@ export const pu66SchemeRecordSchema = z.strictObject({
   axisLabel: z.string().max(500),
   roadName: z.string().max(2_000),
   crossingWidthMetres: cell,
+  /** Фактическая длина проезжей части в границах переезда, п. 8 ПУ-66. */
+  crossingRoadLengthMetres: cell.default(null),
   revision: z.number().int().positive(),
   updatedAt: z.iso.datetime(),
 })
