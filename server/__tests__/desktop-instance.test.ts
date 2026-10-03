@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from 'node:fs'
+import { randomInt } from 'node:crypto'
 import { createServer, Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,7 +26,10 @@ function database() {
   return store
 }
 
-/** Свободный порт из ОС не гарантирует доступности соседнего: Windows резервирует диапазоны. */
+/** Windows раздаёт listen(0) и HTTP-клиентам один диапазон временных портов:
+ * после проверки пары исходящее соединение может занять соседний порт.
+ * Проверяем случайную пару ниже этого диапазона; резервы ОС всё равно пропускаем.
+ */
 async function availablePair(): Promise<number> {
   for (let attempt = 0; attempt < 20; attempt++) {
     const first = createServer()
@@ -33,7 +37,7 @@ async function availablePair(): Promise<number> {
     try {
       await new Promise<void>((resolve, reject) => {
         first.once('error', reject)
-        first.listen(0, '127.0.0.1', resolve)
+        first.listen(randomInt(20_000, 40_000), '127.0.0.1', resolve)
       })
       const address = first.address()
       if (!address || typeof address === 'string') throw new Error('Server address missing')
@@ -67,7 +71,9 @@ async function start(store: RegistryStore, port?: number) {
 describe('desktop instances preserve the selected database', () => {
   it('skips a port reserved by the operating system', async () => {
     const port = await availablePair()
-    vi.spyOn(Server.prototype, 'listen').mockImplementationOnce(function (this: Server) {
+    const listening = vi.spyOn(Server.prototype, 'listen').mockImplementationOnce(function (
+      this: Server,
+    ) {
       queueMicrotask(() =>
         this.emit('error', Object.assign(new Error('Reserved port'), { code: 'EACCES' })),
       )
@@ -75,7 +81,8 @@ describe('desktop instances preserve the selected database', () => {
     })
     const instance = await start(database(), port)
     expect(instance.server).not.toBeNull()
-    expect(instance.port).toBe(port + 1)
+    expect(listening.mock.calls[0]?.[0]).toBe(port)
+    expect(instance.port).toBeGreaterThan(port)
   })
 
   it('reuses the server for the same canonical file without exposing its path', async () => {
