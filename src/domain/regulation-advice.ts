@@ -5,7 +5,7 @@ import {
   regulationVerified,
   type NormativeRules,
 } from './normative-parameters.ts'
-import { workTrafficDecision } from './work-traffic.ts'
+import { workTrafficDecision, shortTermWork, type WorkConditions } from './work-traffic.ts'
 
 /**
  * Объяснимая подсказка способа пропуска транспорта для схемы Б.34. Пороги, протяжённость,
@@ -31,6 +31,7 @@ export type RegulationInput = {
   frontMetres: number | null
   /** Полная протяжённость участка между первым и последним устройствами. */
   sectionMetres: number | null
+  workConditions?: WorkConditions
 }
 
 export type RegulationAdvice = {
@@ -62,6 +63,10 @@ export function adviseRegulation(
   const hourly = parseHourly(input.hourly)
   const reasons: string[] = []
   const warnings: string[] = []
+  if (!shortTermWork(input.workConditions, rules))
+    warnings.push(
+      `Укажите краткосрочные работы и продолжительность не более ${rules.shortTermHours} ч; без этих условий подсказку применять нельзя (${rules.sources['gost-short-term-hours']}).`,
+    )
   const signsSource = rules.sources['odm-signs-hourly']
   let mode: RegulationMode | null
 
@@ -69,7 +74,13 @@ export function adviseRegulation(
   const length = Math.min(rules.signsLengthMetres, rules.workTraffic.signsLength)
   const intensity = Math.min(rules.signsHourly, rules.workTraffic.signsHourly)
   const source = rules.sources['gost-work-traffic']
-  const decision = workTrafficDecision(section, hourly, input.limitedVisibility, rules)
+  const decision = workTrafficDecision(
+    section,
+    hourly,
+    input.limitedVisibility,
+    rules,
+    input.workConditions,
+  )
   if (decision === 'unknown') {
     mode = null
     reasons.push(
@@ -93,7 +104,17 @@ export function adviseRegulation(
       `Интенсивность ${hourly} авт./ч в двух направлениях — менее ${intensity} авт./ч, участок проведения работ ${section} м — менее ${length} м, видимость встречного автомобиля обеспечена с обеих сторон: допускаются знаки 2.6 и 2.7 (${signsSource}; ${source}).`,
     )
   } else {
-    mode = input.straight && !input.limitedVisibility ? 'one' : 'two'
+    mode =
+      input.straight &&
+      !input.limitedVisibility &&
+      section !== null &&
+      section < length &&
+      input.workConditions?.daylight === 'day' &&
+      shortTermWork(input.workConditions, rules) &&
+      input.workConditions.regulatorsPresent &&
+      input.zoneSpeedKmh !== null
+        ? 'one'
+        : 'two'
     reasons.push(
       `Знаки 2.6/2.7 не подходят по интенсивности или видимости. Допускаются регулировщики при их постоянном присутствии в течение всего срока работ (${source}; ОДМ, п. 6.4.3).`,
     )
@@ -108,7 +129,7 @@ export function adviseRegulation(
   }
   if (section !== null)
     reasons.push(
-      `Расчётная протяжённость участка — ${section} м (отгон + буфер + фронт ${input.frontMetres ?? 'не введён'} м). Сверьте фактические границы направляющих устройств и расстояние видимости встречного автомобиля по ГОСТ Р 52289.`,
+      `Протяжённость участка — ${section} м (${input.workConditions?.sectionMetres !== null && input.workConditions?.sectionMetres !== undefined ? 'измеренные границы устройств' : `предварительно: отгон + буфер + фронт ${input.frontMetres ?? 'не введён'} м`}). Сверьте фактические границы направляющих устройств и расстояние видимости встречного автомобиля по ГОСТ Р 52289.`,
     )
   if (mode === 'signs' && input.taperMetres !== rules.signsTaperMetres)
     warnings.push(
@@ -137,7 +158,11 @@ export function adviseRegulation(
     reasons,
     warnings,
     regulatorDistanceMetres,
-    verified: regulationVerified(rules),
+    verified:
+      (section === null || input.frontMetres === null || section >= input.frontMetres) &&
+      regulationVerified(rules) &&
+      shortTermWork(input.workConditions, rules) &&
+      (mode === 'signs' || input.workConditions?.regulatorsPresent === true),
     unconfirmed,
   }
 }

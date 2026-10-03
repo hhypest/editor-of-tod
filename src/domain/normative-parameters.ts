@@ -78,6 +78,17 @@ export const WARNING_RANGE_KEYS = {
 
 export const parameterDefinitions: readonly ParameterDefinition[] = [
   {
+    id: 'gost-short-term-hours',
+    title: 'Наибольшая продолжительность краткосрочных работ',
+    unit: 'ч',
+    usedIn: 'Применимость Б.33/Б.34 и замена светофора регулировщиками; один день переведён в часы',
+    source: { kind: 'clause', documentCode: GOST_WORKS, clause: '3.5' },
+    type: 'number',
+    fallback: 24,
+    min: 1,
+    max: 24,
+  },
+  {
     id: 'gost-work-traffic',
     title: 'Условия поочерёдного пропуска в местах работ',
     unit: '',
@@ -438,6 +449,7 @@ export type ParameterState = z.infer<typeof parameterStateSchema>
 
 /** Значения, которыми пользуются расчёты, и их происхождение. */
 export type NormativeRules = {
+  shortTermHours: number
   signsHourly: number
   workTraffic: Readonly<{
     signsLength: number
@@ -554,6 +566,7 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
     ) as Record<K, number>
   }
   return {
+    shortTermHours: number('gost-short-term-hours'),
     signsHourly: number('odm-signs-hourly'),
     workTraffic: tableNumbers('gost-work-traffic', WORK_TRAFFIC_KEYS),
     signsLengthMetres: number('odm-signs-length'),
@@ -598,6 +611,7 @@ export const PROTOTYPE_RULES: NormativeRules = rulesFrom()
 
 /** Параметры, от которых зависит подсказка способа пропуска. */
 export const REGULATION_PARAMETERS = [
+  'gost-short-term-hours',
   'gost-work-traffic',
   'odm-signs-hourly',
   'odm-signs-length',

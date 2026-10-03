@@ -19,7 +19,8 @@ export function oldTitleBlock(scheme: Scheme) {
  * пункте». Вне населённого пункта поле не использовалось, там записывается значение прототипа.
  */
 export function v6Snapshot(scheme: Scheme) {
-  const { approachSpeedKmh, ...parameters } = scheme.parameters
+  const { approachSpeedKmh, workConditions: _conditions, ...parameters } = scheme.parameters
+  void _conditions
   return {
     ...scheme,
     schemaVersion: 6 as const,

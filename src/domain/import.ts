@@ -7,6 +7,8 @@ import {
   schemeV4Schema,
   schemeV5Schema,
   schemeV6Schema,
+  schemeV7Schema,
+  upgradeSchemeV7,
   upgradeSchemeV4,
   upgradeSchemeV5,
   upgradeSchemeV6,
@@ -35,7 +37,14 @@ export class SchemeImportError extends Error {
 export interface ImportResult {
   scheme: Scheme
   format:
-    'legacy-v1' | 'scheme-v2' | 'scheme-v3' | 'scheme-v4' | 'scheme-v5' | 'scheme-v6' | 'scheme-v7'
+    | 'legacy-v1'
+    | 'scheme-v2'
+    | 'scheme-v3'
+    | 'scheme-v4'
+    | 'scheme-v5'
+    | 'scheme-v6'
+    | 'scheme-v7'
+    | 'scheme-v8'
   warnings: string[]
 }
 
@@ -226,7 +235,7 @@ function migrateLegacy(
 
   const { params, head } = legacy
   const candidate = {
-    schemaVersion: 7,
+    schemaVersion: 8,
     id,
     createdAt: now,
     crossing: { referenceId: params.key, source: 'legacy-pu66', snapshot: null },
@@ -406,11 +415,23 @@ export function importSchemeJson(
   }
 
   if ('schemaVersion' in value && value.schemaVersion === 7) {
+    const parsed = schemeV7Schema.safeParse(value)
+    if (!parsed.success) invalidIssue(parsed.error.issues)
+    return {
+      scheme: upgradeSchemeV7(parsed.data),
+      format: 'scheme-v7',
+      warnings: [
+        'Условия длительности, дневных работ и присутствия регулировщиков в прежнем формате не хранились. Заполните их на этапе 2.',
+      ],
+    }
+  }
+
+  if ('schemaVersion' in value && value.schemaVersion === 8) {
     const parsed = schemeSchema.safeParse(value)
     if (!parsed.success) invalidIssue(parsed.error.issues)
     return {
       scheme: parsed.data,
-      format: 'scheme-v7',
+      format: 'scheme-v8',
       warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
     }
   }
@@ -431,7 +452,7 @@ export function importSchemeJson(
 
   throw new SchemeImportError(
     'unsupported-version',
-    'Версия проекта не поддерживается. Поддерживаются v: 1 и schemaVersion: 2–7.',
+    'Версия проекта не поддерживается. Поддерживаются v: 1 и schemaVersion: 2–8.',
   )
 }
 

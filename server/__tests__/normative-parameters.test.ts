@@ -72,6 +72,13 @@ describe('normative parameters from library documents', () => {
       location: 'out',
       approachSpeedKmh: '90',
       yellowTemporarySigns: false,
+      workConditions: {
+        kind: 'short',
+        durationHours: 5,
+        daylight: 'day',
+        regulatorsPresent: true,
+        sectionMetres: null,
+      },
     })
     scheme.parameters.regulation = { ...scheme.parameters.regulation, mode: 'two', hourly: '300' }
     const original = rulesFrom(await listParameterStates(store, now))

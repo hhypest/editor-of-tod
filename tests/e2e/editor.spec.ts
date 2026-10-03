@@ -20,7 +20,7 @@ async function importSampleCards(request: APIRequestContext): Promise<void> {
   sampleFiles ??= Promise.all(
     sampleCards.slice(0, 4).map(async (card) => ({
       name: card.filename,
-      data: (await createSampleWorkbook(card)).toString('base64'),
+      data: (await createSampleWorkbook({ ...card, length: 40 })).toString('base64'),
     })),
   )
   const files = await sampleFiles
@@ -62,6 +62,12 @@ async function fillNewProject(
   await page.getByLabel('Фронт работ, м').fill('18')
   await page.getByLabel('Отвод, м').fill(sizes.taper)
   await page.getByLabel('Буфер, м').fill('10')
+  await page.locator('[data-field="parameters.workConditions.kind"]:visible').selectOption('short')
+  await page.locator('[data-field="parameters.workConditions.durationHours"]:visible').fill('5')
+  await page
+    .locator('[data-field="parameters.workConditions.daylight"]:visible')
+    .selectOption('day')
+  await page.locator('[data-field="parameters.workConditions.regulatorsPresent"]:visible').check()
   await page.getByLabel(location).check()
 }
 
@@ -82,6 +88,49 @@ test('without PU-66 cards a new project cannot be started', async ({ page }) => 
   await openNewProjectTab(page)
   await expect(page.locator('.blocked')).toContainText('реестр ПУ-66 недоступен')
   await expect(page.getByRole('button', { name: 'Создать проект' })).toHaveCount(0)
+})
+
+test('recalculates the variant from the front and permits explicitly staffed signal replacement', async ({
+  page,
+  request,
+}) => {
+  await importSampleCards(request)
+  await page.goto('/')
+  await fillNewProject(page, '12 км 3 пк', '90001:12:3')
+  await page.getByLabel('Фронт работ, м').fill('21,5')
+  await expect(page.getByRole('status').filter({ hasText: 'По длине фронта' })).toContainText(
+    'Б.34',
+  )
+  await page.getByRole('button', { name: 'Создать проект' }).click()
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('249')
+  await page.locator('[data-field="parameters.workConditions.sectionMetres"]:visible').fill('50')
+  await expect(page.locator('.advice').getByRole('heading')).toContainText('два регулировщика')
+  await page.locator('[data-field="parameters.workConditions.regulatorsPresent"]:visible').uncheck()
+  await expect(page.locator('.advice')).toContainText('таблица предусматривает светофор')
+  await page.locator('[data-field="parameters.workConditions.regulatorsPresent"]:visible').check()
+  await page.getByLabel('Регулирование Б.34').selectOption('two')
+  const front = page
+    .getByRole('heading', { name: 'Зона Б.34', exact: true })
+    .locator('..')
+    .getByLabel('Фронт работ, м', { exact: true })
+  await front.fill('31')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await expect(page.getByRole('heading', { name: 'Зона Б.33', exact: true })).toBeVisible()
+  await page
+    .getByRole('heading', { name: 'Зона Б.33', exact: true })
+    .locator('..')
+    .getByLabel('Фронт работ, м', { exact: true })
+    .fill('21,5')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await expect(page.getByRole('heading', { name: 'Зона Б.34', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Взять фронт из п. 8 ПУ-66' }).click()
+  await expect(
+    page
+      .getByRole('heading', { name: 'Зона Б.34', exact: true })
+      .locator('..')
+      .getByLabel('Фронт работ, м', { exact: true }),
+  ).toHaveValue('40')
 })
 
 test('new project: form edits apply, review opens, and console stays clean', async ({
@@ -165,7 +214,7 @@ test('B.34 regulation hint with unconfirmed parameters explains the rules but ca
   await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('300')
   await page.getByLabel('Прямой участок; регулировщик виден с обоих концов рабочей зоны').check()
   await expect(advice.getByRole('heading')).toContainText('один регулировщик')
-  await expect(advice).toContainText('Не подтверждены: Условия поочерёдного пропуска')
+  await expect(advice).toContainText('Не подтверждены: Наибольшая продолжительность')
   await expect(advice).toContainText('«Нормативные параметры»')
   await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('501')
   await expect(advice.getByRole('heading')).toContainText('требуется проверка условий')
@@ -176,8 +225,8 @@ test('B.34 regulation hint with unconfirmed parameters explains the rules but ca
     .locator('..')
     .getByLabel('Фронт работ, м', { exact: true })
     .fill('25')
-  await expect(advice).toContainText('таблица предусматривает светофор')
-  await page.getByLabel('Регулирование Б.34').selectOption('two')
+  await expect(advice.getByRole('heading')).toContainText('два регулировщика')
+  await page.getByLabel('Регулирование Б.34').selectOption('signs')
   await page.getByRole('button', { name: 'Применить правки' }).click()
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   await expect(
@@ -448,6 +497,12 @@ test('creates a project from a PU-66 card found by kilometre and picket', async 
   await page.getByLabel('Фронт работ, м').fill('18')
   await page.getByLabel('Отвод, м').fill('10')
   await page.getByLabel('Буфер, м').fill('10')
+  await page.locator('[data-field="parameters.workConditions.kind"]:visible').selectOption('short')
+  await page.locator('[data-field="parameters.workConditions.durationHours"]:visible').fill('5')
+  await page
+    .locator('[data-field="parameters.workConditions.daylight"]:visible')
+    .selectOption('day')
+  await page.locator('[data-field="parameters.workConditions.regulatorsPresent"]:visible').check()
   await page.getByLabel('Вне населённого пункта').check()
   // Скорость и ступени пересчитаны для нового местоположения: 90 → 70 → 50 → 40.
   await expect(page.getByLabel('Разрешённая скорость на подходе, км/ч')).toHaveValue('90')
@@ -487,6 +542,12 @@ test('leaving the form while the card is re-read cancels project creation', asyn
   await page.getByLabel('Фронт работ, м').fill('18')
   await page.getByLabel('Отвод, м').fill('10')
   await page.getByLabel('Буфер, м').fill('10')
+  await page.locator('[data-field="parameters.workConditions.kind"]:visible').selectOption('short')
+  await page.locator('[data-field="parameters.workConditions.durationHours"]:visible').fill('5')
+  await page
+    .locator('[data-field="parameters.workConditions.daylight"]:visible')
+    .selectOption('day')
+  await page.locator('[data-field="parameters.workConditions.regulatorsPresent"]:visible').check()
   await page.getByLabel('Вне населённого пункта').check()
   await page.getByRole('button', { name: 'Создать проект' }).click()
   await expect.poll(() => calls).toBe(2)
@@ -610,6 +671,13 @@ test('release requires distances, objects, location and type size but allows pap
     readFileSync('tests/fixtures/legacy-b34-manual.json', 'utf8'),
   ).scheme
   base.parameters.regulation = { ...base.parameters.regulation, mode: 'two', hourly: '300' }
+  base.parameters.workConditions = {
+    kind: 'short',
+    durationHours: 5,
+    daylight: 'day',
+    regulatorsPresent: true,
+    sectionMetres: null,
+  }
   base.parameters.workZones.b34 = {
     ...base.parameters.workZones.b34!,
     workMetres: 18,
@@ -834,7 +902,7 @@ test('attaches standards, switches the sign catalog to a new edition and flags t
     buffer: Buffer.from(zipSync({ 'PNG с номером/1.25.png': png, 'PNG без номера/1.25.png': png })),
   })
   await page.getByRole('button', { name: 'Просмотреть изменения знаков' }).click()
-  await expect(page.getByText('Изменённые изображения')).toBeVisible()
+  await expect(page.getByText(/(?:Новые|Изменённые) изображения/).first()).toBeVisible()
   await page.getByRole('button', { name: 'Подтвердить каталог и создать копию SQLite' }).click()
   await expect(page.getByText(/Текущий набор: ГОСТ Р 99290, редакция 2024/)).toBeVisible()
 
@@ -935,7 +1003,7 @@ test('confirms a normative parameter from the text of an attached document', asy
   await expect(box).toContainText('подтверждено значение 260 авт/ч')
   await expect(item).toContainText('Подтверждено')
   await expect(item.locator('.value')).toHaveText('260 авт/ч')
-  await expect(box).toContainText('Подтверждено 1 из 15')
+  await expect(box).toContainText('Подтверждено 1 из 16')
 })
 
 test('opens help for the current screen, searches it and jumps by contents', async ({ page }) => {

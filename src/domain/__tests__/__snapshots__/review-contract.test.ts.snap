@@ -29,7 +29,7 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "55498b2c0e386a72",
+      "fingerprint": "9f8697475cb16a80",
       "id": "template",
       "kind": "verify",
       "markBlocked": undefined,
@@ -41,7 +41,13 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "b4114f5674d7ff32",
+      "fingerprint": "d39e05436c8ec6d8",
+      "id": "work-conditions",
+      "kind": "verify",
+      "markBlocked": "Б.33/Б.34: укажите краткосрочные работы и продолжительность не более 24 ч (ГОСТ Р 58350, п. 3.5). Проверьте участок между устройствами, часовую интенсивность и условия замены светофора: выбранный профиль не поддерживает полученное сочетание (ГОСТ Р 58350, таблица Д.1).",
+    },
+    {
+      "fingerprint": "879205f7a86a1cd6",
       "id": "b34-traffic",
       "kind": "verify",
       "markBlocked": "Выбранный режим, отгон или условия видимости не соответствуют проверяемым условиям ОДМ и ГОСТ Р 58350 (ГОСТ Р 58350, п. 6.1.3, таблица Д.1 и сноски); исправьте условия или выберите отдельную схему со светофором/иным пропуском.",
@@ -79,13 +85,19 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "065edc0e7fc60820",
+      "fingerprint": "1ec5c5b8bde4c50a",
       "id": "template",
       "kind": "verify",
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "3f1cfe1fea1d2c0a",
+      "fingerprint": "8abc28db3a14ed4e",
+      "id": "work-conditions",
+      "kind": "verify",
+      "markBlocked": "Б.33/Б.34: укажите краткосрочные работы и продолжительность не более 24 ч (ГОСТ Р 58350, п. 3.5). Подтвердите постоянное присутствие регулировщиков в течение всего срока работ (ОДМ, п. 6.4.3).",
+    },
+    {
+      "fingerprint": "4e08a1a27edebce6",
       "id": "b34-traffic",
       "kind": "verify",
       "markBlocked": undefined,
@@ -135,7 +147,7 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "4fa184a373a86160",
+      "fingerprint": "40f099da29566eb4",
       "id": "template",
       "kind": "verify",
       "markBlocked": undefined,
@@ -145,6 +157,12 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "id": "typesize",
       "kind": "fill",
       "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "54459bd4e308b3cd",
+      "id": "work-conditions",
+      "kind": "verify",
+      "markBlocked": "Б.33/Б.34: укажите краткосрочные работы и продолжительность не более 24 ч (ГОСТ Р 58350, п. 3.5). Проверьте участок между устройствами, часовую интенсивность и условия замены светофора: выбранный профиль не поддерживает полученное сочетание (ГОСТ Р 58350, таблица Д.1). Подтвердите постоянное присутствие регулировщиков в течение всего срока работ (ОДМ, п. 6.4.3).",
     },
     {
       "fingerprint": "4864a3e7e7e516a7",
@@ -191,7 +209,7 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "bff93c31f84bf7db",
+      "fingerprint": "79a60d7d7aaba39f",
       "id": "template",
       "kind": "verify",
       "markBlocked": undefined,
@@ -201,6 +219,12 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "id": "typesize",
       "kind": "fill",
       "markBlocked": undefined,
+    },
+    {
+      "fingerprint": "934a670652db3ac9",
+      "id": "work-conditions",
+      "kind": "verify",
+      "markBlocked": "Б.33/Б.34: укажите краткосрочные работы и продолжительность не более 24 ч (ГОСТ Р 58350, п. 3.5). Проверьте участок между устройствами, часовую интенсивность и условия замены светофора: выбранный профиль не поддерживает полученное сочетание (ГОСТ Р 58350, таблица Д.1). Подтвердите постоянное присутствие регулировщиков в течение всего срока работ (ОДМ, п. 6.4.3).",
     },
     {
       "fingerprint": "5d115d4ff3e3da46",
@@ -247,7 +271,7 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "8aca053deccc5f3e",
+      "fingerprint": "f3a3a843ed783e28",
       "id": "template",
       "kind": "verify",
       "markBlocked": undefined,
@@ -259,7 +283,13 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "cfa383aa58df4bde",
+      "fingerprint": "d39e05436c8ec6d8",
+      "id": "work-conditions",
+      "kind": "verify",
+      "markBlocked": "Б.33/Б.34: укажите краткосрочные работы и продолжительность не более 24 ч (ГОСТ Р 58350, п. 3.5). Проверьте участок между устройствами, часовую интенсивность и условия замены светофора: выбранный профиль не поддерживает полученное сочетание (ГОСТ Р 58350, таблица Д.1).",
+    },
+    {
+      "fingerprint": "831962d0f5da1762",
       "id": "b34-traffic",
       "kind": "verify",
       "markBlocked": "Выбранный режим, отгон или условия видимости не соответствуют проверяемым условиям ОДМ и ГОСТ Р 58350 (ГОСТ Р 58350, п. 6.1.3, таблица Д.1 и сноски); исправьте условия или выберите отдельную схему со светофором/иным пропуском.",

@@ -30,6 +30,13 @@ function example(
     location: 'out',
     approachSpeedKmh: '90',
     yellowTemporarySigns: true,
+    workConditions: {
+      kind: 'short',
+      durationHours: 5,
+      daylight: 'day',
+      regulatorsPresent: true,
+      sectionMetres: null,
+    },
   })
   return schemeSchema.parse({
     ...base,

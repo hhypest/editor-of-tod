@@ -1,4 +1,19 @@
 import type { NormativeRules } from './normative-parameters'
+import type { Scheme } from './model'
+
+export type WorkConditions = Scheme['parameters']['workConditions']
+
+export function shortTermWork(
+  conditions: WorkConditions | undefined,
+  rules: NormativeRules,
+): boolean {
+  return (
+    conditions?.kind === 'short' &&
+    conditions.durationHours !== null &&
+    conditions.durationHours > 0 &&
+    conditions.durationHours <= rules.shortTermHours
+  )
+}
 
 export type WorkTrafficDecision = 'signs' | 'regulators' | 'signals' | 'outside' | 'unknown'
 
@@ -8,6 +23,7 @@ export function workTrafficDecision(
   hourly: number | null,
   limitedVisibility: boolean,
   rules: NormativeRules,
+  conditions?: WorkConditions,
 ): WorkTrafficDecision {
   if (
     sectionMetres === null ||
@@ -23,9 +39,29 @@ export function workTrafficDecision(
   const maximum = Math.min(rules.alternateHourly, rules.workTraffic.alternateHourly)
   if (sectionMetres < length && hourly < intensity)
     return limitedVisibility ? 'regulators' : 'signs'
-  if (sectionMetres < length && hourly <= maximum) return 'regulators'
-  if (sectionMetres <= rules.workTraffic.alternateLength && hourly < intensity) return 'signals'
+  if (sectionMetres < length && hourly <= maximum)
+    return !conditions || (shortTermWork(conditions, rules) && conditions.regulatorsPresent)
+      ? 'regulators'
+      : 'signals'
+  if (sectionMetres <= rules.workTraffic.alternateLength && hourly < intensity)
+    return shortTermWork(conditions, rules) && conditions?.regulatorsPresent
+      ? 'regulators'
+      : 'signals'
   return 'outside'
+}
+
+/** Measured limits take precedence over the provisional sum; neither is the work front. */
+export function effectiveWorkSection(
+  zone: Parameters<typeof workSectionMetres>[0],
+  conditions: WorkConditions,
+  variant: 'b33' | 'b34' = 'b34',
+): number | null {
+  return (
+    conditions.sectionMetres ??
+    workSectionMetres(
+      zone && { ...zone, taperMetres: zone.taperMetres * (variant === 'b33' ? 2 : 1) },
+    )
+  )
 }
 
 /** The profile uses the entered taper + buffer + work zone as the section between devices.

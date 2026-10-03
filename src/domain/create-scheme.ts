@@ -9,6 +9,7 @@ import {
 import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import type { Pu66SchemeRecord } from './pu66-snapshot'
 import { selectTemplateByWorkFront } from './registry'
+import { cellNumber } from './pu66-norms'
 
 /** Условия новой схемы, которые составитель вводит сам; переезд задаёт карточка ПУ-66. */
 export type NewSchemeInput = {
@@ -23,6 +24,8 @@ export type NewSchemeInput = {
   approachSpeedKmh: string
   speedStagesKmh: [string, string, string]
   yellowTemporarySigns: boolean
+  workConditions?: Scheme['parameters']['workConditions']
+  frontFromPu66?: boolean
 }
 
 /**
@@ -93,7 +96,7 @@ export function createUnlinkedScheme(
     labels: { taper: '', buffer: '', work: '' },
   }
   const parsed = schemeSchema.safeParse({
-    schemaVersion: 7,
+    schemaVersion: 8,
     id: options.id ?? crypto.randomUUID(),
     createdAt: options.now ?? new Date().toISOString(),
     crossing: {
@@ -117,6 +120,7 @@ export function createUnlinkedScheme(
         options.rules ?? PROTOTYPE_RULES,
       ),
       ...legacyParameters,
+      frontFromPu66: input.frontFromPu66 ?? false,
       location: input.location,
       // Типоразмер по таблице 1 ГОСТ Р 52289 для двухполосной дороги; в населённом пункте — по
       // классу улицы, его выбирает составитель.
@@ -124,6 +128,7 @@ export function createUnlinkedScheme(
       approachSpeedKmh,
       speedStagesKmh: speeds,
       yellowTemporarySigns: input.yellowTemporarySigns,
+      ...(input.workConditions ? { workConditions: input.workConditions } : {}),
       workZones: { b33: code === 'b33' ? zone : null, b34: code === 'b34' ? zone : null },
     },
     titleBlock: {
@@ -161,6 +166,11 @@ export function createSchemeFromPu66(
       'Новую схему можно начать только с карточки ПУ-66 из локального реестра. Выберите карточку.',
     )
   }
+  const maximum = cellNumber(card.crossingRoadLengthMetres)
+  if (maximum !== null && maximum > 0 && positiveNumber(input.frontMetres, 'фронт работ') > maximum)
+    throw new SchemeCreationError(
+      `Фронт работ превышает ${maximum} м — длину в границах переезда из п. 8 выбранной карточки ПУ-66. Отгон и буфер учитываются отдельно.`,
+    )
   return linkPu66Card(
     createUnlinkedScheme({ ...input, referenceId: card.referenceId }, options),
     card,

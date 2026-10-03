@@ -6,7 +6,8 @@ import { anchorCoordinates, placementCoordinates } from './placement-workspace'
 import { dangerousSectionMetres, usesTwoRegulators } from './template-placements'
 import { ZONE_PLATE } from './sign-code'
 import { parseHourly } from './regulation-advice'
-import { workSectionMetres, workTrafficDecision } from './work-traffic'
+import { effectiveWorkSection, workTrafficDecision } from './work-traffic'
+import { workConditionProblems, frontLimit } from './work-conditions'
 import {
   distanceTitles,
   expectedTypesize,
@@ -329,13 +330,33 @@ export function reviewScheme(
     })
   }
 
+  const conditionsProblems = workConditionProblems(scheme, rules)
+  findings.push({
+    id: 'work-conditions',
+    kind: 'verify',
+    title: 'Срок работ и границы переезда',
+    detail:
+      'Сверьте продолжительность работ, светлое время суток, постоянное присутствие регулировщиков и фактическую длину фронта в границах переезда по п. 8 ПУ-66. Границы по приказу № 402: до шлагбаума, при его отсутствии — 10 м от ближайшего рельса, а не от оси.',
+    ...(conditionsProblems.length ? { markBlocked: conditionsProblems.join(' ') } : {}),
+    path: 'parameters.workConditions.kind',
+    basis: JSON.stringify([
+      parameters.workConditions,
+      frontMetres,
+      frontLimit(scheme),
+      parameters.regulation,
+      rules.shortTermHours,
+      rules.confirmed['gost-short-term-hours'],
+      rules.evidence['gost-short-term-hours'],
+    ]),
+  })
   if (scheme.template.code === 'b34') {
-    const section = workSectionMetres(parameters.workZones.b34)
+    const section = effectiveWorkSection(parameters.workZones.b34, parameters.workConditions)
     const decision = workTrafficDecision(
       section,
       parseHourly(parameters.regulation.hourly),
       parameters.regulation.vis,
       rules,
+      parameters.workConditions,
     )
     const incompatible =
       decision === 'outside' ||
@@ -363,6 +384,7 @@ export function reviewScheme(
       path: 'placements',
       basis: JSON.stringify([
         parameters.regulation,
+        parameters.workConditions,
         parameters.location,
         regulators,
         section,

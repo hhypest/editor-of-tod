@@ -1,7 +1,8 @@
 import { schemeSchema, type Scheme } from './model'
 import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import { parseHourly } from './regulation-advice'
-import { workSectionMetres, workTrafficDecision } from './work-traffic'
+import { effectiveWorkSection, workTrafficDecision } from './work-traffic'
+import { workConditionProblems } from './work-conditions'
 import { anchorCoordinates } from './placement-workspace'
 import { distanceTitles, type DistanceField } from './normative-defaults'
 
@@ -50,6 +51,8 @@ export function usesTwoRegulators(scheme: Scheme): boolean {
 }
 
 function checkConditions(scheme: Scheme, rules: NormativeRules): void {
+  const problems = workConditionProblems(scheme, rules)
+  if (problems.length) throw new TemplateBuildError(problems[0]!)
   const { parameters, template } = scheme
   if (parameters.location === 'auto') {
     throw new TemplateBuildError('На этапе 2 укажите, находится ли переезд в населённом пункте.')
@@ -70,7 +73,20 @@ function checkConditions(scheme: Scheme, rules: NormativeRules): void {
       )
     }
   }
-  if (template.code !== 'b34') return
+  if (template.code !== 'b34') {
+    const decision = workTrafficDecision(
+      effectiveWorkSection(parameters.workZones.b33, parameters.workConditions, 'b33'),
+      parseHourly(parameters.regulation.hourly),
+      parameters.regulation.vis,
+      rules,
+      parameters.workConditions,
+    )
+    if (decision === 'outside' || decision === 'signals' || decision === 'unknown')
+      throw new TemplateBuildError(
+        'Для Б.33 проверьте участок между устройствами, часовую интенсивность и условия замены светофора регулировщиками (ОДМ, п. 6.4.3; ГОСТ Р 58350, таблица Д.1).',
+      )
+    return
+  }
   const { regulation } = parameters
   if (regulation.mode === 'auto') {
     throw new TemplateBuildError(
@@ -78,10 +94,11 @@ function checkConditions(scheme: Scheme, rules: NormativeRules): void {
     )
   }
   const decision = workTrafficDecision(
-    workSectionMetres(parameters.workZones.b34),
+    effectiveWorkSection(parameters.workZones.b34, parameters.workConditions),
     parseHourly(regulation.hourly),
     regulation.vis,
     rules,
+    parameters.workConditions,
   )
   if (decision === 'outside' || decision === 'signals' || decision === 'unknown')
     throw new TemplateBuildError(
@@ -90,7 +107,7 @@ function checkConditions(scheme: Scheme, rules: NormativeRules): void {
   if (regulation.mode === 'signs') {
     if (decision !== 'signs') {
       throw new TemplateBuildError(
-        `Для варианта со знаками 2.6/2.7 укажите интенсивность менее ${rules.signsHourly} авт./ч и подтвердите достаточную видимость (${rules.sources['odm-signs-hourly']}).`,
+        `Для знаков 2.6/2.7 требуются участок менее ${Math.min(rules.signsLengthMetres, rules.workTraffic.signsLength)} м, интенсивность менее ${rules.signsHourly} авт./ч и достаточная видимость (${rules.sources['odm-signs-hourly']}; ГОСТ Р 58350, таблица Д.1).`,
       )
     }
     if (parameters.workZones.b34?.taperMetres !== rules.signsTaperMetres) {

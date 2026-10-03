@@ -24,6 +24,7 @@ const card: Pu66SchemeRecord = {
   axisLabel: '88 км 3 пк',
   roadName: 'Вымышленная дорога',
   crossingWidthMetres: 8,
+  crossingRoadLengthMetres: 40,
   revision: 1,
   updatedAt: '2026-09-26T12:00:00.000Z',
 }
@@ -39,6 +40,7 @@ describe('explicit local PU-66 link', () => {
         axisLabel: card.axisLabel,
         roadName: card.roadName,
         crossingWidthMetres: 8,
+        crossingRoadLengthMetres: 40,
         revision: 1,
         updatedAt: card.updatedAt,
       },

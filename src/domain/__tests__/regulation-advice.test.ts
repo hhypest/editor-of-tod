@@ -15,6 +15,13 @@ const base: RegulationInput = {
   taperMetres: 15,
   frontMetres: 20,
   sectionMetres: 45,
+  workConditions: {
+    kind: 'short',
+    durationHours: 5,
+    daylight: 'day',
+    regulatorsPresent: true,
+    sectionMetres: null,
+  },
 }
 
 /** Все параметры подтверждены по вымышленной действующей редакции с заданными значениями. */
@@ -72,8 +79,8 @@ describe('B.34 regulation advice', () => {
 
   it('does not allow signs 2.6/2.7 on a work zone of the limit length or longer', () => {
     const long = adviseRegulation({ ...base, frontMetres: 25, sectionMetres: 50 })
-    expect(long.mode).toBeNull()
-    expect(long.reasons.join(' ')).toContain('участка проведения работ 50 м')
+    expect(long.mode).toBe('two')
+    expect(long.reasons.join(' ')).toContain('участка — 50 м')
     const unknown = adviseRegulation({ ...base, frontMetres: null, sectionMetres: null })
     expect(unknown.mode).toBeNull()
     expect(unknown.reasons.join(' ')).toContain('Протяжённость участка проведения работ не введена')
@@ -124,7 +131,7 @@ describe('B.34 regulation advice', () => {
   it('stays unverified and names the parameters until they are confirmed', () => {
     const advice = adviseRegulation(base)
     expect(advice.verified).toBe(false)
-    expect(advice.unconfirmed).toHaveLength(6)
+    expect(advice.unconfirmed).toHaveLength(7)
   })
 
   it('uses confirmed values of the current edition and cites it', () => {
