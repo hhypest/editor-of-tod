@@ -7,6 +7,7 @@ import {
 } from '../src/domain/normative-documents.ts'
 import {
   parameterDefinitions,
+  confirmationMatchesDefinition,
   parameterValueSchema,
   relevantFragment,
   suggestValue,
@@ -95,18 +96,44 @@ async function amendmentsFor(
   if (source.kind === 'decision') return []
   const documents = store.listDocuments()
   const statuses = documentStatuses(documents, today)
-  const mention =
+  const tableMention =
     source.kind === 'table'
-      ? new RegExp(`таблиц[аеуы]\\s+${source.table.replace('.', '\\.')}(?![\\d.])`, 'iu')
-      : new RegExp(`(?<![\\d.])${source.clause.replace(/\./g, '\\.')}(?![\\d.])`, 'u')
+      ? new RegExp(`таблиц[аеуы]\\s+${source.table.replace('.', '\\.')}(?!\\d|\\.\\d)`, 'iu')
+      : new RegExp(`(?<![\\d.])${source.clause.replace(/\./g, '\\.')}(?!\\d|\\.\\d)`, 'u')
+  const clauses =
+    source.kind === 'table'
+      ? (source.clause.match(/\d+(?:\.\d+)+/g) ?? []).map(
+          (clause) => new RegExp(`(?<![\\d.])${clause.replace(/\./g, '\\.')}(?!\\d|\\.\\d)`, 'u'),
+        )
+      : []
   const result: string[] = []
   for (const amendment of documents.filter((document) => document.amendsId === baseId)) {
     const status = statuses.get(amendment.id)
     if (status?.kind !== 'amendment' || !status.inForce) continue
     const text = (await documentText(store, amendment.id)).join('\n')
-    if (mention.test(text)) result.push(`${amendment.code} (${amendment.edition})`)
+    if (tableMention.test(text) || clauses.some((mention) => mention.test(text)))
+      result.push(`${amendment.code} (${amendment.edition})`)
   }
   return result
+}
+
+/** Changes are part of the evidence, even when the base PDF has not changed. */
+function confirmationFragment(
+  store: RegistryStore,
+  definition: ParameterDefinition,
+  quote: { text: string } | null,
+  amendments: readonly string[],
+): string {
+  const fragment = quote ? relevantFragment(definition, quote.text) : ''
+  if (!amendments.length) return fragment
+  const documents = store.listDocuments()
+  const fingerprint = amendments
+    .map((label) => {
+      const document = documents.find((item) => `${item.code} (${item.edition})` === label)
+      return `${label}:${document?.sha256 ?? ''}`
+    })
+    .join('|')
+  return `${fragment}\nИзменения: ${fingerprint}`
 }
 
 export async function listParameterStates(
@@ -146,14 +173,22 @@ export async function listParameterStates(
       continue
     }
     const quote = await quoteFor(store, definition, current.id)
+    const amendments = await amendmentsFor(store, definition, current.id, today)
+    const fragment = confirmationFragment(store, definition, quote, amendments)
     let status: ParameterState['status']
     if (!confirmation) status = { kind: 'unconfirmed' }
-    else if (confirmation.documentId === current.id) status = { kind: 'confirmed' }
+    else if (!confirmationMatchesDefinition(definition, confirmation))
+      status = {
+        kind: 'changed',
+        previous: `${confirmation.documentLabel}, ${confirmation.clause}`,
+      }
+    else if (confirmation.documentId === current.id && confirmation.fragment === fragment)
+      status = { kind: 'confirmed' }
+    else if (confirmation.documentId === current.id)
+      status = { kind: 'changed', previous: confirmation.documentLabel }
     else {
       const same =
-        quote !== null &&
-        confirmation.fragment !== '' &&
-        relevantFragment(definition, quote.text) === confirmation.fragment
+        quote !== null && confirmation.fragment !== '' && fragment === confirmation.fragment
       status = { kind: same ? 'same-text' : 'changed', previous: confirmation.documentLabel }
     }
     states.push({
@@ -165,7 +200,7 @@ export async function listParameterStates(
         : null,
       suggestion: suggestValue(definition, quote),
       confirmation,
-      amendments: await amendmentsFor(store, definition, current.id, today),
+      amendments,
     })
   }
   return states
@@ -263,6 +298,8 @@ export async function confirmParameter(
     )
   if (input.expectedDocumentId !== current.id) throw new ParameterConfirmationConflict()
   const quote = await quoteFor(store, definition, current.id)
+  const amendments = await amendmentsFor(store, definition, current.id, today)
+  const fragment = confirmationFragment(store, definition, quote, amendments)
   if (currentDocument(store.listDocuments(), source.documentCode, today)?.id !== current.id)
     throw new ParameterConfirmationConflict()
   if (!quote && !input.note)
@@ -279,6 +316,6 @@ export async function confirmParameter(
     clause: source.kind === 'table' ? source.clause : `п. ${source.clause}`,
     page: quote?.page ?? null,
     quote: quote?.text ?? '',
-    fragment: quote ? relevantFragment(definition, quote.text) : '',
+    fragment,
   })
 }

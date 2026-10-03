@@ -44,6 +44,29 @@ function example(
 }
 
 describe('preliminary B.33/B.34 layout', () => {
+  it('rejects a 25 m front when the full sign-regulated section reaches 50 m', () => {
+    const base = example(25, 'out', 'signs')
+    expect(() => buildTemplatePlacements(base)).toThrow('таблица Д.1')
+    const finding = reviewScheme(base).find((item) => item.id === 'b34-traffic')
+    expect(finding?.markBlocked).toContain('таблица Д.1')
+    expect(finding?.detail).toContain('50 м')
+  })
+  it('rejects arbitrary regulator choices beyond table Д.1 and preserves the imported objects', () => {
+    const base = example(18, 'out', 'two')
+    const built = rebuildTemplatePlacements(base).scheme
+    const outside = {
+      ...built,
+      parameters: {
+        ...built.parameters,
+        regulation: { ...built.parameters.regulation, hourly: '501' },
+      },
+    }
+    expect(() => buildTemplatePlacements(outside)).toThrow('таблица Д.1')
+    expect(
+      reviewScheme(outside).find((item) => item.id === 'b34-traffic')?.markBlocked,
+    ).toBeTruthy()
+    expect(outside.placements).toBe(built.placements)
+  })
   it('requires exactly one regulator on each approach after manual moves', () => {
     for (const front of [18, 40]) {
       const built = rebuildTemplatePlacements(example(front, 'out', 'two')).scheme
@@ -115,7 +138,7 @@ describe('preliminary B.33/B.34 layout', () => {
     ).toContain('регулировщиков: 1 из 2')
   })
 
-  it('puts two regulators before the work zone for each direction (ODM 12.7.2, table 5)', () => {
+  it('puts two regulators before the work zone for each direction (ODM 13.7.3, table 5)', () => {
     for (const front of [18, 40]) {
       const scheme = example(front, 'out', 'two')
       const anchors = anchorCoordinates(scheme)
@@ -273,7 +296,7 @@ describe('preliminary B.33/B.34 layout', () => {
           regulation: { ...scheme.parameters.regulation, hourly },
         },
       })
-      expect(() => buildTemplatePlacements(candidate)).toThrow('интенсивность менее 250')
+      expect(() => buildTemplatePlacements(candidate)).toThrow(TemplateBuildError)
     }
   })
 

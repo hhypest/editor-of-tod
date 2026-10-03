@@ -5,11 +5,12 @@ import {
   regulationVerified,
   type NormativeRules,
 } from './normative-parameters.ts'
+import { workTrafficDecision } from './work-traffic.ts'
 
 /**
  * Объяснимая подсказка способа пропуска транспорта для схемы Б.34. Пороги, протяжённость,
  * отгон и таблица расстояний берутся из нормативных параметров («Реестры» → «Нормативные
- * параметры»): составитель подтверждает их по тексту действующей редакции ОДМ 218.6.019.
+ * параметры»): составитель подтверждает их по тексту действующих редакций ОДМ 218.6.019 и ГОСТ Р 58350.
  * Пока хотя бы один параметр не подтверждён, подсказка только объясняет расчёт и не
  * применяется из интерфейса.
  */
@@ -28,6 +29,8 @@ export type RegulationInput = {
   taperMetres: number | null
   /** Протяжённость участка работ (фронт), м; null — не введена. */
   frontMetres: number | null
+  /** Полная протяжённость участка между первым и последним устройствами. */
+  sectionMetres: number | null
 }
 
 export type RegulationAdvice = {
@@ -62,56 +65,50 @@ export function adviseRegulation(
   const signsSource = rules.sources['odm-signs-hourly']
   let mode: RegulationMode | null
 
-  const tooLong =
-    input.frontMetres !== null && input.frontMetres >= rules.signsLengthMetres
-      ? `протяжённость участка работ ${input.frontMetres} м — ${rules.signsLengthMetres} м и более`
-      : null
-  if (hourly === null) {
+  const section = input.sectionMetres
+  const length = Math.min(rules.signsLengthMetres, rules.workTraffic.signsLength)
+  const intensity = Math.min(rules.signsHourly, rules.workTraffic.signsHourly)
+  const source = rules.sources['gost-work-traffic']
+  const decision = workTrafficDecision(section, hourly, input.limitedVisibility, rules)
+  if (decision === 'unknown') {
     mode = null
     reasons.push(
-      'Интенсивность не введена: без часовой интенсивности рекомендация не даётся. Её можно подсчитать или пересчитать из суточной по ПУ-66 с подтверждённой долей часа пик.',
+      hourly === null
+        ? 'Интенсивность не введена: нужна часовая интенсивность в двух направлениях. Пересчёт из ПУ-66 допустим только с подтверждённой долей часа пик.'
+        : 'Протяжённость участка проведения работ не введена: нужны отгон, буфер и фронт. Один фронт не определяет участок между первым и последним направляющим или ограждающим устройством.',
     )
-  } else if (
-    hourly < rules.signsHourly &&
-    !input.limitedVisibility &&
-    !tooLong &&
-    input.frontMetres === null
-  ) {
-    // Знаки допускаются только при участке короче предела: без длины рекомендации нет.
+  } else if (decision === 'outside' || decision === 'signals') {
     mode = null
     reasons.push(
-      `Интенсивность ${hourly} авт./ч — менее ${rules.signsHourly} авт./ч, но протяжённость участка работ не введена: знаки 2.6 и 2.7 допускаются только при участке менее ${rules.signsLengthMetres} м (${rules.sources['odm-signs-length']}). Укажите длину рабочей зоны.`,
+      decision === 'signals'
+        ? `Протяжённость участка проведения работ ${section} м — ${length} м и более при интенсивности менее ${intensity} авт./ч: таблица предусматривает светофор. Автоматический выбор одного или двух регулировщиков не даётся (${source}; ОДМ, пп. 6.4.2–6.4.3).`
+        : `Сочетание протяжённости ${section} м и интенсивности ${hourly} авт./ч выходит за условия таблицы. Требуется отдельное решение по организации движения (${source}; ОДМ, п. 6.4.5).`,
     )
-  } else if (hourly < rules.signsHourly && !input.limitedVisibility && !tooLong) {
+    warnings.push(
+      `Число регулировщиков из одного порога интенсивности не выводится (${source}; ${rules.sources['odm-alternate-hourly']}).`,
+    )
+  } else if (decision === 'signs') {
     mode = 'signs'
     reasons.push(
-      `Интенсивность ${hourly} авт./ч в двух направлениях — менее ${rules.signsHourly} авт./ч, участок ${input.frontMetres} м — менее ${rules.signsLengthMetres} м, видимость встречного автомобиля не ограничена: очерёдность можно установить знаками 2.6 и 2.7 (${signsSource}).`,
+      `Интенсивность ${hourly} авт./ч в двух направлениях — менее ${intensity} авт./ч, участок проведения работ ${section} м — менее ${length} м, видимость встречного автомобиля обеспечена с обеих сторон: допускаются знаки 2.6 и 2.7 (${signsSource}; ${source}).`,
     )
   } else {
-    const cause =
-      hourly >= rules.signsHourly
-        ? `интенсивность ${hourly} авт./ч — ${rules.signsHourly} авт./ч и более`
-        : (tooLong ?? 'видимость встречного автомобиля ограничена')
-    if (input.straight && !input.limitedVisibility) {
-      mode = 'one'
-      reasons.push(
-        `Знаки 2.6/2.7 не подходят: ${cause} (${signsSource}). Участок прямой, регулировщик виден с обоих концов места работ — возможен один регулировщик (ОДМ 218.6.019, п. 12.7.3).`,
-      )
-    } else {
-      mode = 'two'
-      reasons.push(
-        `Знаки 2.6/2.7 не подходят: ${cause} (${signsSource}). ${
-          input.limitedVisibility
-            ? 'При ограниченной видимости'
-            : 'Участок не отмечен как прямой, и'
-        } один регулировщик не виден с обоих концов места работ — нужны два регулировщика у начала и конца (ОДМ 218.6.019, пп. 12.7.2–12.7.3).`,
-      )
-    }
-  }
-
-  if (hourly !== null && hourly > rules.alternateHourly)
+    mode = input.straight && !input.limitedVisibility ? 'one' : 'two'
+    reasons.push(
+      `Знаки 2.6/2.7 не подходят по интенсивности или видимости. Допускаются регулировщики при их постоянном присутствии в течение всего срока работ (${source}; ОДМ, п. 6.4.3).`,
+    )
+    reasons.push(
+      mode === 'one'
+        ? 'Один регулировщик возможен после проверки небольшой протяжённости рабочей зоны, прямого участка, видимости регулировщика с обоих концов, светлого времени суток и введённых ограничений скорости (ОДМ 218.6.019, п. 13.7.5).'
+        : 'Два регулировщика размещаются у начала и конца места работ; необходимы согласованные действия и связь (ОДМ 218.6.019, пп. 13.7.3–13.7.5).',
+    )
     warnings.push(
-      `Интенсивность выше ${rules.alternateHourly} авт./ч — верхней границы поочерёдного пропуска по одной полосе (${rules.sources['odm-alternate-hourly']}). Проверьте допустимость такого пропуска, время работ и другие способы организации движения; число регулировщиков из этого порога не выводится.`,
+      'Видимость встречного автомобиля и видимость регулировщика проверяются отдельно. Для одного регулировщика дополнительно проверьте светлое время суток и все условия п. 13.7.5; для замены светофора — постоянное присутствие (п. 6.4.3).',
+    )
+  }
+  if (section !== null)
+    reasons.push(
+      `Расчётная протяжённость участка — ${section} м (отгон + буфер + фронт ${input.frontMetres ?? 'не введён'} м). Сверьте фактические границы направляющих устройств и расстояние видимости встречного автомобиля по ГОСТ Р 52289.`,
     )
   if (mode === 'signs' && input.taperMetres !== rules.signsTaperMetres)
     warnings.push(

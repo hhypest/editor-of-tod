@@ -156,17 +156,33 @@ test('B.34 regulation hint with unconfirmed parameters explains the rules but ca
   await page.getByRole('button', { name: 'Создать проект' }).click()
   await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
   const advice = page.locator('.advice')
-  await expect(advice).toContainText('нет данных')
+  await expect(advice).toContainText('требуется проверка условий')
   await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('180')
   await expect(advice.getByRole('heading')).toContainText('неподтверждёнными параметрами')
   await expect(advice.getByRole('heading')).toContainText('знаки приоритета 2.6/2.7')
   await expect(advice.getByRole('button')).toHaveCount(0)
   await expect(page.getByLabel('Регулирование Б.34')).toHaveValue('auto')
   await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('300')
-  await page.getByLabel('Прямой участок дороги').check()
+  await page.getByLabel('Прямой участок; регулировщик виден с обоих концов рабочей зоны').check()
   await expect(advice.getByRole('heading')).toContainText('один регулировщик')
-  await expect(advice).toContainText('Не подтверждены: Интенсивность')
+  await expect(advice).toContainText('Не подтверждены: Условия поочерёдного пропуска')
   await expect(advice).toContainText('«Нормативные параметры»')
+  await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('501')
+  await expect(advice.getByRole('heading')).toContainText('требуется проверка условий')
+  await expect(advice).toContainText('выходит за условия таблицы')
+  await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('180')
+  await page
+    .getByRole('heading', { name: 'Зона Б.34', exact: true })
+    .locator('..')
+    .getByLabel('Фронт работ, м', { exact: true })
+    .fill('25')
+  await expect(advice).toContainText('таблица предусматривает светофор')
+  await page.getByLabel('Регулирование Б.34').selectOption('two')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  await expect(
+    page.locator('li', { hasText: 'Условия движения для Б.34' }).getByLabel('Проверено'),
+  ).toBeDisabled()
 })
 
 test('restores applied edits and unapplied fields after the window closes', async ({
@@ -438,7 +454,11 @@ test('creates a project from a PU-66 card found by kilometre and picket', async 
   await expect(page.getByLabel('Первая ступень 3.24')).toHaveValue('70')
   await expect(page.getByLabel('Вторая ступень 3.24')).toHaveValue('50')
   await page.getByRole('button', { name: 'Создать проект' }).click()
-  await expect(page.getByText(/локальная редакция № 1/)).toBeVisible()
+  const cards = await (await request.get(`${api}/api/pu66`)).json()
+  const card = cards.find((item: { referenceId: string }) => item.referenceId === '90002:24:7')
+  await expect(
+    page.getByText(`локальная редакция № ${card.revision}`, { exact: false }),
+  ).toBeVisible()
   await expect(page.locator('.opening-notes')).toContainText('Локальная карточка ПУ-66 закреплена')
   await expect(page.locator('.opening-notes')).not.toContainText('введён вручную')
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
@@ -482,6 +502,10 @@ test('release sheet drops the draft mark and downloads a PNG', async ({ page, re
   await page.goto('/')
   await fillNewProject(page, '12 км 3 пк', '90001:12:3')
   await page.getByRole('button', { name: 'Создать проект' }).click()
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  await page.getByLabel('Регулирование Б.34').selectOption('two')
+  await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('300')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
   await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
   await page.getByRole('button', { name: 'Добавить конус' }).click()
   await page.getByRole('button', { name: 'Применить объект' }).click()
@@ -585,6 +609,13 @@ test('release requires distances, objects, location and type size but allows pap
   const base = importSchemeJson(
     readFileSync('tests/fixtures/legacy-b34-manual.json', 'utf8'),
   ).scheme
+  base.parameters.regulation = { ...base.parameters.regulation, mode: 'two', hourly: '300' }
+  base.parameters.workZones.b34 = {
+    ...base.parameters.workZones.b34!,
+    workMetres: 18,
+    taperMetres: 10,
+    bufferMetres: 10,
+  }
   const originalPost = base.placements.find((p) => p.kind === 'sign-post')!
   for (const variant of ['distance', 'objects', 'location', 'type-out', 'type-in', 'ready']) {
     let scheme = {
@@ -892,7 +923,7 @@ test('confirms a normative parameter from the text of an attached document', asy
   await page.getByRole('button', { name: 'Нормативные параметры' }).click()
   const box = page.locator('.parameters')
   const item = box.locator('[data-parameter="odm-signs-hourly"]')
-  await expect(item).toContainText('ОДМ 218.6.019-2026, п. 5.4.4')
+  await expect(item).toContainText('ОДМ 218.6.019-2026, п. 6.4.4')
   await expect(item).toContainText('используется значение прототипа')
   await item.getByRole('button', { name: 'Проверить и подтвердить' }).click()
   await expect(item.locator('.quote')).toContainText('протяженностью менее 45 м')
@@ -904,7 +935,7 @@ test('confirms a normative parameter from the text of an attached document', asy
   await expect(box).toContainText('подтверждено значение 260 авт/ч')
   await expect(item).toContainText('Подтверждено')
   await expect(item.locator('.value')).toHaveText('260 авт/ч')
-  await expect(box).toContainText('Подтверждено 1 из 14')
+  await expect(box).toContainText('Подтверждено 1 из 15')
 })
 
 test('opens help for the current screen, searches it and jumps by contents', async ({ page }) => {
@@ -1054,6 +1085,7 @@ test('template plate 8.2.1 shows the dangerous section length and the sign size 
   await size.selectOption('III')
   await expect(page.locator('label', { has: size })).toContainText('Изменено · норматив II')
   await page.getByLabel('Регулирование Б.34').selectOption('two')
+  await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('300')
   await page.getByRole('button', { name: 'Применить правки' }).click()
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   await expect(page.locator('li', { hasText: 'Типоразмер знаков не по таблице 1' })).toBeVisible()

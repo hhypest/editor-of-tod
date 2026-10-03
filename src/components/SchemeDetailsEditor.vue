@@ -176,6 +176,17 @@ const advice = computed(() => {
       zoneSpeedKmh: draftNumber(speedStagesKmh[2]),
       taperMetres: draftNumber(workZones.b34?.taperMetres),
       frontMetres: draftNumber(workZones.b34?.workMetres),
+      sectionMetres: [
+        workZones.b34?.taperMetres,
+        workZones.b34?.bufferMetres,
+        workZones.b34?.workMetres,
+      ].every((value) => draftNumber(value) !== null)
+        ? [
+            workZones.b34!.taperMetres,
+            workZones.b34!.bufferMetres,
+            workZones.b34!.workMetres,
+          ].reduce((sum, value) => sum + draftNumber(value)!, 0)
+        : null,
     },
     normativeRules.value,
   )
@@ -411,11 +422,11 @@ function applyDraft(): void {
           </label>
           <label class="checkbox"
             ><input v-model="draft.parameters.regulation.vis" type="checkbox" />
-            Видимость ограничена
+            Видимость встречного автомобиля ограничена
           </label>
           <label class="checkbox"
             ><input v-model="draft.parameters.regulation.straight" type="checkbox" />
-            Прямой участок дороги
+            Прямой участок; регулировщик виден с обоих концов рабочей зоны
           </label>
         </div>
         <Pu66NormsPanel
@@ -440,7 +451,7 @@ function applyDraft(): void {
                 ? 'Рекомендация по подтверждённым нормативным параметрам'
                 : 'Подсказка с неподтверждёнными параметрами'
             }}:
-            {{ advice.mode ? regulationModeLabels[advice.mode] : 'нет данных' }}
+            {{ advice.mode ? regulationModeLabels[advice.mode] : 'требуется проверка условий' }}
           </h3>
           <p v-for="reason in advice.reasons" :key="reason">{{ reason }}</p>
           <p v-for="warning in advice.warnings" :key="warning" class="warning">{{ warning }}</p>
@@ -458,7 +469,7 @@ function applyDraft(): void {
             {{
               advice.verified
                 ? 'Рекомендация считается по введённым данным и ничего не выбирает сама; решение и его обоснование остаются за составителем.'
-                : `Не подтверждены: ${advice.unconfirmed.join('; ')}. Для них действуют значения прототипа. Подтвердите их по тексту ОДМ в «Реестры» → «Нормативные параметры»; до этого способ пропуска выберите сами в поле «Регулирование Б.34».`
+                : `Не подтверждены: ${advice.unconfirmed.join('; ')}. Для них действуют значения прототипа. Подтвердите их по текстам ОДМ и ГОСТ Р 58350 в «Реестры» → «Нормативные параметры»; до этого способ пропуска выберите сами в поле «Регулирование Б.34».`
             }}
           </p>
         </section>

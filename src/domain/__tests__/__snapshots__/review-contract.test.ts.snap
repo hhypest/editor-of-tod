@@ -29,7 +29,7 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "7989824e8aea9aca",
+      "fingerprint": "55498b2c0e386a72",
       "id": "template",
       "kind": "verify",
       "markBlocked": undefined,
@@ -41,10 +41,10 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "a4b56b5a54d05ebd",
+      "fingerprint": "a91b98f62e28776b",
       "id": "b34-traffic",
       "kind": "verify",
-      "markBlocked": undefined,
+      "markBlocked": "Выбранный режим, отгон или условия видимости не соответствуют проверяемым условиям ОДМ и ГОСТ Р 58350 (ГОСТ Р 58350, п. 6.1.3, таблица Д.1 и сноски); исправьте условия или выберите отдельную схему со светофором/иным пропуском.",
     },
     {
       "fingerprint": "927cb50662f1963e",
@@ -79,13 +79,13 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "92bcd6b3ed73fbdc",
+      "fingerprint": "065edc0e7fc60820",
       "id": "template",
       "kind": "verify",
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "7e9eb853673080e5",
+      "fingerprint": "cb0d27ab5f222db3",
       "id": "b34-traffic",
       "kind": "verify",
       "markBlocked": undefined,
@@ -135,7 +135,7 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "e3f223085c942e06",
+      "fingerprint": "4fa184a373a86160",
       "id": "template",
       "kind": "verify",
       "markBlocked": undefined,
@@ -191,7 +191,7 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "65fb7ef8180054c5",
+      "fingerprint": "bff93c31f84bf7db",
       "id": "template",
       "kind": "verify",
       "markBlocked": undefined,
@@ -247,7 +247,7 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "db3686498d826a86",
+      "fingerprint": "8aca053deccc5f3e",
       "id": "template",
       "kind": "verify",
       "markBlocked": undefined,
@@ -259,10 +259,10 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "177654e769579175",
+      "fingerprint": "29e32d12d54e7f2f",
       "id": "b34-traffic",
       "kind": "verify",
-      "markBlocked": undefined,
+      "markBlocked": "Выбранный режим, отгон или условия видимости не соответствуют проверяемым условиям ОДМ и ГОСТ Р 58350 (ГОСТ Р 58350, п. 6.1.3, таблица Д.1 и сноски); исправьте условия или выберите отдельную схему со светофором/иным пропуском.",
     },
     {
       "fingerprint": "5831e08ac2c62c70",
