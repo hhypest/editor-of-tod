@@ -767,6 +767,7 @@ test('attaches standards, switches the sign catalog to a new edition and flags t
     await library
       .locator('input[type="file"]')
       .setInputFiles({ name: filename, mimeType: 'application/pdf', buffer: pdf(text) })
+    await library.getByRole('button', { name: 'Использовать сведения из имени файла' }).click()
     await library.getByLabel('Назначение').selectOption(kind)
     await library.getByLabel('Дата введения в действие').fill(effective)
     await library.getByRole('button', { name: 'Проверить документ' }).click()
@@ -836,6 +837,7 @@ test('extracts the sign catalog from the PDF of a standard in the library', asyn
     mimeType: 'application/pdf',
     buffer: fictionalSignStandard(),
   })
+  await library.getByRole('button', { name: 'Использовать сведения из имени файла' }).click()
   await library.getByLabel(/^Назначение/).selectOption('signs')
   await library.getByLabel('Дата введения в действие').fill('2025-01-01')
   await library.getByRole('button', { name: 'Проверить документ' }).click()
@@ -880,6 +882,7 @@ test('confirms a normative parameter from the text of an attached document', asy
     mimeType: 'application/pdf',
     buffer: fictionalMethodology(520),
   })
+  await library.getByRole('button', { name: 'Использовать сведения из имени файла' }).click()
   await expect(library.getByLabel('Обозначение', { exact: true })).toHaveValue('ОДМ 218.6.019')
   await library.getByLabel('Дата введения в действие').fill('2026-01-01')
   await library.getByRole('button', { name: 'Проверить документ' }).click()

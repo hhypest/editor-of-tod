@@ -2,12 +2,25 @@ import { z } from 'zod'
 import {
   confirmationSchema,
   parameterStateSchema,
+  parameterRejectionSchema,
+  type ParameterRejectionReason,
+  type ParameterRejectionField,
   type ParameterConfirmation,
   type ParameterState,
   type ParameterValue,
 } from '../domain/normative-parameters'
 import type { Pu66Norms } from '../domain/pu66-norms'
 import { localJson } from './json-response'
+
+export class ParameterRequestError extends Error {
+  readonly reason: ParameterRejectionReason
+  readonly field: ParameterRejectionField
+  constructor(message: string, reason: ParameterRejectionReason, field: ParameterRejectionField) {
+    super(message)
+    this.reason = reason
+    this.field = field
+  }
+}
 
 async function send(path: string, method: string, body?: unknown): Promise<unknown> {
   let response: Response
@@ -21,6 +34,13 @@ async function send(path: string, method: string, body?: unknown): Promise<unkno
     throw new Error('Локальный реестр недоступен. Запустите npm run dev или npm run local.')
   }
   const result = await localJson(response)
+  const rejection = parameterRejectionSchema.safeParse(result)
+  if (!response.ok && rejection.success)
+    throw new ParameterRequestError(
+      rejection.data.error,
+      rejection.data.reason,
+      rejection.data.field,
+    )
   if (!response.ok)
     throw new Error(
       result && typeof result === 'object' && 'error' in result && typeof result.error === 'string'

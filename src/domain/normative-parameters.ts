@@ -267,6 +267,25 @@ export const parameterValueSchema = z.union([
 ])
 export type ParameterValue = z.infer<typeof parameterValueSchema>
 
+/** Только фиксированные коды причин и полей; свободный текст не попадает в диагностику. */
+export const parameterRejectionReasons = [
+  'invalid-request',
+  'invalid-value',
+  'unknown-parameter',
+  'no-document',
+  'document-changed',
+  'source-not-found',
+  'note-required',
+  'pdf-unreadable',
+] as const
+export type ParameterRejectionReason = (typeof parameterRejectionReasons)[number]
+export const parameterRejectionSchema = z.strictObject({
+  error: z.string(),
+  reason: z.enum(parameterRejectionReasons),
+  field: z.enum(['value', 'note', 'confirmedBy', 'document', 'request']),
+})
+export type ParameterRejectionField = z.infer<typeof parameterRejectionSchema>['field']
+
 /** Проверка значения по описанию параметра; возвращает текст ошибки или null. */
 export function valueProblem(
   definition: ParameterDefinition,

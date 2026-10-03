@@ -14,6 +14,8 @@ import {
   type ParameterConfirmation,
   type ParameterDefinition,
   type ParameterState,
+  type ParameterRejectionReason,
+  type ParameterRejectionField,
 } from '../src/domain/normative-parameters.ts'
 import { localCalendarDate } from '../src/domain/pu66-review.ts'
 import { extractPdfText } from './pdf-text.ts'
@@ -21,9 +23,28 @@ import { RegistryStore, RevisionConflict } from './store.ts'
 
 export class InvalidParameter extends Error {
   readonly status: number
-  constructor(message: string, status = 400) {
+  readonly reason: ParameterRejectionReason
+  readonly field: ParameterRejectionField
+  constructor(
+    message: string,
+    status = 400,
+    reason: ParameterRejectionReason = 'invalid-request',
+    field: ParameterRejectionField = 'request',
+  ) {
     super(message)
     this.status = status
+    this.reason = reason
+    this.field = field
+  }
+}
+
+export class ParameterConfirmationConflict extends RevisionConflict {
+  readonly reason = 'document-changed'
+  readonly field = 'document'
+  constructor() {
+    super()
+    this.message =
+      'Редакция документа изменилась. Обновите список параметров и сверьте новую цитату перед подтверждением; введённые данные сохранены.'
   }
 }
 
@@ -32,13 +53,16 @@ export async function documentText(store: RegistryStore, id: number): Promise<st
   const saved = store.getDocumentText(id)
   if (saved) return saved
   const file = store.getDocumentPdf(id)
-  if (!file) throw new InvalidParameter('PDF документа не найден.', 404)
+  if (!file) throw new InvalidParameter('PDF документа не найден.', 404, 'no-document', 'document')
   let pages: string[]
   try {
     pages = await extractPdfText(file.pdf)
-  } catch (cause) {
+  } catch {
     throw new InvalidParameter(
-      `Не удалось прочитать текст PDF: ${cause instanceof Error ? cause.message : 'неизвестная ошибка'}.`,
+      'Не удалось прочитать текст PDF. Проверьте файл в библиотеке документов.',
+      400,
+      'pdf-unreadable',
+      'document',
     )
   }
   store.saveDocumentText(id, pages)
@@ -162,10 +186,46 @@ export async function confirmParameter(
   now = new Date(),
 ): Promise<ParameterConfirmation> {
   const definition = parameterDefinitions.find((item) => item.id === parameterId)
-  if (!definition) throw new InvalidParameter('Неизвестный нормативный параметр.', 404)
-  const input = confirmSchema.parse(body)
+  if (!definition)
+    throw new InvalidParameter('Неизвестный нормативный параметр.', 404, 'unknown-parameter')
+  const parsed = confirmSchema.safeParse(body)
+  if (!parsed.success) {
+    const field = parsed.error.issues[0]?.path[0]
+    if (field === 'value')
+      throw new InvalidParameter(
+        'Введите допустимое число или таблицу значений.',
+        400,
+        'invalid-value',
+        'value',
+      )
+    if (field === 'confirmedBy')
+      throw new InvalidParameter(
+        'Укажите, кто подтверждает: от 2 до 240 символов.',
+        400,
+        'invalid-request',
+        'confirmedBy',
+      )
+    if (field === 'note')
+      throw new InvalidParameter(
+        'Примечание должно быть текстом не длиннее 2000 символов.',
+        400,
+        'invalid-request',
+        'note',
+      )
+    if (field === 'expectedDocumentId')
+      throw new InvalidParameter(
+        'Неверная ссылка на документ. Обновите список параметров.',
+        400,
+        'invalid-request',
+        'document',
+      )
+    throw new InvalidParameter(
+      'Неверные данные подтверждения. Обновите программу и повторите проверку.',
+    )
+  }
+  const input = parsed.data
   const problem = valueProblem(definition, input.value)
-  if (problem) throw new InvalidParameter(problem)
+  if (problem) throw new InvalidParameter(problem, 400, 'invalid-value', 'value')
   const today = localCalendarDate(now)
   const base = {
     parameterId,
@@ -177,7 +237,12 @@ export async function confirmParameter(
   const source = definition.source
   if (source.kind === 'decision') {
     if (!input.note)
-      throw new InvalidParameter('Укажите основание решения: документ, расчёт или распоряжение.')
+      throw new InvalidParameter(
+        'Укажите основание решения: документ, расчёт или распоряжение.',
+        400,
+        'note-required',
+        'note',
+      )
     return store.addParameterConfirmation({
       ...base,
       documentId: null,
@@ -192,12 +257,20 @@ export async function confirmParameter(
   if (!current)
     throw new InvalidParameter(
       `Прикрепите действующую редакцию ${source.documentCode} в библиотеке.`,
+      400,
+      'no-document',
+      'document',
     )
-  if (input.expectedDocumentId !== current.id) throw new RevisionConflict()
+  if (input.expectedDocumentId !== current.id) throw new ParameterConfirmationConflict()
   const quote = await quoteFor(store, definition, current.id)
+  if (currentDocument(store.listDocuments(), source.documentCode, today)?.id !== current.id)
+    throw new ParameterConfirmationConflict()
   if (!quote && !input.note)
     throw new InvalidParameter(
       'Пункт не найден в тексте PDF: укажите в примечании страницу и формулировку, по которым проверено значение.',
+      400,
+      'source-not-found',
+      'note',
     )
   return store.addParameterConfirmation({
     ...base,

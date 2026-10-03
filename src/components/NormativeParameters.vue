@@ -6,9 +6,10 @@ import {
   type ParameterDefinition,
   type ParameterState,
   type ParameterValue,
+  type ParameterRejectionField,
 } from '../domain/normative-parameters'
 import { useNormativeRules } from '../composables/useNormativeRules'
-import { confirmParameter } from '../services/local-normatives'
+import { confirmParameter, ParameterRequestError } from '../services/local-normatives'
 import { documentPdfUrl } from '../services/local-documents'
 
 const props = defineProps<{ refreshKey?: number }>()
@@ -33,6 +34,7 @@ watch(confirmedBy, (value) => {
 })
 const busy = ref(false)
 const error = ref('')
+const errorField = ref<ParameterRejectionField>('request')
 const notice = ref('')
 /** Значение в форме: число строкой или строки таблицы. */
 const form = reactive<{
@@ -105,6 +107,7 @@ function inUse(
 }
 
 function open(definition: ParameterDefinition, state: ParameterState | null): void {
+  if (busy.value) return
   error.value = ''
   notice.value = ''
   if (openId.value === definition.id) {
@@ -142,11 +145,21 @@ async function confirm(
   const value = formValue(definition)
   if (value === null) {
     error.value = 'Введите число.'
+    errorField.value = 'value'
     return
   }
   const problem = valueProblem(definition, value)
   if (problem) {
     error.value = problem
+    errorField.value = 'value'
+    return
+  }
+  if (noteRequired(definition, state) && !form.note.trim()) {
+    errorField.value = 'note'
+    error.value =
+      definition.source.kind === 'decision'
+        ? 'Укажите основание решения: документ, расчёт или распоряжение.'
+        : 'Пункт не найден в тексте PDF: укажите страницу и формулировку, по которым проверено значение.'
     return
   }
   busy.value = true
@@ -161,10 +174,19 @@ async function confirm(
     notice.value = `«${definition.title}»: подтверждено значение ${valueText(definition, value)}.`
     openId.value = null
   } catch (cause) {
+    errorField.value = cause instanceof ParameterRequestError ? cause.field : 'request'
     error.value = cause instanceof Error ? cause.message : 'Не удалось записать подтверждение.'
   } finally {
     busy.value = false
   }
+}
+
+function noteRequired(definition: ParameterDefinition, state: ParameterState | null): boolean {
+  return definition.source.kind === 'decision' || Boolean(state?.document && !state.quote)
+}
+
+function fieldInvalid(field: ParameterRejectionField): boolean {
+  return Boolean(error.value && errorField.value === field)
 }
 
 /** Таблица показывается построчно: заголовок, затем строки как в документе. */
@@ -209,7 +231,14 @@ function highlighted(text: string): Array<{ text: string; number: boolean }> {
     <p v-if="notice" role="status" class="ok-text">{{ notice }}</p>
     <label class="who"
       >Кто подтверждает (для журнала)
-      <input v-model="confirmedBy" maxlength="240" placeholder="Должность, фамилия" />
+      <input
+        v-model="confirmedBy"
+        maxlength="240"
+        placeholder="Должность, фамилия"
+        :disabled="busy"
+        :aria-invalid="fieldInvalid('confirmedBy')"
+        :aria-describedby="fieldInvalid('confirmedBy') ? 'parameter-confirm-error' : undefined"
+      />
     </label>
 
     <ul class="list">
@@ -233,6 +262,7 @@ function highlighted(text: string): Array<{ text: string; number: boolean }> {
         <button
           type="button"
           :aria-expanded="openId === definition.id"
+          :disabled="busy"
           @click="open(definition, state)"
         >
           {{ openId === definition.id ? 'Свернуть' : 'Проверить и подтвердить' }}
@@ -287,7 +317,14 @@ function highlighted(text: string): Array<{ text: string; number: boolean }> {
 
           <label v-if="definition.type === 'number'"
             >Значение{{ definition.unit ? `, ${definition.unit}` : '' }}
-            <input v-model="form.number" inputmode="decimal" maxlength="12" />
+            <input
+              v-model="form.number"
+              inputmode="decimal"
+              maxlength="12"
+              :disabled="busy"
+              :aria-invalid="fieldInvalid('value')"
+              :aria-describedby="fieldInvalid('value') ? 'parameter-confirm-error' : undefined"
+            />
           </label>
           <table v-else class="rows">
             <thead>
@@ -300,13 +337,27 @@ function highlighted(text: string): Array<{ text: string; number: boolean }> {
             <tbody>
               <tr v-for="(row, index) in form.rows" :key="index">
                 <td>
-                  <input v-model="row.key" maxlength="80" :aria-label="definition.keyLabel" />
+                  <input
+                    v-model="row.key"
+                    maxlength="80"
+                    :aria-label="definition.keyLabel"
+                    :disabled="busy"
+                    :aria-invalid="fieldInvalid('value')"
+                  />
                 </td>
                 <td>
-                  <input v-model="row.value" maxlength="20" :aria-label="definition.valueLabel" />
+                  <input
+                    v-model="row.value"
+                    maxlength="20"
+                    :aria-label="definition.valueLabel"
+                    :disabled="busy"
+                    :aria-invalid="fieldInvalid('value')"
+                  />
                 </td>
                 <td>
-                  <button type="button" @click="form.rows.splice(index, 1)">Удалить</button>
+                  <button type="button" :disabled="busy" @click="form.rows.splice(index, 1)">
+                    Удалить
+                  </button>
                 </td>
               </tr>
             </tbody>
@@ -314,6 +365,7 @@ function highlighted(text: string): Array<{ text: string; number: boolean }> {
           <button
             v-if="definition.type === 'table'"
             type="button"
+            :disabled="busy"
             @click="form.rows.push({ key: '', value: '' })"
           >
             Добавить строку
@@ -322,11 +374,21 @@ function highlighted(text: string): Array<{ text: string; number: boolean }> {
             >{{
               definition.source.kind === 'decision'
                 ? 'Основание решения (обязательно)'
-                : 'Примечание (необязательно)'
+                : noteRequired(definition, state)
+                  ? 'Примечание: страница и формулировка (обязательно)'
+                  : 'Примечание (необязательно)'
             }}
-            <textarea v-model="form.note" rows="2" maxlength="2000" />
+            <textarea
+              v-model="form.note"
+              rows="2"
+              maxlength="2000"
+              :required="noteRequired(definition, state)"
+              :disabled="busy"
+              :aria-invalid="fieldInvalid('note')"
+              :aria-describedby="fieldInvalid('note') ? 'parameter-confirm-error' : undefined"
+            />
           </label>
-          <p v-if="error" role="alert" class="error">{{ error }}</p>
+          <p v-if="error" id="parameter-confirm-error" role="alert" class="error">{{ error }}</p>
           <button
             type="button"
             class="primary"

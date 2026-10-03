@@ -10,6 +10,11 @@ import { arch, platform, release, totalmem } from 'node:os'
 import { z } from 'zod'
 import type { RegistryStore } from './store.ts'
 import {
+  parameterDefinitions,
+  parameterRejectionReasons,
+  type ParameterRejectionReason,
+} from '../src/domain/normative-parameters.ts'
+import {
   diagnosticError,
   diagnosticErrorTypes,
   diagnosticFrames,
@@ -31,6 +36,8 @@ export type DiagnosticEvent = {
   frames?: string[]
   /** Текст интерфейса строится только из безопасных типа и мест кода. */
   message?: string
+  parameterId?: string
+  rejectionReason?: ParameterRejectionReason
 }
 
 /** Сколько событий хранить; при превышении файл переписывается последними событиями. */
@@ -78,6 +85,7 @@ const fixedRoutes = new Set([
   '/api/signs/import/apply',
   '/api/normative-parameters',
   '/api/documents',
+  '/api/documents/identify',
   '/api/documents/preview',
   '/api/documents/apply',
   '/api/backup',
@@ -126,6 +134,8 @@ const storedEventSchema = z.object({
   status: z.number().int().min(100).max(599).optional(),
   errorType: z.string().max(120).optional(),
   frames: z.array(z.string().max(2_000)).max(4).optional(),
+  parameterId: z.string().max(120).optional(),
+  rejectionReason: z.string().max(120).optional(),
 })
 
 /** Одинаковая защита для новых событий, недоверенного клиента и журнала прежних версий. */
@@ -135,6 +145,14 @@ function safeEvent(value: unknown): DiagnosticEvent | null {
   const { data } = parsed
   const frames = diagnosticFrames(data.frames?.join('\n'))
   const errorType = data.errorType === undefined ? undefined : safeErrorType(data.errorType)
+  const parameterId = parameterDefinitions.some((item) => item.id === data.parameterId)
+    ? data.parameterId
+    : undefined
+  const rejectionReason = parameterRejectionReasons.includes(
+    data.rejectionReason as ParameterRejectionReason,
+  )
+    ? (data.rejectionReason as ParameterRejectionReason)
+    : undefined
   return {
     at: data.at,
     source: data.source,
@@ -142,6 +160,9 @@ function safeEvent(value: unknown): DiagnosticEvent | null {
     name: data.source === 'server' ? safeRoute(data.name) : diagnosticOperation(data.name),
     ...(data.status === undefined ? {} : { status: data.status }),
     ...(data.durationMs === undefined ? {} : { durationMs: data.durationMs }),
+    ...(data.source === 'server' && parameterId && rejectionReason
+      ? { parameterId, rejectionReason }
+      : {}),
     ...(errorType === undefined
       ? {}
       : {
@@ -228,7 +249,12 @@ export class DiagnosticsLog {
   }
 
   /** Учёт запроса: статистика по адресу; ошибки и медленные запросы — в журнал. */
-  request(route: string, status: number, durationMs: number): void {
+  request(
+    route: string,
+    status: number,
+    durationMs: number,
+    rejection?: { parameterId: string; rejectionReason: ParameterRejectionReason },
+  ): void {
     route = safeRoute(route)
     const stats = this.routes.get(route) ?? { count: 0, errors: 0, totalMs: 0, maxMs: 0 }
     stats.count++
@@ -238,7 +264,14 @@ export class DiagnosticsLog {
     this.routes.set(route, stats)
     if (status >= 500) return // Подробности внутренней ошибки записывает обработчик.
     if (status >= 400)
-      this.record({ source: 'server', kind: 'error', name: route, status, durationMs })
+      this.record({
+        source: 'server',
+        kind: 'error',
+        name: route,
+        status,
+        durationMs,
+        ...rejection,
+      })
     else if (durationMs >= SLOW_REQUEST_MS)
       this.record({ source: 'server', kind: 'slow', name: route, status, durationMs })
   }

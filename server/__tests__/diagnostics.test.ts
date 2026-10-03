@@ -23,6 +23,34 @@ afterEach(async () => {
 })
 
 describe('diagnostics without confidential data', () => {
+  it('keeps only allowlisted server parameter ids and rejection reasons, including on restart', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-rejection-log-'))
+    directories.push(directory)
+    const file = join(directory, 'diagnostics.jsonl')
+    const log = new DiagnosticsLog(file, { version: 'test', mode: 'test' })
+    log.request('POST /api/normative-parameters/:id/confirm', 400, 1, {
+      parameterId: 'odm-signs-hourly',
+      rejectionReason: 'source-not-found',
+    })
+    const untrusted = {
+      at: new Date().toISOString(),
+      source: 'server',
+      kind: 'error',
+      name: 'POST /api/normative-parameters/:id/confirm',
+      parameterId: 'Секретный переезд',
+      rejectionReason: 'Секретная причина',
+      message: 'Секретный текст',
+    }
+    writeFileSync(file, readFileSync(file, 'utf8') + JSON.stringify(untrusted) + '\n')
+    const loaded = new DiagnosticsLog(file, { version: 'test', mode: 'test' })
+    const store = new RegistryStore(':memory:')
+    stores.push(store)
+    const report = JSON.stringify(loaded.report(store))
+    expect(report).toContain('source-not-found')
+    expect(report).not.toContain('Секрет')
+    expect(readFileSync(file, 'utf8')).not.toContain('Секрет')
+  })
+
   it('never persists free error text, absolute paths, function names or arbitrary event names', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-private-diagnostics-'))
     directories.push(directory)
