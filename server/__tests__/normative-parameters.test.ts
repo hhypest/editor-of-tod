@@ -8,6 +8,9 @@ import { applyDocumentUpload, previewDocumentUpload } from '../document-web-impo
 import { confirmParameter, listParameterStates } from '../normative-parameters'
 import { DocumentInUse, RegistryStore, RevisionConflict } from '../store'
 import { fictionalMethodology as methodology, textPdf } from './pdf-fixture'
+import { createUnlinkedScheme } from '../../src/domain/create-scheme'
+import { reviewScheme } from '../../src/domain/review-scheme'
+import { markState, setMark, unmarkedChecks } from '../../src/domain/review-marks'
 
 const directories: string[] = []
 const stores: RegistryStore[] = []
@@ -52,6 +55,73 @@ const state = (states: Awaited<ReturnType<typeof listParameterStates>>, id: stri
   states.find((item) => item.id === id)!
 
 describe('normative parameters from library documents', () => {
+  it('requires a new traffic check after a relevant amendment, even after reconfirming the same value', async () => {
+    const store = library()
+    const document = await add(store, methodology(520), {})
+    const who = { confirmedBy: 'Учебный составитель', note: '', expectedDocumentId: document.id }
+    await confirmParameter(store, 'odm-signs-hourly', { ...who, value: 260 }, now)
+    let scheme = createUnlinkedScheme({
+      referenceId: 'TEST-AMENDMENT',
+      locationText: 'Учебный участок',
+      directionLeft: 'А',
+      directionRight: 'Б',
+      frontMetres: '18',
+      taperMetres: '10',
+      bufferMetres: '10',
+      speedStagesKmh: ['70', '50', '40'],
+      location: 'out',
+      approachSpeedKmh: '90',
+      yellowTemporarySigns: false,
+    })
+    scheme.parameters.regulation = { ...scheme.parameters.regulation, mode: 'two', hourly: '300' }
+    const original = rulesFrom(await listParameterStates(store, now))
+    scheme = setMark(scheme, reviewScheme(scheme, original), 'b34-traffic', true, now.toISOString())
+    const traffic = (rules: typeof original) =>
+      reviewScheme(scheme, rules).find((finding) => finding.id === 'b34-traffic')!
+
+    await add(store, textPdf([['Учебное изменение: пункт 6.4.4 требует повторной сверки.']]), {
+      code: 'Изменение № 1 к ОДМ 218.6.019',
+      edition: '2031',
+      effectiveFrom: '2031-01-01',
+      amendsId: document.id,
+    })
+    const amended = rulesFrom(await listParameterStates(store, now))
+    expect(amended.signsHourly).toBe(original.signsHourly)
+    expect(amended.sources).toEqual(original.sources)
+    expect(amended.confirmed['odm-signs-hourly']).toBe(false)
+    expect(markState(scheme, traffic(amended)).status).toBe('stale')
+    expect(
+      unmarkedChecks(scheme, reviewScheme(scheme, amended)).map((finding) => finding.id),
+    ).toContain('b34-traffic')
+
+    await confirmParameter(store, 'odm-signs-hourly', { ...who, value: 260 }, now)
+    const reconfirmed = rulesFrom(await listParameterStates(store, now))
+    expect(reconfirmed.confirmed['odm-signs-hourly']).toBe(true)
+    expect(markState(scheme, traffic(reconfirmed)).status).toBe('stale')
+    scheme = setMark(
+      scheme,
+      reviewScheme(scheme, reconfirmed),
+      'b34-traffic',
+      true,
+      now.toISOString(),
+    )
+    expect(markState(scheme, traffic(reconfirmed)).status).toBe('marked')
+    await confirmParameter(
+      store,
+      'peak-hour-share',
+      {
+        value: 0.1,
+        confirmedBy: who.confirmedBy,
+        note: 'Учебный подсчёт',
+        expectedDocumentId: null,
+      },
+      now,
+    )
+    expect(
+      markState(scheme, traffic(rulesFrom(await listParameterStates(store, now)))).status,
+    ).toBe('marked')
+  })
+
   it('requires reconfirmation for an old clause in the same library document', async () => {
     const store = library()
     const document = await add(store, methodology(520), {})

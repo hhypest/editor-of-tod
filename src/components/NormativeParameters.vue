@@ -118,7 +118,11 @@ function open(definition: ParameterDefinition, state: ParameterState | null): vo
     return
   }
   openId.value = definition.id
-  const initial = state?.suggestion ?? state?.confirmation?.value ?? definition.fallback
+  const initial =
+    state?.suggestion ??
+    (confirmationMatchesDefinition(definition, state?.confirmation)
+      ? state!.confirmation!.value
+      : definition.fallback)
   form.note = ''
   if (definition.type === 'number') {
     form.number = typeof initial === 'number' ? String(initial) : ''

@@ -1,6 +1,6 @@
 import type { Scheme } from './model'
 import { figureDimensions } from './figure-dimensions'
-import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
+import { PROTOTYPE_RULES, REGULATION_PARAMETERS, type NormativeRules } from './normative-parameters'
 import { templateLabel } from './registry'
 import { anchorCoordinates, placementCoordinates } from './placement-workspace'
 import { dangerousSectionMetres, usesTwoRegulators } from './template-placements'
@@ -218,7 +218,7 @@ export function reviewScheme(
     basis: JSON.stringify([
       scheme.template,
       { ...parameters, locationText: undefined, directions: undefined },
-      { ...rules, sources: undefined, confirmed: undefined },
+      { ...rules, sources: undefined, confirmed: undefined, evidence: undefined },
       placements,
     ]),
   })
@@ -377,6 +377,7 @@ export function reviewScheme(
         rules.sources['odm-signs-hourly'],
         rules.sources['odm-alternate-hourly'],
         rules.sources['odm-signs-taper'],
+        REGULATION_PARAMETERS.map((id) => [id, rules.confirmed[id], rules.evidence[id]]),
       ]),
     })
   }

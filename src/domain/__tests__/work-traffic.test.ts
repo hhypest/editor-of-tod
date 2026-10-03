@@ -41,4 +41,20 @@ describe('paired length/traffic conditions of GOST R 58350 table Д.1', () => {
       }),
     ).toBe('regulators')
   })
+
+  it.each([
+    [8.2, 23.9, 17.9, 50, 'signals'],
+    [8.2, 23.9, 17.899, 49.999, 'signs'],
+    [8.2, 23.9, 17.901, 50.001, 'signals'],
+    [98.2, 183.9, 17.9, 300, 'signals'],
+    [98.2, 183.9, 17.899, 299.999, 'signals'],
+    [98.2, 183.9, 17.901, 300.001, 'outside'],
+  ] as const)(
+    'compares decimal sums %s + %s + %s at the boundary %s',
+    (taperMetres, bufferMetres, workMetres, expected, decision) => {
+      const length = workSectionMetres({ taperMetres, bufferMetres, workMetres })
+      expect(length).toBe(expected)
+      expect(workTrafficDecision(length, 200, false, PROTOTYPE_RULES)).toBe(decision)
+    },
+  )
 })

@@ -88,6 +88,19 @@ describe('normative parameters', () => {
     expect(suggestValue(typesize, { text: 'Таблица 1', rows: ['I 1 Дороги'] })).toBeNull()
   })
 
+  it('extracts the signs taper from the wording of table И.1 note 3', () => {
+    const definition = parameterDefinition('odm-signs-taper')!
+    // Вымышленное значение, короткий фрагмент формулировки вместо текста стандарта.
+    expect(
+      suggestValue(definition, {
+        text: 'Учебная таблица: 17 м при регулировании с помощью знаков 2.6 и 2.7.',
+      }),
+    ).toBe(17)
+    expect(
+      suggestValue(definition, { text: 'Учебная таблица: 18 м - с помощью знаков 2.6 и 2.7.' }),
+    ).toBe(18)
+  })
+
   it('compares editions by the sentence with the value', () => {
     expect(relevantFragment(signs, clause)).toBe(
       'знаки допускаются на участках протяженностью менее 45 м с интенсивностью движения менее 260 авт/ч в двух направлениях.',

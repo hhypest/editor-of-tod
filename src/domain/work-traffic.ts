@@ -35,6 +35,7 @@ export function workSectionMetres(
   zone: { taperMetres: number; bufferMetres: number; workMetres: number } | null | undefined,
 ): number | null {
   if (!zone) return null
-  const length = zone.taperMetres + zone.bufferMetres + zone.workMetres
+  // Та же точность суммы, что у dangerousSectionMetres, без округления до целых метров.
+  const length = Number((zone.taperMetres + zone.bufferMetres + zone.workMetres).toFixed(6))
   return Number.isFinite(length) && length > 0 ? length : null
 }

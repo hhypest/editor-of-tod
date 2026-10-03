@@ -151,7 +151,7 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
     fallback: 15,
     min: 1,
     max: 200,
-    pattern: /(\d+) м-с помощью знаков 2\.6/u,
+    pattern: /(\d+) м(?:\s*-\s*с помощью| при регулировании с помощью) знаков 2\.6/u,
   },
   {
     id: 'odm-regulator-distance',
@@ -472,6 +472,8 @@ export type NormativeRules = {
   peakHourShare: number | null
   /** Параметр подтверждён для действующей редакции. */
   confirmed: Readonly<Record<string, boolean>>
+  /** Основание ручной проверки: редакция, изменения и конкретная запись подтверждения. */
+  evidence: Readonly<Record<string, string>>
   /** Ссылка для текста подсказок: «ОДМ 218.6.019-2016, п. 6.4.4». */
   sources: Readonly<Record<string, string>>
 }
@@ -514,11 +516,22 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
   const values: Record<string, ParameterValue | null> = {}
   const confirmed: Record<string, boolean> = {}
   const sources: Record<string, string> = {}
+  const evidence: Record<string, string> = {}
   for (const definition of parameterDefinitions) {
     const state = byId.get(definition.id)
     const matches = confirmationMatchesDefinition(definition, state?.confirmation)
     values[definition.id] = matches ? state!.confirmation!.value : fallbackValue(definition)
     confirmed[definition.id] = matches && state?.status.kind === 'confirmed'
+    evidence[definition.id] =
+      state && (state.document || state.confirmation || state.amendments.length)
+        ? JSON.stringify([
+            state.status.kind,
+            state.document,
+            state.amendments,
+            state.confirmation?.id ?? null,
+            state.confirmation?.fragment ?? null,
+          ])
+        : ''
     sources[definition.id] = sourceLabel(
       definition,
       (matches ? state?.confirmation?.documentLabel : undefined) || state?.document?.label,
@@ -566,6 +579,7 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
     },
     peakHourShare: (values['peak-hour-share'] as number | null) ?? null,
     confirmed,
+    evidence,
     sources,
   }
 }
