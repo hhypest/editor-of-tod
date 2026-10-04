@@ -1,3 +1,4 @@
+import { CROSSING_FRONT_LIMIT_METRES } from './crossing-limits'
 import { schemeSchema, type Scheme, type WorkZone } from './model'
 import {
   changeApproachSpeed,
@@ -226,7 +227,7 @@ function parseZone(zone: WorkZoneDraft | null, name: string): WorkZone | null {
 export function applySchemeDetails(
   scheme: Scheme,
   draft: SchemeDetailsDraft,
-  rules: NormativeRules = PROTOTYPE_RULES,
+  _rules: NormativeRules = PROTOTYPE_RULES,
 ): Scheme {
   const { parameters } = draft
   draft.titleBlock.responsible.forEach((person, index) => {
@@ -291,9 +292,9 @@ export function applySchemeDetails(
     },
   }
   const zone = candidate.parameters.workZones[scheme.template.code]
-  if (zone && zone.workMetres > rules.railProfile.frontMaximumMetres)
+  if (zone && zone.workMetres > CROSSING_FRONT_LIMIT_METRES)
     throw new SchemeEditError(
-      `Фронт ${zone.workMetres} м превышает максимум профиля переезда ${rules.railProfile.frontMaximumMetres} м (решение специалиста).`,
+      `Фронт ${zone.workMetres} м превышает предел фронта редактора ${CROSSING_FRONT_LIMIT_METRES} м.`,
     )
   const maximum = frontLimit(scheme)
   if (zone && maximum !== null && maximum > 0 && zone.workMetres > maximum)

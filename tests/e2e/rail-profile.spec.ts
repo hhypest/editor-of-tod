@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { createSampleWorkbook, sampleCards } from '../../scripts/generate-pu66-samples'
 
-test('railway profile handles inclusive thresholds and limited visibility without rewriting the selected mode', async ({
+test('regulation uses the strict 250 boundary and limited visibility without rewriting the selected mode', async ({
   page,
   request,
 }) => {
@@ -48,7 +48,7 @@ test('railway profile handles inclusive thresholds and limited visibility withou
   const heading = page.locator('.advice').getByRole('heading')
   for (const [hourly, label] of [
     [249, 'знаки приоритета'],
-    [250, 'знаки приоритета'],
+    [250, 'один регулировщик'],
     [251, 'один регулировщик'],
     [500, 'один регулировщик'],
     [501, 'два регулировщика'],

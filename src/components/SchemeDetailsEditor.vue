@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { CROSSING_FRONT_LIMIT_METRES } from '../domain/crossing-limits'
 import { templateLabel, selectTemplateByWorkFront } from '../domain/registry'
 import { workSectionMetres } from '../domain/work-traffic'
 import { frontLimit } from '../domain/work-conditions'
@@ -339,8 +340,8 @@ function applyDraft(): void {
           сохраняются; соберите шаблон заново и повторите проверку листа.
         </p>
         <p class="hint">
-          Максимум профиля переезда: {{ normativeRules.railProfile.frontMaximumMetres }} м (решение
-          специалиста). Дополнительно фронт ограничен п. 8 закреплённой ПУ-66:
+          Предел фронта редактора: {{ CROSSING_FRONT_LIMIT_METRES }} м. Дополнительно фронт
+          ограничен п. 8 закреплённой ПУ-66:
           {{ frontLimit(scheme) ?? 'не указан — обновите связь с заполненной карточкой' }} м.
         </p>
         <button
@@ -514,7 +515,7 @@ function applyDraft(): void {
             {{
               advice.verified
                 ? 'Рекомендация считается по введённым данным и ничего не выбирает сама; решение и его обоснование остаются за составителем.'
-                : `Не подтверждены: ${advice.unconfirmed.join('; ')}. Для них действуют значения прототипа. Подтвердите профиль как решение специалиста с основанием, а параметры документов — по текстам ОДМ и ГОСТ Р 58350 в «Реестры» → «Нормативные параметры»; до этого способ пропуска выберите сами в поле «Регулирование Б.34».`
+                : `Не подтверждены: ${advice.unconfirmed.join('; ')}. Для них действуют значения прототипа. Подтвердите параметры по текстам ОДМ и ГОСТ Р 58350 в «Реестры» → «Нормативные параметры»; до этого способ пропуска выберите сами в поле «Регулирование Б.34».`
             }}
           </p>
         </section>

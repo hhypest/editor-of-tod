@@ -1,3 +1,4 @@
+import { CROSSING_FRONT_LIMIT_METRES } from './crossing-limits'
 import type { Scheme } from './model'
 import { figureDimensions } from './figure-dimensions'
 import { PROTOTYPE_RULES, REGULATION_PARAMETERS, type NormativeRules } from './normative-parameters'
@@ -336,7 +337,7 @@ export function reviewScheme(
     id: 'work-conditions',
     kind: 'verify',
     title: 'Срок работ и границы переезда',
-    detail: `Сверьте продолжительность работ, светлое время суток, постоянное присутствие регулировщиков и фактическую длину фронта в границах переезда по п. 8 ПУ-66 и максимум профиля ${rules.railProfile.frontMaximumMetres} м (решение специалиста). Для Б.33 всегда два регулировщика. Подтвердите профиль в нормативных параметрах и сверку с таблицей Д.1 ГОСТ. Границы по приказу № 402: до шлагбаума, при его отсутствии — 10 м от ближайшего рельса, а не от оси.`,
+    detail: `Сверьте продолжительность работ, светлое время суток, постоянное присутствие регулировщиков и длину фронта по п. 8 ПУ-66. Предел фронта редактора — ${CROSSING_FRONT_LIMIT_METRES} м; отгон и буфер отдельно. Для Б.33 — два регулировщика (ОДМ 218.6.019-2016, п. 7.3.1, рис. Б.33). Условия Б.34: ГОСТ Р 58350-2019, п. 6.1.3, приложение Д; ОДМ, пп. 6.4, 13.7.5. Границы по приказу № 402: до шлагбаума, при его отсутствии — 10 м от ближайшего рельса.`,
     ...(conditionsProblems.length ? { markBlocked: conditionsProblems.join(' ') } : {}),
     path: 'parameters.workConditions.kind',
     basis: JSON.stringify([
@@ -344,9 +345,12 @@ export function reviewScheme(
       frontMetres,
       frontLimit(scheme),
       parameters.regulation,
-      rules.railProfile,
-      rules.confirmed['rail-crossing-profile'],
-      rules.evidence['rail-crossing-profile'],
+      'rail-regulation-v2',
+      CROSSING_FRONT_LIMIT_METRES,
+      rules.workTraffic,
+      rules.signsHourly,
+      rules.alternateHourly,
+      rules.signsLengthMetres,
       rules.shortTermHours,
       rules.confirmed['gost-short-term-hours'],
       rules.evidence['gost-short-term-hours'],
@@ -358,6 +362,7 @@ export function reviewScheme(
     const decision = railRegulationMode(
       {
         frontMetres: frontMetres ?? null,
+        sectionMetres: section,
         hourly: parseHourly(parameters.regulation.hourly),
         limitedVisibility: parameters.regulation.vis,
         straight: parameters.regulation.straight,
@@ -376,10 +381,10 @@ export function reviewScheme(
       id: 'b34-traffic',
       kind: 'verify',
       title: 'Условия движения для Б.34',
-      detail: `На листе размещено регулировщиков: ${regulators}; участок между устройствами ${section ?? 'не введён'} м, фронт ${frontMetres ?? 'не введён'} м. Профиль переезда (решение специалиста): при нормальной видимости до ${rules.railProfile.signsHourlyInclusive} авт/ч включительно — знаки, свыше этого до ${rules.railProfile.oneHourlyInclusive} включительно — один при дневных работах и прямом участке, свыше — два. При ограниченной видимости — два. Рекомендация: ${decision ?? 'нет данных'}. Два могут быть выбраны как более консервативное решение. Подтвердите это решение и сопоставьте его с таблицей Д.1 ГОСТ Р 58350, которая отдельно использует длину участка и строгий порог «менее 250». Для одного проверьте условия ОДМ, п. 13.7.5; постоянное присутствие — п. 6.4.3.`,
+      detail: `На листе размещено регулировщиков: ${regulators}; участок между устройствами ${section ?? 'не введён'} м, фронт ${frontMetres ?? 'не введён'} м. Б.34: знаки при потоке менее ${Math.min(rules.signsHourly, rules.workTraffic.signsHourly)} авт/ч, участке менее ${Math.min(rules.signsLengthMetres, rules.workTraffic.signsLength)} м и обеспеченной видимости (${rules.sources['gost-work-traffic']}; ${rules.sources['odm-signs-hourly']}). От этой границы до ${Math.min(rules.alternateHourly, rules.workTraffic.alternateHourly)} авт/ч включительно предлагается один при дневных работах, прямом коротком участке и видимости с обоих концов (ОДМ, п. 13.7.5); свыше — два. При ограниченной видимости — два. Рекомендация: ${decision ?? 'нет данных'}. Постоянное присутствие — ОДМ, п. 6.4.3. Таблица Д.1 не задаёт количество регулировщиков; для сочетаний вне её строк сверяется применимость краткосрочной схемы Б.34. Два допустимы и в нижних диапазонах.`,
       ...(incompatible
         ? {
-            markBlocked: `Выбранный режим, отгон или условия работ не соответствуют профилю переезда: ${conditionsProblems.join(' ') || 'проверьте отгон для знаков'}.`,
+            markBlocked: `Выбранный режим, отгон или условия работ не соответствуют Б.34: ${conditionsProblems.join(' ') || 'проверьте отгон для знаков'}.`,
           }
         : {}),
       path: 'placements',
@@ -390,7 +395,7 @@ export function reviewScheme(
         regulators,
         section,
         decision,
-        rules.railProfile,
+        'rail-regulation-v2',
         rules.workTraffic,
         rules.signsLengthMetres,
         rules.signsHourly,

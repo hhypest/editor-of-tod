@@ -51,12 +51,12 @@ function example(
 }
 
 describe('preliminary B.33/B.34 layout', () => {
-  it('uses the short front for the specialist profile and retains separate device limits', () => {
+  it('uses device-section length as well as the short front for priority signs', () => {
     const base = example(25, 'out', 'signs')
-    expect(buildTemplatePlacements(base).length).toBeGreaterThan(0)
+    expect(() => buildTemplatePlacements(base)).toThrow('Выбранный режим')
     const finding = reviewScheme(base).find((item) => item.id === 'b34-traffic')
-    expect(finding?.markBlocked).toBeUndefined()
-    expect(finding?.detail).toContain('решение специалиста')
+    expect(finding?.markBlocked).toBeTruthy()
+    expect(finding?.detail).toContain('ГОСТ Р 58350')
     expect(finding?.detail).toContain('50 м')
   })
   it('allows two regulators above 500 in the specialist profile and preserves imported objects', () => {

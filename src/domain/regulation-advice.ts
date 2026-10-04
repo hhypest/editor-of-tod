@@ -1,3 +1,4 @@
+import { CROSSING_FRONT_LIMIT_METRES } from './crossing-limits'
 import {
   PROTOTYPE_RULES,
   REGULATION_PARAMETERS,
@@ -12,8 +13,8 @@ import { selectTemplateByWorkFront } from './registry.ts'
 /**
  * Объяснимая подсказка способа пропуска транспорта для схемы Б.34. Пороги, протяжённость,
  * отгон и таблица расстояний берутся из нормативных параметров («Реестры» → «Нормативные
- * параметры»): нормативные условия подтверждаются по текстам ОДМ и ГОСТ, профиль переезда —
- * отдельным решением специалиста с основанием.
+ * параметры»). Условия подтверждаются по текстам ОДМ и ГОСТ; отдельного подтверждения
+ * профиля переезда нет.
  * Пока хотя бы один параметр не подтверждён, подсказка только объясняет расчёт и не
  * применяется из интерфейса.
  */
@@ -76,6 +77,7 @@ export function adviseRegulation(
       variant:
         input.frontMetres === null ? 'b34' : selectTemplateByWorkFront(input.frontMetres).code,
       frontMetres: input.frontMetres,
+      sectionMetres: section,
       hourly,
       limitedVisibility: input.limitedVisibility,
       straight: input.straight,
@@ -83,23 +85,21 @@ export function adviseRegulation(
     },
     rules,
   )
-  const {
-    signsHourlyInclusive: signs,
-    oneHourlyInclusive: one,
-    frontMaximumMetres: maximum,
-  } = rules.railProfile
+  const signs = Math.min(rules.signsHourly, rules.workTraffic.signsHourly)
+  const one = Math.min(rules.alternateHourly, rules.workTraffic.alternateHourly)
+  const maximum = CROSSING_FRONT_LIMIT_METRES
   reasons.push(
-    `Профиль железнодорожного переезда — решение специалиста: при нормальной видимости до ${signs} авт./ч включительно — знаки, свыше ${signs} до ${one} включительно — один регулировщик, свыше ${one} — два. При ограниченной видимости всегда два; Б.33 всегда два. Максимум фронта ${maximum} м. Профиль подтверждается отдельно от таблицы Д.1 ГОСТ Р 58350.`,
+    `Б.34 при обеспеченной видимости и участке менее ${Math.min(rules.signsLengthMetres, rules.workTraffic.signsLength)} м: менее ${signs} авт./ч — знаки 2.6/2.7; от ${signs} до ${one} включительно — один при выполненных условиях ОДМ, п. 13.7.5; свыше ${one} — два. При ограниченной видимости и для Б.33 — два. Пороги: ${rules.sources['gost-work-traffic']}; ${rules.sources['odm-signs-hourly']}; ${rules.sources['odm-alternate-hourly']}. Предел фронта редактора ${maximum} м, дополнительно действует п. 8 ПУ-66.`,
   )
   if (mode === null) {
     reasons.push(
       hourly === null
         ? 'Интенсивность не введена: нужна часовая интенсивность в двух направлениях. Пересчёт из ПУ-66 допустим только с подтверждённой долей часа пик.'
-        : `Проверьте фронт работ: он должен быть положительным и не превышать ${maximum} м. Участок между устройствами проверяется отдельно.`,
+        : `Проверьте фронт работ (положительный, не более ${maximum} м) и длину участка между устройствами.`,
     )
   } else if (mode === 'signs') {
     reasons.push(
-      `Интенсивность ${hourly} авт./ч — до ${signs} включительно, видимость встречного автомобиля обеспечена: профиль предлагает знаки 2.6 и 2.7 (решение специалиста). Нормативное основание знаков проверяется отдельно: ${rules.sources['odm-signs-hourly']}; ${rules.sources['gost-work-traffic']}.`,
+      `Интенсивность ${hourly} авт./ч — менее ${signs}, видимость встречного автомобиля обеспечена: применяются знаки 2.6 и 2.7. Основание: ${rules.sources['odm-signs-hourly']}; ${rules.sources['gost-work-traffic']}.`,
     )
   } else {
     reasons.push(
@@ -113,12 +113,12 @@ export function adviseRegulation(
       )
     if (
       hourly !== null &&
-      hourly > signs &&
+      hourly >= signs &&
       hourly <= one &&
       (input.workConditions?.daylight !== 'day' || !input.straight)
     )
       warnings.push(
-        'Для одного регулировщика не подтверждены дневные работы или прямой участок: профиль предлагает двух.',
+        'Для одного регулировщика не подтверждены дневные работы или прямой участок: предлагаются два регулировщика.',
       )
   }
   const normative = workTrafficDecision(
@@ -134,7 +134,7 @@ export function adviseRegulation(
     (mode === 'signs' && normative !== 'signs')
   )
     warnings.push(
-      `Принятый профиль требует отдельного обоснования по фактической длине участка и интенсивности. Таблица Д.1 использует строгий порог «менее ${Math.min(rules.signsHourly, rules.workTraffic.signsHourly)} авт./ч» и сочетания длины/потока; её значения не задают количество регулировщиков. Сверьте решение специалиста с действующим текстом (${rules.sources['gost-work-traffic']}).`,
+      `Сверьте применимость краткосрочной схемы по фактической длине участка и интенсивности. Таблица Д.1 использует строгий порог «менее ${Math.min(rules.signsHourly, rules.workTraffic.signsHourly)} авт./ч» и сочетания длины/потока; её значения не задают количество регулировщиков. Сверьте условия Б.34 с действующим текстом (${rules.sources['gost-work-traffic']}).`,
     )
   if (section !== null)
     reasons.push(

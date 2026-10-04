@@ -3,6 +3,7 @@ import { createRegistryServer } from '../index'
 import { RegistryStore } from '../store'
 import { DiagnosticsLog } from '../diagnostics'
 import { textPdf } from './pdf-fixture'
+import { parameterStateSchema } from '../../src/domain/normative-parameters'
 
 describe('parameter confirmation rejection contract', () => {
   it('returns field-specific reasons, records only fixed codes, and rejects a changed document', async () => {
@@ -50,6 +51,20 @@ describe('parameter confirmation rejection contract', () => {
         await post('peak-hour-share', { ...input, value: 0.1 }),
         'note-required',
         'note',
+      )
+      await expectRejection(
+        await post('rail-crossing-profile'),
+        'unknown-parameter',
+        'request',
+        404,
+      )
+      const states = parameterStateSchema
+        .array()
+        .parse(
+          await (await fetch(`http://127.0.0.1:${address.port}/api/normative-parameters`)).json(),
+        )
+      expect(states.some((state: { id: string }) => state.id === 'rail-crossing-profile')).toBe(
+        false,
       )
       await expectRejection(await post('private-unknown'), 'unknown-parameter', 'request', 404)
       const meta = {

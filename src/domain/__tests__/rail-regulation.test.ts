@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { createUnlinkedScheme, createSchemeFromPu66 } from '../create-scheme'
+import { createSchemeFromPu66 } from '../create-scheme'
 import { applySchemeDetails, createSchemeDetailsDraft } from '../edit-details'
 import { exportSchemeJson, importSchemeJson } from '../import'
 import {
   parameterDefinition,
   PROTOTYPE_RULES,
-  RAIL_PROFILE_KEYS,
-  valueProblem,
+  rulesFrom,
+  REGULATION_PARAMETERS,
+  type ParameterState,
 } from '../normative-parameters'
 import { railRegulationMode } from '../rail-regulation'
 import { adviseRegulation } from '../regulation-advice'
@@ -24,6 +25,7 @@ const conditions = {
 }
 const base = {
   frontMetres: 21.5,
+  sectionMetres: 41.5,
   hourly: 298,
   limitedVisibility: false,
   straight: true,
@@ -63,7 +65,7 @@ function project(front = 21.5, hourly = '298') {
   }
   return scheme
 }
-describe('specialist railway-crossing decision after repeat acceptance', () => {
+describe('railway-crossing regulation after normative acceptance', () => {
   it.each([30, 45])('advice anticipates B.33 after a front edit to %s m', (frontMetres) => {
     expect(
       adviseRegulation({
@@ -80,7 +82,7 @@ describe('specialist railway-crossing decision after repeat acceptance', () => {
   it.each([
     [0, 'signs'],
     [249, 'signs'],
-    [250, 'signs'],
+    [250, 'one'],
     [250.1, 'one'],
     [251, 'one'],
     [298, 'one'],
@@ -145,16 +147,16 @@ describe('specialist railway-crossing decision after repeat acceptance', () => {
     expect(() => project(45.001)).toThrow()
     const draft = createSchemeDetailsDraft(scheme)
     draft.parameters.workZones.b33!.workMetres = '45.001'
-    expect(() => applySchemeDetails(scheme, draft)).toThrow('максимум профиля')
+    expect(() => applySchemeDetails(scheme, draft)).toThrow('предел фронта редактора')
     scheme.parameters.workZones.b33!.workMetres = 46
     const opened = importSchemeJson(exportSchemeJson(scheme)).scheme
     expect(opened.parameters.workZones.b33?.workMetres).toBe(46)
-    expect(() => rebuildTemplatePlacements(opened)).toThrow('максимум профиля')
+    expect(() => rebuildTemplatePlacements(opened)).toThrow('предел фронта редактора')
     expect(reviewScheme(opened).find((f) => f.id === 'work-conditions')?.markBlocked).toContain(
-      'максимум профиля',
+      'предел фронта редактора',
     )
   })
-  it('keeps strict table Д.1 semantics separate from the specialist profile', () => {
+  it('keeps table Д.1 semantics and removes the editable crossing profile', () => {
     expect(workTrafficDecision(41.5, 250, false, PROTOTYPE_RULES, conditions)).toBe('regulators')
     expect(workTrafficDecision(42.6, 915, true, PROTOTYPE_RULES, conditions)).toBe('outside')
     const advice = adviseRegulation({
@@ -167,12 +169,13 @@ describe('specialist railway-crossing decision after repeat acceptance', () => {
     })
     expect(advice.mode).toBe('two')
     expect(advice.verified).toBe(false)
-    expect(advice.reasons.join(' ')).toContain('решение специалиста')
-    expect(advice.warnings.join(' ')).toContain('отдельного обоснования')
-    expect(PROTOTYPE_RULES.sources['rail-crossing-profile']).toBe('решение составителя')
+    expect(advice.reasons.join(' ')).toContain('от 250 до 500')
+    expect(advice.warnings.join(' ')).toContain('Сверьте применимость')
+    expect(parameterDefinition('rail-crossing-profile')).toBeUndefined()
+    expect(REGULATION_PARAMETERS).not.toContain('rail-crossing-profile')
   })
   it.each([21.5, 35])(
-    'invalidates old review at front %s when profile evidence changes',
+    'invalidates old review at front %s when normative evidence changes',
     (front) => {
       const scheme = project(front)
       const marked = setMark(scheme, reviewScheme(scheme), 'work-conditions', true)
@@ -180,7 +183,7 @@ describe('specialist railway-crossing decision after repeat acceptance', () => {
         ...PROTOTYPE_RULES,
         evidence: {
           ...PROTOTYPE_RULES.evidence,
-          'rail-crossing-profile': 'новое учебное основание',
+          'gost-work-traffic': 'новое учебное основание',
         },
       }
       expect(
@@ -191,42 +194,45 @@ describe('specialist railway-crossing decision after repeat acceptance', () => {
       ).toBe('stale')
     },
   )
-  it('requires complete ordered decision rows and reads the confirmed maximum', () => {
-    const definition = parameterDefinition('rail-crossing-profile')!
-    if (definition.type !== 'table') throw new Error('Expected table')
-    expect(valueProblem(definition, definition.fallback)).toBeNull()
-    expect(valueProblem(definition, { [RAIL_PROFILE_KEYS.frontMaximumMetres]: '45' })).toContain(
-      'все три',
-    )
-    expect(
-      valueProblem(definition, {
-        ...definition.fallback,
-        [RAIL_PROFILE_KEYS.oneHourlyInclusive]: '250',
-      }),
-    ).toContain('больше')
-    const rules = {
-      ...PROTOTYPE_RULES,
-      railProfile: { ...PROTOTYPE_RULES.railProfile, frontMaximumMetres: 40 },
-    }
-    const draft = createSchemeDetailsDraft(project(45))
-    expect(() => applySchemeDetails(project(45), draft, rules)).toThrow('40 м')
-    expect(() =>
-      createUnlinkedScheme(
-        {
-          referenceId: 'TEST',
-          locationText: '',
-          directionLeft: '',
-          directionRight: '',
-          frontMetres: '41',
-          taperMetres: '10',
-          bufferMetres: '10',
-          location: 'out',
-          approachSpeedKmh: '90',
-          speedStagesKmh: ['70', '50', '40'],
-          yellowTemporarySigns: false,
+  it('ignores obsolete crossing confirmations and uses the existing normative thresholds', () => {
+    const obsolete: ParameterState = {
+      id: 'rail-crossing-profile',
+      status: { kind: 'confirmed' },
+      document: null,
+      quote: null,
+      suggestion: null,
+      amendments: [],
+      confirmation: {
+        id: 1,
+        parameterId: 'rail-crossing-profile',
+        documentId: null,
+        documentLabel: '',
+        clause: '',
+        page: null,
+        quote: '',
+        fragment: '',
+        value: {
+          'Максимальный фронт на переезде, м': '999',
+          'Б.34: знаки при нормальной видимости, до включительно, авт/ч': '999',
+          'Б.34: один регулировщик при дневных работах и прямом участке, до включительно, авт/ч':
+            '9999',
         },
-        { rules },
-      ),
-    ).toThrow('40 м')
+        confirmedBy: 'Учебный специалист',
+        confirmedAt: '2030-01-01',
+        note: 'Старое основание',
+      },
+    }
+    const rules = rulesFrom([obsolete])
+    expect(rules).toEqual(PROTOTYPE_RULES)
+    expect(railRegulationMode({ ...base, hourly: 250 }, rules)).toBe('one')
+    expect(railRegulationMode({ ...base, hourly: 501 }, rules)).toBe('two')
+  })
+  it('does not allow signs when the measured device section reaches 50 m', () => {
+    const scheme = project(21.5, '249')
+    scheme.parameters.regulation.mode = 'signs'
+    scheme.parameters.workZones.b34!.taperMetres = 15
+    scheme.parameters.workConditions.sectionMetres = 50
+    expect(() => rebuildTemplatePlacements(scheme)).toThrow('Выбранный режим')
+    expect(reviewScheme(scheme).find((f) => f.id === 'b34-traffic')?.markBlocked).toBeTruthy()
   })
 })

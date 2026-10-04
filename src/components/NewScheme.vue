@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { CROSSING_FRONT_LIMIT_METRES } from '../domain/crossing-limits'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   createSchemeFromPu66,
@@ -327,9 +328,8 @@ watch(
           Взять фронт из п. 8 ПУ-66
         </button>
         <p class="hint">
-          Максимум фронта профиля переезда: {{ rules.railProfile.frontMaximumMetres }} м (решение
-          специалиста). Длина п. 8 выбранной ПУ-66 дополнительно ограничивает фронт; отгон и буфер
-          учитываются отдельно.
+          Предел фронта редактора: {{ CROSSING_FRONT_LIMIT_METRES }} м. Длина п. 8 выбранной ПУ-66
+          дополнительно ограничивает фронт; отгон и буфер учитываются отдельно.
         </p>
         <WorkConditionsFields v-model="workConditions" />
         <p v-if="choice" class="hint" role="status">

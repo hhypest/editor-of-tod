@@ -98,7 +98,7 @@ describe('explicit conditions after specialist review', () => {
         sectionMetres: section,
         workConditions: conditions,
       }).mode,
-    ).toBe(hourly <= 250 ? 'signs' : 'one')
+    ).toBe(section >= 50 ? 'two' : hourly < 250 ? 'signs' : 'one')
     const scheme = project()
     scheme.parameters.workConditions.sectionMetres = section
     scheme.parameters.regulation.hourly = String(hourly)
