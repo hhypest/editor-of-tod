@@ -51,14 +51,15 @@ function example(
 }
 
 describe('preliminary B.33/B.34 layout', () => {
-  it('rejects a 25 m front when the full sign-regulated section reaches 50 m', () => {
+  it('uses the short front for the specialist profile and retains separate device limits', () => {
     const base = example(25, 'out', 'signs')
-    expect(() => buildTemplatePlacements(base)).toThrow('таблица Д.1')
+    expect(buildTemplatePlacements(base).length).toBeGreaterThan(0)
     const finding = reviewScheme(base).find((item) => item.id === 'b34-traffic')
-    expect(finding?.markBlocked).toContain('таблица Д.1')
+    expect(finding?.markBlocked).toBeUndefined()
+    expect(finding?.detail).toContain('решение специалиста')
     expect(finding?.detail).toContain('50 м')
   })
-  it('rejects arbitrary regulator choices beyond table Д.1 and preserves the imported objects', () => {
+  it('allows two regulators above 500 in the specialist profile and preserves imported objects', () => {
     const base = example(18, 'out', 'two')
     const built = rebuildTemplatePlacements(base).scheme
     const outside = {
@@ -68,10 +69,10 @@ describe('preliminary B.33/B.34 layout', () => {
         regulation: { ...built.parameters.regulation, hourly: '501' },
       },
     }
-    expect(() => buildTemplatePlacements(outside)).toThrow('таблица Д.1')
+    expect(buildTemplatePlacements(outside).length).toBeGreaterThan(0)
     expect(
       reviewScheme(outside).find((item) => item.id === 'b34-traffic')?.markBlocked,
-    ).toBeTruthy()
+    ).toBeUndefined()
     expect(outside.placements).toBe(built.placements)
   })
   it('requires exactly one regulator on each approach after manual moves', () => {
@@ -243,7 +244,7 @@ describe('preliminary B.33/B.34 layout', () => {
       ...scheme,
       parameters: {
         ...scheme.parameters,
-        regulation: { ...scheme.parameters.regulation, hourly: '250' },
+        regulation: { ...scheme.parameters.regulation, hourly: '251' },
       },
     })
     expect(() => buildTemplatePlacements(inadequate)).toThrow(TemplateBuildError)

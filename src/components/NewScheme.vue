@@ -326,6 +326,11 @@ watch(
         >
           Взять фронт из п. 8 ПУ-66
         </button>
+        <p class="hint">
+          Максимум фронта профиля переезда: {{ rules.railProfile.frontMaximumMetres }} м (решение
+          специалиста). Длина п. 8 выбранной ПУ-66 дополнительно ограничивает фронт; отгон и буфер
+          учитываются отдельно.
+        </p>
         <WorkConditionsFields v-model="workConditions" />
         <p v-if="choice" class="hint" role="status">
           По длине фронта предварительно выбран вариант

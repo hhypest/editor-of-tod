@@ -53,6 +53,13 @@ export const ODM = 'ОДМ 218.6.019'
 export const GOST_RULES = 'ГОСТ Р 52289'
 export const GOST_WORKS = 'ГОСТ Р 58350'
 
+export const RAIL_PROFILE_KEYS = {
+  frontMaximumMetres: 'Максимальный фронт на переезде, м',
+  signsHourlyInclusive: 'Б.34: знаки при нормальной видимости, до включительно, авт/ч',
+  oneHourlyInclusive:
+    'Б.34: один регулировщик при дневных работах и прямом участке, до включительно, авт/ч',
+} as const
+
 export const WORK_TRAFFIC_KEYS = {
   signsLength: 'Протяжённость участка для знаков, менее, м',
   signsHourly: 'Интенсивность для знаков, менее, авт/ч',
@@ -77,6 +84,23 @@ export const WARNING_RANGE_KEYS = {
 } as const
 
 export const parameterDefinitions: readonly ParameterDefinition[] = [
+  {
+    id: 'rail-crossing-profile',
+    title: 'Профиль регулирования на железнодорожном переезде',
+    unit: '',
+    usedIn:
+      'Решение специалиста: Б.34 до 250 включительно — знаки, свыше 250 до 500 включительно — один, свыше 500 — два; при ограниченной видимости и для Б.33 — два. Один требует дневных работ и прямого участка. Это отдельное решение, а не таблица Д.1 ГОСТ.',
+    source: { kind: 'decision' },
+    type: 'table',
+    keyLabel: 'Условие профиля',
+    valueLabel: 'Граница',
+    fallback: {
+      [RAIL_PROFILE_KEYS.frontMaximumMetres]: '45',
+      [RAIL_PROFILE_KEYS.signsHourlyInclusive]: '250',
+      [RAIL_PROFILE_KEYS.oneHourlyInclusive]: '500',
+    },
+    valuePattern: /^\d{1,4}$/,
+  },
   {
     id: 'gost-short-term-hours',
     title: 'Наибольшая продолжительность краткосрочных работ',
@@ -345,6 +369,19 @@ export function valueProblem(
     return null
   }
   if (typeof value === 'number') return 'Нужна таблица значений.'
+  if (definition.id === 'rail-crossing-profile') {
+    if (
+      Object.values(RAIL_PROFILE_KEYS).some(
+        (key) => !/^\d{1,4}$/.test(value[key] ?? '') || Number(value[key]) <= 0,
+      )
+    )
+      return 'Заполните все три условия профиля положительными числами; подписи строк должны сохраняться.'
+    if (
+      Number(value[RAIL_PROFILE_KEYS.signsHourlyInclusive]) >=
+      Number(value[RAIL_PROFILE_KEYS.oneHourlyInclusive])
+    )
+      return 'Верхняя граница для одного регулировщика должна быть больше границы для знаков.'
+  }
   if (definition.id === 'gost-work-traffic') {
     const keys = Object.values(WORK_TRAFFIC_KEYS)
     if (keys.some((key) => !/^\d{1,4}$/.test(value[key] ?? '') || Number(value[key]) <= 0))
@@ -449,6 +486,11 @@ export type ParameterState = z.infer<typeof parameterStateSchema>
 
 /** Значения, которыми пользуются расчёты, и их происхождение. */
 export type NormativeRules = {
+  railProfile: Readonly<{
+    frontMaximumMetres: number
+    signsHourlyInclusive: number
+    oneHourlyInclusive: number
+  }>
   shortTermHours: number
   signsHourly: number
   workTraffic: Readonly<{
@@ -542,6 +584,9 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
             state.amendments,
             state.confirmation?.id ?? null,
             state.confirmation?.fragment ?? null,
+            state.confirmation?.note ?? null,
+            state.confirmation?.confirmedBy ?? null,
+            state.confirmation?.confirmedAt ?? null,
           ])
         : ''
     sources[definition.id] = sourceLabel(
@@ -566,6 +611,7 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
     ) as Record<K, number>
   }
   return {
+    railProfile: tableNumbers('rail-crossing-profile', RAIL_PROFILE_KEYS),
     shortTermHours: number('gost-short-term-hours'),
     signsHourly: number('odm-signs-hourly'),
     workTraffic: tableNumbers('gost-work-traffic', WORK_TRAFFIC_KEYS),
@@ -611,6 +657,7 @@ export const PROTOTYPE_RULES: NormativeRules = rulesFrom()
 
 /** Параметры, от которых зависит подсказка способа пропуска. */
 export const REGULATION_PARAMETERS = [
+  'rail-crossing-profile',
   'gost-short-term-hours',
   'gost-work-traffic',
   'odm-signs-hourly',

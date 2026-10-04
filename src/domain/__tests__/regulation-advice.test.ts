@@ -64,11 +64,11 @@ describe('B.34 regulation advice', () => {
     ['-5', false, true, null],
     ['249', false, true, 'signs'],
     ['249', true, true, 'two'],
-    ['250', false, true, 'one'],
-    ['250', false, false, 'two'],
+    ['250', false, true, 'signs'],
+    ['250', false, false, 'signs'],
     ['500', false, true, 'one'],
-    ['501', false, true, null],
-    ['501', false, false, null],
+    ['501', false, true, 'two'],
+    ['501', false, false, 'two'],
     ['120,5', false, false, 'signs'],
   ] as const)(
     'hourly %s, limited visibility %s, straight %s → %s',
@@ -79,13 +79,17 @@ describe('B.34 regulation advice', () => {
 
   it('does not allow signs 2.6/2.7 on a work zone of the limit length or longer', () => {
     const long = adviseRegulation({ ...base, frontMetres: 25, sectionMetres: 50 })
-    expect(long.mode).toBe('two')
+    expect(long.mode).toBe('signs')
+    expect(long.warnings.join(' ')).toContain('отдельного обоснования')
     expect(long.reasons.join(' ')).toContain('участка — 50 м')
     const unknown = adviseRegulation({ ...base, frontMetres: null, sectionMetres: null })
     expect(unknown.mode).toBeNull()
-    expect(unknown.reasons.join(' ')).toContain('Протяжённость участка проведения работ не введена')
+    expect(unknown.reasons.join(' ')).toContain('фронт работ')
     // Без длины нельзя определить строку таблицы Д.1 даже при высокой интенсивности.
-    expect(adviseRegulation({ ...base, hourly: '300', sectionMetres: null }).mode).toBeNull()
+    expect(adviseRegulation({ ...base, hourly: '300', sectionMetres: null })).toMatchObject({
+      mode: 'one',
+      verified: false,
+    })
   })
 
   it('points to PU-66 and the peak-hour share when intensity is missing', () => {
@@ -94,12 +98,12 @@ describe('B.34 regulation advice', () => {
     expect(advice.reasons.join(' ')).toContain('часа пик')
   })
 
-  it('warns above 500 veh/h without deriving the number of regulators from it', () => {
+  it('keeps the specialist profile separate from the GOST table above 500 veh/h', () => {
     const straight = adviseRegulation({ ...base, hourly: '600' })
-    expect(straight.mode).toBeNull()
-    expect(straight.warnings.join(' ')).toContain('п. 6.4.2')
-    expect(straight.warnings.join(' ')).toContain('не выводится')
-    expect(adviseRegulation({ ...base, hourly: '400' }).warnings.join(' ')).toContain('п. 13.7.5')
+    expect(straight.mode).toBe('two')
+    expect(straight.warnings.join(' ')).toContain('Таблица Д.1')
+    expect(straight.reasons.join(' ')).toContain('решение специалиста')
+    expect(adviseRegulation({ ...base, hourly: '400' }).reasons.join(' ')).toContain('п. 13.7.5')
   })
 
   it('cites the clauses behind every recommendation', () => {
@@ -131,11 +135,17 @@ describe('B.34 regulation advice', () => {
   it('stays unverified and names the parameters until they are confirmed', () => {
     const advice = adviseRegulation(base)
     expect(advice.verified).toBe(false)
-    expect(advice.unconfirmed).toHaveLength(7)
+    expect(advice.unconfirmed).toHaveLength(8)
   })
 
   it('uses confirmed values of the current edition and cites it', () => {
     const rules = confirmedRules({
+      'rail-crossing-profile': {
+        'Максимальный фронт на переезде, м': '45',
+        'Б.34: знаки при нормальной видимости, до включительно, авт/ч': '300',
+        'Б.34: один регулировщик при дневных работах и прямом участке, до включительно, авт/ч':
+          '500',
+      },
       'odm-signs-hourly': 300,
       'gost-work-traffic': {
         'Протяжённость участка для знаков, менее, м': '50',
@@ -148,7 +158,7 @@ describe('B.34 regulation advice', () => {
     })
     const signs = adviseRegulation({ ...base, hourly: '280', taperMetres: 12 }, rules)
     expect(signs).toMatchObject({ mode: 'signs', verified: true, unconfirmed: [] })
-    expect(signs.reasons.join(' ')).toContain('менее 300 авт./ч')
+    expect(signs.reasons.join(' ')).toContain('до 300 включительно')
     expect(signs.reasons.join(' ')).toContain('ОДМ 218.6.019-2030, п. 6.4.4')
     expect(signs.warnings).toEqual([])
     expect(adviseRegulation({ ...base, hourly: '310' }, rules).regulatorDistanceMetres).toBe(20)

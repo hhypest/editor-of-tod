@@ -36,7 +36,7 @@ describe('dimension chains read from ODM figures B.33/B.34', () => {
     expect(dimensions[1]?.endX).toBe(dimensions[2]?.startX)
     expect(dimensions[2]?.endX).toBe(dimensions[3]?.startX)
     expect(dimensions[3]?.endX).toBeGreaterThan(dimensions[3]?.startX ?? 0)
-    expect(figureDimensions(project('50', '10', '15')).every((part) => part.agreesWithFigure)).toBe(
+    expect(figureDimensions(project('45', '10', '15')).every((part) => part.agreesWithFigure)).toBe(
       true,
     )
   })

@@ -77,6 +77,11 @@ export function createUnlinkedScheme(
     throw new SchemeCreationError('Укажите локальный идентификатор переезда.')
   }
   const workMetres = positiveNumber(input.frontMetres, 'фронт работ')
+  const profileMaximum = (options.rules ?? PROTOTYPE_RULES).railProfile.frontMaximumMetres
+  if (workMetres > profileMaximum)
+    throw new SchemeCreationError(
+      `Фронт работ превышает максимум профиля переезда ${profileMaximum} м (решение специалиста).`,
+    )
   const taperMetres = positiveNumber(input.taperMetres, 'отвод')
   const bufferMetres = positiveNumber(input.bufferMetres, 'буфер')
   if (input.location !== 'in' && input.location !== 'out') {

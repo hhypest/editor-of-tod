@@ -84,8 +84,11 @@ describe('manual review marks', () => {
         imported.parameters.regulation.mode = 'one'
         imported.parameters.regulation.straight = false
       }
-      if (variant === 'long') imported.parameters.workZones.b34!.workMetres = 30
-      if (variant === 'intensity') imported.parameters.regulation.hourly = '501'
+      if (variant === 'long') imported.parameters.workZones.b34!.workMetres = 46
+      if (variant === 'intensity') {
+        imported.parameters.regulation.hourly = '501'
+        imported.parameters.regulation.mode = 'one'
+      }
       const findings = reviewScheme(imported)
       const finding = findings.find((item) => item.id === 'b34-traffic')!
       expect(markState(imported, finding).status).toBe('blocked')

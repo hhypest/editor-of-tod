@@ -168,7 +168,7 @@ function restoreAll(): void {
   markDirty()
 }
 
-/** Рекомендация ОДМ по введённым, ещё не применённым данным формы. */
+/** Профиль переезда по введённым, ещё не применённым данным формы. */
 const advice = computed(() => {
   const { regulation, speedStagesKmh, workZones } = draft.value.parameters
   const zone = workZones[props.scheme.template.code]
@@ -285,7 +285,7 @@ function discard(): void {
 function applyDraft(): void {
   if (props.locked) return
   try {
-    const updated = applySchemeDetails(props.scheme, draft.value)
+    const updated = applySchemeDetails(props.scheme, draft.value, normativeRules.value)
     dirty.value = false
     error.value = ''
     status.value = 'Правки применены к проекту. Сохраните проект; файл JSON можно скачать отдельно.'
@@ -339,7 +339,8 @@ function applyDraft(): void {
           сохраняются; соберите шаблон заново и повторите проверку листа.
         </p>
         <p class="hint">
-          Максимальный фронт по п. 8 закреплённой ПУ-66:
+          Максимум профиля переезда: {{ normativeRules.railProfile.frontMaximumMetres }} м (решение
+          специалиста). Дополнительно фронт ограничен п. 8 закреплённой ПУ-66:
           {{ frontLimit(scheme) ?? 'не указан — обновите связь с заполненной карточкой' }} м.
         </p>
         <button
@@ -513,7 +514,7 @@ function applyDraft(): void {
             {{
               advice.verified
                 ? 'Рекомендация считается по введённым данным и ничего не выбирает сама; решение и его обоснование остаются за составителем.'
-                : `Не подтверждены: ${advice.unconfirmed.join('; ')}. Для них действуют значения прототипа. Подтвердите их по текстам ОДМ и ГОСТ Р 58350 в «Реестры» → «Нормативные параметры»; до этого способ пропуска выберите сами в поле «Регулирование Б.34».`
+                : `Не подтверждены: ${advice.unconfirmed.join('; ')}. Для них действуют значения прототипа. Подтвердите профиль как решение специалиста с основанием, а параметры документов — по текстам ОДМ и ГОСТ Р 58350 в «Реестры» → «Нормативные параметры»; до этого способ пропуска выберите сами в поле «Регулирование Б.34».`
             }}
           </p>
         </section>

@@ -1,7 +1,5 @@
 import { schemeSchema, type Scheme } from './model'
 import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
-import { parseHourly } from './regulation-advice'
-import { effectiveWorkSection, workTrafficDecision } from './work-traffic'
 import { workConditionProblems } from './work-conditions'
 import { anchorCoordinates } from './placement-workspace'
 import { distanceTitles, type DistanceField } from './normative-defaults'
@@ -73,54 +71,14 @@ function checkConditions(scheme: Scheme, rules: NormativeRules): void {
       )
     }
   }
-  if (template.code !== 'b34') {
-    const decision = workTrafficDecision(
-      effectiveWorkSection(parameters.workZones.b33, parameters.workConditions, 'b33'),
-      parseHourly(parameters.regulation.hourly),
-      parameters.regulation.vis,
-      rules,
-      parameters.workConditions,
-    )
-    if (decision === 'outside' || decision === 'signals' || decision === 'unknown')
-      throw new TemplateBuildError(
-        'Для Б.33 проверьте участок между устройствами, часовую интенсивность и условия замены светофора регулировщиками (ОДМ, п. 6.4.3; ГОСТ Р 58350, таблица Д.1).',
-      )
-    return
-  }
-  const { regulation } = parameters
-  if (regulation.mode === 'auto') {
-    throw new TemplateBuildError(
-      'На этапе 2 выберите способ регулирования Б.34 после оценки условий.',
-    )
-  }
-  const decision = workTrafficDecision(
-    effectiveWorkSection(parameters.workZones.b34, parameters.workConditions),
-    parseHourly(regulation.hourly),
-    regulation.vis,
-    rules,
-    parameters.workConditions,
+  if (template.code !== 'b34') return
+  if (
+    parameters.regulation.mode === 'signs' &&
+    parameters.workZones.b34?.taperMetres !== rules.signsTaperMetres
   )
-  if (decision === 'outside' || decision === 'signals' || decision === 'unknown')
     throw new TemplateBuildError(
-      `Условия поочерёдного пропуска не позволяют собрать выбранный вариант: проверьте протяжённость участка, часовую интенсивность, светофор или иной способ организации движения (${rules.sources['gost-work-traffic']}).`,
+      `Для знаков 2.6/2.7 проверьте и укажите отгон ${rules.signsTaperMetres} м (${rules.sources['odm-signs-taper']}).`,
     )
-  if (regulation.mode === 'signs') {
-    if (decision !== 'signs') {
-      throw new TemplateBuildError(
-        `Для знаков 2.6/2.7 требуются участок менее ${Math.min(rules.signsLengthMetres, rules.workTraffic.signsLength)} м, интенсивность менее ${rules.signsHourly} авт./ч и достаточная видимость (${rules.sources['odm-signs-hourly']}; ГОСТ Р 58350, таблица Д.1).`,
-      )
-    }
-    if (parameters.workZones.b34?.taperMetres !== rules.signsTaperMetres) {
-      throw new TemplateBuildError(
-        `Для знаков 2.6/2.7 проверьте и укажите отгон ${rules.signsTaperMetres} м (${rules.sources['odm-signs-taper']}).`,
-      )
-    }
-  }
-  if (regulation.mode === 'one' && (!regulation.straight || regulation.vis)) {
-    throw new TemplateBuildError(
-      'Один регулировщик возможен после подтверждения прямого участка и видимости с двух сторон (ОДМ, п. 13.7.5).',
-    )
-  }
 }
 
 /**

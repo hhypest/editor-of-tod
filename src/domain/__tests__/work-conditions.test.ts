@@ -98,7 +98,7 @@ describe('explicit conditions after specialist review', () => {
         sectionMetres: section,
         workConditions: conditions,
       }).mode,
-    ).toBe(section < 50 ? 'one' : 'two')
+    ).toBe(hourly <= 250 ? 'signs' : 'one')
     const scheme = project()
     scheme.parameters.workConditions.sectionMetres = section
     scheme.parameters.regulation.hourly = String(hourly)
@@ -146,7 +146,7 @@ describe('explicit conditions after specialist review', () => {
       'короче фронта',
     )
   })
-  it('rejects one regulator at night and a long measured section, but permits two', () => {
+  it('rejects one regulator at night; device length does not replace the work front', () => {
     const scheme = project()
     scheme.parameters.regulation.mode = 'one'
     scheme.parameters.workConditions.daylight = 'night'
@@ -154,7 +154,11 @@ describe('explicit conditions after specialist review', () => {
     scheme.parameters.workConditions.daylight = 'day'
     scheme.parameters.workConditions.sectionMetres = 50
     scheme.parameters.regulation.hourly = '249'
-    expect(() => buildTemplatePlacements(scheme)).toThrow('двух регулировщиков')
+    expect(
+      buildTemplatePlacements(scheme).filter(
+        (p) => p.kind === 'element' && p.elementKind === 'reg',
+      ),
+    ).toHaveLength(1)
     scheme.parameters.regulation.mode = 'two'
     expect(buildTemplatePlacements(scheme).length).toBeGreaterThan(0)
   })

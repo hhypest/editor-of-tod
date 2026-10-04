@@ -6,7 +6,8 @@ import { anchorCoordinates, placementCoordinates } from './placement-workspace'
 import { dangerousSectionMetres, usesTwoRegulators } from './template-placements'
 import { ZONE_PLATE } from './sign-code'
 import { parseHourly } from './regulation-advice'
-import { effectiveWorkSection, workTrafficDecision } from './work-traffic'
+import { effectiveWorkSection } from './work-traffic'
+import { railRegulationMode } from './rail-regulation'
 import { workConditionProblems, frontLimit } from './work-conditions'
 import {
   distanceTitles,
@@ -335,8 +336,7 @@ export function reviewScheme(
     id: 'work-conditions',
     kind: 'verify',
     title: 'Срок работ и границы переезда',
-    detail:
-      'Сверьте продолжительность работ, светлое время суток, постоянное присутствие регулировщиков и фактическую длину фронта в границах переезда по п. 8 ПУ-66. Границы по приказу № 402: до шлагбаума, при его отсутствии — 10 м от ближайшего рельса, а не от оси.',
+    detail: `Сверьте продолжительность работ, светлое время суток, постоянное присутствие регулировщиков и фактическую длину фронта в границах переезда по п. 8 ПУ-66 и максимум профиля ${rules.railProfile.frontMaximumMetres} м (решение специалиста). Для Б.33 всегда два регулировщика. Подтвердите профиль в нормативных параметрах и сверку с таблицей Д.1 ГОСТ. Границы по приказу № 402: до шлагбаума, при его отсутствии — 10 м от ближайшего рельса, а не от оси.`,
     ...(conditionsProblems.length ? { markBlocked: conditionsProblems.join(' ') } : {}),
     path: 'parameters.workConditions.kind',
     basis: JSON.stringify([
@@ -344,30 +344,31 @@ export function reviewScheme(
       frontMetres,
       frontLimit(scheme),
       parameters.regulation,
+      rules.railProfile,
+      rules.confirmed['rail-crossing-profile'],
+      rules.evidence['rail-crossing-profile'],
       rules.shortTermHours,
       rules.confirmed['gost-short-term-hours'],
       rules.evidence['gost-short-term-hours'],
+      REGULATION_PARAMETERS.map((id) => [id, rules.confirmed[id], rules.evidence[id]]),
     ]),
   })
   if (scheme.template.code === 'b34') {
     const section = effectiveWorkSection(parameters.workZones.b34, parameters.workConditions)
-    const decision = workTrafficDecision(
-      section,
-      parseHourly(parameters.regulation.hourly),
-      parameters.regulation.vis,
+    const decision = railRegulationMode(
+      {
+        frontMetres: frontMetres ?? null,
+        hourly: parseHourly(parameters.regulation.hourly),
+        limitedVisibility: parameters.regulation.vis,
+        straight: parameters.regulation.straight,
+        daylight: parameters.workConditions.daylight,
+      },
       rules,
-      parameters.workConditions,
     )
     const incompatible =
-      decision === 'outside' ||
-      decision === 'signals' ||
-      decision === 'unknown' ||
-      parameters.regulation.mode === 'auto' ||
+      conditionsProblems.length > 0 ||
       (parameters.regulation.mode === 'signs' &&
-        (decision !== 'signs' ||
-          parameters.workZones.b34?.taperMetres !== rules.signsTaperMetres)) ||
-      (parameters.regulation.mode === 'one' &&
-        (!parameters.regulation.straight || parameters.regulation.vis))
+        parameters.workZones.b34?.taperMetres !== rules.signsTaperMetres)
     const regulators = placements.filter(
       (placement) => placement.kind === 'element' && placement.elementKind === 'reg',
     ).length
@@ -375,10 +376,10 @@ export function reviewScheme(
       id: 'b34-traffic',
       kind: 'verify',
       title: 'Условия движения для Б.34',
-      detail: `На листе размещено регулировщиков: ${regulators}; расчётный участок проведения работ ${section ?? 'не введён'} м (отгон + буфер + фронт). Сверьте фактические границы устройств, интенсивность в двух направлениях и видимость встречного автомобиля (${rules.sources['odm-signs-hourly']}; ${rules.sources['gost-work-traffic']}). Для одного регулировщика отдельно проверьте видимость с обоих концов, небольшой фронт, прямой участок, светлое время суток и ограничения скорости (ОДМ, п. 13.7.5). Замена светофора требует постоянного присутствия регулировщиков (п. 6.4.3).`,
+      detail: `На листе размещено регулировщиков: ${regulators}; участок между устройствами ${section ?? 'не введён'} м, фронт ${frontMetres ?? 'не введён'} м. Профиль переезда (решение специалиста): при нормальной видимости до ${rules.railProfile.signsHourlyInclusive} авт/ч включительно — знаки, свыше этого до ${rules.railProfile.oneHourlyInclusive} включительно — один при дневных работах и прямом участке, свыше — два. При ограниченной видимости — два. Рекомендация: ${decision ?? 'нет данных'}. Два могут быть выбраны как более консервативное решение. Подтвердите это решение и сопоставьте его с таблицей Д.1 ГОСТ Р 58350, которая отдельно использует длину участка и строгий порог «менее 250». Для одного проверьте условия ОДМ, п. 13.7.5; постоянное присутствие — п. 6.4.3.`,
       ...(incompatible
         ? {
-            markBlocked: `Выбранный режим, отгон или условия видимости не соответствуют проверяемым условиям ОДМ и ГОСТ Р 58350 (${rules.sources['gost-work-traffic']}); исправьте условия или выберите отдельную схему со светофором/иным пропуском.`,
+            markBlocked: `Выбранный режим, отгон или условия работ не соответствуют профилю переезда: ${conditionsProblems.join(' ') || 'проверьте отгон для знаков'}.`,
           }
         : {}),
       path: 'placements',
@@ -389,6 +390,7 @@ export function reviewScheme(
         regulators,
         section,
         decision,
+        rules.railProfile,
         rules.workTraffic,
         rules.signsLengthMetres,
         rules.signsHourly,

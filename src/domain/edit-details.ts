@@ -7,7 +7,7 @@ import {
   type DistanceField,
   type SchemeLocation,
 } from './normative-defaults'
-import type { NormativeRules } from './normative-parameters'
+import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import { PHONE_PLACEHOLDER, phoneComplete } from './title-block'
 import { selectTemplateByWorkFront } from './registry'
 import { frontLimit } from './work-conditions'
@@ -223,7 +223,11 @@ function parseZone(zone: WorkZoneDraft | null, name: string): WorkZone | null {
   }
 }
 
-export function applySchemeDetails(scheme: Scheme, draft: SchemeDetailsDraft): Scheme {
+export function applySchemeDetails(
+  scheme: Scheme,
+  draft: SchemeDetailsDraft,
+  rules: NormativeRules = PROTOTYPE_RULES,
+): Scheme {
   const { parameters } = draft
   draft.titleBlock.responsible.forEach((person, index) => {
     if (person.phone.trim() && !phoneComplete(person.phone.trim())) {
@@ -287,6 +291,10 @@ export function applySchemeDetails(scheme: Scheme, draft: SchemeDetailsDraft): S
     },
   }
   const zone = candidate.parameters.workZones[scheme.template.code]
+  if (zone && zone.workMetres > rules.railProfile.frontMaximumMetres)
+    throw new SchemeEditError(
+      `Фронт ${zone.workMetres} м превышает максимум профиля переезда ${rules.railProfile.frontMaximumMetres} м (решение специалиста).`,
+    )
   const maximum = frontLimit(scheme)
   if (zone && maximum !== null && maximum > 0 && zone.workMetres > maximum)
     throw new SchemeEditError(

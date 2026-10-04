@@ -8,6 +8,7 @@ import { fictionalMethodology, fictionalSignStandard } from '../../server/__test
 import { importSchemeJson } from '../../src/domain/import'
 import { reviewScheme } from '../../src/domain/review-scheme'
 import { setMark } from '../../src/domain/review-marks'
+import { parameterDefinitions } from '../../src/domain/normative-parameters'
 
 const api = 'http://127.0.0.1:4100'
 const origin = 'http://127.0.0.1:5173'
@@ -105,9 +106,13 @@ test('recalculates the variant from the front and permits explicitly staffed sig
   await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
   await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('249')
   await page.locator('[data-field="parameters.workConditions.sectionMetres"]:visible').fill('50')
-  await expect(page.locator('.advice').getByRole('heading')).toContainText('два регулировщика')
+  await expect(page.locator('.advice').getByRole('heading')).toContainText(
+    'знаки приоритета 2.6/2.7',
+  )
+  await expect(page.locator('.advice')).toContainText('отдельного обоснования')
+  await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('298')
   await page.locator('[data-field="parameters.workConditions.regulatorsPresent"]:visible').uncheck()
-  await expect(page.locator('.advice')).toContainText('таблица предусматривает светофор')
+  await expect(page.locator('.advice')).toContainText('Подтвердите постоянное присутствие')
   await page.locator('[data-field="parameters.workConditions.regulatorsPresent"]:visible').check()
   await page.getByLabel('Регулирование Б.34').selectOption('two')
   const front = page
@@ -214,19 +219,22 @@ test('B.34 regulation hint with unconfirmed parameters explains the rules but ca
   await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('300')
   await page.getByLabel('Прямой участок; регулировщик виден с обоих концов рабочей зоны').check()
   await expect(advice.getByRole('heading')).toContainText('один регулировщик')
-  await expect(advice).toContainText('Не подтверждены: Наибольшая продолжительность')
+  await expect(advice).toContainText('Не подтверждены: Профиль регулирования')
   await expect(advice).toContainText('«Нормативные параметры»')
   await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('501')
-  await expect(advice.getByRole('heading')).toContainText('требуется проверка условий')
-  await expect(advice).toContainText('выходит за условия таблицы')
+  await expect(advice.getByRole('heading')).toContainText('два регулировщика')
+  await expect(advice).toContainText('отдельного обоснования')
+  await expect(page.getByLabel('Регулирование Б.34')).toHaveValue('auto')
   await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('180')
   await page
     .getByRole('heading', { name: 'Зона Б.34', exact: true })
     .locator('..')
     .getByLabel('Фронт работ, м', { exact: true })
     .fill('25')
-  await expect(advice.getByRole('heading')).toContainText('два регулировщика')
-  await page.getByLabel('Регулирование Б.34').selectOption('signs')
+  await expect(advice.getByRole('heading')).toContainText('знаки приоритета 2.6/2.7')
+  await expect(advice).toContainText('отдельного обоснования')
+  await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('915')
+  await page.getByLabel('Регулирование Б.34').selectOption('one')
   await page.getByRole('button', { name: 'Применить правки' }).click()
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   await expect(
@@ -1003,7 +1011,7 @@ test('confirms a normative parameter from the text of an attached document', asy
   await expect(box).toContainText('подтверждено значение 260 авт/ч')
   await expect(item).toContainText('Подтверждено')
   await expect(item.locator('.value')).toHaveText('260 авт/ч')
-  await expect(box).toContainText('Подтверждено 1 из 16')
+  await expect(box).toContainText(`Подтверждено 1 из ${parameterDefinitions.length}`)
 })
 
 test('opens help for the current screen, searches it and jumps by contents', async ({ page }) => {
