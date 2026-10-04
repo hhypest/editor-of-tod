@@ -77,7 +77,7 @@ describe('B.34 regulation advice', () => {
     },
   )
 
-  it('does not allow signs 2.6/2.7 on a work zone of the limit length or longer', () => {
+  it('keeps a separate table warning when the profile proposes signs at the device-length boundary', () => {
     const long = adviseRegulation({ ...base, frontMetres: 25, sectionMetres: 50 })
     expect(long.mode).toBe('signs')
     expect(long.warnings.join(' ')).toContain('отдельного обоснования')
