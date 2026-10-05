@@ -1450,3 +1450,85 @@ test('editor shell keeps a selected object and unapplied object input across scr
   )
   expect(copies).toHaveLength(1)
 })
+
+test('post distance in metres drives the place on the sheet, the caption and the stage 2 link', async ({
+  page,
+  request,
+}) => {
+  // Каталог знаков нужен форме стойки: без него коды не принимаются.
+  await page.route('**/api/signs', (route) =>
+    route.fulfill({ json: [{ code: '1.25', width: 8, height: 8, revision: 1 }] }),
+  )
+  await importSampleCards(request)
+  await page.goto('/')
+  await fillNewProject(page, '12 км 3 пк', '90001:12:3')
+  await page.getByRole('button', { name: 'Создать проект' }).click()
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  await page.getByLabel('Регулирование Б.34').selectOption('two')
+  await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('300')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
+  await page.getByRole('button', { name: 'Собрать черновой шаблон' }).click()
+
+  // У стоек рабочей области подписаны расстояния; у начала работ — «0».
+  const workspace = page.locator('[aria-labelledby="workspace-title"]')
+  const captions = workspace.locator('[data-post-distance]')
+  await expect(captions).toHaveCount(10)
+  await expect(captions.filter({ hasText: /^\s*150 м\s*$/ })).toHaveCount(2)
+  await expect(captions.filter({ hasText: /^\s*0\s*$/ })).toHaveCount(2)
+
+  // Стойка шаблона связана с полем этапа 2; условных координат в форме нет.
+  const narrowing = workspace.getByRole('button', { name: /Стойка № 3:/ })
+  await narrowing.click()
+  const mode = page.locator('[data-field="placement.distanceMode"]')
+  await expect(mode).toHaveValue('d150')
+  await expect(page.locator('[data-field="placement.approach"]')).toHaveValue('left')
+  await expect(page.getByLabel('Привязка')).toHaveCount(0)
+  const before = await narrowing.boundingBox()
+
+  // Поле этапа 2 меняет подписи связанных стоек обоих подходов; место в ряду прежнее.
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  await page.locator('[data-field="parameters.signDistancesMetres.d150"]').fill('180')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
+  await expect(captions.filter({ hasText: /^\s*180 м\s*$/ })).toHaveCount(2)
+  expect((await narrowing.boundingBox())!.x).toBeCloseTo(before!.x, 0)
+
+  // Стрелка вправо приближает левую стойку к началу работ на 5 м и даёт ей своё значение.
+  await narrowing.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(narrowing.locator('[data-post-distance]')).toHaveText(/175 м/)
+  await expect(captions.filter({ hasText: /^\s*180 м\s*$/ })).toHaveCount(1)
+  await narrowing.click()
+  await expect(mode).toHaveValue('own')
+  await expect(page.locator('[data-field="placement.distanceMetres"]')).toHaveValue('175')
+
+  // Перенос мышью показывает будущее расстояние и меняет его при отпускании.
+  const box = (await narrowing.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 - 20, box.y + box.height / 2, { steps: 4 })
+  await expect(narrowing.locator('[data-post-distance]')).toHaveText(/≈ \d+ м/)
+  await page.mouse.up()
+  const moved = await narrowing.locator('[data-post-distance]').innerText()
+  expect(Number(/(\d+) м/.exec(moved)![1])).toBeGreaterThan(175)
+
+  // Новая стойка создаётся с расстоянием; без числа не применяется.
+  await page.getByRole('button', { name: 'Добавить стойку' }).click()
+  await expect(mode).toHaveValue('own')
+  await page.getByLabel('Коды знаков через запятую').fill('1.25')
+  await page.getByRole('button', { name: 'Применить объект' }).click()
+  await expect(
+    page.locator('.object-editor [role="alert"], form [role="alert"]').first(),
+  ).toContainText('Расстояние до начала работ, м')
+  await page.locator('[data-field="placement.distanceMetres"]').fill('400')
+  await page.getByRole('button', { name: 'Применить объект' }).click()
+  await expect(captions.filter({ hasText: /^\s*400 м\s*$/ })).toHaveCount(1)
+
+  // На листе подписи расстояний те же.
+  await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  const sheet = page.locator('.print-host')
+  await expect(sheet).toContainText('400 м')
+  await expect(sheet).toContainText('180 м')
+  await expect(sheet).not.toContainText('{d')
+})

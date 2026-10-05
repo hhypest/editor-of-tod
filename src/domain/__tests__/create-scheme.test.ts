@@ -30,7 +30,7 @@ const options = {
 describe('scheme conditions without a pinned card (older projects and tests)', () => {
   it('starts B.34 with only entered measurements and supports editing and JSON roundtrip', () => {
     const scheme = createUnlinkedScheme(input, options)
-    expect(scheme.schemaVersion).toBe(9)
+    expect(scheme.schemaVersion).toBe(10)
     expect(scheme.crossing).toEqual({
       referenceId: 'TEST-NEW',
       source: 'entered-by-editor',
@@ -60,7 +60,7 @@ describe('scheme conditions without a pinned card (older projects and tests)', (
     const withText = savePlacement(edited, placement)
     expect(importSchemeJson(exportSchemeJson(withText))).toMatchObject({
       scheme: withText,
-      format: 'scheme-v9',
+      format: 'scheme-v10',
     })
     expect(withText.source).toEqual({ kind: 'created-in-editor' })
     // Расстояния выбранного местоположения подставлены по нормативным параметрам.

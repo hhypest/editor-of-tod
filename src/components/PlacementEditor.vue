@@ -10,7 +10,9 @@ import {
   savePlacement,
   type PlacementDraft,
 } from '../domain/edit-placements'
-import type { Scheme } from '../domain/model'
+import type { DistanceMarker, Scheme } from '../domain/model'
+import { distanceFields, distanceTitles } from '../domain/normative-defaults'
+import { decimalComma } from '../domain/number-format'
 import { anchorCoordinates } from '../domain/placement-workspace'
 import { drawableWithoutImage, signImageCode } from '../domain/sheet-drawing'
 import SignPreview from './SignPreview.vue'
@@ -123,6 +125,26 @@ watch(
   },
 )
 
+/** Поля расстояний этапа 2 для местоположения проекта; пока оно не выбрано — все. */
+const distanceOptions = computed<DistanceMarker[]>(() => {
+  const location = props.scheme.parameters.location
+  return location === 'auto'
+    ? [...distanceFields.out, ...distanceFields.in]
+    : [...distanceFields[location]]
+})
+
+function distanceValue(field: DistanceMarker): string {
+  const metres = props.scheme.parameters.signDistancesMetres[field]
+  return metres === null ? ' — не заполнено' : ` — ${decimalComma(metres)} м`
+}
+
+/** Знаки подхода слева стоят под дорогой, справа — над ней: сторона следует за подходом. */
+function approachChanged(): void {
+  if (draft.value?.kind !== 'sign-post') return
+  draft.value.side = draft.value.approach === 'left' ? 'down' : 'up'
+  draft.value.stand = draft.value.approach === 'left' ? 'left' : 'right'
+}
+
 function markDirty(): void {
   if (props.locked) return
   error.value = ''
@@ -150,7 +172,7 @@ function createNew(kind: 'sign-post' | 'text' | 'reg' | 'car' | 'cone' | 'comple
   const anchor = anchorCoordinates(props.scheme)
   draft.value =
     kind === 'sign-post'
-      ? newSignDraft()
+      ? newSignDraft('left')
       : kind === 'text'
         ? newTextDraft()
         : newSymbolDraft(
@@ -229,9 +251,10 @@ function removeSelected(): void {
   <section aria-labelledby="placements-title">
     <h2 id="placements-title">Объекты проекта</h2>
     <p class="hint">
-      Выберите объект для изменения свойств или добавьте стойку, надпись или условное обозначение.
-      Координаты сохранены в условной системе старого листа, не в метрах. После ручной правки
-      автоматический объект становится ручным. Расстановка по ОДМ здесь не выполняется.
+      Выберите объект для изменения свойств или добавьте стойку, надпись или условное обозначение. У
+      стойки задаётся расстояние до начала работ в метрах: её место на листе и подпись следуют из
+      него. Остальные объекты и стойки без расстояния стоят по условным координатам листа. После
+      ручной правки автоматический объект становится ручным.
     </p>
     <p v-if="locked" class="hint" role="status">
       Сначала примените или отмените изменения параметров выше.
@@ -291,17 +314,67 @@ function removeSelected(): void {
               : 'Ручной объект.'
           }}
         </p>
+        <template v-if="draft.kind === 'sign-post'">
+          <div class="fields distance-fields">
+            <label
+              >Расстояние до начала работ
+              <select v-model="draft.distanceMode" data-field="placement.distanceMode">
+                <option value="own">Своё значение</option>
+                <option v-for="field in distanceOptions" :key="field" :value="field">
+                  Поле этапа 2: {{ distanceTitles[field] }}{{ distanceValue(field) }}
+                </option>
+                <option value="none">Без расстояния (условная координата)</option>
+              </select>
+            </label>
+            <label v-if="draft.distanceMode === 'own'"
+              >Расстояние, м
+              <input
+                v-model="draft.distanceMetres"
+                type="text"
+                inputmode="decimal"
+                data-field="placement.distanceMetres"
+              />
+            </label>
+            <label v-if="draft.distanceMode !== 'none'"
+              >Подход
+              <select
+                v-model="draft.approach"
+                data-field="placement.approach"
+                @change="approachChanged"
+              >
+                <option value="left">Слева от места работ</option>
+                <option value="right">Справа от места работ</option>
+              </select>
+            </label>
+          </div>
+          <p v-if="draft.distanceMode !== 'none'" class="hint">
+            {{
+              draft.distanceMode === 'own'
+                ? 'Место стойки на листе и подпись на выноске следуют из этого числа. Лист без масштаба: стойки идут по порядку расстояний.'
+                : 'Стойка следует за полем этапа 2: измените его там — стойка и подпись изменятся здесь. Чтобы задать расстояние только этой стойке, выберите «Своё значение».'
+            }}
+          </p>
+        </template>
         <div class="fields position-fields">
+          <template v-if="draft.kind !== 'sign-post' || draft.distanceMode === 'none'">
+            <label
+              >Привязка
+              <select v-model="draft.anchor">
+                <option v-for="(label, anchor) in anchorLabels" :key="anchor" :value="anchor">
+                  {{ label }}
+                </option>
+              </select>
+            </label>
+            <label>X <input v-model="draft.x" type="text" inputmode="decimal" /></label>
+          </template>
           <label
-            >Привязка
-            <select v-model="draft.anchor">
-              <option v-for="(label, anchor) in anchorLabels" :key="anchor" :value="anchor">
-                {{ label }}
-              </option>
-            </select>
-          </label>
-          <label>X <input v-model="draft.x" type="text" inputmode="decimal" /></label>
-          <label>Y <input v-model="draft.y" type="text" inputmode="decimal" /></label>
+            >{{
+              draft.kind === 'sign-post' && draft.distanceMode !== 'none'
+                ? 'Сдвиг по вертикали'
+                : 'Y'
+            }}
+            <input v-model="draft.y" type="text" inputmode="decimal"
+          /></label>
         </div>
 
         <template v-if="draft.kind === 'sign-post'">
@@ -322,7 +395,9 @@ function removeSelected(): void {
                 </option>
               </select>
             </label>
-            <label>Подпись расстояния <input v-model="draft.distanceLabel" type="text" /></label>
+            <label v-if="draft.distanceMode === 'none'"
+              >Подпись на выноске <input v-model="draft.distanceLabel" type="text"
+            /></label>
           </div>
           <label
             >Коды знаков через запятую

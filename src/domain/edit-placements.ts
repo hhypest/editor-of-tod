@@ -1,4 +1,10 @@
-import { schemeSchema, type Scheme, type SignPlacement } from './model'
+import {
+  schemeSchema,
+  type Approach,
+  type DistanceMarker,
+  type Scheme,
+  type SignPlacement,
+} from './model'
 
 type Placement = Scheme['placements'][number]
 type Anchor = SignPlacement['position']['anchor']
@@ -10,7 +16,15 @@ export type PlacementDraft =
       side: SignPlacement['side']
       stand: SignPlacement['stand']
       signCodes: string
+      /** Подпись стойки без расстояния; у стойки с расстоянием не используется. */
       distanceLabel: string
+      /**
+       * Откуда берётся расстояние до начала работ: поле этапа 2 (`d150` и т. д.), собственное
+       * число (`own`) или его нет (`none` — положение задано привязкой и X).
+       */
+      distanceMode: DistanceMarker | 'own' | 'none'
+      approach: Approach
+      distanceMetres: string
     })
   | (BaseDraft & {
       kind: 'element'
@@ -41,6 +55,14 @@ export function createPlacementDraft(placement: Placement): PlacementDraft {
       stand: placement.stand,
       signCodes: placement.signIds.join(', '),
       distanceLabel: placement.distanceLabel ?? '',
+      distanceMode: !placement.distance
+        ? 'none'
+        : placement.distance.by === 'marker'
+          ? placement.distance.marker
+          : 'own',
+      // Без расстояния подход подсказывает сторона: знаки подхода слева стоят под дорогой.
+      approach: placement.distance?.approach ?? (placement.side === 'down' ? 'left' : 'right'),
+      distanceMetres: placement.distance?.by === 'metres' ? String(placement.distance.metres) : '',
     }
   }
   return {
@@ -58,17 +80,25 @@ export function createPlacementDraft(placement: Placement): PlacementDraft {
   }
 }
 
-export function newSignDraft(): PlacementDraft {
+/**
+ * Новая стойка. С `approach` — стойка с расстоянием до начала работ (его вводит составитель):
+ * сторона дороги и опора ставятся как у стоек шаблона для этого подхода. Без аргумента —
+ * стойка без расстояния на условных координатах.
+ */
+export function newSignDraft(approach?: Approach): PlacementDraft {
   return {
     kind: 'sign-post',
     id: null,
     anchor: 'abs',
     x: '0',
     y: '0',
-    side: 'up',
-    stand: 'right',
+    side: approach === 'left' ? 'down' : 'up',
+    stand: approach === 'left' ? 'left' : 'right',
     signCodes: '',
     distanceLabel: '',
+    distanceMode: approach ? 'own' : 'none',
+    approach: approach ?? 'right',
+    distanceMetres: '',
   }
 }
 
@@ -145,6 +175,16 @@ function placementFromDraft(draft: PlacementDraft, id: number): Placement {
     if (!signIds.length || signIds.length > 20 || signIds.some((code) => code.length > 120)) {
       throw new PlacementEditError('На стойке должно быть от 1 до 20 кодов знаков до 120 символов.')
     }
+    const distance: SignPlacement['distance'] =
+      draft.distanceMode === 'none'
+        ? null
+        : draft.distanceMode === 'own'
+          ? {
+              by: 'metres',
+              approach: draft.approach,
+              metres: numberField(draft.distanceMetres, 'Расстояние до начала работ, м', 0),
+            }
+          : { by: 'marker', approach: draft.approach, marker: draft.distanceMode }
     return {
       kind: 'sign-post',
       id,
@@ -153,7 +193,9 @@ function placementFromDraft(draft: PlacementDraft, id: number): Placement {
       side: draft.side,
       stand: draft.stand,
       signIds,
-      distanceLabel: draft.distanceLabel.trim() || null,
+      distance,
+      // Подпись стойки с расстоянием строится из него.
+      distanceLabel: distance ? null : draft.distanceLabel.trim() || null,
     }
   }
   if (draft.elementKind === 'text' && !draft.text.trim()) {

@@ -144,6 +144,8 @@ describe('manual review marks', () => {
       'pdd-regulator',
       'pdd-speed',
       'pdd-temporary',
+      // Новая стойка без расстояния меняет и пункт «Стойки без расстояния».
+      'post-distance',
       'signs',
       'template',
     ])

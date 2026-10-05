@@ -27,7 +27,8 @@ describe('documentation states the current format versions', () => {
     expect(stated.length).toBeGreaterThan(0)
     expect([...new Set(stated)]).toEqual([project])
     expect(testing).toContain(`\`schemaVersion: 2–${project}\``)
-    expect(testing).not.toMatch(new RegExp(`schemaVersion: 2–[2-${project - 1}]\\b`))
+    const previous = Array.from({ length: project - 2 }, (_, index) => index + 2).join('|')
+    expect(testing).not.toMatch(new RegExp(`schemaVersion: 2–(?:${previous})(?!\\d)`))
   })
 
   it('names the current database version', () => {

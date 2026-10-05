@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { PHONE_PATTERN, responsibleFromLegacy } from './title-block.ts'
 import { pu66SnapshotSchema } from './pu66-snapshot.ts'
 import { decisionEvidenceSchema, speedConditionsSchema } from './decision-evidence-schema.ts'
+import { adoptPostDistances, DISTANCE_MARKERS } from './post-distance.ts'
 
 const finite = z.number().finite()
 const text = z.string().max(5_000)
@@ -71,6 +72,34 @@ const signPlacementSchema = z.strictObject({
   stand: z.enum(['left', 'right']),
   signIds: z.array(z.string().min(1).max(120)).min(1).max(20),
   distanceLabel: text.nullable(),
+})
+
+/** Поля расстояний этапа 2, с которыми может быть связана стойка. */
+export const distanceMarkerSchema = z.enum(DISTANCE_MARKERS)
+/** Подход к месту работ: слева (движение по нижней полосе) или справа (по верхней). */
+export const approachSchema = z.enum(['left', 'right'])
+
+/**
+ * Расстояние стойки до начала работ для своего подхода, м (v10, ADR-0008). `marker` — стойка
+ * следует за полем расстояния этапа 2; `metres` — собственное число. Положение на листе и
+ * подпись на выноске выводятся из расстояния; `null` — стойка без расстояния, её положение
+ * задано условной координатой.
+ */
+export const postDistanceSchema = z.discriminatedUnion('by', [
+  z.strictObject({
+    by: z.literal('marker'),
+    approach: approachSchema,
+    marker: distanceMarkerSchema,
+  }),
+  z.strictObject({
+    by: z.literal('metres'),
+    approach: approachSchema,
+    metres: finite.nonnegative().max(10_000),
+  }),
+])
+
+const signPlacementV10Schema = signPlacementSchema.extend({
+  distance: postDistanceSchema.nullable(),
 })
 
 const elementPlacementSchema = z.strictObject({
@@ -390,24 +419,55 @@ export const schemeV8Schema = z
   .superRefine(checkModernScheme)
 
 /** v9 records explicit speed conditions and historical decision evidence without inventing it. */
+const schemeV9Object = z.strictObject({
+  ...schemeV8Schema.shape,
+  schemaVersion: z.literal(9),
+  parameters: schemeV8Schema.shape.parameters.extend({
+    speedConditions: speedConditionsSchema.default({ road: '', vehicle: '' }),
+  }),
+  decisionEvidence: decisionEvidenceSchema.default({ speed: null, regulation: null }),
+})
+
+function checkSpeedConditions(
+  scheme: { parameters: { speedConditions: { road: string } } },
+  context: z.RefinementCtx,
+): void {
+  if (scheme.parameters.speedConditions.road === 'motorway')
+    context.addIssue({
+      code: 'custom',
+      path: ['parameters', 'speedConditions', 'road'],
+      message:
+        'Автомагистраль доступна только для справки; для схемы переезда выберите другое условие.',
+    })
+}
+
+/** Read-only validator for files and SQLite revisions saved before Р1 (format v9). */
+export const schemeV9Schema = schemeV9Object
+  .superRefine(checkModernScheme)
+  .superRefine(checkSpeedConditions)
+
+/**
+ * v10 (Р1, ADR-0008): у стойки расстояние до начала работ и подход; положение по горизонтали и
+ * подпись расстояния выводятся из них. У стойки с расстоянием собственной подписи нет.
+ */
 export const schemeSchema = z
   .strictObject({
-    ...schemeV8Schema.shape,
-    schemaVersion: z.literal(9),
-    parameters: schemeV8Schema.shape.parameters.extend({
-      speedConditions: speedConditionsSchema.default({ road: '', vehicle: '' }),
-    }),
-    decisionEvidence: decisionEvidenceSchema.default({ speed: null, regulation: null }),
+    ...schemeV9Object.shape,
+    schemaVersion: z.literal(10),
+    placements: z
+      .array(z.discriminatedUnion('kind', [signPlacementV10Schema, elementPlacementV5Schema]))
+      .max(2_000),
   })
   .superRefine(checkModernScheme)
+  .superRefine(checkSpeedConditions)
   .superRefine((scheme, context) => {
-    if (scheme.parameters.speedConditions.road === 'motorway')
-      context.addIssue({
-        code: 'custom',
-        path: ['parameters', 'speedConditions', 'road'],
-        message:
-          'Автомагистраль доступна только для справки; для схемы переезда выберите другое условие.',
-      })
+    for (const [index, placement] of scheme.placements.entries())
+      if (placement.kind === 'sign-post' && placement.distance && placement.distanceLabel !== null)
+        context.addIssue({
+          code: 'custom',
+          path: ['placements', index, 'distanceLabel'],
+          message: 'У стойки с расстоянием подпись строится из расстояния',
+        })
   })
 
 export type Scheme = z.infer<typeof schemeSchema>
@@ -416,10 +476,12 @@ export type SchemeV3 = z.infer<typeof schemeV3Schema>
 export type SchemeV4 = z.infer<typeof schemeV4Schema>
 export type SchemeV5 = z.infer<typeof schemeV5Schema>
 export type SchemeV6 = z.infer<typeof schemeV6Schema>
+export type SchemeV9 = z.infer<typeof schemeV9Schema>
+export type { Approach, DistanceMarker, PostDistance } from './post-distance.ts'
 export type TitleBlock = z.infer<typeof titleBlockSchema>
 export type Crossing = z.infer<typeof crossingSchema>
 export type Template = z.infer<typeof templateSchema>
-export type SignPlacement = z.infer<typeof signPlacementSchema>
+export type SignPlacement = z.infer<typeof signPlacementV10Schema>
 export type WorkZone = z.infer<typeof workZoneSchema>
 
 export function upgradeSchemeV2(value: unknown): Scheme {
@@ -494,7 +556,20 @@ export function upgradeSchemeV7(value: unknown): Scheme {
 
 export function upgradeSchemeV8(value: unknown): Scheme {
   const previous = schemeV8Schema.parse(value)
-  return schemeSchema.parse({ ...previous, schemaVersion: 9 })
+  return upgradeSchemeV9({ ...previous, schemaVersion: 9 })
+}
+
+/**
+ * v9 → v10: стойка получает расстояние из прежней подписи, если это не меняет её места на
+ * листе (`adoptPostDistances`); остальные стойки сохраняют условные координаты и подпись.
+ */
+export function upgradeSchemeV9(value: unknown): Scheme {
+  const previous = schemeV9Schema.parse(value)
+  return schemeSchema.parse({
+    ...previous,
+    schemaVersion: 10,
+    placements: adoptPostDistances(previous),
+  })
 }
 
 export function parseStoredScheme(value: unknown): Scheme {
@@ -517,5 +592,7 @@ export function parseStoredScheme(value: unknown): Scheme {
     return upgradeSchemeV7(value)
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 8)
     return upgradeSchemeV8(value)
+  if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 9)
+    return upgradeSchemeV9(value)
   return schemeSchema.parse(value)
 }

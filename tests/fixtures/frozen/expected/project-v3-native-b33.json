@@ -52,7 +52,8 @@
       "signIds": [
         "1.25"
       ],
-      "distanceLabel": "{d150}"
+      "distanceLabel": "{d150}",
+      "distance": null
     }
   ],
   "nextPlacementId": 2,
@@ -128,7 +129,7 @@
     "kind": "created-in-editor"
   },
   "reviewMarks": {},
-  "schemaVersion": 9,
+  "schemaVersion": 10,
   "decisionEvidence": {
     "speed": null,
     "regulation": null

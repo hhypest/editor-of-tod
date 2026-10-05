@@ -58,7 +58,12 @@
         "1.25",
         "3.24_40_ж"
       ],
-      "distanceLabel": "{d300}"
+      "distanceLabel": null,
+      "distance": {
+        "by": "marker",
+        "approach": "left",
+        "marker": "d300"
+      }
     },
     {
       "kind": "element",
@@ -163,7 +168,7 @@
     "originalJson": "{\n  \"v\": 1,\n  \"params\": {\n    \"key\": \"TEST-001\",\n    \"variant\": \"b33\",\n    \"peregon\": \"Учебный участок\",\n    \"dirL\": \"к станции А\",\n    \"dirR\": \"к станции Б\",\n    \"d300\": \"300\",\n    \"d250\": \"250.5\",\n    \"d150\": 150,\n    \"d50\": \"\",\n    \"s1\": 70,\n    \"s2\": 50,\n    \"s3\": 40,\n    \"yellow\": true,\n    \"len\": {\n      \"b33\": {\n        \"taper\": 7,\n        \"buffer\": 15,\n        \"zone\": 37,\n        \"lTaper\": \"5–10\",\n        \"lBuffer\": \"15\",\n        \"lZone\": \"min 30\"\n      },\n      \"b34\": {\n        \"taper\": 10,\n        \"buffer\": 10,\n        \"zone\": 30,\n        \"lTaper\": \"10\",\n        \"lBuffer\": \"10\",\n        \"lZone\": \"max 30\"\n      }\n    }\n  },\n  \"head\": {\n    \"dev_org\": \"Учебная организация\",\n    \"dev_fio\": \"Тестовый составитель\",\n    \"dev_date\": \"26.09.2026\",\n    \"org\": \"Учебная организация\",\n    \"work\": \"Учебная схема\",\n    \"term\": \"Условный срок\",\n    \"resp1\": \"Ответственный 1\",\n    \"resp2\": \"Ответственный 2\",\n    \"ap_pos\": \"Должность\",\n    \"ap_org\": \"Учебный владелец\",\n    \"ap_fio\": \"Тестовая подпись\",\n    \"ag_pos\": \"Должность\",\n    \"ag_fio\": \"Тестовая подпись\",\n    \"year\": \"2026\"\n  },\n  \"objects\": [\n    {\n      \"t\": \"post\",\n      \"id\": 1,\n      \"signs\": [\"1.25\", \"3.24_40_ж\"],\n      \"anchor\": \"L0\",\n      \"dx\": -520,\n      \"dy\": 12,\n      \"side\": \"down\",\n      \"stand\": \"left\",\n      \"dist\": \"{d300}\",\n      \"auto\": 1\n    },\n    {\n      \"t\": \"el\",\n      \"id\": 2,\n      \"e\": \"text\",\n      \"anchor\": \"abs\",\n      \"dx\": 810,\n      \"y\": 605,\n      \"w\": 0,\n      \"h\": 0,\n      \"text\": \"Ручная правка\",\n      \"size\": 14,\n      \"bold\": true\n    }\n  ],\n  \"nid\": 3\n}\n"
   },
   "reviewMarks": {},
-  "schemaVersion": 9,
+  "schemaVersion": 10,
   "decisionEvidence": {
     "speed": null,
     "regulation": null

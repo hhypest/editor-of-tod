@@ -184,7 +184,9 @@ export function reviewScheme(
     const postIds = placements
       .filter(
         (placement) =>
-          placement.kind === 'sign-post' && placement.distanceLabel?.includes(`{${name}}`),
+          placement.kind === 'sign-post' &&
+          ((placement.distance?.by === 'marker' && placement.distance.marker === name) ||
+            placement.distanceLabel?.includes(`{${name}}`)),
       )
       .map((placement) => placement.id)
     if (postIds.length && parameters.signDistancesMetres[name] === null) {
@@ -192,11 +194,35 @@ export function reviewScheme(
         id: `distance-${name}`,
         kind: 'fill',
         title: `Расстояние «${distanceTitles[name]}»`,
-        detail: `Маркер {${name}} указан на стойках № ${postIds.join(', ')}, а расстояние не введено.`,
+        detail: `С этим полем связаны стойки № ${postIds.join(', ')}, а расстояние не введено.`,
         path: `parameters.signDistancesMetres.${name}`,
       })
     }
   }
+
+  // Стойка без расстояния стоит на листе по условной координате: её место не следует из
+  // метров и подписи. Стойки «конец ограничений» шаблона расстояния до начала работ не имеют.
+  const freePosts = placements.filter(
+    (placement) =>
+      placement.kind === 'sign-post' &&
+      !placement.distance &&
+      !/^post2:[LR]:end$/.test(placement.templateSlot ?? ''),
+  )
+  if (freePosts.length)
+    findings.push({
+      id: 'post-distance',
+      kind: 'verify',
+      title: 'Стойки без расстояния',
+      detail: `У стоек № ${freePosts.map((placement) => placement.id).join(', ')} не задано расстояние до начала работ: их положение на листе определяется условной координатой и не связано с подписью. Укажите расстояние на этапе 3 или подтвердите, что стойке оно не нужно (например, знак за зоной работ).`,
+      path: 'placements',
+      basis: JSON.stringify(
+        freePosts.map((placement) =>
+          placement.kind === 'sign-post'
+            ? [placement.id, placement.signIds, placement.distanceLabel, placement.position]
+            : null,
+        ),
+      ),
+    })
 
   findings.push({
     id: 'crossing',

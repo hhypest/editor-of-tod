@@ -1,11 +1,12 @@
 import { decimalComma } from './number-format'
 import type { Scheme } from './model'
+import { postCaption } from './post-distance'
 import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import { responsibleLine } from './title-block'
 import { figureDimensions, type FigureDimension } from './figure-dimensions'
 import {
-  anchorCoordinates,
-  placementCoordinates,
+  type anchorCoordinates,
+  schemeLayout,
   WORKSPACE_HEIGHT,
   WORKSPACE_WIDTH,
 } from './placement-workspace'
@@ -100,9 +101,9 @@ export function projectDraftSheet(
 ): DraftSheet {
   const zone = scheme.parameters.workZones[scheme.template.code]
   if (!zone) throw new Error('Размеры выбранного варианта не заполнены.')
-  const anchors = anchorCoordinates(scheme)
+  const { anchors, coordinates } = schemeLayout(scheme)
   const placements: DraftSheet['placements'] = scheme.placements.map((placement) => {
-    const { x, y } = placementCoordinates(placement, anchors)
+    const { x, y } = coordinates(placement)
     if (placement.kind === 'sign-post') {
       return {
         kind: 'sign-post',
@@ -110,10 +111,9 @@ export function projectDraftSheet(
         x,
         y,
         signIds: [...placement.signIds],
-        distanceLabel: renderDistanceLabel(
-          placement.distanceLabel,
-          scheme.parameters.signDistancesMetres,
-        ),
+        distanceLabel: placement.distance
+          ? postCaption(placement.distance, scheme.parameters.signDistancesMetres)
+          : renderDistanceLabel(placement.distanceLabel, scheme.parameters.signDistancesMetres),
         side: placement.side,
         stand: placement.stand,
         dy: placement.position.offsetYSvg,
