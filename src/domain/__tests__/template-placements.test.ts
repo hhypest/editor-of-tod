@@ -3,6 +3,7 @@ import { createUnlinkedScheme } from '../create-scheme'
 import { createPlacementDraft, newTextDraft, savePlacement } from '../edit-placements'
 import { anchorCoordinates, movePlacement, placementCoordinates } from '../placement-workspace'
 import { PROTOTYPE_RULES } from '../normative-parameters'
+import { setMark, unmarkedChecks } from '../review-marks'
 import { reviewScheme } from '../review-scheme'
 import { schemeSchema, type Scheme } from '../model'
 import {
@@ -136,6 +137,14 @@ describe('preliminary B.33/B.34 layout', () => {
     const finding = reviewScheme(moved).find((item) => item.id === 'regulator-distance')
     expect(finding?.kind).toBe('verify')
     expect(finding?.detail).toContain(`№ ${right.id} стоит над рабочей зоной`)
+    // Несоответствие нельзя принять отметкой: пункт блокирует выпуск (CR-02).
+    expect(finding?.markBlocked).toContain('Выпуск недоступен')
+    expect(() => setMark(moved, reviewScheme(moved), 'regulator-distance', true)).toThrow(
+      'Выпуск недоступен',
+    )
+    expect(unmarkedChecks(moved, reviewScheme(moved)).map((item) => item.id)).toContain(
+      'regulator-distance',
+    )
     expect(finding?.detail).toContain('не ближе 15 м')
     const oneLeft = {
       ...built,
@@ -428,5 +437,21 @@ describe('preliminary B.33/B.34 layout', () => {
     expect(rebuilt).toMatchObject({ keptSlots: 1, staleSlots: 0 })
     const slots = posts.map((item) => item.templateSlot)
     expect(new Set(slots).size).toBe(slots.length)
+  })
+
+  it('requires exactly one regulator on the sheet in the one-regulator mode', () => {
+    const base = example(18, 'out', 'one')
+    const finding = (scheme: Scheme) =>
+      reviewScheme(scheme).find((item) => item.id === 'regulator-distance')
+    expect(finding(base)?.markBlocked).toContain('регулировщиков: 0 из 1')
+    const two = rebuildTemplatePlacements(example(18, 'out', 'two')).scheme.placements.filter(
+      (item) => item.kind === 'element' && item.elementKind === 'reg',
+    )
+    expect(finding({ ...base, placements: [two[0]!] })).toBeUndefined()
+    // Раскладка шаблона для одного регулировщика проходит проверку без правок.
+    expect(finding(rebuildTemplatePlacements(base).scheme)).toBeUndefined()
+    expect(finding({ ...base, placements: two })?.markBlocked).toContain('регулировщиков: 2 из 1')
+    // Знаки 2.6/2.7: регулировщики не требуются, пункт не появляется.
+    expect(finding(example(18, 'out', 'signs'))).toBeUndefined()
   })
 })

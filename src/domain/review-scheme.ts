@@ -477,37 +477,57 @@ export function reviewScheme(
 }
 
 /**
- * Два регулировщика стоят у начала и конца места работ, каждый не ближе расстояния по табл. 5
- * ОДМ до рабочей зоны Z0–Z1 со стороны своего направления (п. 13.7.3). Пункт появляется, только
- * если на листе это не так или расстояние не определено: примечание листа — требование, а этот
- * пункт сверяет с ним фактические объекты.
+ * Регулировщики на листе должны соответствовать выбранному способу пропуска. Два (Б.33 всегда,
+ * Б.34 по выбору) стоят у начала и конца места работ, каждый вне рабочей зоны Z0–Z1 и не ближе
+ * расстояния по табл. 5 ОДМ со стороны своего направления (п. 13.7.3). При одном регулировщике
+ * (п. 13.7.5) проверяется только их число: место одного регулировщика нормативно не сверено,
+ * шаблон ставит его у места работ.
+ * Несоответствие нельзя принять отметкой: пункт блокирует выпуск листа, пока объекты не
+ * исправлены (решение владельца 05.10.2026 по CR-02). Без замечаний пункт не показывается.
  */
 function regulatorDistanceFinding(scheme: Scheme, rules: NormativeRules): ReviewFinding | null {
-  if (!usesTwoRegulators(scheme)) return null
+  const two = usesTwoRegulators(scheme)
+  const one = scheme.template.code === 'b34' && scheme.parameters.regulation.mode === 'one'
+  if (!two && !one) return null
   const zone = scheme.parameters.workZones[scheme.template.code]
   if (!zone) return null
+  const expected = two ? 2 : 1
   const source = rules.sources['odm-regulator-distance']
   const zoneSpeed = scheme.parameters.speedStagesKmh[2]
-  const required = rules.regulatorDistance[zoneSpeed]
   const base = {
     id: 'regulator-distance',
     kind: 'verify' as const,
-    title: 'Расстояние от регулировщиков',
+    title: 'Регулировщики на листе',
     path: 'placements' as const,
   }
-  if (required === undefined)
-    return {
-      ...base,
-      detail: `Скорости в зоне ${zoneSpeed} км/ч нет в таблице расстояний (${source}). Определите расстояние от регулировщиков до рабочей зоны и проверьте их положение на листе.`,
-      basis: JSON.stringify([zoneSpeed, scheme.placements]),
-    }
-  const anchors = anchorCoordinates(scheme)
-  const unitsPerMetre = (anchors.Z1 - anchors.Z0) / zone.workMetres
   const regulators = scheme.placements.filter(
     (placement) => placement.kind === 'element' && placement.elementKind === 'reg',
   )
+  if (!two) {
+    if (regulators.length === expected) return null
+    const detail = `Выбран пропуск транспорта одним регулировщиком (ОДМ 218.6.019-2016, п. 13.7.5), на листе регулировщиков: ${regulators.length} из ${expected}. Пересоберите шаблон на этапе 3 или исправьте объекты.`
+    return {
+      ...base,
+      detail,
+      markBlocked: `Выпуск недоступен, пока регулировщики на листе не соответствуют способу пропуска. ${detail}`,
+      basis: JSON.stringify([expected, regulators]),
+    }
+  }
+  const required = rules.regulatorDistance[zoneSpeed]
+  if (required === undefined) {
+    const detail = `Скорости в зоне ${zoneSpeed} км/ч нет в таблице расстояний от регулировщика до рабочей зоны (${source}). Укажите на этапе 2 третью ступень скорости из таблицы: ${Object.keys(rules.regulatorDistance).join(', ')} км/ч.`
+    return {
+      ...base,
+      detail,
+      markBlocked: `Выпуск недоступен. ${detail}`,
+      basis: JSON.stringify([zoneSpeed, scheme.placements]),
+    }
+  }
+  const anchors = anchorCoordinates(scheme)
+  const unitsPerMetre = (anchors.Z1 - anchors.Z0) / zone.workMetres
   const problems: string[] = []
-  if (regulators.length !== 2) problems.push(`на листе регулировщиков: ${regulators.length} из 2`)
+  if (regulators.length !== expected)
+    problems.push(`на листе регулировщиков: ${regulators.length} из ${expected}`)
   let leftCount = 0
   let rightCount = 0
   for (const regulator of regulators) {
@@ -529,10 +549,12 @@ function regulatorDistanceFinding(scheme: Scheme, rules: NormativeRules): Review
   if (leftCount !== 1) problems.push(`со стороны начала работ (Z0): ${leftCount} вместо 1`)
   if (rightCount !== 1) problems.push(`со стороны конца работ (Z1): ${rightCount} вместо 1`)
   if (!problems.length) return null
+  const detail = `Два регулировщика должны стоять у начала и конца места работ, не ближе ${required} м до рабочей зоны при скорости ${zoneSpeed} км/ч (${source}): ${problems.join('; ')}. Пересоберите шаблон на этапе 3 или исправьте объекты.`
   return {
     ...base,
-    detail: `Регулировщики должны стоять не ближе ${required} м до рабочей зоны при скорости ${zoneSpeed} км/ч (${source}): ${problems.join('; ')}. Пересоберите шаблон на этапе 3 или передвиньте объекты; если так задумано, зафиксируйте решение.`,
-    basis: JSON.stringify([required, regulators]),
+    detail,
+    markBlocked: `Выпуск недоступен, пока регулировщики на листе не соответствуют способу пропуска. ${detail}`,
+    basis: JSON.stringify([required, expected, regulators]),
   }
 }
 

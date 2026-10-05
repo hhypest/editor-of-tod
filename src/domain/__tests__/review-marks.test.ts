@@ -6,6 +6,7 @@ import { exportSchemeJson, importSchemeJson } from '../import'
 import { findingFingerprint, markState, setMark, unmarkedChecks } from '../review-marks'
 import { reviewScheme as domainReviewScheme } from '../review-scheme'
 import { pinSignImages } from '../sign-images'
+import { rebuildTemplatePlacements } from '../template-placements'
 import { PROTOTYPE_RULES, REGULATION_PARAMETERS } from '../normative-parameters'
 
 const pddRules: typeof PROTOTYPE_RULES = {
@@ -40,15 +41,26 @@ function project() {
   const post = newSignDraft()
   if (post.kind !== 'sign-post') throw new Error('Expected sign post')
   post.signCodes = '1.25'
+  const withPost = savePlacement(scheme, post)
+  // Два регулировщика на листе по раскладке шаблона: без них выпуск заблокирован.
+  const regulators = rebuildTemplatePlacements(scheme)
+    .scheme.placements.filter((item) => item.kind === 'element' && item.elementKind === 'reg')
+    .map((item, index) => ({
+      ...item,
+      id: withPost.nextPlacementId + index,
+      generatedByTemplate: false,
+      templateSlot: undefined,
+    }))
+  const withRegulators = {
+    ...withPost,
+    placements: [...withPost.placements, ...regulators],
+    nextPlacementId: withPost.nextPlacementId + regulators.length,
+  }
   // Знаки закреплены: без этого пункт «Знаки на стойках» отметить нельзя.
-  return pinSignImages(
-    savePlacement(scheme, post),
-    { id: 1, documentCode: 'ГОСТ TEST', edition: '2024' },
-    [
-      { code: '1.25', revision: 1 },
-      { code: '3.20', revision: 1 },
-    ],
-  )
+  return pinSignImages(withRegulators, { id: 1, documentCode: 'ГОСТ TEST', edition: '2024' }, [
+    { code: '1.25', revision: 1 },
+    { code: '3.20', revision: 1 },
+  ])
 }
 
 const now = '2026-09-30T10:00:00.000Z'

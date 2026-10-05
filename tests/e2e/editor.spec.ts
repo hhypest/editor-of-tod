@@ -8,6 +8,7 @@ import { fictionalMethodology, fictionalSignStandard } from '../../server/__test
 import { importSchemeJson } from '../../src/domain/import'
 import { reviewScheme } from '../../src/domain/review-scheme'
 import { setMark } from '../../src/domain/review-marks'
+import { rebuildTemplatePlacements } from '../../src/domain/template-placements'
 import {
   parameterDefinitions,
   rulesFrom,
@@ -589,12 +590,24 @@ test('release sheet drops the draft mark and downloads a PNG', async ({ page, re
   await page.getByLabel('Регулирование Б.34').selectOption('two')
   await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('300')
   await page.getByRole('button', { name: 'Применить правки' }).click()
-  await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
-  await page.getByRole('button', { name: 'Добавить конус' }).click()
-  await page.getByRole('button', { name: 'Применить объект' }).click()
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   const host = page.locator('.print-host')
   await expect(host.locator('.draft-mark')).toHaveCount(1)
+  // CR-02: выбраны два регулировщика, на листе их нет — пункт нельзя принять отметкой.
+  const regulators = page.locator('.checks li', { hasText: 'Регулировщики на листе' })
+  await expect(regulators).toContainText('на листе регулировщиков: 0 из 2')
+  await expect(regulators.getByLabel('Проверено')).toBeDisabled()
+  await expect(host.getByLabel(/Я проверил лист/)).toBeDisabled()
+  // Один регулировщик на прямом участке и один объект на листе: пункт исчезает.
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  await page.getByLabel('Регулирование Б.34').selectOption('one')
+  await page.getByLabel('Прямой участок; регулировщик виден с обоих концов рабочей зоны').check()
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
+  await page.getByRole('button', { name: 'Добавить регулировщика' }).click()
+  await page.getByRole('button', { name: 'Применить объект' }).click()
+  await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  await expect(regulators).toHaveCount(0)
   // Выпуск недоступен, пока не отмечены пункты «Проверить вручную».
   await expect(host.getByLabel(/Я проверил лист/)).toBeDisabled()
   await expect(host).toContainText('не отмечены пункты «Проверить вручную»')
@@ -722,6 +735,14 @@ test('release requires distances, objects, location and type size but allows pap
     bufferMetres: 10,
   }
   const originalPost = base.placements.find((p) => p.kind === 'sign-post')!
+  // Два регулировщика по раскладке шаблона: без них выпуск закрыт независимо от отметок.
+  const twoRegulators = rebuildTemplatePlacements({
+    ...base,
+    parameters: { ...base.parameters, location: 'out', signSize: 'II' },
+    placements: [],
+  })
+    .scheme.placements.filter((p) => p.kind === 'element' && p.elementKind === 'reg')
+    .map((p, index) => ({ ...p, id: 900 + index }))
   for (const variant of ['distance', 'objects', 'location', 'type-out', 'type-in', 'ready']) {
     let scheme = {
       ...base,
@@ -749,15 +770,18 @@ test('release requires distances, objects, location and type size but allows pap
                 distanceLabel: '{d50}',
                 position: { ...originalPost.position, anchor: 'abs' as const, offsetXSvg: 300 },
               },
+              ...twoRegulators,
             ],
       signImages: {
         catalog: { documentCode: 'УЧЕБНЫЙ', edition: 'демо', id: 1 },
         revisions: { '1.25': 1 },
       },
       reviewMarks: {},
+      nextPlacementId: 902,
     }
     const findings = reviewScheme(scheme, pddRules)
-    for (const finding of findings.filter((f) => f.kind === 'verify'))
+    // Пункты с блокировкой отметить нельзя: без объектов это и регулировщики на листе.
+    for (const finding of findings.filter((f) => f.kind === 'verify' && !f.markBlocked))
       scheme = setMark(scheme, findings, finding.id, true) as typeof scheme
     await page.goto('/')
     await page
