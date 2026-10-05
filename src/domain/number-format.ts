@@ -5,3 +5,11 @@
 export function decimalComma(value: number | string): string {
   return String(value).replace(/(\d)\.(?=\d)/g, '$1,')
 }
+
+/**
+ * Десятичная запятая в подписи, введённой составителем: только у чисел перед единицей длины
+ * («0.5 км» → «0,5 км»). Номера пунктов и знаков («п. 5.2.2», «1.25») не меняются.
+ */
+export function decimalCommaInMeasures(text: string): string {
+  return text.replace(/(\d+)\.(\d+)(?=\s*(?:км|м)(?![а-яёa-z]))/gi, '$1,$2')
+}

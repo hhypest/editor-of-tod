@@ -184,7 +184,7 @@ function isPlate(code: string): boolean {
 
 /**
  * Столбцы стойки слева направо: знак и таблички под ним. Табличка относится к знаку, с
- * которым применена, и размещается непосредственно под ним (ГОСТ Р 52289-2019, п. 5.9.2).
+ * которым применена, и размещается непосредственно под ним (ГОСТ Р 52289-2019, п. 5.9.1).
  * В списке знаков стойки табличка принадлежит предыдущему знаку; табличка 8.2.1 — соседнему
  * знаку 1.25, с которым её ставит шаблон (п. 5.9.5), даже если он записан после неё. Стойка из
  * одних табличек рисует каждую отдельным столбцом.
@@ -244,6 +244,8 @@ function drawPost(
   let stackTop = top
   let stackBottom = bottom
   let codeLength = 0
+  let codeLeft = Infinity
+  let codeRight = -Infinity
   for (const column of columns) {
     // Столбец растёт от дороги: под дорогой — вниз от верхней кромки ряда, над дорогой — вверх
     // от нижней. Знак без табличек остаётся на оси стойки, как раньше.
@@ -265,6 +267,9 @@ function drawPost(
       codeLength = Math.max(codeLength, textWidth(text, 12.5))
       const labelX =
         sx + column.width / 2 + 4.5 + (position - (column.items.length - 1) / 2) * CODE_STEP
+      // Подписи кодов столбца с табличками расходятся шире самого столбца.
+      codeLeft = Math.min(codeLeft, labelX - 14)
+      codeRight = Math.max(codeRight, labelX + 4)
       nodes.push(
         down
           ? {
@@ -333,8 +338,8 @@ function drawPost(
   // Повёрнутые коды над (под) знаками и выноска с подписью расстояния.
   let extentTop = down ? stackTop - 4 : stackTop - 5 - codeLength
   let extentBottom = down ? stackBottom + 5 + codeLength : stackBottom + 4
-  let extentLeft = left
-  let extentRight = rightEdge
+  let extentLeft = Math.min(left, codeLeft)
+  let extentRight = Math.max(rightEdge, codeRight)
   if (post.distanceLabel !== null) {
     const labelLength = textWidth(post.distanceLabel, 12.5)
     if (down) extentBottom = Math.max(extentBottom, 655 + post.dy + labelLength)

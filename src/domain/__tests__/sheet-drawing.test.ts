@@ -111,7 +111,7 @@ describe('vector A4 sheet', () => {
     const signs = post.children.filter((node) => node.t === 'sign')
     expect(signs.map((node) => node.code)).toEqual(['1.25', '3.24_ж', '8.2.1'])
     const [warning, speed, plate] = signs as [(typeof signs)[number], ...typeof signs]
-    // Знаки в ряд от стойки; табличка — под своим знаком (ГОСТ Р 52289-2019, п. 5.9.2),
+    // Знаки в ряд от стойки; табличка — под своим знаком (ГОСТ Р 52289-2019, п. 5.9.1),
     // по центру, ниже его и уже по высоте; её ширина следует пропорциям PNG.
     expect(speed!.x).toBeGreaterThan(warning.x + warning.w)
     expect(plate!.y).toBeGreaterThanOrEqual(speed!.y + speed!.h)
@@ -125,6 +125,21 @@ describe('vector A4 sheet', () => {
     // Габарит стойки включает табличку: по нему проверяются перекрытия и границы листа.
     const box = drawing.objectBoxes[0]!
     expect(box.box[1] + box.box[3]).toBeGreaterThanOrEqual(plate!.y + plate!.h)
+    // Подписи кодов двух табличек под одним знаком шире столбца: они входят в габарит для
+    // проверки границ листа.
+    const fanned = drawSheet(
+      projectDraftSheet(savePlacement(scheme(), withPost('1.25, 8.1.1_300, 8.2.1', 300))),
+      options,
+    )
+    const group = fanned.nodes.find((node) => node.t === 'group' && node.objectId)
+    if (!group || group.t !== 'group') throw new Error('Post group expected')
+    const codeXs = group.children.flatMap((node) =>
+      node.t === 'text' && /^\d/.test(node.text) && !node.text.includes('м') ? [node.x] : [],
+    )
+    expect(codeXs).toHaveLength(3)
+    const [extentLeft, , extentWidth] = fanned.objectBoxes[0]!.extent
+    expect(extentLeft).toBeLessThanOrEqual(Math.min(...codeXs) - 14)
+    expect(extentLeft + extentWidth).toBeGreaterThanOrEqual(Math.max(...codeXs) + 4)
   })
 
   it('assigns a plate to the previous sign, and plate 8.2.1 to the adjacent sign 1.25', () => {
@@ -262,13 +277,17 @@ describe('vector A4 sheet', () => {
       revision: 1,
       updatedAt: '2026-09-28T10:00:00.000Z',
     })
-    let project = savePlacement(decimal, withPost('1.25', 300, '{d50} / 0.5 км'))
+    let project = savePlacement(
+      decimal,
+      withPost('1.25', 300, '{d50} / 0.5 км (ГОСТ Р 52289-2019, п. 5.2.2)'),
+    )
     const details = createSchemeDetailsDraft(project)
     details.parameters.signDistancesMetres.d50 = '47.5'
     project = applySchemeDetails(project, details)
     const printed = texts(drawSheet(projectDraftSheet(project), options).nodes)
     expect(printed).toContain('ширина проезжей части 7,9 м')
-    expect(printed).toContain('47,5 м / 0,5 км')
+    // Ссылка на пункт в подписи составителя остаётся как введена.
+    expect(printed).toContain('47,5 м / 0,5 км (ГОСТ Р 52289-2019, п. 5.2.2)')
     expect(printed.join(' ')).not.toMatch(/\d\.\d+ (м|км)/)
   })
 
