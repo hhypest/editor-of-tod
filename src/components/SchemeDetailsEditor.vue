@@ -457,7 +457,7 @@ function applyDraft(): void {
           @select="selectSpeedConditions"
           @apply="applySpeedReference"
         />
-        <details class="advice">
+        <details class="decision-evidence">
           <summary>Обоснование решений и источники</summary>
           <p>
             Запись сохраняет текущие условия и нормативные основания. Для ручного решения укажите
@@ -850,16 +850,19 @@ function applyDraft(): void {
 .warning {
   color: #8a3b12;
 }
-.advice {
+.advice,
+.decision-evidence {
   margin: 0.8rem 0 1rem;
   padding: 0.7rem 0.9rem;
   border-left: 4px solid #2f7d5b;
   background: #eef6f1;
 }
-.advice h3 {
+.advice h3,
+.decision-evidence h3 {
   margin: 0 0 0.4rem;
 }
-.advice p {
+.advice p,
+.decision-evidence p {
   margin: 0.3rem 0;
   line-height: 1.45;
 }
