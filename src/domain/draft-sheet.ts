@@ -1,3 +1,4 @@
+import { decimalComma, decimalCommaInMeasures } from './number-format'
 import type { Scheme } from './model'
 import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import { responsibleLine } from './title-block'
@@ -81,11 +82,13 @@ function renderDistanceLabel(
   distances: Scheme['parameters']['signDistancesMetres'],
 ): string | null {
   if (label === null) return null
-  return label.replace(/\{(\w+)\}/g, (marker, key: string) => {
+  // Подставленное расстояние — с десятичной запятой; в тексте составителя запятая ставится
+  // только у чисел с единицей длины, ссылки на пункты («п. 5.2.2») остаются как введены.
+  return decimalCommaInMeasures(label).replace(/\{(\w+)\}/g, (marker, key: string) => {
     const value = Object.prototype.hasOwnProperty.call(distances, key)
       ? distances[key as keyof typeof distances]
       : null
-    return value === null ? marker : `${value} м`
+    return value === null ? marker : `${decimalComma(value)} м`
   })
 }
 
@@ -144,7 +147,7 @@ export function projectDraftSheet(
             carriagewayWidthMetres:
               scheme.crossing.snapshot.crossingWidthMetres === null
                 ? ''
-                : String(scheme.crossing.snapshot.crossingWidthMetres).trim(),
+                : decimalComma(String(scheme.crossing.snapshot.crossingWidthMetres).trim()),
           }
         : null,
     directions: { ...scheme.parameters.directions },

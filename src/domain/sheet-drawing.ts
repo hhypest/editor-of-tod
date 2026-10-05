@@ -1,3 +1,4 @@
+import { decimalComma } from './number-format'
 import { drawnSignBase, signImageCode } from './sign-code'
 // Preserve the drawing API while code interpretation lives independently of the drawing.
 export { drawableWithoutImage, drawnSignBase, signImageCode, ZONE_PLATE } from './sign-code'
@@ -150,7 +151,7 @@ export function wrapText(text: string, width: number, size: number): string[] {
 }
 
 function metres(value: number): string {
-  return String(Math.round(value * 100) / 100).replace('.', ',')
+  return decimalComma(Math.round(value * 100) / 100)
 }
 
 function blank(value: string, placeholder = '______________'): string {
@@ -165,7 +166,7 @@ function signatureLine(name: string): string {
 function signSize(code: string, sizes: ReadonlyMap<string, SignSize>): [number, number] {
   const base = drawnSignBase(code)
   const known = sizes.get(code) ?? (base ? sizes.get(base) : undefined)
-  const plate = code.startsWith('8.') && !code.startsWith('8.22')
+  const plate = isPlate(code)
   const height = plate ? SIGN_HEIGHT * 0.62 : SIGN_HEIGHT
   if (!known || known.height <= 0) return plate ? [height * 2, height] : [height, height]
   return [(height * known.width) / known.height, height]
@@ -177,6 +178,45 @@ function codeLabel(code: string): string {
 
 type Box = [number, number, number, number]
 
+function isPlate(code: string): boolean {
+  return code.startsWith('8.') && !code.startsWith('8.22')
+}
+
+/**
+ * Столбцы стойки слева направо: знак и таблички под ним. Табличка относится к знаку, с
+ * которым применена, и размещается непосредственно под ним (ГОСТ Р 52289-2019, п. 5.9.1).
+ * В списке знаков стойки табличка принадлежит предыдущему знаку; табличка 8.2.1 — соседнему
+ * знаку 1.25, с которым её ставит шаблон (п. 5.9.5), даже если он записан после неё. Стойка из
+ * одних табличек рисует каждую отдельным столбцом.
+ */
+export function postColumns(signIds: readonly string[]): number[][] {
+  const columns = new Map<number, number[]>()
+  const loose: number[][] = []
+  const main = (from: number, step: 1 | -1): number | null => {
+    for (let index = from; index >= 0 && index < signIds.length; index += step)
+      if (!isPlate(signIds[index]!)) return index
+    return null
+  }
+  signIds.forEach((code, index) => {
+    if (!isPlate(code)) columns.set(index, [index])
+  })
+  signIds.forEach((code, index) => {
+    if (!isPlate(code)) return
+    const previous = main(index - 1, -1)
+    const next = main(index + 1, 1)
+    const warning = (target: number | null) =>
+      target !== null && /^1\.25(_|$)/.test(signIds[target]!)
+    const owner =
+      /^8\.2\.1(_|$)/.test(code) && warning(next) && !warning(previous) ? next : (previous ?? next)
+    if (owner === null) loose.push([index])
+    else columns.get(owner)!.push(index)
+  })
+  return [...[...columns.entries()].sort(([a], [b]) => a - b).map(([, items]) => items), ...loose]
+}
+
+const PLATE_GAP = 2
+const CODE_STEP = 14
+
 function drawPost(
   post: Extract<DraftSheet['placements'][number], { kind: 'sign-post' }>,
   options: SheetOptions,
@@ -186,38 +226,74 @@ function drawPost(
   const yc = post.y
   const codes = post.signIds.map((code) => signImageCode(code, available))
   const sizes = codes.map((code) => signSize(code, options.signSizes))
-  const rowWidth = sizes.reduce((sum, [w]) => sum + w, 0) + SIGN_GAP * (sizes.length - 1)
+  const columns = postColumns(post.signIds).map((items) => ({
+    items,
+    width: Math.max(...items.map((index) => sizes[index]![0])),
+    height:
+      items.reduce((sum, index) => sum + sizes[index]![1], 0) + PLATE_GAP * (items.length - 1),
+  }))
+  const rowWidth =
+    columns.reduce((sum, column) => sum + column.width, 0) +
+    SIGN_GAP * Math.max(0, columns.length - 1)
   const top = yc - SIGN_HEIGHT / 2
+  const bottom = top + SIGN_HEIGHT
   const right = post.stand === 'right'
+  const down = post.side === 'down'
   let sx = right ? x - POLE_BAR - rowWidth : x + POLE_BAR
   const nodes: SheetNode[] = []
-  codes.forEach((code, index) => {
-    const [w, h] = sizes[index]!
-    nodes.push({ t: 'sign', x: sx, y: yc - h / 2, w, h, code })
-    const labelX = sx + w / 2 + 4.5
-    nodes.push(
-      post.side === 'down'
-        ? {
-            t: 'text',
-            x: labelX,
-            y: top + SIGN_HEIGHT + 5,
-            text: codeLabel(post.signIds[index]!),
-            size: 12.5,
-            anchor: 'end',
-            rotate: -90,
-          }
-        : {
-            t: 'text',
-            x: labelX,
-            y: top - 5,
-            text: codeLabel(post.signIds[index]!),
-            size: 12.5,
-            anchor: 'start',
-            rotate: -90,
-          },
-    )
-    sx += w + SIGN_GAP
-  })
+  let stackTop = top
+  let stackBottom = bottom
+  let codeLength = 0
+  let codeLeft = Infinity
+  let codeRight = -Infinity
+  for (const column of columns) {
+    // Столбец растёт от дороги: под дорогой — вниз от верхней кромки ряда, над дорогой — вверх
+    // от нижней. Знак без табличек остаётся на оси стойки, как раньше.
+    const single = column.items.length === 1
+    const columnTop = single ? yc - column.height / 2 : down ? top : bottom - column.height
+    let sy = columnTop
+    for (const index of column.items) {
+      const [w, h] = sizes[index]!
+      nodes.push({ t: 'sign', x: sx + (column.width - w) / 2, y: sy, w, h, code: codes[index]! })
+      sy += h + PLATE_GAP
+    }
+    const columnBottom = columnTop + column.height
+    const edgeTop = Math.min(top, columnTop)
+    const edgeBottom = Math.max(bottom, columnBottom)
+    stackTop = Math.min(stackTop, edgeTop)
+    stackBottom = Math.max(stackBottom, edgeBottom)
+    column.items.forEach((index, position) => {
+      const text = codeLabel(post.signIds[index]!)
+      codeLength = Math.max(codeLength, textWidth(text, 12.5))
+      const labelX =
+        sx + column.width / 2 + 4.5 + (position - (column.items.length - 1) / 2) * CODE_STEP
+      // Подписи кодов столбца с табличками расходятся шире самого столбца.
+      codeLeft = Math.min(codeLeft, labelX - 14)
+      codeRight = Math.max(codeRight, labelX + 4)
+      nodes.push(
+        down
+          ? {
+              t: 'text',
+              x: labelX,
+              y: edgeBottom + 5,
+              text,
+              size: 12.5,
+              anchor: 'end',
+              rotate: -90,
+            }
+          : {
+              t: 'text',
+              x: labelX,
+              y: edgeTop - 5,
+              text,
+              size: 12.5,
+              anchor: 'start',
+              rotate: -90,
+            },
+      )
+    })
+    sx += column.width + SIGN_GAP
+  }
   const barEnd = right ? x - POLE_BAR : x + POLE_BAR
   nodes.push(
     { t: 'line', x1: barEnd, y1: yc, x2: x, y2: yc, sw: 2 },
@@ -225,7 +301,7 @@ function drawPost(
   )
   if (post.distanceLabel !== null) {
     const labelX = right ? x + 14 : x - 3
-    if (post.side === 'down') {
+    if (down) {
       const end = 655 + post.dy
       nodes.push(
         { t: 'line', x1: x, y1: yc + 9, x2: x, y2: end, sw: 1.2 },
@@ -260,15 +336,13 @@ function drawPost(
   const left = Math.min(x, right ? x - POLE_BAR - rowWidth : x) - 3
   const rightEdge = Math.max(x, right ? x : x + POLE_BAR + rowWidth) + 3
   // Повёрнутые коды над (под) знаками и выноска с подписью расстояния.
-  const codeLength = Math.max(0, ...post.signIds.map((code) => textWidth(codeLabel(code), 12.5)))
-  let extentTop = post.side === 'down' ? top - 4 : top - 5 - codeLength
-  let extentBottom =
-    post.side === 'down' ? top + SIGN_HEIGHT + 5 + codeLength : top + SIGN_HEIGHT + 4
-  let extentLeft = left
-  let extentRight = rightEdge
+  let extentTop = down ? stackTop - 4 : stackTop - 5 - codeLength
+  let extentBottom = down ? stackBottom + 5 + codeLength : stackBottom + 4
+  let extentLeft = Math.min(left, codeLeft)
+  let extentRight = Math.max(rightEdge, codeRight)
   if (post.distanceLabel !== null) {
     const labelLength = textWidth(post.distanceLabel, 12.5)
-    if (post.side === 'down') extentBottom = Math.max(extentBottom, 655 + post.dy + labelLength)
+    if (down) extentBottom = Math.max(extentBottom, 655 + post.dy + labelLength)
     else extentTop = Math.min(extentTop, 245 + post.dy - labelLength)
     const labelX = right ? x + 14 : x - 3
     extentLeft = Math.min(extentLeft, labelX - 14)
@@ -276,7 +350,7 @@ function drawPost(
   }
   return {
     nodes,
-    box: [left, top - 4, rightEdge - left, SIGN_HEIGHT + 8],
+    box: [left, stackTop - 4, rightEdge - left, stackBottom - stackTop + 8],
     extent: [extentLeft, extentTop, extentRight - extentLeft, extentBottom - extentTop],
     codes,
   }
@@ -407,11 +481,13 @@ function titleSuffix(sheet: DraftSheet): string {
  * Типовые примечания образцов (время работ, зачехление знаков, передача схемы и т. п.)
  * не печатаются: их применимость и источники ещё не проверены (docs/standards.md).
  */
-function notes(sheet: DraftSheet): string[] {
+function notes(sheet: DraftSheet, release: boolean): string[] {
   const list: string[] = []
+  // Пометка нужна при сверке черновика; на выпускном листе она не печатается.
+  const decision = release ? '' : ' (решение составителя)'
   if (sheet.workConditions.kind !== 'unknown') {
     list.push(
-      `Работы: ${sheet.workConditions.kind === 'short' ? 'краткосрочные' : 'долгосрочные'}, ${sheet.workConditions.durationHours ?? 'уточнить'} ч; ${sheet.workConditions.daylight === 'day' ? 'в светлое время' : sheet.workConditions.daylight === 'night' ? 'включая тёмное время' : 'время суток уточнить'}.`,
+      `Работы: ${sheet.workConditions.kind === 'short' ? 'краткосрочные' : 'долгосрочные'}, ${sheet.workConditions.durationHours === null ? 'уточнить' : decimalComma(sheet.workConditions.durationHours)} ч; ${sheet.workConditions.daylight === 'day' ? 'в светлое время' : sheet.workConditions.daylight === 'night' ? 'включая тёмное время' : 'время суток уточнить'}.`,
     )
     if (
       sheet.template === 'b33' ||
@@ -445,14 +521,13 @@ function notes(sheet: DraftSheet): string[] {
     (sheet.template === 'b33' || (sheet.template === 'b34' && sheet.regulationMode === 'two'))
   )
     list.push(
-      `Регулировщиков устанавливать не ближе ${sheet.regulatorDistance.metres} м до рабочей зоны (${sheet.regulatorDistance.source}).`,
+      `Регулировщиков устанавливать не ближе ${decimalComma(sheet.regulatorDistance.metres)} м до рабочей зоны (${sheet.regulatorDistance.source}).`,
     )
   if (sheet.settlement !== 'auto')
     list.push(
-      `Расстояния установки знаков приняты для участка ${sheet.settlement === 'in' ? 'в населённом пункте' : 'вне населённого пункта'} (решение составителя).`,
+      `Расстояния установки знаков приняты для участка ${sheet.settlement === 'in' ? 'в населённом пункте' : 'вне населённого пункта'}${decision}.`,
     )
-  if (sheet.signSize !== 'auto')
-    list.push(`Типоразмер знаков ${sheet.signSize} (решение составителя).`)
+  if (sheet.signSize !== 'auto') list.push(`Типоразмер знаков ${sheet.signSize}${decision}.`)
   return list.map((text, index) => `${index + 1}. ${text}`)
 }
 
@@ -849,7 +924,7 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
     })
 
   // Примечания.
-  const noteLines = notes(sheet)
+  const noteLines = notes(sheet, options.release === true)
   const noteSize = noteLines.length > 8 ? 13.5 : 14.5
   if (noteLines.length || !options.release)
     nodes.push(
