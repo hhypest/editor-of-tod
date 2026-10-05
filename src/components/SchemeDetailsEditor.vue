@@ -4,6 +4,7 @@ import { templateLabel, selectTemplateByWorkFront } from '../domain/registry'
 import { workSectionMetres } from '../domain/work-traffic'
 import { frontLimit } from '../domain/work-conditions'
 import WorkConditionsFields from './WorkConditionsFields.vue'
+import PddSpeedReference from './PddSpeedReference.vue'
 import { computed, ref, watch } from 'vue'
 import {
   applySchemeDetails,
@@ -385,6 +386,12 @@ function applyDraft(): void {
             <NormativeMark :mark="marks['parameters.signSize']" @restore="restore" />
           </label>
         </div>
+        <PddSpeedReference
+          :location="draft.parameters.location"
+          :rules="normativeRules"
+          :locked="locked"
+          @apply="approachSpeed = String($event)"
+        />
         <p class="hint">
           Расстояния и ступени скорости подставляются по нормативным значениям: при выборе
           местоположения и при смене разрешённой скорости. Любое значение можно исправить под

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { kindForCode, suggestFromFilename } from './normative-documents.ts'
+import { isPddHeading, pddEdition } from './pdd-identification.ts'
 
 const suggestionSchema = z.strictObject({
   code: z.string().max(120),
@@ -31,6 +32,21 @@ function designations(text: string) {
 
 function candidatesOnPage(raw: string, page: number): DocumentCandidate[] {
   const text = raw.replace(/[–—−‑]/g, '-').replace(/\r/g, '')
+  if (isPddHeading(text)) {
+    const edition = pddEdition(text.slice(0, 3_000))
+    return [
+      {
+        code: 'ПДД',
+        edition,
+        kind: 'rules',
+        title:
+          'Правила дорожного движения Российской Федерации (постановление от 23.10.1993 № 1090)',
+        documentType: 'base',
+        baseEdition: edition,
+        page,
+      },
+    ]
+  }
   const result = new Map<string, DocumentCandidate>()
   for (const match of designations(text)) {
     const before = text.slice(0, match.index)

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { createHash } from 'node:crypto'
 import { findClause, findTable } from '../src/domain/document-text.ts'
 import {
   currentDocument,
@@ -111,7 +112,11 @@ async function amendmentsFor(
     const status = statuses.get(amendment.id)
     if (status?.kind !== 'amendment' || !status.inForce) continue
     const text = (await documentText(store, amendment.id)).join('\n')
-    if (tableMention.test(text) || clauses.some((mention) => mention.test(text)))
+    if (
+      source.documentCode === 'ПДД' ||
+      tableMention.test(text) ||
+      clauses.some((mention) => mention.test(text))
+    )
       result.push(`${amendment.code} (${amendment.edition})`)
   }
   return result
@@ -174,6 +179,30 @@ export async function listParameterStates(
     }
     const quote = await quoteFor(store, definition, current.id)
     const amendments = await amendmentsFor(store, definition, current.id, today)
+    // Includes PDF hashes even while an earlier confirmation is already stale.
+    const sourceFingerprint =
+      source.documentCode === 'ПДД'
+        ? createHash('sha256')
+            .update(
+              JSON.stringify([
+                [current.id, current.code, current.edition, current.effectiveFrom, current.sha256],
+                documents
+                  .filter(
+                    (item) =>
+                      item.amendsId === current.id && (item.effectiveFrom || '9999-12-31') <= today,
+                  )
+                  .map((item) => [
+                    item.id,
+                    item.code,
+                    item.edition,
+                    item.effectiveFrom,
+                    item.sha256,
+                  ])
+                  .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+              ]),
+            )
+            .digest('hex')
+        : undefined
     const fragment = confirmationFragment(store, definition, quote, amendments)
     let status: ParameterState['status']
     if (!confirmation) status = { kind: 'unconfirmed' }
@@ -193,6 +222,7 @@ export async function listParameterStates(
     }
     states.push({
       id: definition.id,
+      ...(sourceFingerprint ? { sourceFingerprint } : {}),
       status,
       document: { id: current.id, label: documentLabel(current), sha256: current.sha256 },
       quote: quote

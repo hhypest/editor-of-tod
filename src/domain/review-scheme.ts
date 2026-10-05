@@ -10,6 +10,7 @@ import { parseHourly } from './regulation-advice'
 import { effectiveWorkSection } from './work-traffic'
 import { railRegulationMode } from './rail-regulation'
 import { workConditionProblems, frontLimit } from './work-conditions'
+import { pddFindings } from './pdd-review'
 import {
   distanceTitles,
   expectedTypesize,
@@ -221,7 +222,14 @@ export function reviewScheme(
     basis: JSON.stringify([
       scheme.template,
       { ...parameters, locationText: undefined, directions: undefined },
-      { ...rules, sources: undefined, confirmed: undefined, evidence: undefined },
+      {
+        ...rules,
+        sources: undefined,
+        confirmed: undefined,
+        evidence: undefined,
+        pddSpeedLimits: undefined,
+        pddDocument: undefined,
+      },
       placements,
     ]),
   })
@@ -463,7 +471,7 @@ export function reviewScheme(
     })
   }
 
-  return findings
+  return [...findings, ...pddFindings(scheme, rules)]
 }
 
 /**

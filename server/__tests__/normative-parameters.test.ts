@@ -55,6 +55,81 @@ const state = (states: Awaited<ReturnType<typeof listParameterStates>>, id: stri
   states.find((item) => item.id === id)!
 
 describe('normative parameters from library documents', () => {
+  it('keeps a PDD edition undated until explicitly dated and tracks amendments outside speed clauses', async () => {
+    const store = library()
+    const document = await add(
+      store,
+      textPdf([
+        [
+          'ПДД: вымышленный учебный документ',
+          '10.2. Учебное условие с числом 61 км/ч.',
+          '10.3. Учебные условия нескольких групп ТС.',
+          '10.4. Учебные условия буксировки.',
+        ],
+      ]),
+      { code: 'ПДД', edition: '2030-04-01', effectiveFrom: '' },
+    )
+    expect(state(await listParameterStates(store, now), 'pdd-speed-settlement').status.kind).toBe(
+      'no-document',
+    )
+    const dated = await add(
+      store,
+      textPdf([
+        [
+          'ПДД: другая вымышленная редакция',
+          '10.2. Учебное условие с числом 62 км/ч.',
+          '10.3. Учебные условия нескольких групп ТС.',
+          '10.4. Учебные условия буксировки.',
+        ],
+      ]),
+      { code: 'ПДД', edition: '2030-05-01', effectiveFrom: '2030-09-01' },
+    )
+    const definition = parameterDefinitions.find(
+      (item) => item.id === 'pdd-speed-outside-conditions',
+    )!
+    if (definition.type !== 'table') throw new Error('Expected table')
+    await confirmParameter(
+      store,
+      definition.id,
+      {
+        value: definition.fallback,
+        confirmedBy: 'Учебный составитель',
+        note: 'Учебная сверка всех условий',
+        expectedDocumentId: dated.id,
+      },
+      now,
+    )
+    const before = rulesFrom(await listParameterStates(store, now))
+    expect(before.pddDocument?.id).toBe(dated.id)
+    expect(before.confirmed[definition.id]).toBe(true)
+    const amendment = await add(
+      store,
+      textPdf([['Вымышленное изменение', '6.15. Учебный порядок сигналов.']]),
+      {
+        code: 'ПДД',
+        edition: 'Учебное изменение',
+        effectiveFrom: '2031-01-01',
+        amendsId: dated.id,
+      },
+    )
+    const after = rulesFrom(await listParameterStates(store, now))
+    expect(after.confirmed[definition.id]).toBe(false)
+    expect(after.evidence[definition.id]).not.toBe(before.evidence[definition.id])
+    expect(after.pddDocument?.id).not.toBe(document.id)
+    store.updateDocument(amendment.id, {
+      code: amendment.code,
+      edition: amendment.edition,
+      title: amendment.title,
+      kind: amendment.kind,
+      effectiveFrom: '2031-01-02',
+      amendsId: amendment.amendsId,
+      note: amendment.note,
+      actualCheckedAt: amendment.actualCheckedAt,
+    })
+    const revised = rulesFrom(await listParameterStates(store, now))
+    expect(revised.confirmed[definition.id]).toBe(false)
+    expect(revised.evidence[definition.id]).not.toBe(after.evidence[definition.id])
+  })
   it('requires a new traffic check after a relevant amendment, even after reconfirming the same value', async () => {
     const store = library()
     const document = await add(store, methodology(520), {})

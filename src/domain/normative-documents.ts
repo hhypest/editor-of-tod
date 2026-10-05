@@ -42,6 +42,7 @@ export type DocumentRecord = z.infer<typeof documentRecordSchema>
 
 /** «гост р52290-2024» → «ГОСТ Р 52290»: год редакции хранится отдельно. */
 export function normalizeDocumentCode(code: string): string {
+  if (/^пдд(?:\s+рф|\s*[№N]\s*1090)?$/iu.test(code.trim())) return 'ПДД'
   return code
     .trim()
     .toLocaleUpperCase('ru-RU')
@@ -54,6 +55,7 @@ export function normalizeDocumentCode(code: string): string {
 }
 
 const knownKinds: Array<[RegExp, DocumentKind]> = [
+  [/^ПДД$/u, 'rules'],
   [/^ГОСТ Р 52290\b/u, 'signs'],
   [/^ГОСТ Р (52289|58350|50597)\b/u, 'rules'],
   [/^ОДМ(?:\s|$)/u, 'methodology'],
@@ -72,6 +74,14 @@ export function suggestFromFilename(
   filename: string,
 ): Pick<DocumentMeta, 'code' | 'edition' | 'kind'> {
   const name = filename.replace(/\.pdf$/i, '').replace(/[_–—−‑]/g, '-')
+  if (/(?:^|[-\s])(?:пдд|pdd)(?:$|[-\s])/iu.test(name)) {
+    const edition = /(?:19|20)\d{2}-\d{2}-\d{2}/u.exec(name)?.[0] ?? ''
+    return {
+      code: 'ПДД',
+      edition: z.iso.date().safeParse(edition).success ? edition : '',
+      kind: 'rules',
+    }
+  }
   const year = (value: string | undefined) => (value && /^(19|20)\d{2}$/.test(value) ? value : '')
   const gost =
     /(?<![\p{L}\d])(?:gost|гост)[-\s]*([rр])?[-\s]*(\d{4,6}(?:\.\d+)*)(?:[-\s]+((?:19|20)\d{2})(?!\d))?/iu.exec(
@@ -100,6 +110,8 @@ export type DocumentStatus =
 /** Дата, с которой редакция считается введённой: указанная или 1 января года редакции. */
 function effectiveKey(document: DocumentRecord): string | null {
   if (document.effectiveFrom) return document.effectiveFrom
+  // Дата постановления и дата редакции ПДД не определяют вступление изменений в силу.
+  if (normalizeDocumentCode(document.code) === 'ПДД') return null
   return /^(19|20)\d{2}$/.test(document.edition) ? `${document.edition}-01-01` : null
 }
 
@@ -115,10 +127,12 @@ export function documentStatuses(
   const groups = new Map<string, DocumentRecord[]>()
   for (const document of documents) {
     if (document.amendsId !== null) {
+      const effective = effectiveKey(document)
       statuses.set(document.id, {
         kind: 'amendment',
         of: document.amendsId,
-        inForce: (effectiveKey(document) ?? today) <= today,
+        inForce:
+          effective !== null ? effective <= today : normalizeDocumentCode(document.code) !== 'ПДД',
       })
       continue
     }
@@ -139,7 +153,12 @@ export function documentStatuses(
     }
     for (const document of group.filter((item) => effectiveKey(item) === null)) {
       // Без даты и года редакция считается действующей, только если она единственная.
-      statuses.set(document.id, group.length === 1 ? { kind: 'current' } : { kind: 'undated' })
+      statuses.set(
+        document.id,
+        group.length === 1 && normalizeDocumentCode(document.code) !== 'ПДД'
+          ? { kind: 'current' }
+          : { kind: 'undated' },
+      )
     }
   }
   return statuses

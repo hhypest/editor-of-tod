@@ -9,6 +9,30 @@ async function openDocuments(page: Page) {
   return page.locator('.library')
 }
 
+test('PDD identification separates the resolution date from edition and effective date', async ({
+  page,
+}) => {
+  const library = await openDocuments(page)
+  await library.locator('input[type="file"]').setInputFiles({
+    name: 'synthetic.pdf',
+    mimeType: 'application/pdf',
+    buffer: textPdf([
+      [
+        'Постановление Правительства РФ от 23.10.1993 N 1090',
+        '(ред. от 28.08.2026)',
+        'О Правилах дорожного движения',
+        'Вымышленный учебный фрагмент.',
+      ],
+    ]),
+  })
+  await expect(library.locator('.candidate')).toContainText('2026-08-28')
+  await library.getByRole('button', { name: 'Использовать сведения', exact: true }).click()
+  await expect(library.getByLabel('Обозначение', { exact: true })).toHaveValue('ПДД')
+  await expect(library.getByLabel('Редакция', { exact: true })).toHaveValue('2026-08-28')
+  await expect(library.getByLabel('Дата введения в действие', { exact: true })).toHaveValue('')
+  await expect(library).toContainText('не подтверждают вступление изменений в силу')
+})
+
 for (const variant of [
   {
     name: 'obsolete document',

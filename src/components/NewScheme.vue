@@ -16,6 +16,7 @@ import { selectTemplateByWorkFront, templateLabel } from '../domain/registry'
 import { getPu66SchemeRecord, listPu66Cards, type Pu66ListEntry } from '../services/local-pu66'
 import Pu66CardPicker from './Pu66CardPicker.vue'
 import WorkConditionsFields from './WorkConditionsFields.vue'
+import PddSpeedReference from './PddSpeedReference.vue'
 import { cellNumber } from '../domain/pu66-norms'
 import type { SchemeDetailsDraft } from '../domain/edit-details'
 
@@ -367,8 +368,9 @@ watch(
         </fieldset>
         <template v-if="input.location">
           <p class="hint">
-            Скорости подставлены по нормативным значениям, расстояния до знаков подставятся при
-            создании проекта. Всё можно исправить под местные условия — здесь или на этапе 2.
+            Скорости подставлены предварительно: применимость по виду дороги, ТС и знакам нужно
+            сверить. Расстояния до знаков подставятся при создании проекта. Всё можно исправить под
+            местные условия — здесь или на этапе 2.
           </p>
           <div class="fields compact">
             <label
@@ -388,6 +390,12 @@ watch(
               <input v-model="input.speedStagesKmh[2]" type="text" inputmode="decimal" required
             /></label>
           </div>
+          <PddSpeedReference
+            :location="input.location"
+            :rules="rules"
+            :locked="locked"
+            @apply="approachSpeed = String($event)"
+          />
         </template>
         <label class="checkbox">
           <input v-model="input.yellowTemporarySigns" type="checkbox" />

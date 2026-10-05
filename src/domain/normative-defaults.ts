@@ -52,7 +52,10 @@ export function distanceSource(field: DistanceField, rules: NormativeRules): str
 }
 
 export function approachSource(location: SchemeLocation, rules: NormativeRules): string {
-  return rules.sources[location === 'in' ? 'pdd-speed-settlement' : 'pdd-speed-outside']!
+  const source = rules.sources[location === 'in' ? 'pdd-speed-settlement' : 'pdd-speed-outside']!
+  return location === 'out'
+    ? `${source}; только легковые, мотоциклы и грузовые до 3,5 т на остальных дорогах`
+    : `${source}; общий предел, кроме жилых/велосипедных зон и дворов`
 }
 
 /**
