@@ -206,6 +206,14 @@ export function migrationNotice(store: RegistryStore): string | null {
     : versions
 }
 
+/** Формат записанного снимка проекта: редакции в базе не переписываются при обновлении. */
+function storedVersion(payload: string): { storedSchemaVersion?: number } {
+  const version = (JSON.parse(payload) as { schemaVersion?: unknown }).schemaVersion
+  return Number.isInteger(version) && (version as number) > 0
+    ? { storedSchemaVersion: version as number }
+    : {}
+}
+
 export class RegistryStore {
   private readonly db: DatabaseSync
   readonly path: string
@@ -668,6 +676,7 @@ export class RegistryStore {
           scheme: this.parseProject(row.scheme_json),
           revision: row.revision,
           updatedAt: row.updated_at,
+          ...storedVersion(row.scheme_json),
         }
       : null
   }
@@ -693,6 +702,7 @@ export class RegistryStore {
           scheme: this.parseProject(row.scheme_json),
           revision: row.revision,
           updatedAt: row.updated_at,
+          ...storedVersion(row.scheme_json),
         }
       : null
   }

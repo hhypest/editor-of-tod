@@ -99,13 +99,18 @@ function templateKnots(source: DistanceLayoutSource, anchors: ZoneAnchors, appro
     offsets = left ? [...layout.before].reverse() : layout.after
   }
   // Места ряда закреплены компоновкой листа; расстояния занимают их по возрастанию.
-  const values = [
+  const entered = [
     ...new Set(
       markers.map((marker) => parameters.signDistancesMetres[marker] ?? LAYOUT_FALLBACK[marker]),
     ),
   ]
     .filter((value) => value > 0)
     .sort((a, b) => a - b)
+  // Все поля равны нулю: шкале всё равно нужен ряд, иначе любая стойка встала бы у начала
+  // работ. Ряд размечается обычными значениями полей.
+  const values = entered.length
+    ? entered
+    : markers.map((marker) => LAYOUT_FALLBACK[marker]).sort((a, b) => a - b)
   const list: Knot[] = [
     { metres: 0, x: origin },
     ...values.map((metres, index) => ({ metres, x: base + offsets[index]! })),

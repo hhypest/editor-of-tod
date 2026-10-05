@@ -201,12 +201,17 @@ export function reviewScheme(
   }
 
   // Стойка без расстояния стоит на листе по условной координате: её место не следует из
-  // метров и подписи. Стойки «конец ограничений» шаблона расстояния до начала работ не имеют.
+  // метров и подписи. Стойки «конец ограничений» шаблона расстояния до начала работ не имеют;
+  // исключение действует, пока на стойке остаётся знак 3.31 — место в шаблоне сохраняется и
+  // после ручной правки, когда знаки могли заменить.
   const freePosts = placements.filter(
     (placement) =>
       placement.kind === 'sign-post' &&
       !placement.distance &&
-      !/^post2:[LR]:end$/.test(placement.templateSlot ?? ''),
+      !(
+        /^post2:[LR]:end$/.test(placement.templateSlot ?? '') &&
+        placement.signIds.some((code) => /^3\.31(_|$)/.test(code))
+      ),
   )
   if (freePosts.length)
     findings.push({

@@ -276,6 +276,42 @@ describe('post distance to the start of works (Р1)', () => {
     expect(finding(withFree)?.detail).toContain(`№ ${posts(withFree).at(-1)!.id}`)
   })
 
+  it('keeps a usable scale when every stage 2 distance is zero', () => {
+    const scheme = project()
+    const details = createSchemeDetailsDraft(scheme)
+    for (const key of ['d300', 'd250', 'd150', 'd50'] as const)
+      details.parameters.signDistancesMetres[key] = '0'
+    const zeroed = addPost(
+      addPost(applySchemeDetails(scheme, details), 'left', '50'),
+      'left',
+      '300',
+    )
+    const [near, far] = posts(zeroed).slice(-2) as [Post, Post]
+    const origin = xOf(zeroed, bySlot(zeroed, 'L:start'))
+    // Стойки со своим расстоянием не слипаются у начала работ.
+    expect(xOf(zeroed, near)).toBeLessThan(origin - 50)
+    expect(xOf(zeroed, far)).toBeLessThan(xOf(zeroed, near) - 50)
+  })
+
+  it('stops exempting an end-of-restrictions post once its signs are replaced', () => {
+    const scheme = project()
+    const finding = (value: Scheme) =>
+      reviewScheme(value).find((item) => item.id === 'post-distance')
+    const end = bySlot(scheme, 'L:end')
+    const draft = createPlacementDraft(end)
+    if (draft.kind !== 'sign-post') throw new Error('Expected sign draft')
+    // Ручная правка сохраняет место в шаблоне; со знаком 3.31 стойка остаётся исключением.
+    draft.y = '12'
+    const nudged = savePlacement(scheme, draft)
+    expect(bySlot(nudged, 'L:end')).toMatchObject({ generatedByTemplate: false })
+    expect(finding(nudged)).toBeUndefined()
+    // Знаки заменены на знак подхода: стойка без расстояния попадает в проверку.
+    draft.signCodes = '1.25'
+    const repurposed = savePlacement(scheme, draft)
+    expect(bySlot(repurposed, 'L:end').templateSlot).toBe('post2:L:end')
+    expect(finding(repurposed)?.detail).toContain(`№ ${end.id}`)
+  })
+
   it('blocks the release while the field of a linked post is empty', () => {
     const scheme = project()
     const details = createSchemeDetailsDraft(scheme)

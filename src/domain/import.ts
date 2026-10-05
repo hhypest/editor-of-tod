@@ -55,8 +55,11 @@ export interface ImportResult {
 }
 
 /** До v7 скорость на подходе вне населённого пункта не вводилась. */
-/** Стойки прежнего формата, подпись расстояния которых не удалось перевести в метры. */
-function freePostWarning(scheme: Scheme): string[] {
+/**
+ * Стойки прежнего формата, подпись расстояния которых не удалось перевести в метры. Сообщение
+ * показывается при открытии и файла, и проекта из локальной базы, сохранённого до v10.
+ */
+export function freePostWarning(scheme: Scheme): string[] {
   const ids = scheme.placements.flatMap((placement) =>
     placement.kind === 'sign-post' && !placement.distance && placement.distanceLabel
       ? [placement.id]

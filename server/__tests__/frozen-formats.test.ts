@@ -139,6 +139,12 @@ describe('frozen files of previous formats', () => {
         if (from >= 4) {
           const [project] = store.listProjects()
           expect(project).toMatchObject({ referenceId: 'TEST-001', revision: 2 })
+          // Редакция в базе не переписана: клиенту сообщается её исходный формат, чтобы при
+          // открытии показать то же предупреждение о стойках, что и для файла.
+          const storedVersion = store.getProject(project!.id)!.storedSchemaVersion
+          expect(storedVersion).toBeGreaterThanOrEqual(2)
+          expect(storedVersion).toBeLessThanOrEqual(CURRENT_PROJECT_VERSION)
+          if (from < 13) expect(storedVersion).toBeLessThan(CURRENT_PROJECT_VERSION)
           const first = store.getProjectRevision(project!.id, 1)!.scheme
           const second = store.getProject(project!.id)!.scheme
           expect(first.schemaVersion).toBe(CURRENT_PROJECT_VERSION)

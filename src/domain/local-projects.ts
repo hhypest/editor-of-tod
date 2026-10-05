@@ -17,6 +17,11 @@ export const projectRecordSchema = z.strictObject({
   scheme: schemeSchema,
   revision: z.number().int().positive(),
   updatedAt: z.iso.datetime(),
+  /**
+   * Формат, в котором редакция записана в локальной базе; `scheme` уже поднята до текущего.
+   * По нему при открытии сообщается то же, что при открытии файла прежнего формата.
+   */
+  storedSchemaVersion: z.number().int().positive().optional(),
 })
 
 export const projectSummarySchema = z.strictObject({
