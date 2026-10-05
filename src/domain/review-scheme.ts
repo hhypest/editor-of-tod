@@ -12,6 +12,8 @@ import { railRegulationMode } from './rail-regulation'
 import { workConditionProblems, frontLimit } from './work-conditions'
 import { pddFindings } from './pdd-review'
 import { decisionFindings } from './decision-evidence'
+import { plateCountProblems, stepIntervalProblems, type SpeedStep } from './post-checks'
+import { decimalComma } from './number-format'
 import {
   distanceTitles,
   expectedTypesize,
@@ -262,6 +264,10 @@ export function reviewScheme(
         pddSpeedLimits: undefined,
         pddDocument: undefined,
         parameterBasis: undefined,
+        // Не влияют на раскладку; у них свои пункты проверки. Иначе отметка «Проверено»
+        // снималась бы при каждом добавлении параметра в программу.
+        speedStepInterval: undefined,
+        plateLimit: undefined,
       },
       placements,
     ]),
@@ -346,6 +352,61 @@ export function reviewScheme(
       detail: `Между соседними ступенями (от разрешённой скорости ${parameters.approachSpeedKmh} км/ч до скорости в зоне) перепад ${step} км/ч — больше ${rules.speedStepKmh} км/ч (${rules.sources['gost-speed-step']}). Проверьте ступени на этапе 2.`,
       path: 'parameters.approachSpeedKmh',
       basis: JSON.stringify([parameters.approachSpeedKmh, parameters.speedStagesKmh]),
+    })
+  }
+
+  const intervals = stepIntervalProblems(scheme, rules)
+  if (intervals) {
+    const step = (item: SpeedStep) =>
+      `«${item.kmh}» (стойка № ${item.postId}, ${decimalComma(item.metres)} м)`
+    const source = rules.sources['gost-speed-step-interval']
+    findings.push({
+      id: 'speed-step-interval',
+      kind: 'verify',
+      title: 'Интервал между знаками 3.24',
+      detail: `Между последовательными ступенями 3.24 должно быть от ${intervals.range[0]} до ${intervals.range[1]} м (${source}), а на схеме: ${intervals.problems
+        .map(
+          (problem) =>
+            `подход ${problem.approach === 'left' ? 'слева' : 'справа'} — ${step(problem.from)} и ${step(problem.to)}: ${
+              problem.gapMetres === 0
+                ? 'на одном расстоянии'
+                : `${decimalComma(problem.gapMetres)} м`
+            }`,
+        )
+        .join(
+          '; ',
+        )}. Тот же пункт допускает перед местами производства работ ступенчатое ограничение по ГОСТ Р 58350: сверьте интервалы с ним и условиями места либо исправьте расстояния стоек на этапе 3. Стойки без расстояния в проверке не участвуют.`,
+      path: 'placements',
+      basis: JSON.stringify([
+        intervals,
+        rules.confirmed['gost-speed-step-interval'],
+        rules.evidence['gost-speed-step-interval'],
+      ]),
+    })
+  }
+
+  const plates = plateCountProblems(scheme, rules)
+  if (plates.length) {
+    findings.push({
+      id: 'plate-count',
+      kind: 'verify',
+      title: 'Число табличек под знаком',
+      detail: `${plates
+        .map(
+          (problem) =>
+            `Стойка № ${problem.postId}: под знаком ${problem.sign} табличек — ${problem.plates}`,
+        )
+        .join('; ')}. ${
+        parameters.location === 'out'
+          ? `С временным знаком вне населённых пунктов допускается не более ${plates[0]!.limit}`
+          : `С одним знаком допускается не более ${plates[0]!.limit}`
+      } (${rules.sources['gost-plate-limit']}). Табличка относится к знаку, после которого записана в списке знаков стойки; проверьте состав стойки на этапе 3.`,
+      path: 'placements',
+      basis: JSON.stringify([
+        plates,
+        rules.confirmed['gost-plate-limit'],
+        rules.evidence['gost-plate-limit'],
+      ]),
     })
   }
 

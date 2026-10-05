@@ -90,6 +90,12 @@ export const WARNING_RANGE_KEYS = {
   in: 'В населённом пункте',
 } as const
 
+/** Строки таблицы наибольшего числа табличек под одним знаком (ГОСТ Р 52289, п. 5.9.1). */
+export const PLATE_LIMIT_KEYS = {
+  general: 'С одним знаком',
+  temporaryOutside: 'С временным знаком вне населённых пунктов',
+} as const
+
 export const parameterDefinitions: readonly ParameterDefinition[] = [
   {
     id: 'gost-short-term-hours',
@@ -202,6 +208,37 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
     min: 5,
     max: 60,
     pattern: /с шагом не более (\d+) км\/ч/u,
+  },
+  {
+    id: 'gost-speed-step-interval',
+    title: 'Расстояние между последовательными знаками 3.24 при ступенчатом ограничении скорости',
+    unit: 'м',
+    usedIn:
+      'Предупреждение об интервале между ступенями 3.24 вне диапазона (перед местами работ пункт допускает ступени по ГОСТ Р 58350)',
+    source: { kind: 'clause', documentCode: GOST_RULES, clause: '5.4.22' },
+    type: 'table',
+    keyLabel: 'Местоположение',
+    valueLabel: 'Диапазон, м',
+    fallback: {
+      [WARNING_RANGE_KEYS.out]: '100–150',
+      [WARNING_RANGE_KEYS.in]: '50–100',
+    },
+    valuePattern: /^\d{1,4}\s*[–-]\s*\d{1,4}$/,
+  },
+  {
+    id: 'gost-plate-limit',
+    title: 'Наибольшее число табличек под одним знаком',
+    unit: 'шт.',
+    usedIn: 'Предупреждение о числе табличек под знаком на стойке',
+    source: { kind: 'clause', documentCode: GOST_RULES, clause: '5.9.1' },
+    type: 'table',
+    keyLabel: 'Знак',
+    valueLabel: 'Табличек, не более',
+    fallback: {
+      [PLATE_LIMIT_KEYS.general]: '2',
+      [PLATE_LIMIT_KEYS.temporaryOutside]: '1',
+    },
+    valuePattern: /^[1-9]$/,
   },
   {
     id: 'gost-sign-typesize',
@@ -544,6 +581,13 @@ export type NormativeRules = {
   signsTaperMetres: number
   regulatorDistance: Readonly<Record<number, number>>
   speedStepKmh: number
+  /** Диапазон расстояния между последовательными знаками 3.24; null — значение не разобрано. */
+  speedStepInterval: Readonly<{
+    in: readonly [number, number] | null
+    out: readonly [number, number] | null
+  }>
+  /** Наибольшее число табличек под одним знаком: общее и для временного знака вне нас. пункта. */
+  plateLimit: Readonly<{ general: number; temporaryOutside: number }>
   typesize: Readonly<Record<string, string>>
   /** Разрешённая скорость по умолчанию на подходе: в населённом пункте и вне его. */
   allowedSpeedKmh: Readonly<{ in: number; out: number }>
@@ -707,6 +751,11 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
       ]),
     ),
     speedStepKmh: number('gost-speed-step'),
+    speedStepInterval: {
+      in: range(table('gost-speed-step-interval')[WARNING_RANGE_KEYS.in]),
+      out: range(table('gost-speed-step-interval')[WARNING_RANGE_KEYS.out]),
+    },
+    plateLimit: tableNumbers('gost-plate-limit', PLATE_LIMIT_KEYS),
     typesize: table('gost-sign-typesize'),
     allowedSpeedKmh: { in: number('pdd-speed-settlement'), out: number('pdd-speed-outside') },
     pddSpeedLimits: {
