@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { schemeSchema, upgradeTitleBlock } from './model.ts'
+import { decisionEvidenceSchema, speedConditionsSchema } from './decision-evidence-schema.ts'
 
 const text = z.string().max(5_000)
 const zone = z.strictObject({
@@ -18,6 +19,8 @@ const titleBlockV5DraftSchema = z.strictObject({
 })
 
 export const detailsDraftSchema = z.strictObject({
+  decisionEvidence: decisionEvidenceSchema.optional(),
+  decisionNotes: z.strictObject({ speed: text, regulation: text }).optional(),
   // Копии до 01.10.2026 (v6) хранят «скорость в населённом пункте» — она становится скоростью
   // на подходе, кроме местоположения «вне населённого пункта», где поле не использовалось.
   parameters: z.preprocess(
@@ -43,6 +46,7 @@ export const detailsDraftSchema = z.strictObject({
       speedStagesKmh: z.tuple([text, text, text]),
       yellowTemporarySigns: z.boolean(),
       location: z.enum(['auto', 'in', 'out']),
+      speedConditions: speedConditionsSchema.optional(),
       signSize: z.enum(['auto', 'I', 'II', 'III', 'IV']),
       approachSpeedKmh: text,
       lastSettlement: z.boolean().nullable(),

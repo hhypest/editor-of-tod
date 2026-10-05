@@ -156,6 +156,12 @@ describe('normative parameters from library documents', () => {
     })
     const after = rulesFrom(await listParameterStates(store, now))
     expect(after.confirmed[definition.id]).toBe(false)
+    expect(after.parameterBasis[definition.id]).toMatchObject({
+      document: { id: dated.id, sha256: dated.sha256, effectiveFrom: '2030-09-01' },
+      currentDocument: { id: dated.id },
+      amendments: [{ id: amendment.id, sha256: amendment.sha256, effectiveFrom: '2031-01-01' }],
+      confirmation: { documentLabel: 'ПДД-2030-05-01' },
+    })
     expect(after.evidence[definition.id]).not.toBe(before.evidence[definition.id])
     expect(after.pddDocument?.id).not.toBe(document.id)
     expect(
@@ -177,6 +183,22 @@ describe('normative parameters from library documents', () => {
     const revised = rulesFrom(await listParameterStates(store, now))
     expect(revised.confirmed[definition.id]).toBe(false)
     expect(revised.evidence[definition.id]).not.toBe(after.evidence[definition.id])
+    store.updateDocument(dated.id, {
+      code: dated.code,
+      edition: dated.edition,
+      title: dated.title,
+      kind: dated.kind,
+      effectiveFrom: '2032-01-01',
+      amendsId: null,
+      note: '',
+      actualCheckedAt: '',
+    })
+    const noCurrent = rulesFrom(await listParameterStates(store, now))
+    expect(noCurrent.parameterBasis[definition.id]).toMatchObject({
+      confirmed: false,
+      currentDocument: null,
+      document: { id: dated.id, sha256: dated.sha256, effectiveFrom: '2032-01-01' },
+    })
   })
   it('requires a new traffic check after a relevant amendment, even after reconfirming the same value', async () => {
     const store = library()

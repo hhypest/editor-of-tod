@@ -23,6 +23,8 @@ export function pddFindings(scheme: Scheme, rules: NormativeRules) {
         parameters.approachSpeedKmh,
         parameters.speedStagesKmh,
         placements.filter((item) => item.kind === 'sign-post'),
+        parameters.speedConditions,
+        scheme.decisionEvidence.speed,
       ]),
     },
     {

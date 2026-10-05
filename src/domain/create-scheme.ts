@@ -27,6 +27,7 @@ export type NewSchemeInput = {
   yellowTemporarySigns: boolean
   workConditions?: Scheme['parameters']['workConditions']
   frontFromPu66?: boolean
+  speedConditions?: Scheme['parameters']['speedConditions']
 }
 
 /**
@@ -102,7 +103,7 @@ export function createUnlinkedScheme(
     labels: { taper: '', buffer: '', work: '' },
   }
   const parsed = schemeSchema.safeParse({
-    schemaVersion: 8,
+    schemaVersion: 9,
     id: options.id ?? crypto.randomUUID(),
     createdAt: options.now ?? new Date().toISOString(),
     crossing: {
@@ -128,6 +129,7 @@ export function createUnlinkedScheme(
       ...legacyParameters,
       frontFromPu66: input.frontFromPu66 ?? false,
       location: input.location,
+      speedConditions: input.speedConditions ?? { road: '', vehicle: '' },
       // Типоразмер по таблице 1 ГОСТ Р 52289 для двухполосной дороги; в населённом пункте — по
       // классу улицы, его выбирает составитель.
       signSize: expectedTypesize(input.location, options.rules ?? PROTOTYPE_RULES) ?? 'auto',

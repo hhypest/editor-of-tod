@@ -144,7 +144,7 @@ describe('import of autonomous editor projects', () => {
     const first = importSchemeJson(JSON.stringify(sourceFixture()), { id, now: importedAt })
     const second = importSchemeJson(exportSchemeJson(first.scheme))
 
-    expect(second.format).toBe('scheme-v8')
+    expect(second.format).toBe('scheme-v9')
     expect(second.scheme).toEqual(first.scheme)
     expect(second.scheme.id).toBe(id)
   })
@@ -189,7 +189,7 @@ describe('import of autonomous editor projects', () => {
     }
     const reopened = importSchemeJson(JSON.stringify(schemeV5Schema.parse(v5)))
     expect(reopened.format).toBe('scheme-v5')
-    expect(reopened.scheme.schemaVersion).toBe(8)
+    expect(reopened.scheme.schemaVersion).toBe(9)
     expect(reopened.scheme.titleBlock.responsible).toEqual([
       { position: 'начальник участка', name: 'Учебный Иван Петрович', phone: '+7 (910) 000-11-22' },
     ])
@@ -212,7 +212,7 @@ describe('import of autonomous editor projects', () => {
     expect(reopened.scheme.source).toMatchObject({
       originalJson: migrated.source.kind === 'legacy-html-v1' ? migrated.source.originalJson : '',
     })
-    expect(JSON.parse(exportSchemeJson(reopened.scheme)).schemaVersion).toBe(8)
+    expect(JSON.parse(exportSchemeJson(reopened.scheme)).schemaVersion).toBe(9)
   })
 
   it('opens the previous v3 format and writes the same data in v7', () => {
@@ -224,7 +224,7 @@ describe('import of autonomous editor projects', () => {
     const reopened = importSchemeJson(JSON.stringify(v3))
     expect(reopened.format).toBe('scheme-v3')
     expect(reopened.scheme).toEqual(migrated)
-    expect(JSON.parse(exportSchemeJson(reopened.scheme)).schemaVersion).toBe(8)
+    expect(JSON.parse(exportSchemeJson(reopened.scheme)).schemaVersion).toBe(9)
   })
 
   it('keeps unknown old fields in the original snapshot', () => {

@@ -5,6 +5,9 @@ import { workSectionMetres } from '../domain/work-traffic'
 import { frontLimit } from '../domain/work-conditions'
 import WorkConditionsFields from './WorkConditionsFields.vue'
 import PddSpeedReference from './PddSpeedReference.vue'
+import DecisionEvidencePanel from './DecisionEvidencePanel.vue'
+import { recordSpeedDecision, recordRegulationDecision } from '../domain/decision-evidence'
+import type { SpeedConditions } from '../domain/decision-evidence-schema'
 import { computed, ref, watch } from 'vue'
 import {
   applySchemeDetails,
@@ -81,6 +84,10 @@ watch(
   (recovery) => {
     if (!recovery?.details) return
     draft.value = structuredClone(recovery.details)
+    draft.value.decisionNotes ??= {
+      speed: draft.value.decisionEvidence?.speed?.note ?? '',
+      regulation: draft.value.decisionEvidence?.regulation?.note ?? '',
+    }
     dirty.value = true
     emit('dirty', true)
   },
@@ -105,6 +112,7 @@ const location = computed({
   set: (to) => {
     const from = draft.value.parameters.location
     draft.value.parameters.location = to
+    draft.value.parameters.speedConditions = { road: '', vehicle: '' }
     changeDraftLocation(draft.value, from, normativeRules.value)
     markDirty()
   },
@@ -218,6 +226,50 @@ function applyAdvice(): void {
   if (props.locked || !advice.value.mode || !advice.value.verified) return
   draft.value.parameters.regulation.mode = advice.value.mode
   markDirty()
+  draft.value.decisionNotes ??= { speed: '', regulation: '' }
+  draft.value.decisionNotes.regulation = advice.value.reasons.join(' ')
+  recordDecision('regulation')
+}
+
+function selectSpeedConditions(value: SpeedConditions) {
+  if (props.locked) return
+  draft.value.parameters.speedConditions = value
+  markDirty()
+}
+function applySpeedReference(value: number) {
+  if (props.locked) return
+  approachSpeed.value = String(value)
+  draft.value.decisionNotes ??= { speed: '', regulation: '' }
+  if (!draft.value.decisionNotes.speed)
+    draft.value.decisionNotes.speed =
+      'Выбран справочник скорости по указанному виду дороги и ТС; состав потока и действующие знаки требуют отдельной сверки.'
+  recordDecision('speed')
+}
+const decisionNotes = computed(() => {
+  return draft.value.decisionNotes ?? { speed: '', regulation: '' }
+})
+const evidencePreview = computed(() => {
+  try {
+    return applySchemeDetails(props.scheme, draft.value, normativeRules.value)
+  } catch {
+    return props.scheme
+  }
+})
+function recordDecision(kind: 'speed' | 'regulation') {
+  if (props.locked) return
+  try {
+    const candidate = applySchemeDetails(props.scheme, draft.value, normativeRules.value)
+    const updated =
+      kind === 'speed'
+        ? recordSpeedDecision(candidate, normativeRules.value, decisionNotes.value.speed)
+        : recordRegulationDecision(candidate, normativeRules.value, decisionNotes.value.regulation)
+    draft.value.decisionEvidence = updated.decisionEvidence
+    markDirty()
+    error.value = ''
+    status.value = 'Основания записаны в вводе формы. Примените правки и сохраните проект.'
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : 'Не удалось записать основания.'
+  }
 }
 
 function useHourly(value: string): void {
@@ -287,6 +339,17 @@ function discard(): void {
 function applyDraft(): void {
   if (props.locked) return
   try {
+    if (
+      draft.value.decisionNotes &&
+      (['speed', 'regulation'] as const).some(
+        (kind) =>
+          draft.value.decisionNotes![kind] !== (draft.value.decisionEvidence?.[kind]?.note ?? ''),
+      )
+    ) {
+      throw new SchemeEditError(
+        'Запишите изменённое обоснование кнопкой «Записать основания скорости» или «Записать основания регулирования» перед применением правок.',
+      )
+    }
     const updated = applySchemeDetails(props.scheme, draft.value, normativeRules.value)
     dirty.value = false
     error.value = ''
@@ -390,8 +453,42 @@ function applyDraft(): void {
           :location="draft.parameters.location"
           :rules="normativeRules"
           :locked="locked"
-          @apply="approachSpeed = String($event)"
+          :selection="draft.parameters.speedConditions ?? { road: '', vehicle: '' }"
+          @select="selectSpeedConditions"
+          @apply="applySpeedReference"
         />
+        <details class="decision-evidence">
+          <summary>Обоснование решений и источники</summary>
+          <p>
+            Запись сохраняет текущие условия и нормативные основания. Для ручного решения укажите
+            фактические ограничения и причину выбора. Затем примените правки и сохраните проект.
+          </p>
+          <label
+            >Обоснование скорости
+            <textarea
+              v-model="decisionNotes.speed"
+              data-field="decisionEvidence.speed"
+              maxlength="5000"
+              :disabled="locked"
+            />
+          </label>
+          <button type="button" :disabled="locked" @click="recordDecision('speed')">
+            Записать основания скорости
+          </button>
+          <label
+            >Обоснование регулирования
+            <textarea
+              v-model="decisionNotes.regulation"
+              data-field="decisionEvidence.regulation"
+              maxlength="5000"
+              :disabled="locked"
+            />
+          </label>
+          <button type="button" :disabled="locked" @click="recordDecision('regulation')">
+            Записать основания регулирования
+          </button>
+          <DecisionEvidencePanel :scheme="evidencePreview" :rules="normativeRules" />
+        </details>
         <p class="hint">
           Расстояния и ступени скорости подставляются по нормативным значениям: при выборе
           местоположения и при смене разрешённой скорости. Любое значение можно исправить под
@@ -753,16 +850,19 @@ function applyDraft(): void {
 .warning {
   color: #8a3b12;
 }
-.advice {
+.advice,
+.decision-evidence {
   margin: 0.8rem 0 1rem;
   padding: 0.7rem 0.9rem;
   border-left: 4px solid #2f7d5b;
   background: #eef6f1;
 }
-.advice h3 {
+.advice h3,
+.decision-evidence h3 {
   margin: 0 0 0.4rem;
 }
-.advice p {
+.advice p,
+.decision-evidence p {
   margin: 0.3rem 0;
   line-height: 1.45;
 }

@@ -11,6 +11,7 @@ import { effectiveWorkSection } from './work-traffic'
 import { railRegulationMode } from './rail-regulation'
 import { workConditionProblems, frontLimit } from './work-conditions'
 import { pddFindings } from './pdd-review'
+import { decisionFindings } from './decision-evidence'
 import {
   distanceTitles,
   expectedTypesize,
@@ -221,7 +222,7 @@ export function reviewScheme(
     // направлений — это подписи листа) и значения нормативных параметров.
     basis: JSON.stringify([
       scheme.template,
-      { ...parameters, locationText: undefined, directions: undefined },
+      { ...parameters, locationText: undefined, directions: undefined, speedConditions: undefined },
       {
         ...rules,
         sources: undefined,
@@ -229,6 +230,7 @@ export function reviewScheme(
         evidence: undefined,
         pddSpeedLimits: undefined,
         pddDocument: undefined,
+        parameterBasis: undefined,
       },
       placements,
     ]),
@@ -471,7 +473,7 @@ export function reviewScheme(
     })
   }
 
-  return [...findings, ...pddFindings(scheme, rules)]
+  return [...findings, ...pddFindings(scheme, rules), ...decisionFindings(scheme, rules)]
 }
 
 /**

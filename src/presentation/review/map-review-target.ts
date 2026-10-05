@@ -18,6 +18,8 @@ export function mapReviewTarget(
   finding: Pick<ReviewFinding, 'id' | 'path' | 'markBlocked'>,
 ): ReviewTarget {
   const { id, path } = finding
+  if (id.startsWith('decision-'))
+    return { view: 'geometry', sectionId: 'details-title', field: path }
   if (id.startsWith('pdd-') && finding.markBlocked)
     return { view: 'registries', sectionId: 'documents-title', registryTab: 'documents' }
   if (path === 'crossing') return { view: 'source', sectionId: 'pu66-link-title' }

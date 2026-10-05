@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { PHONE_PATTERN, responsibleFromLegacy } from './title-block.ts'
 import { pu66SnapshotSchema } from './pu66-snapshot.ts'
+import { decisionEvidenceSchema, speedConditionsSchema } from './decision-evidence-schema.ts'
 
 const finite = z.number().finite()
 const text = z.string().max(5_000)
@@ -372,7 +373,7 @@ export const workConditionsSchema = z.strictObject({
   sectionMetres: finite.positive().nullable().default(null),
 })
 /** v8 adds explicit work conditions; missing historical conditions remain unknown. */
-export const schemeSchema = z
+export const schemeV8Schema = z
   .strictObject({
     ...schemeV7Schema.shape,
     schemaVersion: z.literal(8),
@@ -387,6 +388,27 @@ export const schemeSchema = z
     }),
   })
   .superRefine(checkModernScheme)
+
+/** v9 records explicit speed conditions and historical decision evidence without inventing it. */
+export const schemeSchema = z
+  .strictObject({
+    ...schemeV8Schema.shape,
+    schemaVersion: z.literal(9),
+    parameters: schemeV8Schema.shape.parameters.extend({
+      speedConditions: speedConditionsSchema.default({ road: '', vehicle: '' }),
+    }),
+    decisionEvidence: decisionEvidenceSchema.default({ speed: null, regulation: null }),
+  })
+  .superRefine(checkModernScheme)
+  .superRefine((scheme, context) => {
+    if (scheme.parameters.speedConditions.road === 'motorway')
+      context.addIssue({
+        code: 'custom',
+        path: ['parameters', 'speedConditions', 'road'],
+        message:
+          'Автомагистраль доступна только для справки; для схемы переезда выберите другое условие.',
+      })
+  })
 
 export type Scheme = z.infer<typeof schemeSchema>
 export type SchemeV2 = z.infer<typeof schemeV2Schema>
@@ -467,7 +489,12 @@ export function upgradeSchemeV6(value: unknown): Scheme {
 
 export function upgradeSchemeV7(value: unknown): Scheme {
   const previous = schemeV7Schema.parse(value)
-  return schemeSchema.parse({ ...previous, schemaVersion: 8 })
+  return upgradeSchemeV8({ ...previous, schemaVersion: 8 })
+}
+
+export function upgradeSchemeV8(value: unknown): Scheme {
+  const previous = schemeV8Schema.parse(value)
+  return schemeSchema.parse({ ...previous, schemaVersion: 9 })
 }
 
 export function parseStoredScheme(value: unknown): Scheme {
@@ -488,5 +515,7 @@ export function parseStoredScheme(value: unknown): Scheme {
   }
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 7)
     return upgradeSchemeV7(value)
+  if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 8)
+    return upgradeSchemeV8(value)
   return schemeSchema.parse(value)
 }

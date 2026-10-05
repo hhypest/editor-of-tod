@@ -1,6 +1,15 @@
 import type { Scheme } from '../../src/domain/model'
 import { responsibleLine } from '../../src/domain/title-block'
 
+/** v8 did not retain speed conditions or normative decision evidence. */
+export function v8Snapshot(scheme: Scheme) {
+  const { decisionEvidence: _evidence, ...rest } = scheme
+  const { speedConditions: _conditions, ...parameters } = scheme.parameters
+  void _evidence
+  void _conditions
+  return { ...rest, schemaVersion: 8 as const, parameters }
+}
+
 /** Реквизиты в форме v1–v5: без должности разработчика, ответственные — две строки. */
 export function oldTitleBlock(scheme: Scheme) {
   const { developer, responsible, ...rest } = scheme.titleBlock
@@ -19,10 +28,11 @@ export function oldTitleBlock(scheme: Scheme) {
  * пункте». Вне населённого пункта поле не использовалось, там записывается значение прототипа.
  */
 export function v6Snapshot(scheme: Scheme) {
-  const { approachSpeedKmh, workConditions: _conditions, ...parameters } = scheme.parameters
+  const previous = v8Snapshot(scheme)
+  const { approachSpeedKmh, workConditions: _conditions, ...parameters } = previous.parameters
   void _conditions
   return {
-    ...scheme,
+    ...previous,
     schemaVersion: 6 as const,
     parameters: { ...parameters, settlementSpeedKmh: approachSpeedKmh ?? 60 },
   }
@@ -38,7 +48,7 @@ export function v5Snapshot(scheme: Scheme) {
 /** Reconstruct the shape of old saved snapshots for migration tests. */
 export function oldSnapshot(scheme: Scheme, schemaVersion: 2 | 3 | 4) {
   const parameters = scheme.parameters
-  const { signImages: _signImages, reviewMarks: _marks, ...oldBase } = scheme
+  const { signImages: _signImages, reviewMarks: _marks, ...oldBase } = v8Snapshot(scheme)
   void _signImages
   void _marks
   return {

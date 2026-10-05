@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { documentBasisSchema, type ParameterBasis } from './decision-evidence-schema.ts'
+import { evidenceFingerprint } from './evidence-fingerprint.ts'
 import { normalizeQuote } from './document-text.ts'
 
 /**
@@ -507,7 +509,16 @@ export const parameterStateSchema = z.strictObject({
     z.strictObject({ kind: z.literal('unconfirmed') }),
     z.strictObject({ kind: z.literal('no-document') }),
   ]),
-  document: z.strictObject({ id: z.number(), label: z.string(), sha256: z.string() }).nullable(),
+  document: z
+    .strictObject({
+      id: z.number(),
+      label: z.string(),
+      sha256: z.string(),
+      effectiveFrom: z.string().optional(),
+    })
+    .nullable(),
+  amendmentDocuments: z.array(documentBasisSchema).optional(),
+  confirmationDocument: documentBasisSchema.nullable().optional(),
   quote: z
     .strictObject({ page: z.number(), text: z.string(), rows: z.array(z.string()).optional() })
     .nullable(),
@@ -566,6 +577,8 @@ export type NormativeRules = {
   evidence: Readonly<Record<string, string>>
   /** Ссылка для текста подсказок: «ОДМ 218.6.019-2016, п. 6.4.4». */
   sources: Readonly<Record<string, string>>
+  /** Исторические значения и метаданные источников; без текста PDF и персональных данных. */
+  parameterBasis: Readonly<Record<string, ParameterBasis>>
 }
 
 function fallbackValue(definition: ParameterDefinition): ParameterValue | null {
@@ -607,6 +620,7 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
   const confirmed: Record<string, boolean> = {}
   const sources: Record<string, string> = {}
   const evidence: Record<string, string> = {}
+  const parameterBasis: Record<string, ParameterBasis> = {}
   for (const definition of parameterDefinitions) {
     const state = byId.get(definition.id)
     const matches = confirmationMatchesDefinition(definition, state?.confirmation)
@@ -630,6 +644,38 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
       definition,
       (matches ? state?.confirmation?.documentLabel : undefined) || state?.document?.label,
     )
+    parameterBasis[definition.id] = {
+      id: definition.id,
+      title: definition.title,
+      source: sources[definition.id]!,
+      value: JSON.parse(JSON.stringify(values[definition.id])),
+      confirmed: confirmed[definition.id]!,
+      document:
+        matches && state!.confirmation!.documentId !== state?.document?.id
+          ? state?.confirmationDocument
+            ? { ...state.confirmationDocument }
+            : null
+          : state?.document
+            ? { ...state.document }
+            : null,
+      currentDocument: state?.document ? { ...state.document } : null,
+      amendments: (state?.amendmentDocuments ?? []).map((item) => ({ ...item })),
+      confirmation: matches
+        ? {
+            id: state!.confirmation!.id,
+            documentLabel: state!.confirmation!.documentLabel,
+            clause: state!.confirmation!.clause,
+            confirmedAt: state!.confirmation!.confirmedAt,
+          }
+        : null,
+      fingerprint: evidenceFingerprint([
+        evidence[definition.id],
+        state?.amendmentDocuments ?? [],
+        values[definition.id],
+        sources[definition.id],
+        confirmed[definition.id],
+      ]),
+    }
   }
   const number = (id: string) => values[id] as number
   const table = (id: string) => values[id] as Record<string, string>
@@ -687,6 +733,7 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
     confirmed,
     evidence,
     sources,
+    parameterBasis,
   }
 }
 
