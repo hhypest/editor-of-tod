@@ -4,9 +4,16 @@ import { applySchemeDetails, createSchemeDetailsDraft } from '../edit-details'
 import { newSignDraft, savePlacement } from '../edit-placements'
 import { exportSchemeJson, importSchemeJson } from '../import'
 import { findingFingerprint, markState, setMark, unmarkedChecks } from '../review-marks'
-import { reviewScheme } from '../review-scheme'
+import { reviewScheme as domainReviewScheme } from '../review-scheme'
 import { pinSignImages } from '../sign-images'
 import { PROTOTYPE_RULES, REGULATION_PARAMETERS } from '../normative-parameters'
+
+const pddRules: typeof PROTOTYPE_RULES = {
+  ...PROTOTYPE_RULES,
+  pddDocument: { id: 1, label: 'ПДД-2030-01-01', sha256: 'a'.repeat(64) },
+}
+const reviewScheme = (scheme: Parameters<typeof domainReviewScheme>[0], rules = pddRules) =>
+  domainReviewScheme(scheme, rules)
 
 function project() {
   const scheme = createUnlinkedScheme({
@@ -114,13 +121,20 @@ describe('manual review marks', () => {
     let scheme = project()
     for (const check of reviewScheme(scheme).filter((finding) => finding.kind === 'verify'))
       scheme = setMark(scheme, reviewScheme(scheme), check.id, true, now)
-    // Новая стойка меняет данные пунктов «Вариант и расстановка» и «Знаки на стойках».
+    // Новая стойка меняет расстановку, знаки и предметные проверки ПДД, включая скорость.
     const post = newSignDraft()
     if (post.kind !== 'sign-post') throw new Error('Expected sign post')
     post.signCodes = '3.20'
     const edited = savePlacement(scheme, post)
     const stale = unmarkedChecks(edited, reviewScheme(edited)).map((finding) => finding.id)
-    expect(stale.sort()).toEqual(['signs', 'template'])
+    expect(stale.sort()).toEqual([
+      'pdd-crossing',
+      'pdd-regulator',
+      'pdd-speed',
+      'pdd-temporary',
+      'signs',
+      'template',
+    ])
     const crossing = reviewScheme(edited).find((finding) => finding.id === 'crossing')!
     expect(markState(edited, crossing).status).toBe('marked')
     const template = reviewScheme(edited).find((finding) => finding.id === 'template')!
@@ -133,7 +147,7 @@ describe('manual review marks', () => {
       unmarkedChecks(titled, reviewScheme(titled))
         .map((finding) => finding.id)
         .sort(),
-    ).toEqual(['signs', 'template'])
+    ).toEqual(stale.sort())
   })
 
   it('does not accept a sign check until the PNG revisions are pinned', () => {

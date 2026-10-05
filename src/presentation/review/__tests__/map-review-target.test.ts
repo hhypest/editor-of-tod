@@ -2,6 +2,18 @@ import { describe, expect, it } from 'vitest'
 import { mapReviewTarget } from '../map-review-target'
 
 describe('review navigation adapter', () => {
+  it('opens the document library for a PDD check blocked by a missing edition', () => {
+    expect(
+      mapReviewTarget({
+        id: 'pdd-speed',
+        path: 'parameters.approachSpeedKmh',
+        markBlocked: 'Нет редакции',
+      }),
+    ).toEqual({ view: 'registries', sectionId: 'documents-title', registryTab: 'documents' })
+    expect(mapReviewTarget({ id: 'pdd-speed', path: 'parameters.approachSpeedKmh' }).view).toBe(
+      'geometry',
+    )
+  })
   it.each([
     ['place', 'parameters.locationText', 'source', 'details-title', 'parameters.locationText'],
     [

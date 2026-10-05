@@ -8,7 +8,11 @@ import { fictionalMethodology, fictionalSignStandard } from '../../server/__test
 import { importSchemeJson } from '../../src/domain/import'
 import { reviewScheme } from '../../src/domain/review-scheme'
 import { setMark } from '../../src/domain/review-marks'
-import { parameterDefinitions } from '../../src/domain/normative-parameters'
+import {
+  parameterDefinitions,
+  rulesFrom,
+  type ParameterState,
+} from '../../src/domain/normative-parameters'
 
 const api = 'http://127.0.0.1:4100'
 const origin = 'http://127.0.0.1:5173'
@@ -567,6 +571,16 @@ test('leaving the form while the card is re-read cancels project creation', asyn
 })
 
 test('release sheet drops the draft mark and downloads a PNG', async ({ page, request }) => {
+  const pddState: ParameterState = {
+    id: 'pdd-speed-settlement',
+    document: { id: 999, label: 'ПДД-2030-01-01', sha256: 'a'.repeat(64) },
+    status: { kind: 'unconfirmed' },
+    quote: null,
+    suggestion: null,
+    confirmation: null,
+    amendments: [],
+  }
+  await page.route('**/api/normative-parameters', (route) => route.fulfill({ json: [pddState] }))
   await importSampleCards(request)
   await page.goto('/')
   await fillNewProject(page, '12 км 3 пк', '90001:12:3')
@@ -610,9 +624,12 @@ test('release sheet drops the draft mark and downloads a PNG', async ({ page, re
   await page.evaluate(() => {
     window.print = () => {
       window.dispatchEvent(new Event('beforeprint'))
+      document.documentElement.dataset.testPrintCompleted = 'true'
     }
   })
   await host.getByRole('button', { name: 'Печать листа A4' }).click()
+  // Preparation checks the local sources asynchronously; wait for the permitted call itself.
+  await expect(page.locator('html')).toHaveAttribute('data-test-print-completed', 'true')
   await expect(host).not.toHaveClass(/native-print-blocked/)
   await page.evaluate(() => window.dispatchEvent(new Event('beforeprint')))
   await expect(host).toHaveClass(/native-print-blocked/)
@@ -661,6 +678,18 @@ test('release sheet drops the draft mark and downloads a PNG', async ({ page, re
 test('release requires distances, objects, location and type size but allows paper requisites', async ({
   page,
 }) => {
+  const pddDocument = { id: 999, label: 'ПДД-2030-01-01', sha256: 'a'.repeat(64) }
+  const pddState: ParameterState = {
+    id: 'pdd-speed-settlement',
+    document: pddDocument,
+    status: { kind: 'unconfirmed' },
+    quote: null,
+    suggestion: null,
+    confirmation: null,
+    amendments: [],
+  }
+  await page.route('**/api/normative-parameters', (route) => route.fulfill({ json: [pddState] }))
+  const pddRules = rulesFrom([pddState])
   const png = new PNG({ width: 8, height: 8 })
   png.data.fill(255)
   await page.route('**/api/signs', (route) =>
@@ -727,7 +756,7 @@ test('release requires distances, objects, location and type size but allows pap
       },
       reviewMarks: {},
     }
-    const findings = reviewScheme(scheme)
+    const findings = reviewScheme(scheme, pddRules)
     for (const finding of findings.filter((f) => f.kind === 'verify'))
       scheme = setMark(scheme, findings, finding.id, true) as typeof scheme
     await page.goto('/')

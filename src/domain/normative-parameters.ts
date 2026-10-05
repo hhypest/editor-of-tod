@@ -53,6 +53,18 @@ export const ODM = 'ОДМ 218.6.019'
 export const GOST_RULES = 'ГОСТ Р 52289'
 export const GOST_WORKS = 'ГОСТ Р 58350'
 
+/** Условия п. 10.3 ПДД, а не таблица из текста Правил. Полноту строк сверяет составитель. */
+export const PDD_OUTSIDE_SPEED_KEYS = {
+  lightOrdinary: 'Мотоциклы, легковые, грузовые до 3,5 т: остальные дороги',
+  lightMotorway: 'Мотоциклы, легковые, грузовые до 3,5 т: автомагистраль',
+  heavyOrdinary: 'Грузовые свыше 3,5 т, легковые с прицепом: остальные дороги',
+  heavyMotorway: 'Грузовые свыше 3,5 т, легковые с прицепом: автомагистраль',
+  busSeated: 'Автобусы: только сидящие пассажиры, места с ремнями',
+  busOther: 'Другие автобусы',
+  children: 'Автобусы: организованная перевозка групп детей',
+  peopleTruck: 'Грузовые: перевозка людей в кузове',
+} as const
+
 export const WORK_TRAFFIC_KEYS = {
   signsLength: 'Протяжённость участка для знаков, менее, м',
   signsHourly: 'Интенсивность для знаков, менее, авт/ч',
@@ -221,15 +233,63 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
   },
   {
     id: 'pdd-speed-outside',
-    title: 'Разрешённая скорость вне населённых пунктов (значение по умолчанию на подходе)',
+    title: 'Скорость легковых, мотоциклов и грузовых до 3,5 т на остальных дорогах',
     unit: 'км/ч',
-    usedIn: 'Подстановка разрешённой скорости на подходе и ступеней 3.24 вне населённого пункта',
+    usedIn:
+      'Предварительная подстановка на подходе вне населённого пункта только для указанных ТС; применимость проверяется отдельно',
     source: { kind: 'clause', documentCode: 'ПДД', clause: '10.3' },
     type: 'number',
     fallback: 90,
     min: 5,
     max: 130,
-    pattern: /на остальных дорогах-не более (\d+) км\/ч/u,
+    pattern:
+      /мотоциклам,\s*легковым автомобилям и грузовым автомобилям[^;]*?на остальных дорогах-не более (\d+) км\/ч/u,
+  },
+  {
+    id: 'pdd-speed-outside-conditions',
+    title: 'Пределы скорости вне населённых пунктов по виду дороги и ТС',
+    unit: 'км/ч',
+    usedIn:
+      'Справочник скорости; подстановка только по явному выбору условий. Для легковых на остальных дорогах используется отдельный параметр скорости, а не повторная строка таблицы',
+    source: { kind: 'clause', documentCode: 'ПДД', clause: '10.3' },
+    type: 'table',
+    keyLabel: 'Условия п. 10.3',
+    valueLabel: 'Предельная скорость, км/ч',
+    fallback: {
+      [PDD_OUTSIDE_SPEED_KEYS.lightOrdinary]: '90',
+      [PDD_OUTSIDE_SPEED_KEYS.lightMotorway]: '110',
+      [PDD_OUTSIDE_SPEED_KEYS.heavyOrdinary]: '70',
+      [PDD_OUTSIDE_SPEED_KEYS.heavyMotorway]: '90',
+      [PDD_OUTSIDE_SPEED_KEYS.busSeated]: '90',
+      [PDD_OUTSIDE_SPEED_KEYS.busOther]: '70',
+      [PDD_OUTSIDE_SPEED_KEYS.children]: '60',
+      [PDD_OUTSIDE_SPEED_KEYS.peopleTruck]: '60',
+    },
+    valuePattern: /^(?:[1-9]\d?|1[0-2]\d|130)$/,
+  },
+  {
+    id: 'pdd-speed-residential',
+    title: 'Скорость в жилой, велосипедной зоне и на дворовой территории',
+    unit: 'км/ч',
+    usedIn: 'Справочник скорости по особым условиям п. 10.2',
+    source: { kind: 'clause', documentCode: 'ПДД', clause: '10.2' },
+    type: 'number',
+    fallback: 20,
+    min: 1,
+    max: 130,
+    pattern: /на дворовых территориях не более (\d+) км\/ч/u,
+  },
+  {
+    id: 'pdd-speed-towing',
+    title: 'Скорость при буксировке механического транспортного средства',
+    unit: 'км/ч',
+    usedIn: 'Справочник скорости; буксировка ТС отличается от прицепа',
+    source: { kind: 'clause', documentCode: 'ПДД', clause: '10.4' },
+    type: 'number',
+    fallback: 50,
+    min: 1,
+    max: 130,
+    pattern: /буксирующим механические транспортные средства[^.]*?не более (\d+) км\/ч/u,
   },
   {
     id: 'odm-zone-speed',
@@ -345,6 +405,12 @@ export function valueProblem(
     return null
   }
   if (typeof value === 'number') return 'Нужна таблица значений.'
+  if (
+    definition.id === 'pdd-speed-outside-conditions' &&
+    (Object.keys(value).length !== Object.keys(PDD_OUTSIDE_SPEED_KEYS).length ||
+      Object.values(PDD_OUTSIDE_SPEED_KEYS).some((key) => !(key in value)))
+  )
+    return 'Сохраните все восемь условий п. 10.3 с исходными подписями строк.'
   if (definition.id === 'gost-work-traffic') {
     const keys = Object.values(WORK_TRAFFIC_KEYS)
     if (keys.some((key) => !/^\d{1,4}$/.test(value[key] ?? '') || Number(value[key]) <= 0))
@@ -429,6 +495,11 @@ export type ParameterStatus =
 
 export const parameterStateSchema = z.strictObject({
   id: z.string(),
+  /** Отпечаток действующего документа и связанных изменений ПДД; старые ответы API поддерживаются. */
+  sourceFingerprint: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
   status: z.discriminatedUnion('kind', [
     z.strictObject({ kind: z.literal('confirmed') }),
     z.strictObject({ kind: z.literal('same-text'), previous: z.string() }),
@@ -465,6 +536,13 @@ export type NormativeRules = {
   typesize: Readonly<Record<string, string>>
   /** Разрешённая скорость по умолчанию на подходе: в населённом пункте и вне его. */
   allowedSpeedKmh: Readonly<{ in: number; out: number }>
+  pddSpeedLimits: Readonly<{
+    outside: Readonly<Record<keyof typeof PDD_OUTSIDE_SPEED_KEYS, number>>
+    residential: number
+    towing: number
+  }>
+  /** Действующая по датам библиотеки редакция, независимо от подтверждения числовых параметров. */
+  pddDocument: ParameterState['document']
   /** Скорость в зоне работ по умолчанию (последняя ступень 3.24). */
   zoneSpeedKmh: number
   /** Расстояния от стоек до начала работ по умолчанию. */
@@ -545,6 +623,7 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
             state.confirmation?.note ?? null,
             state.confirmation?.confirmedBy ?? null,
             state.confirmation?.confirmedAt ?? null,
+            ...(state.sourceFingerprint ? [state.sourceFingerprint] : []),
           ])
         : ''
     sources[definition.id] = sourceLabel(
@@ -584,6 +663,17 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
     speedStepKmh: number('gost-speed-step'),
     typesize: table('gost-sign-typesize'),
     allowedSpeedKmh: { in: number('pdd-speed-settlement'), out: number('pdd-speed-outside') },
+    pddSpeedLimits: {
+      outside: {
+        ...tableNumbers('pdd-speed-outside-conditions', PDD_OUTSIDE_SPEED_KEYS),
+        // Строка оставлена для совместимости подтверждений; рабочее значение едино.
+        lightOrdinary: number('pdd-speed-outside'),
+      },
+      residential: number('pdd-speed-residential'),
+      towing: number('pdd-speed-towing'),
+    },
+    pddDocument:
+      states.find((state) => state.id.startsWith('pdd-') && state.document)?.document ?? null,
     zoneSpeedKmh: number('odm-zone-speed'),
     signDistances: {
       ...tableNumbers('odm-sign-distances-outside', OUTSIDE_DISTANCE_KEYS),

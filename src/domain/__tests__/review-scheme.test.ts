@@ -44,7 +44,15 @@ describe('live draft review', () => {
     ).toEqual(['place', 'developer', 'work', 'responsible', 'approver', 'agreement', 'placements'])
     expect(
       initialFindings.filter((finding) => finding.kind === 'verify').map((finding) => finding.id),
-    ).toEqual(['crossing', 'template', 'figure-dimensions', 'work-conditions', 'b34-traffic'])
+    ).toEqual([
+      'crossing',
+      'template',
+      'figure-dimensions',
+      'work-conditions',
+      'b34-traffic',
+      'pdd-speed',
+      'pdd-crossing',
+    ])
 
     const draft = createSchemeDetailsDraft(initial)
     draft.parameters.locationText = 'Учебный участок'

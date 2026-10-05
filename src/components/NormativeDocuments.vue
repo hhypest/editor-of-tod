@@ -507,7 +507,13 @@ function megabytes(bytes: number): string {
             :key="`${candidate.code}/${candidate.edition}`"
             class="candidate"
           >
-            <strong>{{ candidate.code }} — {{ candidate.edition }}</strong>
+            <strong
+              >{{ candidate.code }} — {{ candidate.edition || 'редакция не определена' }}</strong
+            >
+            <p v-if="candidate.code === 'ПДД'" class="hint">
+              Постановление от 23.10.1993 № 1090. Укажите дату редакции и отдельно дату её введения:
+              дата постановления и дата редакции не подтверждают вступление изменений в силу.
+            </p>
             <p v-if="candidate.title">{{ candidate.title }}</p>
             <p class="meta">
               {{
