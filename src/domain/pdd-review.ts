@@ -18,7 +18,12 @@ export function pddFindings(scheme: Scheme, rules: NormativeRules) {
       title: 'Скорость по условиям ПДД',
       detail: `${edition}, пп. 10.1–10.5. Проверьте скорость на подходе для фактического вида дороги, состава потока и действующих знаков. Предварительная подстановка вне населённого пункта относится только к легковым, мотоциклам и грузовым до 3,5 т на остальных дорогах. Другие ТС, прицеп, буксировка ТС, перевозка людей/детей и особые зоны имеют отдельные пределы. Повышение скорости требует предусмотренного Правилами решения и знаков; один выбор местоположения его не подтверждает.`,
       path: 'parameters.approachSpeedKmh',
-      basis: basis([parameters.location, parameters.approachSpeedKmh, parameters.speedStagesKmh]),
+      basis: basis([
+        parameters.location,
+        parameters.approachSpeedKmh,
+        parameters.speedStagesKmh,
+        placements.filter((item) => item.kind === 'sign-post'),
+      ]),
     },
     {
       id: 'pdd-crossing',

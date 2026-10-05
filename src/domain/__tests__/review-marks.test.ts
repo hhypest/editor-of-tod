@@ -121,7 +121,7 @@ describe('manual review marks', () => {
     let scheme = project()
     for (const check of reviewScheme(scheme).filter((finding) => finding.kind === 'verify'))
       scheme = setMark(scheme, reviewScheme(scheme), check.id, true, now)
-    // Новая стойка меняет данные пунктов «Вариант и расстановка» и «Знаки на стойках».
+    // Новая стойка меняет расстановку, знаки и предметные проверки ПДД, включая скорость.
     const post = newSignDraft()
     if (post.kind !== 'sign-post') throw new Error('Expected sign post')
     post.signCodes = '3.20'
@@ -130,6 +130,7 @@ describe('manual review marks', () => {
     expect(stale.sort()).toEqual([
       'pdd-crossing',
       'pdd-regulator',
+      'pdd-speed',
       'pdd-temporary',
       'signs',
       'template',
@@ -146,7 +147,7 @@ describe('manual review marks', () => {
       unmarkedChecks(titled, reviewScheme(titled))
         .map((finding) => finding.id)
         .sort(),
-    ).toEqual(['pdd-crossing', 'pdd-regulator', 'pdd-temporary', 'signs', 'template'])
+    ).toEqual(stale.sort())
   })
 
   it('does not accept a sign check until the PNG revisions are pinned', () => {

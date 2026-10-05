@@ -125,14 +125,19 @@ export function documentStatuses(
 ): Map<number, DocumentStatus> {
   const statuses = new Map<number, DocumentStatus>()
   const groups = new Map<string, DocumentRecord[]>()
+  const byId = new Map(documents.map((document) => [document.id, document]))
   for (const document of documents) {
     if (document.amendsId !== null) {
-      const effective = effectiveKey(document)
+      const parent = byId.get(document.amendsId)
+      const isPdd =
+        normalizeDocumentCode(document.code) === 'ПДД' ||
+        (parent !== undefined && normalizeDocumentCode(parent.code) === 'ПДД')
+      // У изменяющего постановления свой код; год редакции тоже не определяет дату введения.
+      const effective = isPdd ? document.effectiveFrom || null : effectiveKey(document)
       statuses.set(document.id, {
         kind: 'amendment',
         of: document.amendsId,
-        inForce:
-          effective !== null ? effective <= today : normalizeDocumentCode(document.code) !== 'ПДД',
+        inForce: effective !== null ? effective <= today : !isPdd,
       })
       continue
     }

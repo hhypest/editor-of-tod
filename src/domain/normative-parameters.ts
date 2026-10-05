@@ -249,7 +249,8 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
     id: 'pdd-speed-outside-conditions',
     title: 'Пределы скорости вне населённых пунктов по виду дороги и ТС',
     unit: 'км/ч',
-    usedIn: 'Справочник скорости; подстановка только по явному выбору условий',
+    usedIn:
+      'Справочник скорости; подстановка только по явному выбору условий. Для легковых на остальных дорогах используется отдельный параметр скорости, а не повторная строка таблицы',
     source: { kind: 'clause', documentCode: 'ПДД', clause: '10.3' },
     type: 'table',
     keyLabel: 'Условия п. 10.3',
@@ -663,7 +664,11 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
     typesize: table('gost-sign-typesize'),
     allowedSpeedKmh: { in: number('pdd-speed-settlement'), out: number('pdd-speed-outside') },
     pddSpeedLimits: {
-      outside: tableNumbers('pdd-speed-outside-conditions', PDD_OUTSIDE_SPEED_KEYS),
+      outside: {
+        ...tableNumbers('pdd-speed-outside-conditions', PDD_OUTSIDE_SPEED_KEYS),
+        // Строка оставлена для совместимости подтверждений; рабочее значение едино.
+        lightOrdinary: number('pdd-speed-outside'),
+      },
       residential: number('pdd-speed-residential'),
       towing: number('pdd-speed-towing'),
     },

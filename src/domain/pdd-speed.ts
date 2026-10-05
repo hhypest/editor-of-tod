@@ -45,8 +45,13 @@ export function pddSpeedReference(
             ? 'heavyMotorway'
             : 'heavyOrdinary'
           : vehicle
-    speed = rules.pddSpeedLimits.outside[key]
-    ids.push('pdd-speed-outside-conditions')
+    if (key === 'lightOrdinary') {
+      speed = rules.allowedSpeedKmh.out
+      ids.push('pdd-speed-outside')
+    } else {
+      speed = rules.pddSpeedLimits.outside[key]
+      ids.push('pdd-speed-outside-conditions')
+    }
   }
   if (vehicle === 'towing') {
     speed = Math.min(speed, rules.pddSpeedLimits.towing)

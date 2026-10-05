@@ -11,8 +11,10 @@ import {
   parameterDefinition,
   PDD_OUTSIDE_SPEED_KEYS,
   PROTOTYPE_RULES,
+  rulesFrom,
   suggestValue,
   valueProblem,
+  type ParameterState,
 } from '../normative-parameters'
 import { pddSpeedReference } from '../pdd-speed'
 import { pddFindings } from '../pdd-review'
@@ -95,6 +97,81 @@ describe('PDD edition and conditional speed references', () => {
     expect(documentStatuses([old, next], '2030-10-01').get(2)?.kind).toBe('superseded')
     expect(documentStatuses([old, next], '2030-10-01').get(3)?.kind).toBe('current')
   })
+  it.each(['2030', 'Учебное изменение'])(
+    'requires a date for a PDD-linked resolution with edition %s',
+    (edition) => {
+      const base = doc('2029-05-01', '2029-09-01', 1)
+      const amendment = { ...doc(edition, '', 2), code: 'Постановление № 1088', amendsId: base.id }
+      for (const [effectiveFrom, inForce] of [
+        ['', false],
+        ['2030-09-01', false],
+        ['2030-06-01', true],
+      ] as const) {
+        expect(
+          documentStatuses([base, { ...amendment, effectiveFrom }], '2030-06-01').get(2),
+        ).toEqual({ kind: 'amendment', of: base.id, inForce })
+      }
+      // Поведение недатированных изменений других нормативов сохраняется.
+      expect(
+        documentStatuses([{ ...base, code: 'ГОСТ Р 52289' }, amendment], '2030-06-01').get(2),
+      ).toEqual({ kind: 'amendment', of: base.id, inForce: true })
+    },
+  )
+  it('uses the same light-vehicle value, source and confirmation as project defaults despite a conflicting table row', () => {
+    const table = parameterDefinition('pdd-speed-outside-conditions')!
+    if (table.type !== 'table') throw new Error('Expected table')
+    const state = (id: string, value: number | Record<string, string>): ParameterState => ({
+      id,
+      status: { kind: 'confirmed' },
+      document: current,
+      quote: null,
+      suggestion: null,
+      amendments: [],
+      confirmation: {
+        id: 1,
+        parameterId: id,
+        documentId: current.id,
+        documentLabel: current.label,
+        clause: 'п. 10.3',
+        page: 1,
+        quote: '',
+        fragment: '',
+        value,
+        confirmedBy: 'Учебный составитель',
+        confirmedAt: '2030-05-01',
+        note: 'Учебная сверка',
+      },
+    })
+    const tableState = state(table.id, {
+      ...table.fallback,
+      [PDD_OUTSIDE_SPEED_KEYS.lightOrdinary]: '92',
+    })
+    const scalarState = state('pdd-speed-outside', 87)
+    const confirmed = rulesFrom([tableState, scalarState])
+    expect(confirmed.pddSpeedLimits.outside.lightOrdinary).toBe(confirmed.allowedSpeedKmh.out)
+    expect(pddSpeedReference('out', 'ordinary', 'light', confirmed)).toMatchObject({
+      speed: 87,
+      source: confirmed.sources['pdd-speed-outside'],
+      confirmed: true,
+    })
+    const tableOnly = rulesFrom([tableState])
+    expect(pddSpeedReference('out', 'ordinary', 'light', tableOnly)).toMatchObject({
+      speed: tableOnly.allowedSpeedKmh.out,
+      confirmed: false,
+    })
+    const scalarOnly = rulesFrom([scalarState])
+    expect(pddSpeedReference('out', 'ordinary', 'light', scalarOnly)?.confirmed).toBe(true)
+    expect(pddSpeedReference('out', 'motorway', 'light', scalarOnly)?.confirmed).toBe(false)
+    const towing = {
+      ...confirmed,
+      pddSpeedLimits: { ...confirmed.pddSpeedLimits, towing: 100 },
+      confirmed: { ...confirmed.confirmed, 'pdd-speed-towing': true },
+    }
+    expect(pddSpeedReference('out', 'ordinary', 'towing', towing)).toMatchObject({
+      speed: 87,
+      confirmed: true,
+    })
+  })
   it.each([
     ['light', 'ordinary', 90],
     ['light', 'motorway', 110],
@@ -167,6 +244,43 @@ describe('PDD edition and conditional speed references', () => {
 })
 
 describe('PDD review evidence', () => {
+  it.each(['add', 'remove', 'speed', 'cancel', 'move', 'plate'] as const)(
+    'invalidates a speed mark after a sign post change: %s',
+    (change) => {
+      let scheme = importSchemeJson(fixture).scheme
+      const original = pddFindings(scheme, rules)
+      scheme = setMark(scheme, original, 'pdd-speed', true, '2030-05-01T00:00:00.000Z')
+      const post = scheme.placements.find(
+        (item) => item.kind === 'sign-post' && item.signIds.includes('3.24_40_ж'),
+      )!
+      if (post.kind !== 'sign-post') throw new Error('Expected sign post')
+      if (change === 'add')
+        scheme.placements.push({ ...post, id: scheme.nextPlacementId++, signIds: ['3.25'] })
+      else if (change === 'remove')
+        scheme.placements = scheme.placements.filter((item) => item.id !== post.id)
+      else if (change === 'speed') post.signIds = ['3.24_30_ж']
+      else if (change === 'cancel') post.signIds = ['3.25']
+      else if (change === 'move') post.position.offsetXSvg += 10
+      else post.signIds.push('8.2.1')
+      expect(markState(scheme, pddFindings(scheme, rules)[0]!).status).toBe('stale')
+    },
+  )
+  it('retains the speed mark when only an unrelated text element changes', () => {
+    let scheme = importSchemeJson(fixture).scheme
+    scheme = setMark(
+      scheme,
+      pddFindings(scheme, rules),
+      'pdd-speed',
+      true,
+      '2030-05-01T00:00:00.000Z',
+    )
+    const text = scheme.placements.find(
+      (item) => item.kind === 'element' && item.elementKind === 'text',
+    )!
+    if (text.kind !== 'element') throw new Error('Expected text element')
+    text.text = 'Другая учебная надпись'
+    expect(markState(scheme, pddFindings(scheme, rules)[0]!).status).toBe('marked')
+  })
   it('blocks marks without an in-force library edition and includes conditional checks', () => {
     const scheme = importSchemeJson(fixture).scheme
     const unavailable = pddFindings(scheme, PROTOTYPE_RULES)

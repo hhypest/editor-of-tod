@@ -1,5 +1,67 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
+import {
+  parameterDefinition,
+  PDD_OUTSIDE_SPEED_KEYS,
+  type ParameterState,
+} from '../../src/domain/normative-parameters'
+
+test('the light-vehicle reference applies the scalar limit despite a conflicting confirmed table', async ({
+  page,
+}) => {
+  const table = parameterDefinition('pdd-speed-outside-conditions')!
+  if (table.type !== 'table') throw new Error('Expected table')
+  const state = (id: string, value: number | Record<string, string>): ParameterState => ({
+    id,
+    status: { kind: 'confirmed' },
+    document: { id: 1, label: 'ПДД-2030-04-01', sha256: 'a'.repeat(64) },
+    quote: null,
+    suggestion: null,
+    amendments: [],
+    confirmation: {
+      id: 1,
+      parameterId: id,
+      documentId: 1,
+      documentLabel: 'ПДД-2030-04-01',
+      clause: 'п. 10.3',
+      page: 1,
+      quote: '',
+      fragment: '',
+      value,
+      confirmedBy: 'Учебный составитель',
+      confirmedAt: '2030-05-01',
+      note: 'Учебная сверка',
+    },
+  })
+  await page.route('**/api/normative-parameters', (route) =>
+    route.fulfill({
+      json: [
+        state('pdd-speed-outside', 87),
+        state(table.id, { ...table.fallback, [PDD_OUTSIDE_SPEED_KEYS.lightOrdinary]: '92' }),
+      ],
+    }),
+  )
+  await page.goto('/')
+  await page
+    .getByRole('group', { name: 'Способ открытия проекта' })
+    .getByRole('button', { name: 'Открыть файл' })
+    .click()
+  await page.locator('#scheme-file').setInputFiles({
+    name: 'synthetic-pdd.json',
+    mimeType: 'application/json',
+    buffer: readFileSync('tests/fixtures/legacy-v1-new-fields.json'),
+  })
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  await page.getByRole('combobox', { name: 'Местоположение', exact: true }).selectOption('out')
+  await page.getByText('Справочник скорости по ПДД', { exact: true }).click()
+  const reference = page.locator('.speed-reference')
+  await reference.getByLabel('Вид дороги для сверки скорости').selectOption('ordinary')
+  await reference.getByLabel('Вид ТС для сверки скорости').selectOption('light')
+  await expect(reference.getByRole('status')).toContainText('87 км/ч')
+  await expect(reference.getByRole('status')).toContainText('Числа подтверждены по библиотеке.')
+  await reference.getByRole('button', { name: 'Подставить скорость для выбранных условий' }).click()
+  await expect(page.locator('[data-field="parameters.approachSpeedKmh"]:visible')).toHaveValue('87')
+})
 
 test('conditional speed is applied explicitly and motorway remains a reference', async ({
   page,

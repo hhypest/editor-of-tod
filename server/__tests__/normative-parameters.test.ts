@@ -106,16 +106,64 @@ describe('normative parameters from library documents', () => {
       store,
       textPdf([['Вымышленное изменение', '6.15. Учебный порядок сигналов.']]),
       {
-        code: 'ПДД',
-        edition: 'Учебное изменение',
-        effectiveFrom: '2031-01-01',
+        code: 'Постановление № 1088',
+        edition: '2031',
+        effectiveFrom: '',
         amendsId: dated.id,
       },
     )
+    const undated = rulesFrom(await listParameterStates(store, now))
+    expect(undated.confirmed[definition.id]).toBe(true)
+    expect(undated.evidence[definition.id]).toBe(before.evidence[definition.id])
+    const scheme = createUnlinkedScheme(
+      {
+        referenceId: 'Учебный ПДД',
+        locationText: 'Учебный участок',
+        directionLeft: 'А',
+        directionRight: 'Б',
+        frontMetres: '18',
+        taperMetres: '10',
+        bufferMetres: '10',
+        speedStagesKmh: ['70', '50', '40'],
+        location: 'out',
+        approachSpeedKmh: '90',
+        yellowTemporarySigns: false,
+      },
+      { rules: before },
+    )
+    const checked = setMark(
+      scheme,
+      reviewScheme(scheme, before),
+      'pdd-speed',
+      true,
+      now.toISOString(),
+    )
+    expect(
+      markState(
+        checked,
+        reviewScheme(checked, undated).find((item) => item.id === 'pdd-speed')!,
+      ).status,
+    ).toBe('marked')
+    store.updateDocument(amendment.id, {
+      code: amendment.code,
+      edition: amendment.edition,
+      title: amendment.title,
+      kind: amendment.kind,
+      effectiveFrom: '2031-01-01',
+      amendsId: amendment.amendsId,
+      note: amendment.note,
+      actualCheckedAt: amendment.actualCheckedAt,
+    })
     const after = rulesFrom(await listParameterStates(store, now))
     expect(after.confirmed[definition.id]).toBe(false)
     expect(after.evidence[definition.id]).not.toBe(before.evidence[definition.id])
     expect(after.pddDocument?.id).not.toBe(document.id)
+    expect(
+      markState(
+        checked,
+        reviewScheme(checked, after).find((item) => item.id === 'pdd-speed')!,
+      ).status,
+    ).toBe('stale')
     store.updateDocument(amendment.id, {
       code: amendment.code,
       edition: amendment.edition,
