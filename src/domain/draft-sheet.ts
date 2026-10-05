@@ -1,3 +1,4 @@
+import { decimalComma } from './number-format'
 import type { Scheme } from './model'
 import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import { responsibleLine } from './title-block'
@@ -81,12 +82,15 @@ function renderDistanceLabel(
   distances: Scheme['parameters']['signDistancesMetres'],
 ): string | null {
   if (label === null) return null
-  return label.replace(/\{(\w+)\}/g, (marker, key: string) => {
-    const value = Object.prototype.hasOwnProperty.call(distances, key)
-      ? distances[key as keyof typeof distances]
-      : null
-    return value === null ? marker : `${value} м`
-  })
+  // Запятая ставится и в числе, введённом составителем вручную («0.5 км» → «0,5 км»).
+  return decimalComma(
+    label.replace(/\{(\w+)\}/g, (marker, key: string) => {
+      const value = Object.prototype.hasOwnProperty.call(distances, key)
+        ? distances[key as keyof typeof distances]
+        : null
+      return value === null ? marker : `${value} м`
+    }),
+  )
 }
 
 /** Whitelist of fields used on a provisional A4 sheet; never include the whole PU-66 snapshot or legacy source. */
@@ -144,7 +148,7 @@ export function projectDraftSheet(
             carriagewayWidthMetres:
               scheme.crossing.snapshot.crossingWidthMetres === null
                 ? ''
-                : String(scheme.crossing.snapshot.crossingWidthMetres).trim(),
+                : decimalComma(String(scheme.crossing.snapshot.crossingWidthMetres).trim()),
           }
         : null,
     directions: { ...scheme.parameters.directions },
