@@ -1,4 +1,4 @@
-import { decimalComma } from './number-format'
+import { decimalComma, decimalCommaInMeasures } from './number-format'
 import type { Scheme } from './model'
 import { postCaption } from './post-distance'
 import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
@@ -83,15 +83,14 @@ function renderDistanceLabel(
   distances: Scheme['parameters']['signDistancesMetres'],
 ): string | null {
   if (label === null) return null
-  // Запятая ставится и в числе, введённом составителем вручную («0.5 км» → «0,5 км»).
-  return decimalComma(
-    label.replace(/\{(\w+)\}/g, (marker, key: string) => {
-      const value = Object.prototype.hasOwnProperty.call(distances, key)
-        ? distances[key as keyof typeof distances]
-        : null
-      return value === null ? marker : `${value} м`
-    }),
-  )
+  // Подставленное расстояние — с десятичной запятой; в тексте составителя запятая ставится
+  // только у чисел с единицей длины, ссылки на пункты («п. 5.2.2») остаются как введены.
+  return decimalCommaInMeasures(label).replace(/\{(\w+)\}/g, (marker, key: string) => {
+    const value = Object.prototype.hasOwnProperty.call(distances, key)
+      ? distances[key as keyof typeof distances]
+      : null
+    return value === null ? marker : `${decimalComma(value)} м`
+  })
 }
 
 /** Whitelist of fields used on a provisional A4 sheet; never include the whole PU-66 snapshot or legacy source. */
