@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { launchDesktop } from '../server/desktop-instance.ts'
 import { createRegistryServer } from '../server/index.ts'
 import { runImport } from '../server/import-cli.ts'
 import { RegistryStore } from '../server/store.ts'
@@ -20,7 +24,27 @@ try {
   assert.equal(status.application, 'editor-of-tod')
   assert.match(status.databaseId, /^[a-f0-9]{64}$/)
   assert.equal(typeof runImport, 'function')
-  console.log('Локальный API и CLI импортируются и запускаются напрямую через Node.js.')
+
+  // Запуск программы (`npm run desktop`, exe): второй запуск находит первый и не открывает базу.
+  const directory = mkdtempSync(join(tmpdir(), 'tod-check-desktop-'))
+  const databasePath = join(directory, 'registry.sqlite')
+  const first = await launchDesktop(databasePath, address.port + 1)
+  try {
+    assert.equal(first.running, false)
+    assert.ok(existsSync(`${databasePath}.instance.json`))
+    assert.deepEqual(await launchDesktop(databasePath, address.port + 1), {
+      running: true,
+      port: first.port,
+    })
+  } finally {
+    if (!first.running) {
+      first.release()
+      await new Promise((resolve) => first.server.close(resolve))
+      first.store.close()
+    }
+    rmSync(directory, { recursive: true, force: true })
+  }
+  console.log('Локальный API, CLI и запуск программы работают напрямую через Node.js.')
 } finally {
   if (server.listening) {
     await new Promise((resolve, reject) => {

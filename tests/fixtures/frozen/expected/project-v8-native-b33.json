@@ -1,0 +1,441 @@
+{
+  "id": "00000000-0000-4000-8000-000000000804",
+  "createdAt": "2026-09-26T12:00:00.000Z",
+  "template": {
+    "code": "b33",
+    "sourceReference": "ОДМ 218.6.019-2016",
+    "reviewStatus": "not-verified",
+    "projectionVersion": "draft-2"
+  },
+  "titleBlock": {
+    "developer": {
+      "organization": "Учебная организация",
+      "position": "",
+      "name": "Составитель",
+      "date": "2026-09-26"
+    },
+    "work": {
+      "organization": "",
+      "description": "Условные текущие работы",
+      "period": ""
+    },
+    "responsible": [
+      {
+        "position": "",
+        "name": "",
+        "phone": ""
+      }
+    ],
+    "approver": {
+      "position": "",
+      "organization": "",
+      "name": ""
+    },
+    "agreement": {
+      "position": "",
+      "name": "",
+      "year": ""
+    }
+  },
+  "placements": [
+    {
+      "kind": "sign-post",
+      "id": 1,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:L:warning",
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": -520,
+        "offsetYSvg": 0
+      },
+      "side": "down",
+      "stand": "left",
+      "signIds": [
+        "1.25"
+      ],
+      "distanceLabel": "{d300}"
+    },
+    {
+      "kind": "sign-post",
+      "id": 2,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:L:speed1",
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": -410,
+        "offsetYSvg": 0
+      },
+      "side": "down",
+      "stand": "left",
+      "signIds": [
+        "3.24_70",
+        "3.20"
+      ],
+      "distanceLabel": "{d250}"
+    },
+    {
+      "kind": "sign-post",
+      "id": 3,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:L:narrowing",
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": -290,
+        "offsetYSvg": 0
+      },
+      "side": "down",
+      "stand": "left",
+      "signIds": [
+        "3.24",
+        "1.20.2"
+      ],
+      "distanceLabel": "{d150}"
+    },
+    {
+      "kind": "sign-post",
+      "id": 4,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:L:zone-speed",
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": -170,
+        "offsetYSvg": 0
+      },
+      "side": "down",
+      "stand": "left",
+      "signIds": [
+        "3.24_40"
+      ],
+      "distanceLabel": "{d50}"
+    },
+    {
+      "kind": "sign-post",
+      "id": 5,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:L:start",
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": -2,
+        "offsetYSvg": 0
+      },
+      "side": "down",
+      "stand": "right",
+      "signIds": [
+        "8.2.1_50",
+        "1.25"
+      ],
+      "distanceLabel": "0"
+    },
+    {
+      "kind": "sign-post",
+      "id": 6,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:L:end",
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": -410,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "left",
+      "signIds": [
+        "3.20",
+        "3.31"
+      ],
+      "distanceLabel": null
+    },
+    {
+      "kind": "sign-post",
+      "id": 7,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:R:start",
+      "position": {
+        "anchor": "E",
+        "offsetXSvg": 2,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "left",
+      "signIds": [
+        "1.25",
+        "8.2.1_50"
+      ],
+      "distanceLabel": "0"
+    },
+    {
+      "kind": "sign-post",
+      "id": 8,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:R:zone-speed",
+      "position": {
+        "anchor": "E",
+        "offsetXSvg": 170,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "right",
+      "signIds": [
+        "3.24_40"
+      ],
+      "distanceLabel": "{d50}"
+    },
+    {
+      "kind": "sign-post",
+      "id": 9,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:R:narrowing",
+      "position": {
+        "anchor": "E",
+        "offsetXSvg": 290,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "right",
+      "signIds": [
+        "1.20.3",
+        "3.24"
+      ],
+      "distanceLabel": "{d150}"
+    },
+    {
+      "kind": "sign-post",
+      "id": 10,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:R:speed1",
+      "position": {
+        "anchor": "E",
+        "offsetXSvg": 410,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "right",
+      "signIds": [
+        "3.20",
+        "3.24_70"
+      ],
+      "distanceLabel": "{d250}"
+    },
+    {
+      "kind": "sign-post",
+      "id": 11,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:R:warning",
+      "position": {
+        "anchor": "E",
+        "offsetXSvg": 500,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "right",
+      "signIds": [
+        "1.25"
+      ],
+      "distanceLabel": "{d300}"
+    },
+    {
+      "kind": "sign-post",
+      "id": 12,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:R:end",
+      "position": {
+        "anchor": "E",
+        "offsetXSvg": 410,
+        "offsetYSvg": 0
+      },
+      "side": "down",
+      "stand": "right",
+      "signIds": [
+        "3.31",
+        "3.20"
+      ],
+      "distanceLabel": null
+    },
+    {
+      "kind": "element",
+      "id": 13,
+      "generatedByTemplate": true,
+      "templateSlot": "complex2:L0:-48",
+      "elementKind": "complex",
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": -48,
+        "ySvg": 486
+      },
+      "sizeSvg": {
+        "width": 46,
+        "height": 40
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 14,
+      "generatedByTemplate": true,
+      "templateSlot": "car2:L1:6",
+      "elementKind": "car",
+      "position": {
+        "anchor": "L1",
+        "offsetXSvg": 6,
+        "ySvg": 474
+      },
+      "sizeSvg": {
+        "width": 58,
+        "height": 58
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 15,
+      "generatedByTemplate": true,
+      "templateSlot": "reg2:L0:-95",
+      "elementKind": "reg",
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": -95,
+        "ySvg": 518
+      },
+      "sizeSvg": {
+        "width": 22,
+        "height": 30
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 16,
+      "generatedByTemplate": true,
+      "templateSlot": "reg2:E:70",
+      "elementKind": "reg",
+      "position": {
+        "anchor": "E",
+        "offsetXSvg": 70,
+        "ySvg": 368
+      },
+      "sizeSvg": {
+        "width": 22,
+        "height": 30
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "sign-post",
+      "id": 17,
+      "generatedByTemplate": false,
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 0,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "right",
+      "signIds": [
+        "1.25"
+      ],
+      "distanceLabel": "{d150}"
+    }
+  ],
+  "nextPlacementId": 18,
+  "signImages": {
+    "catalog": null,
+    "revisions": {}
+  },
+  "crossing": {
+    "referenceId": "TEST-PU66",
+    "source": "local-pu66",
+    "snapshot": {
+      "location": "Учебный километр",
+      "axisLabel": "Учебная ось",
+      "roadName": "Условная дорога",
+      "crossingWidthMetres": 8,
+      "crossingRoadLengthMetres": 40,
+      "revision": 2,
+      "updatedAt": "2026-09-26T12:00:00.000Z"
+    }
+  },
+  "parameters": {
+    "locationText": "Учебный участок",
+    "directions": {
+      "left": "Учебный пункт А",
+      "right": "Учебный пункт Б"
+    },
+    "signDistancesMetres": {
+      "d300": 300,
+      "d250": 250,
+      "d150": 150,
+      "d50": 50,
+      "n100": null,
+      "n50": null
+    },
+    "speedStagesKmh": [
+      70,
+      50,
+      40
+    ],
+    "yellowTemporarySigns": false,
+    "location": "out",
+    "signSize": "II",
+    "lastSettlement": null,
+    "frontStyle": "part",
+    "frontFromPu66": false,
+    "regulation": {
+      "mode": "two",
+      "hourly": "300",
+      "k": 0,
+      "vis": false,
+      "straight": false,
+      "last": null
+    },
+    "workZones": {
+      "b33": {
+        "taperMetres": 8,
+        "bufferMetres": 12,
+        "workMetres": 30,
+        "labels": {
+          "taper": "",
+          "buffer": "",
+          "work": ""
+        }
+      },
+      "b34": null
+    },
+    "approachSpeedKmh": 90,
+    "workConditions": {
+      "kind": "short",
+      "durationHours": 8,
+      "daylight": "day",
+      "regulatorsPresent": true,
+      "sectionMetres": null
+    },
+    "speedConditions": {
+      "road": "",
+      "vehicle": ""
+    }
+  },
+  "source": {
+    "kind": "created-in-editor"
+  },
+  "reviewMarks": {
+    "crossing": {
+      "fingerprint": "ee6eec6633de84b8",
+      "markedAt": "2026-09-26T13:00:00.000Z"
+    },
+    "template": {
+      "fingerprint": "3914283c3082bc99",
+      "markedAt": "2026-09-26T13:00:00.000Z"
+    }
+  },
+  "schemaVersion": 9,
+  "decisionEvidence": {
+    "speed": null,
+    "regulation": null
+  }
+}

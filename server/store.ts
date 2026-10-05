@@ -194,10 +194,26 @@ function summaryText(path: string): string {
     THEN substr(json_extract(scheme_json, '${path}'), 1, 500) ELSE '' END`
 }
 
+/** Текущая версия схемы локальной базы (`PRAGMA user_version`). */
+export const SCHEMA_VERSION = 13
+
+/** Сообщение для окна программы после обновления схемы базы; `null`, если обновления не было. */
+export function migrationNotice(store: RegistryStore): string | null {
+  if (store.migratedFrom === null) return null
+  const versions = `База обновлена: версия ${store.migratedFrom} → ${SCHEMA_VERSION}.`
+  return store.migrationBackup
+    ? `${versions} Прежняя база сохранена: ${join(store.backupDirectory, store.migrationBackup)}`
+    : versions
+}
+
 export class RegistryStore {
   private readonly db: DatabaseSync
   readonly path: string
   private readonly now: () => string
+  /** Версия схемы, с которой база обновлена при этом открытии; `null` — обновления не было. */
+  readonly migratedFrom: number | null = null
+  /** Имя копии в `backupDirectory`, снятой перед обновлением схемы; `null` — копия не создавалась. */
+  readonly migrationBackup: string | null = null
 
   constructor(path: string, now: () => string = () => new Date().toISOString()) {
     this.path = path
@@ -213,24 +229,12 @@ export class RegistryStore {
       this.db.exec('PRAGMA foreign_keys = ON')
       const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
         .user_version
-      if (
-        version !== 0 &&
-        version !== 1 &&
-        version !== 2 &&
-        version !== 3 &&
-        version !== 4 &&
-        version !== 5 &&
-        version !== 6 &&
-        version !== 7 &&
-        version !== 8 &&
-        version !== 9 &&
-        version !== 10 &&
-        version !== 11 &&
-        version !== 12 &&
-        version !== 13
-      ) {
+      if (!Number.isInteger(version) || version < 0 || version > SCHEMA_VERSION) {
         throw new Error(`Неизвестная версия локальной базы: ${version}. Файл не изменён.`)
       }
+      this.migratedFrom = version > 0 && version < SCHEMA_VERSION ? version : null
+      if (this.migratedFrom !== null && path !== ':memory:')
+        this.migrationBackup = this.backupBeforeMigration(version)
       if (version === 0) {
         this.db.exec(`
         BEGIN;
@@ -1797,7 +1801,19 @@ export class RegistryStore {
 
   updateDocument(id: number, input: DocumentMeta): DocumentRecord | null {
     const meta = documentMetaSchema.parse(input)
-    if (!this.getDocument(id)) return null
+    const existing = this.getDocument(id)
+    if (!existing) return null
+    if (existing.kind !== meta.kind) {
+      // Партия каталога знаков ссылается на документ как на стандарт знаков: после смены
+      // вида история каталога указывала бы на документ, из которого знаки взять нельзя.
+      const batches = this.db
+        .prepare('SELECT COUNT(*) AS count FROM sign_catalog_batches WHERE document_id = ?')
+        .get(id) as { count: number }
+      if (batches.count)
+        throw new DocumentInUse(
+          'С этим документом сверен импорт каталога знаков: вид документа изменить нельзя.',
+        )
+    }
     this.checkAmends(meta, id)
     this.db
       .prepare(
@@ -1915,6 +1931,34 @@ export class RegistryStore {
         this.now(),
       ) as { id: number }
     return { ...input, id: row.id }
+  }
+
+  /**
+   * Копия файла до изменения схемы. Имя отличается от копий по кнопке, поэтому
+   * `backups:prune` такие файлы не удаляет: к прежней версии базы можно вернуться только по ним.
+   * Версия 2 не копируется: её обновление удаляет векторные изображения знаков без остатка,
+   * а копия сохранила бы их.
+   */
+  private backupBeforeMigration(version: number): string | null {
+    if (version === 2) return null
+    const directory = this.backupDirectory
+    const filename = `registry-before-update-v${version}-${this.now().replaceAll(':', '-').replaceAll('.', '-')}-${randomUUID().slice(0, 8)}.sqlite`
+    const path = join(directory, filename)
+    try {
+      mkdirSync(directory, { recursive: true, mode: 0o700 })
+      this.db.prepare('VACUUM INTO ?').run(path)
+      if (process.platform !== 'win32') chmodSync(path, 0o600)
+    } catch (error) {
+      try {
+        rmSync(path, { force: true })
+      } catch {
+        // Каталог копий недоступен: удалять нечего, важна исходная причина.
+      }
+      throw new Error(
+        `Не удалось сохранить копию базы перед обновлением (${error instanceof Error ? error.message : String(error)}). База не изменена: освободите место или проверьте доступ к папке ${directory} и запустите программу снова.`,
+      )
+    }
+    return filename
   }
 
   async createBackup(): Promise<string> {

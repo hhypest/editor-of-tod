@@ -1,0 +1,760 @@
+{
+  "id": "00000000-0000-4000-8000-000000000903",
+  "createdAt": "2026-09-26T12:00:00.000Z",
+  "template": {
+    "code": "b34",
+    "sourceReference": "ОДМ 218.6.019-2016",
+    "reviewStatus": "not-verified",
+    "projectionVersion": "draft-2"
+  },
+  "titleBlock": {
+    "developer": {
+      "organization": "Учебная организация",
+      "position": "",
+      "name": "Составитель",
+      "date": "2026-09-26"
+    },
+    "work": {
+      "organization": "",
+      "description": "Условные текущие работы",
+      "period": ""
+    },
+    "responsible": [
+      {
+        "position": "",
+        "name": "",
+        "phone": ""
+      }
+    ],
+    "approver": {
+      "position": "",
+      "organization": "",
+      "name": ""
+    },
+    "agreement": {
+      "position": "",
+      "name": "",
+      "year": ""
+    }
+  },
+  "placements": [
+    {
+      "kind": "sign-post",
+      "id": 1,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:L:warning",
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": -520,
+        "offsetYSvg": 0
+      },
+      "side": "down",
+      "stand": "left",
+      "signIds": [
+        "1.25"
+      ],
+      "distanceLabel": "{d300}"
+    },
+    {
+      "kind": "sign-post",
+      "id": 2,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:L:speed1",
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": -410,
+        "offsetYSvg": 0
+      },
+      "side": "down",
+      "stand": "left",
+      "signIds": [
+        "3.24_70",
+        "3.20"
+      ],
+      "distanceLabel": "{d250}"
+    },
+    {
+      "kind": "sign-post",
+      "id": 3,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:L:narrowing",
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": -290,
+        "offsetYSvg": 0
+      },
+      "side": "down",
+      "stand": "left",
+      "signIds": [
+        "3.24",
+        "1.20.2"
+      ],
+      "distanceLabel": "{d150}"
+    },
+    {
+      "kind": "sign-post",
+      "id": 4,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:L:zone-speed",
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": -170,
+        "offsetYSvg": 0
+      },
+      "side": "down",
+      "stand": "left",
+      "signIds": [
+        "3.24_40"
+      ],
+      "distanceLabel": "{d50}"
+    },
+    {
+      "kind": "sign-post",
+      "id": 5,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:L:start",
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": -2,
+        "offsetYSvg": 0
+      },
+      "side": "down",
+      "stand": "right",
+      "signIds": [
+        "8.2.1_38",
+        "1.25"
+      ],
+      "distanceLabel": "0"
+    },
+    {
+      "kind": "sign-post",
+      "id": 6,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:L:end",
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": -410,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "left",
+      "signIds": [
+        "3.20",
+        "3.31"
+      ],
+      "distanceLabel": null
+    },
+    {
+      "kind": "sign-post",
+      "id": 7,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:R:start",
+      "position": {
+        "anchor": "E",
+        "offsetXSvg": 2,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "left",
+      "signIds": [
+        "1.25",
+        "8.2.1_38"
+      ],
+      "distanceLabel": "0"
+    },
+    {
+      "kind": "sign-post",
+      "id": 8,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:R:zone-speed",
+      "position": {
+        "anchor": "E",
+        "offsetXSvg": 170,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "right",
+      "signIds": [
+        "3.24_40"
+      ],
+      "distanceLabel": "{d50}"
+    },
+    {
+      "kind": "sign-post",
+      "id": 9,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:R:narrowing",
+      "position": {
+        "anchor": "E",
+        "offsetXSvg": 290,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "right",
+      "signIds": [
+        "1.20.3",
+        "3.24"
+      ],
+      "distanceLabel": "{d150}"
+    },
+    {
+      "kind": "sign-post",
+      "id": 10,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:R:speed1",
+      "position": {
+        "anchor": "E",
+        "offsetXSvg": 410,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "right",
+      "signIds": [
+        "3.20",
+        "3.24_70"
+      ],
+      "distanceLabel": "{d250}"
+    },
+    {
+      "kind": "sign-post",
+      "id": 11,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:R:warning",
+      "position": {
+        "anchor": "E",
+        "offsetXSvg": 500,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "right",
+      "signIds": [
+        "1.25"
+      ],
+      "distanceLabel": "{d300}"
+    },
+    {
+      "kind": "sign-post",
+      "id": 12,
+      "generatedByTemplate": true,
+      "templateSlot": "post2:R:end",
+      "position": {
+        "anchor": "E",
+        "offsetXSvg": 410,
+        "offsetYSvg": 0
+      },
+      "side": "down",
+      "stand": "right",
+      "signIds": [
+        "3.31",
+        "3.20"
+      ],
+      "distanceLabel": null
+    },
+    {
+      "kind": "element",
+      "id": 13,
+      "generatedByTemplate": true,
+      "templateSlot": "complex2:L0:-48",
+      "elementKind": "complex",
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": -48,
+        "ySvg": 486
+      },
+      "sizeSvg": {
+        "width": 46,
+        "height": 40
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 14,
+      "generatedByTemplate": true,
+      "templateSlot": "car2:L1:6",
+      "elementKind": "car",
+      "position": {
+        "anchor": "L1",
+        "offsetXSvg": 6,
+        "ySvg": 474
+      },
+      "sizeSvg": {
+        "width": 58,
+        "height": 58
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 15,
+      "generatedByTemplate": true,
+      "templateSlot": "complex2:Z1:-22",
+      "elementKind": "complex",
+      "position": {
+        "anchor": "Z1",
+        "offsetXSvg": -22,
+        "ySvg": 462
+      },
+      "sizeSvg": {
+        "width": 46,
+        "height": 40
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 16,
+      "generatedByTemplate": true,
+      "templateSlot": "pit2:Z0:0.06",
+      "elementKind": "pit",
+      "position": {
+        "anchor": "Z0",
+        "offsetXSvg": 0,
+        "ySvg": 478,
+        "zoneFraction": 0.06
+      },
+      "sizeSvg": {
+        "width": 40,
+        "height": 18
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 17,
+      "generatedByTemplate": true,
+      "templateSlot": "pit2:Z0:0.32",
+      "elementKind": "pit",
+      "position": {
+        "anchor": "Z0",
+        "offsetXSvg": 0,
+        "ySvg": 490,
+        "zoneFraction": 0.32
+      },
+      "sizeSvg": {
+        "width": 28,
+        "height": 18
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 18,
+      "generatedByTemplate": true,
+      "templateSlot": "pit2:Z0:0.56",
+      "elementKind": "pit",
+      "position": {
+        "anchor": "Z0",
+        "offsetXSvg": 0,
+        "ySvg": 480,
+        "zoneFraction": 0.56
+      },
+      "sizeSvg": {
+        "width": 32,
+        "height": 16
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 19,
+      "generatedByTemplate": true,
+      "templateSlot": "pit2:Z0:0.78",
+      "elementKind": "pit",
+      "position": {
+        "anchor": "Z0",
+        "offsetXSvg": 0,
+        "ySvg": 491,
+        "zoneFraction": 0.78
+      },
+      "sizeSvg": {
+        "width": 24,
+        "height": 17
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 20,
+      "generatedByTemplate": true,
+      "templateSlot": "reg2:L0:-100",
+      "elementKind": "reg",
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": -100,
+        "ySvg": 518
+      },
+      "sizeSvg": {
+        "width": 22,
+        "height": 30
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 21,
+      "generatedByTemplate": true,
+      "templateSlot": "reg2:E:135",
+      "elementKind": "reg",
+      "position": {
+        "anchor": "E",
+        "offsetXSvg": 135,
+        "ySvg": 366
+      },
+      "sizeSvg": {
+        "width": 22,
+        "height": 30
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    },
+    {
+      "kind": "sign-post",
+      "id": 22,
+      "generatedByTemplate": false,
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 0,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "right",
+      "signIds": [
+        "1.25"
+      ],
+      "distanceLabel": "{d150}"
+    }
+  ],
+  "nextPlacementId": 23,
+  "signImages": {
+    "catalog": null,
+    "revisions": {}
+  },
+  "crossing": {
+    "referenceId": "TEST-PU66",
+    "source": "local-pu66",
+    "snapshot": {
+      "location": "Учебный километр",
+      "axisLabel": "Учебная ось",
+      "roadName": "Условная дорога",
+      "crossingWidthMetres": 8,
+      "crossingRoadLengthMetres": 40,
+      "revision": 2,
+      "updatedAt": "2026-09-26T12:00:00.000Z"
+    }
+  },
+  "parameters": {
+    "locationText": "Учебный участок",
+    "directions": {
+      "left": "Учебный пункт А",
+      "right": "Учебный пункт Б"
+    },
+    "signDistancesMetres": {
+      "d300": 300,
+      "d250": 250,
+      "d150": 150,
+      "d50": 50,
+      "n100": null,
+      "n50": null
+    },
+    "speedStagesKmh": [
+      70,
+      50,
+      40
+    ],
+    "yellowTemporarySigns": false,
+    "location": "out",
+    "signSize": "II",
+    "lastSettlement": null,
+    "frontStyle": "part",
+    "frontFromPu66": false,
+    "regulation": {
+      "mode": "two",
+      "hourly": "300",
+      "k": 0,
+      "vis": false,
+      "straight": false,
+      "last": null
+    },
+    "workZones": {
+      "b33": null,
+      "b34": {
+        "taperMetres": 8,
+        "bufferMetres": 12,
+        "workMetres": 18,
+        "labels": {
+          "taper": "",
+          "buffer": "",
+          "work": ""
+        }
+      }
+    },
+    "approachSpeedKmh": 90,
+    "workConditions": {
+      "kind": "short",
+      "durationHours": 8,
+      "daylight": "day",
+      "regulatorsPresent": true,
+      "sectionMetres": null
+    },
+    "speedConditions": {
+      "road": "ordinary",
+      "vehicle": "heavy"
+    }
+  },
+  "source": {
+    "kind": "created-in-editor"
+  },
+  "reviewMarks": {
+    "crossing": {
+      "fingerprint": "ee6eec6633de84b8",
+      "markedAt": "2026-09-26T13:00:00.000Z"
+    },
+    "template": {
+      "fingerprint": "2da54b014b5c6f55",
+      "markedAt": "2026-09-26T13:00:00.000Z"
+    }
+  },
+  "schemaVersion": 9,
+  "decisionEvidence": {
+    "speed": {
+      "recordedAt": "2026-09-26T14:00:00.000Z",
+      "note": "Учебные условия потока",
+      "inputFingerprint": "b4888032132f2b94",
+      "parameters": [
+        {
+          "id": "pdd-speed-outside",
+          "title": "Скорость легковых, мотоциклов и грузовых до 3,5 т на остальных дорогах",
+          "source": "ПДД, п. 10.3",
+          "value": 90,
+          "confirmed": false,
+          "document": null,
+          "currentDocument": null,
+          "amendments": [],
+          "confirmation": null,
+          "fingerprint": "b06fd15706969f5d"
+        },
+        {
+          "id": "pdd-speed-outside-conditions",
+          "title": "Пределы скорости вне населённых пунктов по виду дороги и ТС",
+          "source": "ПДД, п. 10.3",
+          "value": {
+            "Мотоциклы, легковые, грузовые до 3,5 т: остальные дороги": "90",
+            "Мотоциклы, легковые, грузовые до 3,5 т: автомагистраль": "110",
+            "Грузовые свыше 3,5 т, легковые с прицепом: остальные дороги": "70",
+            "Грузовые свыше 3,5 т, легковые с прицепом: автомагистраль": "90",
+            "Автобусы: только сидящие пассажиры, места с ремнями": "90",
+            "Другие автобусы": "70",
+            "Автобусы: организованная перевозка групп детей": "60",
+            "Грузовые: перевозка людей в кузове": "60"
+          },
+          "confirmed": false,
+          "document": null,
+          "currentDocument": null,
+          "amendments": [],
+          "confirmation": null,
+          "fingerprint": "be7d3536055b42cd"
+        },
+        {
+          "id": "pdd-speed-residential",
+          "title": "Скорость в жилой, велосипедной зоне и на дворовой территории",
+          "source": "ПДД, п. 10.2",
+          "value": 20,
+          "confirmed": false,
+          "document": null,
+          "currentDocument": null,
+          "amendments": [],
+          "confirmation": null,
+          "fingerprint": "ea9a96986d8692c9"
+        },
+        {
+          "id": "pdd-speed-settlement",
+          "title": "Разрешённая скорость в населённом пункте (значение по умолчанию на подходе)",
+          "source": "ПДД, п. 10.2",
+          "value": 60,
+          "confirmed": false,
+          "document": null,
+          "currentDocument": null,
+          "amendments": [],
+          "confirmation": null,
+          "fingerprint": "147d52cd4473198d"
+        },
+        {
+          "id": "pdd-speed-towing",
+          "title": "Скорость при буксировке механического транспортного средства",
+          "source": "ПДД, п. 10.4",
+          "value": 50,
+          "confirmed": false,
+          "document": null,
+          "currentDocument": null,
+          "amendments": [],
+          "confirmation": null,
+          "fingerprint": "0e8b7e6cf98c6d04"
+        }
+      ],
+      "conditions": {
+        "road": "ordinary",
+        "vehicle": "heavy"
+      },
+      "location": "out",
+      "approachSpeedKmh": 90,
+      "speedStagesKmh": [
+        70,
+        50,
+        40
+      ],
+      "referenceSpeedKmh": 70
+    },
+    "regulation": {
+      "recordedAt": "2026-09-26T14:00:00.000Z",
+      "note": "Учебная причина выбора двух регулировщиков",
+      "inputFingerprint": "5c9e9917ce8136e5",
+      "parameters": [
+        {
+          "id": "gost-short-term-hours",
+          "title": "Наибольшая продолжительность краткосрочных работ",
+          "source": "ГОСТ Р 58350, п. 3.5",
+          "value": 24,
+          "confirmed": false,
+          "document": null,
+          "currentDocument": null,
+          "amendments": [],
+          "confirmation": null,
+          "fingerprint": "d99106a5825a3cdc"
+        },
+        {
+          "id": "gost-work-traffic",
+          "title": "Условия поочерёдного пропуска в местах работ",
+          "source": "ГОСТ Р 58350, п. 6.1.3, таблица Д.1 и сноски",
+          "value": {
+            "Протяжённость участка для знаков, менее, м": "50",
+            "Интенсивность для знаков, менее, авт/ч": "250",
+            "Наибольшая протяжённость участка со светофором, м": "300",
+            "Наибольшая интенсивность на коротком участке, авт/ч": "500"
+          },
+          "confirmed": false,
+          "document": null,
+          "currentDocument": null,
+          "amendments": [],
+          "confirmation": null,
+          "fingerprint": "e0d2515209c496d1"
+        },
+        {
+          "id": "odm-signs-hourly",
+          "title": "Интенсивность, до которой встречный разъезд регулируют знаками 2.6 и 2.7",
+          "source": "ОДМ 218.6.019, п. 6.4.4",
+          "value": 250,
+          "confirmed": false,
+          "document": null,
+          "currentDocument": null,
+          "amendments": [],
+          "confirmation": null,
+          "fingerprint": "f592693a69d478c9"
+        },
+        {
+          "id": "odm-signs-length",
+          "title": "Протяжённость участка работ, до которой допускаются знаки 2.6 и 2.7",
+          "source": "ОДМ 218.6.019, п. 6.4.4",
+          "value": 50,
+          "confirmed": false,
+          "document": null,
+          "currentDocument": null,
+          "amendments": [],
+          "confirmation": null,
+          "fingerprint": "469815a0c9689dcf"
+        },
+        {
+          "id": "odm-alternate-hourly",
+          "title": "Верхняя граница интенсивности при поочерёдном пропуске по одной полосе",
+          "source": "ОДМ 218.6.019, п. 6.4.2",
+          "value": 500,
+          "confirmed": false,
+          "document": null,
+          "currentDocument": null,
+          "amendments": [],
+          "confirmation": null,
+          "fingerprint": "93cf6368acdcb393"
+        },
+        {
+          "id": "odm-signs-taper",
+          "title": "Длина отгона при регулировании знаками 2.6 и 2.7",
+          "source": "ГОСТ Р 58350, таблица И.1, примечание 3",
+          "value": 15,
+          "confirmed": false,
+          "document": null,
+          "currentDocument": null,
+          "amendments": [],
+          "confirmation": null,
+          "fingerprint": "fc6dea3bc64591d0"
+        },
+        {
+          "id": "odm-regulator-distance",
+          "title": "Расстояние от регулировщика до начала рабочей зоны",
+          "source": "ОДМ 218.6.019, таблица 5",
+          "value": {
+            "30": "10",
+            "40": "15",
+            "50": "30",
+            "60": "45",
+            "70": "65",
+            "80": "85"
+          },
+          "confirmed": false,
+          "document": null,
+          "currentDocument": null,
+          "amendments": [],
+          "confirmation": null,
+          "fingerprint": "456113a90ffe8126"
+        }
+      ],
+      "input": {
+        "variant": "b34",
+        "crossingReferenceId": "TEST-PU66",
+        "crossingRevision": 2,
+        "hourly": "300",
+        "limitedVisibility": false,
+        "straight": false,
+        "zoneSpeedKmh": 40,
+        "taperMetres": 8,
+        "bufferMetres": 12,
+        "frontMetres": 18,
+        "sectionMetres": 38,
+        "workConditions": {
+          "kind": "short",
+          "durationHours": 8,
+          "daylight": "day",
+          "regulatorsPresent": true,
+          "sectionMetres": null
+        }
+      },
+      "mode": "two",
+      "recommendation": "two",
+      "reasons": [
+        "Б.34 при обеспеченной видимости и участке менее 50 м: менее 250 авт./ч — знаки 2.6/2.7; от 250 до 500 включительно — один при выполненных условиях ОДМ, п. 13.7.5; свыше 500 — два. При ограниченной видимости и для Б.33 — два. Пороги: ГОСТ Р 58350, п. 6.1.3, таблица Д.1 и сноски; ОДМ 218.6.019, п. 6.4.4; ОДМ 218.6.019, п. 6.4.2. Предел фронта редактора 45 м, дополнительно действует п. 8 ПУ-66.",
+        "Два регулировщика размещаются у начала и конца места работ; необходимы согласованные действия, связь и постоянное присутствие (ОДМ 218.6.019, пп. 13.7.3–13.7.5, п. 6.4.3).",
+        "Протяжённость участка — 38 м (предварительно: отгон + буфер + фронт 18 м). Сверьте фактические границы направляющих устройств и расстояние видимости встречного автомобиля по ГОСТ Р 52289.",
+        "Регулировщик — на расстоянии 15 м до начала рабочей зоны при скорости 40 км/ч (ОДМ 218.6.019, таблица 5)."
+      ],
+      "warnings": [
+        "Для одного регулировщика не подтверждены дневные работы или прямой участок: предлагаются два регулировщика."
+      ]
+    }
+  }
+}
