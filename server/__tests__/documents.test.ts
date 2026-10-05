@@ -275,6 +275,14 @@ describe('normative document library', () => {
       await applySignUpload(registry, { ...first, expectedFingerprint: preview.fingerprint })
       expect(registry.latestSignCatalog()).toMatchObject({ edition: '2004', documentId: old.id })
       expect(() => registry.deleteDocument(old.id)).toThrow('каталога знаков')
+      // Вид документа, по которому загружен каталог, не меняется; прочие реквизиты — можно.
+      expect(() =>
+        registry.updateDocument(old.id, meta({ edition: '2004', kind: 'rules' })),
+      ).toThrow('вид документа изменить нельзя')
+      expect(registry.getDocument(old.id)).toMatchObject({ kind: 'signs' })
+      expect(
+        registry.updateDocument(old.id, meta({ edition: '2004', note: 'Учебная пометка' })),
+      ).toMatchObject({ kind: 'signs', note: 'Учебная пометка' })
 
       // Та же картинка по новой редакции: сменился только источник.
       expect(previewSignUpload(registry, signs(200, current.id))).toMatchObject({

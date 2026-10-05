@@ -7,8 +7,8 @@ import { getAsset, isSea } from 'node:sea'
 import { resolveDataDirectory, resolvePort } from './app-paths.ts'
 import { DiagnosticsLog } from './diagnostics.ts'
 import { DEFAULT_PORT, type StaticFiles } from './index.ts'
-import { startDesktopInstance } from './desktop-instance.ts'
-import { RegistryStore } from './store.ts'
+import { launchDesktop } from './desktop-instance.ts'
+import { migrationNotice } from './store.ts'
 
 declare const __TOD_VERSION__: string | undefined
 
@@ -46,44 +46,37 @@ async function main(): Promise<void> {
   console.log(`Редактор схем ОДД ${version}`)
 
   process.umask(0o077)
-  let databasePath = process.env.TOD_DATABASE_PATH
   let portableNote = ''
-  if (!databasePath) {
+  let chosenPath = process.env.TOD_DATABASE_PATH
+  if (!chosenPath) {
     const location = resolveDataDirectory(dirname(process.execPath))
-    databasePath = join(location.directory, 'registry.sqlite')
+    chosenPath = join(location.directory, 'registry.sqlite')
     if (!location.portable) {
       portableNote =
         'Папка программы недоступна для записи, данные хранятся в профиле пользователя.'
     }
   }
+  const databasePath = chosenPath
 
-  const store = new RegistryStore(databasePath)
-  const diagnostics = new DiagnosticsLog(join(dirname(databasePath), 'diagnostics.jsonl'), {
-    version,
-    mode: isSea() ? 'exe' : 'npm run desktop',
+  const launched = await launchDesktop(databasePath, initialPort, {
+    staticFiles: isSea() ? seaFiles() : undefined,
+    diagnostics: () =>
+      new DiagnosticsLog(join(dirname(databasePath), 'diagnostics.jsonl'), {
+        version,
+        mode: isSea() ? 'exe' : 'npm run desktop',
+      }),
   })
-  let instance: Awaited<ReturnType<typeof startDesktopInstance>>
-  try {
-    instance = await startDesktopInstance(
-      store,
-      initialPort,
-      isSea() ? seaFiles() : undefined,
-      diagnostics,
-    )
-  } catch (error) {
-    store.close()
-    throw error
-  }
-  const { server, port } = instance
-  const url = `http://127.0.0.1:${port}/`
-  if (!server) {
-    store.close()
+  const url = `http://127.0.0.1:${launched.port}/`
+  if (launched.running) {
     console.log(`Эта база уже открыта: ${url}\nОткрываю её в браузере.`)
     openBrowser(url)
     return
   }
+  const { server, port, store, release } = launched
   console.log(`Адрес: ${url}`)
   console.log(`Данные: ${databasePath}`)
+  const updated = migrationNotice(store)
+  if (updated) console.log(updated)
   if (port !== initialPort)
     console.log(`Порт ${initialPort} занят; выбран порт ${port} для этой базы.`)
   if (portableNote) console.log(portableNote)
@@ -96,6 +89,7 @@ async function main(): Promise<void> {
     closing = true
     server.close()
     server.closeAllConnections()
+    release()
     try {
       store.close()
     } finally {
@@ -108,6 +102,7 @@ async function main(): Promise<void> {
   }
 
   server.once('error', (error: NodeJS.ErrnoException) => {
+    release()
     try {
       store.close()
     } catch {

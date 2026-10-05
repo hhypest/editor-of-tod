@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,7 +9,8 @@ import { importSchemeJson } from '../../src/domain/import'
 import { createSchemeDetailsDraft } from '../../src/domain/edit-details'
 import { schemeSchema, schemeV2Schema, schemeV3Schema } from '../../src/domain/model'
 import { normativeDraftSchema, type CrossingDraft } from '../../src/domain/registry'
-import { RegistryStore, RevisionConflict } from '../store'
+import { migrationNotice, RegistryStore, RevisionConflict, SCHEMA_VERSION } from '../store'
+import { planBackupPrune } from '../backup-retention'
 import { oldSnapshot } from '../../tests/fixtures/old-version'
 import { recordSpeedDecision, recordRegulationDecision } from '../../src/domain/decision-evidence'
 import { PROTOTYPE_RULES } from '../../src/domain/normative-parameters'
@@ -561,5 +562,98 @@ describe('local SQLite registries', () => {
     const database = new DatabaseSync(path)
     expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 13 })
     database.close()
+  })
+
+  describe('backup before a schema update', () => {
+    function oldDatabase(name: string) {
+      const directory = mkdtempSync(join(tmpdir(), name))
+      directories.push(directory)
+      const path = join(directory, 'registry.sqlite')
+      const current = new RegistryStore(path)
+      current.saveCrossing(crossing, 0)
+      expect(current.migratedFrom).toBeNull()
+      expect(migrationNotice(current)).toBeNull()
+      current.close()
+      expect(existsSync(join(directory, 'backups'))).toBe(false)
+      const old = new DatabaseSync(path)
+      old.exec(
+        'ALTER TABLE project_recovery DROP COLUMN owner_until; ALTER TABLE project_recovery DROP COLUMN owner_id; PRAGMA user_version = 12;',
+      )
+      old.close()
+      return { directory, path }
+    }
+
+    it('keeps the previous file, reports it and does not repeat on the next start', () => {
+      const { directory, path } = oldDatabase('tod-backup-update-')
+      const updated = new RegistryStore(path, () => '2026-10-05T12:00:00.000Z')
+      const backup = updated.migrationBackup!
+      try {
+        expect(updated.migratedFrom).toBe(12)
+        expect(backup).toMatch(
+          /^registry-before-update-v12-2026-10-05T12-00-00-000Z-[a-f0-9]{8}\.sqlite$/,
+        )
+        expect(migrationNotice(updated)).toBe(
+          `База обновлена: версия 12 → ${SCHEMA_VERSION}. Прежняя база сохранена: ${join(directory, 'backups', backup)}`,
+        )
+        expect(updated.listCrossings()).toMatchObject([{ referenceId: 'TEST-001' }])
+      } finally {
+        updated.close()
+      }
+      const copy = new DatabaseSync(join(directory, 'backups', backup), { readOnly: true })
+      try {
+        expect(copy.prepare('PRAGMA user_version').get()).toEqual({ user_version: 12 })
+        expect(copy.prepare('SELECT key FROM crossings').all()).toEqual([{ key: 'TEST-001' }])
+      } finally {
+        copy.close()
+      }
+      const again = new RegistryStore(path)
+      try {
+        expect(again.migratedFrom).toBeNull()
+        expect(again.migrationBackup).toBeNull()
+      } finally {
+        again.close()
+      }
+      expect(readdirSync(join(directory, 'backups'))).toEqual([backup])
+    })
+
+    it('leaves the copy in place when the update itself fails', () => {
+      const directory = mkdtempSync(join(tmpdir(), 'tod-backup-failed-update-'))
+      directories.push(directory)
+      const path = join(directory, 'registry.sqlite')
+      const raw = new DatabaseSync(path)
+      raw.exec('CREATE TABLE crossings (key TEXT PRIMARY KEY); PRAGMA user_version = 5;')
+      raw.prepare('INSERT INTO crossings VALUES (?)').run('TEST-KEPT')
+      raw.close()
+      expect(() => new RegistryStore(path)).toThrow()
+      const [backup] = readdirSync(join(directory, 'backups'))
+      expect(backup).toMatch(/^registry-before-update-v5-/)
+      const copy = new DatabaseSync(join(directory, 'backups', backup!), { readOnly: true })
+      try {
+        expect(copy.prepare('SELECT key FROM crossings').all()).toEqual([{ key: 'TEST-KEPT' }])
+      } finally {
+        copy.close()
+      }
+    })
+
+    it('does not touch the database when the copy cannot be written', () => {
+      const { directory, path } = oldDatabase('tod-backup-refused-')
+      writeFileSync(join(directory, 'backups'), 'не каталог')
+      expect(() => new RegistryStore(path)).toThrow(
+        /Не удалось сохранить копию базы перед обновлением.*База не изменена/s,
+      )
+      const untouched = new DatabaseSync(path, { readOnly: true })
+      try {
+        expect(untouched.prepare('PRAGMA user_version').get()).toEqual({ user_version: 12 })
+      } finally {
+        untouched.close()
+      }
+    })
+
+    it('is not picked up by automatic pruning of manual backups', async () => {
+      const { directory, path } = oldDatabase('tod-backup-prune-')
+      new RegistryStore(path).close()
+      const plan = await planBackupPrune(join(directory, 'backups'), { keep: 1, maxAgeDays: 1 })
+      expect(plan).toEqual({ keep: [], remove: [] })
+    })
   })
 })

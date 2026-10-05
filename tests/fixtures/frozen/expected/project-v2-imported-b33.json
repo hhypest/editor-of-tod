@@ -1,0 +1,171 @@
+{
+  "id": "00000000-0000-4000-8000-000000000201",
+  "createdAt": "2026-09-26T12:00:00.000Z",
+  "template": {
+    "code": "b33",
+    "sourceReference": "ОДМ 218.6.019-2016",
+    "reviewStatus": "not-verified",
+    "projectionVersion": "draft-1"
+  },
+  "titleBlock": {
+    "developer": {
+      "organization": "Учебная организация",
+      "position": "",
+      "name": "Тестовый составитель",
+      "date": "26.09.2026"
+    },
+    "work": {
+      "organization": "Учебная организация",
+      "description": "Учебная схема",
+      "period": "Условный срок"
+    },
+    "responsible": [
+      {
+        "position": "",
+        "name": "Ответственный 1",
+        "phone": ""
+      },
+      {
+        "position": "",
+        "name": "Ответственный 2",
+        "phone": ""
+      }
+    ],
+    "approver": {
+      "position": "Должность",
+      "organization": "Учебный владелец",
+      "name": "Тестовая подпись"
+    },
+    "agreement": {
+      "position": "Должность",
+      "name": "Тестовая подпись",
+      "year": "2026"
+    }
+  },
+  "placements": [
+    {
+      "kind": "sign-post",
+      "id": 1,
+      "generatedByTemplate": true,
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": -520,
+        "offsetYSvg": 12
+      },
+      "side": "down",
+      "stand": "left",
+      "signIds": [
+        "1.25",
+        "3.24_40_ж"
+      ],
+      "distanceLabel": "{d300}"
+    },
+    {
+      "kind": "element",
+      "id": 2,
+      "generatedByTemplate": false,
+      "elementKind": "text",
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 810,
+        "ySvg": 605
+      },
+      "sizeSvg": {
+        "width": 0,
+        "height": 0
+      },
+      "text": "Ручная правка",
+      "fontSizeSvg": 14,
+      "bold": true
+    }
+  ],
+  "nextPlacementId": 3,
+  "signImages": {
+    "catalog": null,
+    "revisions": {}
+  },
+  "crossing": {
+    "referenceId": "TEST-001",
+    "source": "legacy-pu66",
+    "snapshot": null
+  },
+  "parameters": {
+    "locationText": "Учебный участок",
+    "directions": {
+      "left": "к станции А",
+      "right": "к станции Б"
+    },
+    "signDistancesMetres": {
+      "d300": 300,
+      "d250": 250.5,
+      "d150": 150,
+      "d50": null,
+      "n100": null,
+      "n50": null
+    },
+    "speedStagesKmh": [
+      70,
+      50,
+      40
+    ],
+    "yellowTemporarySigns": true,
+    "location": "auto",
+    "signSize": "auto",
+    "lastSettlement": null,
+    "frontStyle": "part",
+    "frontFromPu66": false,
+    "regulation": {
+      "mode": "auto",
+      "hourly": "",
+      "k": 0,
+      "vis": false,
+      "straight": false,
+      "last": null
+    },
+    "workZones": {
+      "b33": {
+        "taperMetres": 7,
+        "bufferMetres": 15,
+        "workMetres": 37,
+        "labels": {
+          "taper": "5–10",
+          "buffer": "15",
+          "work": "min 30"
+        }
+      },
+      "b34": {
+        "taperMetres": 10,
+        "bufferMetres": 10,
+        "workMetres": 30,
+        "labels": {
+          "taper": "10",
+          "buffer": "10",
+          "work": "max 30"
+        }
+      }
+    },
+    "approachSpeedKmh": 60,
+    "workConditions": {
+      "kind": "unknown",
+      "durationHours": null,
+      "daylight": "unknown",
+      "regulatorsPresent": false,
+      "sectionMetres": null
+    },
+    "speedConditions": {
+      "road": "",
+      "vehicle": ""
+    }
+  },
+  "source": {
+    "kind": "legacy-html-v1",
+    "importedAt": "2026-09-26T12:00:00.000Z",
+    "originalJson": "{\n  \"v\": 1,\n  \"params\": {\n    \"key\": \"TEST-001\",\n    \"variant\": \"b33\",\n    \"peregon\": \"Учебный участок\",\n    \"dirL\": \"к станции А\",\n    \"dirR\": \"к станции Б\",\n    \"d300\": \"300\",\n    \"d250\": \"250.5\",\n    \"d150\": 150,\n    \"d50\": \"\",\n    \"s1\": 70,\n    \"s2\": 50,\n    \"s3\": 40,\n    \"yellow\": true,\n    \"len\": {\n      \"b33\": {\n        \"taper\": 7,\n        \"buffer\": 15,\n        \"zone\": 37,\n        \"lTaper\": \"5–10\",\n        \"lBuffer\": \"15\",\n        \"lZone\": \"min 30\"\n      },\n      \"b34\": {\n        \"taper\": 10,\n        \"buffer\": 10,\n        \"zone\": 30,\n        \"lTaper\": \"10\",\n        \"lBuffer\": \"10\",\n        \"lZone\": \"max 30\"\n      }\n    }\n  },\n  \"head\": {\n    \"dev_org\": \"Учебная организация\",\n    \"dev_fio\": \"Тестовый составитель\",\n    \"dev_date\": \"26.09.2026\",\n    \"org\": \"Учебная организация\",\n    \"work\": \"Учебная схема\",\n    \"term\": \"Условный срок\",\n    \"resp1\": \"Ответственный 1\",\n    \"resp2\": \"Ответственный 2\",\n    \"ap_pos\": \"Должность\",\n    \"ap_org\": \"Учебный владелец\",\n    \"ap_fio\": \"Тестовая подпись\",\n    \"ag_pos\": \"Должность\",\n    \"ag_fio\": \"Тестовая подпись\",\n    \"year\": \"2026\"\n  },\n  \"objects\": [\n    {\n      \"t\": \"post\",\n      \"id\": 1,\n      \"signs\": [\"1.25\", \"3.24_40_ж\"],\n      \"anchor\": \"L0\",\n      \"dx\": -520,\n      \"dy\": 12,\n      \"side\": \"down\",\n      \"stand\": \"left\",\n      \"dist\": \"{d300}\",\n      \"auto\": 1\n    },\n    {\n      \"t\": \"el\",\n      \"id\": 2,\n      \"e\": \"text\",\n      \"anchor\": \"abs\",\n      \"dx\": 810,\n      \"y\": 605,\n      \"w\": 0,\n      \"h\": 0,\n      \"text\": \"Ручная правка\",\n      \"size\": 14,\n      \"bold\": true\n    }\n  ],\n  \"nid\": 3\n}\n"
+  },
+  "reviewMarks": {},
+  "schemaVersion": 9,
+  "decisionEvidence": {
+    "speed": null,
+    "regulation": null
+  }
+}

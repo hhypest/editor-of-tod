@@ -1,0 +1,190 @@
+{
+  "id": "00000000-0000-4000-8000-000000000602",
+  "createdAt": "2026-09-26T12:00:00.000Z",
+  "template": {
+    "code": "b34",
+    "sourceReference": "ОДМ 218.6.019-2016",
+    "reviewStatus": "not-verified",
+    "projectionVersion": "draft-1"
+  },
+  "titleBlock": {
+    "developer": {
+      "organization": "Учебная организация",
+      "position": "",
+      "name": "Тестовый составитель",
+      "date": "26.09.2026"
+    },
+    "work": {
+      "organization": "Учебная организация",
+      "description": "Условные текущие работы",
+      "period": "Учебный срок"
+    },
+    "responsible": [
+      {
+        "position": "",
+        "name": "Ответственный 1",
+        "phone": ""
+      },
+      {
+        "position": "",
+        "name": "Ответственный 2",
+        "phone": ""
+      }
+    ],
+    "approver": {
+      "position": "Должность",
+      "organization": "Учебный владелец",
+      "name": "Тестовая подпись"
+    },
+    "agreement": {
+      "position": "Должность",
+      "name": "Тестовая подпись",
+      "year": "2026"
+    }
+  },
+  "placements": [
+    {
+      "kind": "sign-post",
+      "id": 4,
+      "generatedByTemplate": true,
+      "position": {
+        "anchor": "L1",
+        "offsetXSvg": 125,
+        "offsetYSvg": -30
+      },
+      "side": "up",
+      "stand": "right",
+      "signIds": [
+        "1.25"
+      ],
+      "distanceLabel": "{d150}"
+    },
+    {
+      "kind": "sign-post",
+      "id": 7,
+      "generatedByTemplate": false,
+      "position": {
+        "anchor": "abs",
+        "offsetXSvg": 912,
+        "offsetYSvg": 44
+      },
+      "side": "down",
+      "stand": "left",
+      "signIds": [
+        "3.24_40_ж",
+        "9.99"
+      ],
+      "distanceLabel": null
+    },
+    {
+      "kind": "element",
+      "id": 10,
+      "generatedByTemplate": false,
+      "elementKind": "text",
+      "position": {
+        "anchor": "Z1",
+        "offsetXSvg": -25,
+        "ySvg": 600
+      },
+      "sizeSvg": {
+        "width": 0,
+        "height": 0
+      },
+      "text": "Ручная надпись",
+      "fontSizeSvg": 14,
+      "bold": false
+    },
+    {
+      "kind": "element",
+      "id": 11,
+      "generatedByTemplate": true,
+      "elementKind": "cone",
+      "position": {
+        "anchor": "AX",
+        "offsetXSvg": 23,
+        "ySvg": 20
+      },
+      "sizeSvg": {
+        "width": 12,
+        "height": 12
+      },
+      "text": null,
+      "fontSizeSvg": null,
+      "bold": false
+    }
+  ],
+  "nextPlacementId": 12,
+  "signImages": {
+    "catalog": null,
+    "revisions": {}
+  },
+  "crossing": {
+    "referenceId": "TEST-002",
+    "source": "legacy-pu66",
+    "snapshot": null
+  },
+  "parameters": {
+    "locationText": "Учебное направление Б",
+    "directions": {
+      "left": "к условной станции В",
+      "right": "к условной станции Г"
+    },
+    "signDistancesMetres": {
+      "d300": 300.5,
+      "d250": 250,
+      "d150": 150,
+      "d50": 50,
+      "n100": null,
+      "n50": null
+    },
+    "speedStagesKmh": [
+      70,
+      50,
+      40
+    ],
+    "yellowTemporarySigns": false,
+    "location": "auto",
+    "signSize": "auto",
+    "settlementSpeedKmh": 60,
+    "lastSettlement": null,
+    "frontStyle": "part",
+    "frontFromPu66": false,
+    "regulation": {
+      "mode": "auto",
+      "hourly": "",
+      "k": 0,
+      "vis": false,
+      "straight": false,
+      "last": null
+    },
+    "workZones": {
+      "b33": {
+        "taperMetres": 7,
+        "bufferMetres": 15,
+        "workMetres": 45,
+        "labels": {
+          "taper": "5–10",
+          "buffer": "15",
+          "work": "учебная подпись Б.33"
+        }
+      },
+      "b34": {
+        "taperMetres": 10,
+        "bufferMetres": 10,
+        "workMetres": 18,
+        "labels": {
+          "taper": "10",
+          "buffer": "10",
+          "work": "учебная подпись Б.34"
+        }
+      }
+    }
+  },
+  "source": {
+    "kind": "legacy-html-v1",
+    "importedAt": "2026-09-26T12:00:00.000Z",
+    "originalJson": "{\n  \"v\": 1,\n  \"params\": {\n    \"key\": \"TEST-002\",\n    \"variant\": \"b34\",\n    \"peregon\": \"Учебное направление Б\",\n    \"dirL\": \"к условной станции В\",\n    \"dirR\": \"к условной станции Г\",\n    \"d300\": \"300,5\",\n    \"d250\": 250,\n    \"d150\": \"150\",\n    \"d50\": \"50\",\n    \"s1\": 70,\n    \"s2\": 50,\n    \"s3\": 40,\n    \"yellow\": false,\n    \"len\": {\n      \"b33\": {\n        \"taper\": 7,\n        \"buffer\": 15,\n        \"zone\": 45,\n        \"lTaper\": \"5–10\",\n        \"lBuffer\": \"15\",\n        \"lZone\": \"учебная подпись Б.33\"\n      },\n      \"b34\": {\n        \"taper\": 10,\n        \"buffer\": 10,\n        \"zone\": 18,\n        \"lTaper\": \"10\",\n        \"lBuffer\": \"10\",\n        \"lZone\": \"учебная подпись Б.34\"\n      }\n    }\n  },\n  \"head\": {\n    \"dev_org\": \"Учебная организация\",\n    \"dev_fio\": \"Тестовый составитель\",\n    \"dev_date\": \"26.09.2026\",\n    \"org\": \"Учебная организация\",\n    \"work\": \"Условные текущие работы\",\n    \"term\": \"Учебный срок\",\n    \"resp1\": \"Ответственный 1\",\n    \"resp2\": \"Ответственный 2\",\n    \"ap_pos\": \"Должность\",\n    \"ap_org\": \"Учебный владелец\",\n    \"ap_fio\": \"Тестовая подпись\",\n    \"ag_pos\": \"Должность\",\n    \"ag_fio\": \"Тестовая подпись\",\n    \"year\": \"2026\"\n  },\n  \"objects\": [\n    {\n      \"t\": \"post\",\n      \"id\": 4,\n      \"signs\": [\"1.25\"],\n      \"anchor\": \"L1\",\n      \"dx\": 125,\n      \"dy\": -30,\n      \"side\": \"up\",\n      \"stand\": \"right\",\n      \"dist\": \"{d150}\",\n      \"auto\": 1\n    },\n    {\n      \"t\": \"post\",\n      \"id\": 7,\n      \"signs\": [\"3.24_40_ж\", \"9.99\"],\n      \"anchor\": \"abs\",\n      \"dx\": 912,\n      \"dy\": 44,\n      \"side\": \"down\",\n      \"stand\": \"left\",\n      \"dist\": null,\n      \"auto\": 0\n    },\n    {\n      \"t\": \"el\",\n      \"id\": 10,\n      \"e\": \"text\",\n      \"anchor\": \"Z1\",\n      \"dx\": -25,\n      \"y\": 600,\n      \"w\": 0,\n      \"h\": 0,\n      \"text\": \"Ручная надпись\",\n      \"size\": 14,\n      \"bold\": false\n    },\n    {\n      \"t\": \"el\",\n      \"id\": 11,\n      \"e\": \"cone\",\n      \"anchor\": \"AX\",\n      \"dx\": 23,\n      \"y\": 20,\n      \"w\": 12,\n      \"h\": 12,\n      \"auto\": 1\n    }\n  ],\n  \"nid\": 7,\n  \"legacyNote\": {\n    \"purpose\": \"Проверка сохранения неизвестных полей\"\n  }\n}\n"
+  },
+  "schemaVersion": 6,
+  "reviewMarks": {}
+}

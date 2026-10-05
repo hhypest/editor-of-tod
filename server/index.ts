@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { dirname, join, extname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -58,9 +59,11 @@ import {
   RecoveryOwned,
   AmbiguousPu66Key,
   DocumentInUse,
+  migrationNotice,
 } from './store.ts'
 
 export const DEFAULT_PORT = 4100
+const PROBE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const port = DEFAULT_PORT
 
 /** Источник файлов собранного интерфейса: папка `dist/` или ресурсы исполняемого файла. */
@@ -190,6 +193,8 @@ export function createRegistryServer(
   listenPort = port,
   staticFiles: StaticFiles = defaultStaticFiles(),
   diagnostics: DiagnosticsLog = new DiagnosticsLog(null, { version: 'dev', mode: 'test' }),
+  /** Отличает этот запуск программы от других: по нему проверяется отметка рядом с базой. */
+  instanceId: string = randomUUID(),
 ) {
   const databaseId = databaseIdentity(store.path)
   const server = createServer(async (req, res) => {
@@ -204,7 +209,8 @@ export function createRegistryServer(
     try {
       const address = server.address()
       const actualPort = typeof address === 'object' && address ? address.port : listenPort
-      const pathname = new URL(req.url ?? '/', `http://127.0.0.1:${actualPort}`).pathname
+      const url = new URL(req.url ?? '/', `http://127.0.0.1:${actualPort}`)
+      const pathname = url.pathname
       route = routeOf(req.method ?? 'GET', pathname)
       checkRequest(req, actualPort)
       const projectPath = /^\/api\/projects\/([^/]+)$/.exec(pathname)
@@ -218,7 +224,20 @@ export function createRegistryServer(
           pathname,
         )
       if (req.method === 'GET' && pathname === '/api/status') {
-        json(res, 200, { application: 'editor-of-tod', ready: true, databaseId })
+        // Другой запуск программы кладёт рядом со своей базой пустой файл и спрашивает, видим
+        // ли мы его рядом с нашей: так он узнаёт, что база та же, каким бы путём её ни открыли.
+        const probe = url.searchParams.get('probe')
+        const sameFile =
+          probe !== null && PROBE_ID.test(probe) && store.path !== ':memory:'
+            ? { probe: existsSync(`${store.path}.probe-${probe}`) }
+            : {}
+        json(res, 200, {
+          application: 'editor-of-tod',
+          ready: true,
+          databaseId,
+          instanceId,
+          ...sameFile,
+        })
       } else if (req.method === 'GET' && pathname === '/api/diagnostics') {
         json(res, 200, diagnostics.report(store))
       } else if (req.method === 'POST' && pathname === '/api/diagnostics/events') {
@@ -570,6 +589,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   server.listen(port, '127.0.0.1', () => {
     console.log(`Локальный редактор: http://127.0.0.1:${port}/`)
     console.log(`Реестр хранится в ${databasePath}`)
+    const updated = migrationNotice(store)
+    if (updated) console.log(updated)
   })
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, () => server.close(() => store.close()))
