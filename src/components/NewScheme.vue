@@ -18,6 +18,8 @@ import Pu66CardPicker from './Pu66CardPicker.vue'
 import WorkConditionsFields from './WorkConditionsFields.vue'
 import PddSpeedReference from './PddSpeedReference.vue'
 import { cellNumber } from '../domain/pu66-norms'
+import type { SpeedConditions } from '../domain/decision-evidence-schema'
+import { recordSpeedDecision } from '../domain/decision-evidence'
 import type { SchemeDetailsDraft } from '../domain/edit-details'
 
 const props = defineProps<{ locked?: boolean; active?: boolean }>()
@@ -33,7 +35,18 @@ const input = reactive<NewSchemeInput>({
   approachSpeedKmh: '',
   speedStagesKmh: ['', '', ''],
   yellowTemporarySigns: false,
+  speedConditions: { road: '', vehicle: '' },
 })
+const recordChosenSpeed = ref(false)
+function selectSpeedConditions(conditions: SpeedConditions) {
+  input.speedConditions = conditions
+  recordChosenSpeed.value = false
+}
+function applySpeedReference(value: number) {
+  if (props.locked) return
+  approachSpeed.value = String(value)
+  recordChosenSpeed.value = true
+}
 const { rules } = useNormativeRules()
 const workConditions = ref<SchemeDetailsDraft['parameters']['workConditions']>({
   kind: 'unknown',
@@ -88,6 +101,8 @@ function chooseLocation(to: SchemeLocation): void {
   const previousDefault = from ? String(rules.value.allowedSpeedKmh[from]) : ''
   const keepStages = !stagesAreDefault(input.approachSpeedKmh)
   input.location = to
+  input.speedConditions = { road: '', vehicle: '' }
+  recordChosenSpeed.value = false
   if (!input.approachSpeedKmh.trim() || parsed(input.approachSpeedKmh) === parsed(previousDefault))
     input.approachSpeedKmh = newSchemeDefaults(to, rules.value).approachSpeedKmh
   if (!keepStages) fillStages()
@@ -199,7 +214,14 @@ async function create(): Promise<void> {
       error.value = `Карточка обновлена до редакции № ${latest.revision}. Проверьте данные и создайте проект ещё раз.`
       return
     }
-    emit('create', createSchemeFromPu66(input, latest, { rules: rules.value }))
+    let created = createSchemeFromPu66(input, latest, { rules: rules.value })
+    if (recordChosenSpeed.value)
+      created = recordSpeedDecision(
+        created,
+        rules.value,
+        'Выбран справочник скорости по указанному виду дороги и ТС; состав потока и действующие знаки требуют отдельной сверки.',
+      )
+    emit('create', created)
   } catch (cause) {
     error.value =
       cause instanceof SchemeCreationError || cause instanceof Error
@@ -394,7 +416,9 @@ watch(
             :location="input.location"
             :rules="rules"
             :locked="locked"
-            @apply="approachSpeed = String($event)"
+            :selection="input.speedConditions ?? { road: '', vehicle: '' }"
+            @select="selectSpeedConditions"
+            @apply="applySpeedReference"
           />
         </template>
         <label class="checkbox">

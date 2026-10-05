@@ -40,6 +40,20 @@ describe('review navigation adapter', () => {
     ['figure-dimensions', 'parameters', 'geometry', 'details-title', undefined],
     ['crossing', 'crossing', 'source', 'pu66-link-title', undefined],
     ['pu66-status', 'crossing', 'source', 'pu66-link-title', undefined],
+    [
+      'decision-speed',
+      'decisionEvidence.speed',
+      'geometry',
+      'details-title',
+      'decisionEvidence.speed',
+    ],
+    [
+      'decision-regulation',
+      'decisionEvidence.regulation',
+      'geometry',
+      'details-title',
+      'decisionEvidence.regulation',
+    ],
     ['b34-traffic', 'placements', 'objects', 'placements-title', undefined],
   ] as const)('maps %s by semantic path', (id, path, view, sectionId, field) => {
     expect(mapReviewTarget({ id, path })).toEqual({ view, sectionId, ...(field ? { field } : {}) })

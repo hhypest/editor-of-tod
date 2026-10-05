@@ -11,6 +11,8 @@ import { schemeSchema, schemeV2Schema, schemeV3Schema } from '../../src/domain/m
 import { normativeDraftSchema, type CrossingDraft } from '../../src/domain/registry'
 import { RegistryStore, RevisionConflict } from '../store'
 import { oldSnapshot } from '../../tests/fixtures/old-version'
+import { recordSpeedDecision, recordRegulationDecision } from '../../src/domain/decision-evidence'
+import { PROTOTYPE_RULES } from '../../src/domain/normative-parameters'
 
 const directories: string[] = []
 const fixture = readFileSync(
@@ -33,6 +35,60 @@ const crossing: CrossingDraft = {
 }
 
 describe('local SQLite registries', () => {
+  it('preserves v9 decision evidence in SQLite history, restore and pending recovery after reopening', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'tod-decision-evidence-'))
+    directories.push(directory)
+    const path = join(directory, 'registry.sqlite')
+    let scheme = importSchemeJson(fixture).scheme
+    scheme.parameters.location = 'out'
+    scheme.parameters.speedConditions = { road: 'ordinary', vehicle: 'heavy' }
+    scheme.parameters.regulation.mode = 'two'
+    scheme = recordSpeedDecision(scheme, PROTOTYPE_RULES, 'Учебные условия потока')
+    scheme = recordRegulationDecision(
+      scheme,
+      PROTOTYPE_RULES,
+      'Учебная причина выбора двух регулировщиков',
+    )
+    const draft = createSchemeDetailsDraft(scheme)
+    draft.parameters.speedConditions = { road: 'ordinary', vehicle: 'light' }
+    draft.decisionNotes!.speed = 'Неприменённое новое обоснование'
+    const sessionId = randomUUID()
+    const ownerId = randomUUID()
+    const store = new RegistryStore(path)
+    try {
+      expect(store.saveProject(scheme, 0).revision).toBe(1)
+      const changed = { ...scheme, parameters: { ...scheme.parameters, approachSpeedKmh: 65 } }
+      expect(store.saveProject(changed, 1).revision).toBe(2)
+      expect(store.restoreProject(scheme.id, 1, 2)?.scheme.decisionEvidence).toEqual(
+        scheme.decisionEvidence,
+      )
+      store.saveRecovery(
+        {
+          sessionId,
+          scheme,
+          baseRevision: 3,
+          detailsDraft: draft,
+          placementDraft: null,
+          fileName: 'synthetic-v9.json',
+          expectedVersion: 0,
+        },
+        ownerId,
+      )
+    } finally {
+      store.close()
+    }
+    const reopened = new RegistryStore(path)
+    try {
+      expect(reopened.schemaVersion()).toBe(13)
+      expect(reopened.getProjectRevision(scheme.id, 1)?.scheme.decisionEvidence).toEqual(
+        scheme.decisionEvidence,
+      )
+      expect(reopened.getProject(scheme.id)?.scheme).toEqual(scheme)
+      expect(reopened.getRecovery(sessionId)?.detailsDraft).toEqual(draft)
+    } finally {
+      reopened.close()
+    }
+  })
   it('recovers uncommitted fields without making a project revision and rejects stale recovery writes', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-recovery-'))
     directories.push(directory)
@@ -340,7 +396,7 @@ describe('local SQLite registries', () => {
         .prepare('SELECT revision, scheme_json FROM project_revisions ORDER BY revision')
         .all() as { revision: number; scheme_json: string }[]
       expect(records.map((record) => JSON.parse(record.scheme_json).schemaVersion)).toEqual([
-        2, 8, 8,
+        2, 9, 9,
       ])
       expect(JSON.parse(records[0]!.scheme_json)).toEqual(previous)
     } finally {

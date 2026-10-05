@@ -164,12 +164,24 @@ export async function listParameterStates(
       })
       continue
     }
+    const confirmedDocument = confirmation?.documentId
+      ? store.getDocument(confirmation.documentId)
+      : null
     const current = currentDocument(documents, source.documentCode, today)
     if (!current) {
       states.push({
         id: definition.id,
         status: { kind: 'no-document' },
         document: null,
+        confirmationDocument: confirmedDocument
+          ? {
+              id: confirmedDocument.id,
+              label: documentLabel(confirmedDocument),
+              sha256: confirmedDocument.sha256,
+              effectiveFrom: confirmedDocument.effectiveFrom,
+            }
+          : null,
+        amendmentDocuments: [],
         quote: null,
         suggestion: null,
         confirmation,
@@ -179,6 +191,23 @@ export async function listParameterStates(
     }
     const quote = await quoteFor(store, definition, current.id)
     const amendments = await amendmentsFor(store, definition, current.id, today)
+    const statuses = documentStatuses(documents, today)
+    const amendmentDocuments = documents
+      .filter((item) => {
+        const status = statuses.get(item.id)
+        return (
+          item.amendsId === current.id &&
+          status?.kind === 'amendment' &&
+          status.inForce &&
+          amendments.includes(`${item.code} (${item.edition})`)
+        )
+      })
+      .map((item) => ({
+        id: item.id,
+        label: documentLabel(item),
+        sha256: item.sha256,
+        effectiveFrom: item.effectiveFrom,
+      }))
     // Includes PDF hashes even while an earlier confirmation is already stale.
     const sourceFingerprint =
       source.documentCode === 'ПДД'
@@ -224,7 +253,21 @@ export async function listParameterStates(
       id: definition.id,
       ...(sourceFingerprint ? { sourceFingerprint } : {}),
       status,
-      document: { id: current.id, label: documentLabel(current), sha256: current.sha256 },
+      document: {
+        id: current.id,
+        label: documentLabel(current),
+        sha256: current.sha256,
+        effectiveFrom: current.effectiveFrom,
+      },
+      amendmentDocuments,
+      confirmationDocument: confirmedDocument
+        ? {
+            id: confirmedDocument.id,
+            label: documentLabel(confirmedDocument),
+            sha256: confirmedDocument.sha256,
+            effectiveFrom: confirmedDocument.effectiveFrom,
+          }
+        : null,
       quote: quote
         ? { page: quote.page, text: quote.text, ...(quote.rows ? { rows: quote.rows } : {}) }
         : null,

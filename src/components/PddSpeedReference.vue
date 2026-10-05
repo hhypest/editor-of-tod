@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
+import type { SpeedConditions } from '../domain/decision-evidence-schema'
 import { pddRoads, pddVehicles, pddSpeedReference } from '../domain/pdd-speed'
 import type { NormativeRules } from '../domain/normative-parameters'
 
@@ -7,17 +8,17 @@ const props = defineProps<{
   location: 'in' | 'out' | 'auto' | ''
   rules: NormativeRules
   locked?: boolean
+  selection: SpeedConditions
 }>()
-const emit = defineEmits<{ apply: [speed: number] }>()
-const road = ref<keyof typeof pddRoads | ''>('')
-const vehicle = ref<keyof typeof pddVehicles | ''>('')
-watch(
-  () => props.location,
-  () => {
-    road.value = ''
-    vehicle.value = ''
-  },
-)
+const emit = defineEmits<{ apply: [speed: number]; select: [conditions: SpeedConditions] }>()
+const road = computed({
+  get: () => props.selection.road,
+  set: (value) => emit('select', { ...props.selection, road: value }),
+})
+const vehicle = computed({
+  get: () => props.selection.vehicle,
+  set: (value) => emit('select', { ...props.selection, vehicle: value }),
+})
 const reference = computed(() =>
   pddSpeedReference(props.location, road.value, vehicle.value, props.rules),
 )
@@ -70,8 +71,8 @@ const reference = computed(() =>
       <p class="hint">
         Это предел для выбранного вида ТС. Проверьте скорость всего потока и ступени 3.24;
         подстановка не повышает разрешённую скорость по действующим знакам. В проекте сохраняются
-        скорость и ступени; выбранные здесь условия пока служат для справки и проверяются в пункте
-        «Скорость по условиям ПДД».
+        скорость, ступени и выбранные условия. Обоснование и исторические основания записываются
+        отдельно; затем пройдите пункт «Скорость по условиям ПДД».
       </p>
       <button
         type="button"

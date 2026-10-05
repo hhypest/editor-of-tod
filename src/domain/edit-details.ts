@@ -21,7 +21,10 @@ type WorkZoneDraft = {
 }
 
 export type SchemeDetailsDraft = {
+  decisionEvidence?: Scheme['decisionEvidence']
+  decisionNotes?: { speed: string; regulation: string }
   parameters: {
+    speedConditions?: Scheme['parameters']['speedConditions']
     locationText: string
     directions: Scheme['parameters']['directions']
     signDistancesMetres: Record<keyof Scheme['parameters']['signDistancesMetres'], string>
@@ -74,7 +77,13 @@ function cloneTitleBlock(title: Scheme['titleBlock']): Scheme['titleBlock'] {
 export function createSchemeDetailsDraft(scheme: Scheme): SchemeDetailsDraft {
   const { parameters } = scheme
   return {
+    decisionEvidence: JSON.parse(JSON.stringify(scheme.decisionEvidence)),
+    decisionNotes: {
+      speed: scheme.decisionEvidence.speed?.note ?? '',
+      regulation: scheme.decisionEvidence.regulation?.note ?? '',
+    },
     parameters: {
+      speedConditions: { ...parameters.speedConditions },
       locationText: parameters.locationText,
       directions: { ...parameters.directions },
       signDistancesMetres: {
@@ -239,8 +248,10 @@ export function applySchemeDetails(
   })
   const candidate = {
     ...scheme,
+    decisionEvidence: draft.decisionEvidence ?? scheme.decisionEvidence,
     parameters: {
       ...scheme.parameters,
+      speedConditions: parameters.speedConditions ?? scheme.parameters.speedConditions,
       locationText: parameters.locationText,
       directions: { ...parameters.directions },
       signDistancesMetres: {

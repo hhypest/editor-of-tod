@@ -75,8 +75,19 @@ export function useEditorNavigation({
     if (target.registryTab) registryTab.value = target.registryTab
     showView(target.view)
     await nextTick()
+    const candidates = [...document.querySelectorAll<HTMLElement>('[data-field]')].filter(
+      (element) => element.dataset.field === target.field,
+    )
+    // Поле обоснования может находиться в свёрнутом разделе: раскрываем его перед фокусом.
+    for (const candidate of candidates) {
+      let details = candidate.closest('details')
+      while (details) {
+        details.open = true
+        details = details.parentElement?.closest('details') ?? null
+      }
+    }
     const field = target.field
-      ? [...document.querySelectorAll<HTMLElement>('[data-field]')].find(
+      ? candidates.find(
           (element) => element.dataset.field === target.field && element.offsetParent !== null,
         )
       : undefined

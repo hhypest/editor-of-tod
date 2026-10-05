@@ -8,6 +8,8 @@ import {
   schemeV5Schema,
   schemeV6Schema,
   schemeV7Schema,
+  schemeV8Schema,
+  upgradeSchemeV8,
   upgradeSchemeV7,
   upgradeSchemeV4,
   upgradeSchemeV5,
@@ -45,6 +47,7 @@ export interface ImportResult {
     | 'scheme-v6'
     | 'scheme-v7'
     | 'scheme-v8'
+    | 'scheme-v9'
   warnings: string[]
 }
 
@@ -235,7 +238,7 @@ function migrateLegacy(
 
   const { params, head } = legacy
   const candidate = {
-    schemaVersion: 8,
+    schemaVersion: 9,
     id,
     createdAt: now,
     crossing: { referenceId: params.key, source: 'legacy-pu66', snapshot: null },
@@ -427,11 +430,23 @@ export function importSchemeJson(
   }
 
   if ('schemaVersion' in value && value.schemaVersion === 8) {
+    const parsed = schemeV8Schema.safeParse(value)
+    if (!parsed.success) invalidIssue(parsed.error.issues)
+    return {
+      scheme: upgradeSchemeV8(parsed.data),
+      format: 'scheme-v8',
+      warnings: [
+        'Условия справочника и снимки решений в прежнем формате не хранились. Старые скорости и объекты сохранены; основания можно записать на этапе 2.',
+      ],
+    }
+  }
+
+  if ('schemaVersion' in value && value.schemaVersion === 9) {
     const parsed = schemeSchema.safeParse(value)
     if (!parsed.success) invalidIssue(parsed.error.issues)
     return {
       scheme: parsed.data,
-      format: 'scheme-v8',
+      format: 'scheme-v9',
       warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
     }
   }
@@ -452,7 +467,7 @@ export function importSchemeJson(
 
   throw new SchemeImportError(
     'unsupported-version',
-    'Версия проекта не поддерживается. Поддерживаются v: 1 и schemaVersion: 2–8.',
+    'Версия проекта не поддерживается. Поддерживаются v: 1 и schemaVersion: 2–9.',
   )
 }
 

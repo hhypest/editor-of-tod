@@ -180,11 +180,14 @@ describe('explicit conditions after specialist review', () => {
   it('roundtrips v8 and opens v7 without inventing confirmations', () => {
     const scheme = project()
     expect(importSchemeJson(exportSchemeJson(scheme)).scheme).toEqual(scheme)
-    const { workConditions: _absent, ...parameters } = scheme.parameters
+    const { workConditions: _absent, speedConditions: _speed, ...parameters } = scheme.parameters
     void _absent
-    const imported = importSchemeJson(JSON.stringify({ ...scheme, schemaVersion: 7, parameters }))
+    void _speed
+    const { decisionEvidence: _evidence, ...old } = scheme
+    void _evidence
+    const imported = importSchemeJson(JSON.stringify({ ...old, schemaVersion: 7, parameters }))
     expect(imported.format).toBe('scheme-v7')
-    expect(imported.scheme.schemaVersion).toBe(8)
+    expect(imported.scheme.schemaVersion).toBe(9)
     expect(imported.scheme.parameters.workConditions.kind).toBe('unknown')
     expect(() => buildTemplatePlacements(imported.scheme)).toThrow('краткосрочные')
   })
