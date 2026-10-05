@@ -187,7 +187,7 @@ describe('explicit conditions after specialist review', () => {
     void _evidence
     const imported = importSchemeJson(JSON.stringify({ ...old, schemaVersion: 7, parameters }))
     expect(imported.format).toBe('scheme-v7')
-    expect(imported.scheme.schemaVersion).toBe(9)
+    expect(imported.scheme.schemaVersion).toBe(10)
     expect(imported.scheme.parameters.workConditions.kind).toBe('unknown')
     expect(() => buildTemplatePlacements(imported.scheme)).toThrow('краткосрочные')
   })

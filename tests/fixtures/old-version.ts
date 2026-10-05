@@ -1,9 +1,33 @@
 import type { Scheme } from '../../src/domain/model'
 import { responsibleLine } from '../../src/domain/title-block'
 
+/**
+ * Формат v9 (до Р1): у стойки нет расстояния, только подпись — маркер поля этапа 2 или текст.
+ */
+export function v9Snapshot(scheme: Scheme) {
+  return {
+    ...scheme,
+    schemaVersion: 9 as const,
+    placements: scheme.placements.map((placement) => {
+      if (placement.kind !== 'sign-post') return placement
+      const { distance, ...post } = placement
+      return {
+        ...post,
+        distanceLabel: !distance
+          ? placement.distanceLabel
+          : distance.by === 'marker'
+            ? `{${distance.marker}}`
+            : distance.metres === 0
+              ? '0'
+              : `${distance.metres} м`,
+      }
+    }),
+  }
+}
+
 /** v8 did not retain speed conditions or normative decision evidence. */
 export function v8Snapshot(scheme: Scheme) {
-  const { decisionEvidence: _evidence, ...rest } = scheme
+  const { decisionEvidence: _evidence, ...rest } = v9Snapshot(scheme)
   const { speedConditions: _conditions, ...parameters } = scheme.parameters
   void _evidence
   void _conditions
@@ -73,7 +97,7 @@ export function oldSnapshot(scheme: Scheme, schemaVersion: 2 | 3 | 4) {
       yellowTemporarySigns: parameters.yellowTemporarySigns,
       workZones: parameters.workZones,
     },
-    placements: scheme.placements.map((placement) => {
+    placements: oldBase.placements.map((placement) => {
       if (placement.kind !== 'element') return placement
       const { anchor, offsetXSvg, ySvg } = placement.position
       return { ...placement, position: { anchor, offsetXSvg, ySvg } }

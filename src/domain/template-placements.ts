@@ -3,35 +3,11 @@ import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import { workConditionProblems } from './work-conditions'
 import { anchorCoordinates } from './placement-workspace'
 import { distanceTitles, type DistanceField } from './normative-defaults'
+import { draftTemplateProfile } from './template-profile'
 
 type Placement = Scheme['placements'][number]
 
-/** Sources for a preliminary drawing profile, not a statement that a project complies. */
-export const draftTemplateProfile = {
-  id: 'draft-2',
-  source: 'ОДМ 218.6.019-2016',
-  clauses: {
-    figures: 'Приложение Б, рисунки Б.33 и Б.34 (стр. 100–101)',
-    roadworks: '9.1.2.2',
-    priority: '6.4.4, 9.1.3.1; ГОСТ Р 58350-2019, п. 6.1.3, таблицы Д.1 и И.1',
-    regulators: '13.7.3–13.7.5, таблица 5',
-    settlement: 'ГОСТ Р 52289-2019, пп. 5.2.2, 5.4.22 — расстояния и ступени скорости сверяются',
-  },
-  /**
-   * Смещения стоек от начала отвода (L0) и конца зоны (E) в единицах листа 1680 × 1188.
-   * Это компоновка рисунка, а не расстояния на местности: расстояния подписываются маркерами.
-   */
-  offsets: {
-    outside: {
-      regular: { before: [-520, -410, -290, -170], after: [170, 290, 410, 500] },
-      priority: { before: [-600, -520, -412, -210], after: [208, 332, 452, 536] },
-    },
-    settlement: {
-      regular: { far: -410, near: -255, afterNear: 255, afterFar: 420 },
-      priority: { far: -540, near: -385, afterNear: 300, afterFar: 465 },
-    },
-  },
-} as const
+export { draftTemplateProfile }
 
 export class TemplateBuildError extends Error {
   constructor(message: string) {
@@ -176,8 +152,12 @@ export function buildTemplatePlacements(
     offsetXSvg: number,
     side: 'up' | 'down',
     stand: 'left' | 'right',
-    distanceLabel: string | null,
+    /** Поле расстояния этапа 2, `0` — у начала работ, `null` — стойка за зоной без расстояния. */
+    distance: DistanceField | 0 | null,
   ): void => {
+    // Подход следует из привязки: стойки левого подхода стоят от L0, правого — от E. Стойки
+    // «конец ограничений» относятся ко встречному подходу и расстояния до начала работ не имеют.
+    const approach = slot.startsWith('L:') ? 'left' : 'right'
     placements.push({
       kind: 'sign-post',
       id: id++,
@@ -187,7 +167,13 @@ export function buildTemplatePlacements(
       side,
       stand,
       signIds,
-      distanceLabel,
+      distance:
+        distance === null
+          ? null
+          : distance === 0
+            ? { by: 'metres', approach, metres: 0 }
+            : { by: 'marker', approach, marker: distance },
+      distanceLabel: null,
     })
   }
 
@@ -195,8 +181,8 @@ export function buildTemplatePlacements(
     const { before, after } =
       draftTemplateProfile.offsets.outside[priority ? 'priority' : 'regular']
     // Подход слева (нижняя полоса): 300 → 250 → 150 → 50 → 0 м.
-    post('L:warning', ['1.25'], 'L0', before[0], 'down', 'left', '{d300}')
-    post('L:speed1', [speed(first), yellow('3.20')], 'L0', before[1], 'down', 'left', '{d250}')
+    post('L:warning', ['1.25'], 'L0', before[0], 'down', 'left', 'd300')
+    post('L:speed1', [speed(first), yellow('3.20')], 'L0', before[1], 'down', 'left', 'd250')
     post(
       'L:narrowing',
       priority
@@ -206,22 +192,22 @@ export function buildTemplatePlacements(
       before[2],
       'down',
       'left',
-      '{d150}',
+      'd150',
     )
-    post('L:zone-speed', [speed(zone)], 'L0', before[3], 'down', 'left', '{d50}')
-    post('L:start', entry, 'L0', -2, 'down', 'right', '0')
+    post('L:zone-speed', [speed(zone)], 'L0', before[3], 'down', 'left', 'd50')
+    post('L:start', entry, 'L0', -2, 'down', 'right', 0)
     post('L:end', [yellow('3.20'), '3.31'], 'L0', before[1], 'up', 'left', null)
     // Подход справа (верхняя полоса): 0 → 50 → 150 → 250 → 300 м.
-    post('R:start', exit, 'E', 2, 'up', 'left', '0')
-    post('R:zone-speed', [speed(zone)], 'E', after[0], 'up', 'right', '{d50}')
-    post('R:narrowing', [yellow('1.20.3'), speed(second)], 'E', after[1], 'up', 'right', '{d150}')
-    post('R:speed1', [yellow('3.20'), speed(first)], 'E', after[2], 'up', 'right', '{d250}')
-    post('R:warning', ['1.25'], 'E', after[3], 'up', 'right', '{d300}')
+    post('R:start', exit, 'E', 2, 'up', 'left', 0)
+    post('R:zone-speed', [speed(zone)], 'E', after[0], 'up', 'right', 'd50')
+    post('R:narrowing', [yellow('1.20.3'), speed(second)], 'E', after[1], 'up', 'right', 'd150')
+    post('R:speed1', [yellow('3.20'), speed(first)], 'E', after[2], 'up', 'right', 'd250')
+    post('R:warning', ['1.25'], 'E', after[3], 'up', 'right', 'd300')
     post('R:end', ['3.31', yellow('3.20')], 'E', after[2], 'down', 'right', null)
   } else {
     const layout = draftTemplateProfile.offsets.settlement[priority ? 'priority' : 'regular']
     const steps = settlementSteps(parameters.approachSpeedKmh!, zone, rules.speedStepKmh).map(speed)
-    post('L:warning', ['1.25', ...steps], 'L0', layout.far, 'down', 'left', '{n100}')
+    post('L:warning', ['1.25', ...steps], 'L0', layout.far, 'down', 'left', 'n100')
     post(
       'L:narrowing',
       priority
@@ -237,11 +223,11 @@ export function buildTemplatePlacements(
       layout.near,
       'down',
       'left',
-      '{n50}',
+      'n50',
     )
-    post('L:start', entry, 'L0', -2, 'down', 'right', '0')
+    post('L:start', entry, 'L0', -2, 'down', 'right', 0)
     post('L:end', [yellow('3.20'), '3.31'], 'L0', layout.near, 'up', 'left', null)
-    post('R:start', exit, 'E', 2, 'up', 'left', '0')
+    post('R:start', exit, 'E', 2, 'up', 'left', 0)
     post(
       'R:narrowing',
       [yellow('1.20.3'), yellow('3.20'), speed(zone)],
@@ -249,7 +235,7 @@ export function buildTemplatePlacements(
       layout.afterNear,
       'up',
       'right',
-      '{n50}',
+      'n50',
     )
     post(
       'R:warning',
@@ -258,7 +244,7 @@ export function buildTemplatePlacements(
       layout.afterFar,
       'up',
       'right',
-      '{n100}',
+      'n100',
     )
     post('R:end', ['3.31', yellow('3.20')], 'E', layout.afterNear, 'down', 'right', null)
   }

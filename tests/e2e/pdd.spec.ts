@@ -205,7 +205,7 @@ test('decision evidence and speed conditions survive SQLite and JSON; changed so
   await page.getByRole('button', { name: 'Сохранить проект', exact: true }).click()
   await expect(page.locator('.save-state')).toHaveText('Сохранён')
   const stored = await (await request.get(`http://127.0.0.1:4100/api/projects/${scheme.id}`)).json()
-  expect(stored.scheme.schemaVersion).toBe(9)
+  expect(stored.scheme.schemaVersion).toBe(10)
   expect(stored.scheme.parameters.speedConditions).toEqual({ road: 'ordinary', vehicle: 'heavy' })
   expect(stored.scheme.decisionEvidence.regulation.mode).toBe('two')
   expect(
@@ -217,7 +217,7 @@ test('decision evidence and speed conditions survive SQLite and JSON; changed so
   const downloading = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Скачать файл проекта (JSON)', exact: true }).click()
   const download = await downloading
-  expect(download.suggestedFilename()).toContain('_v9.json')
+  expect(download.suggestedFilename()).toContain('_v10.json')
   const exported = readFileSync((await download.path())!)
   changed = true
   await page.reload()

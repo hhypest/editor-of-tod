@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest'
 import b33 from '../../../tests/fixtures/manual-v1.json?raw'
 import b34 from '../../../tests/fixtures/legacy-b34-manual.json?raw'
 import { exportSchemeJson, importSchemeJson } from '../import'
-import { anchorCoordinates, movePlacement, placementCoordinates } from '../placement-workspace'
+import {
+  anchorCoordinates,
+  movePlacement,
+  placementCoordinates,
+  schemeLayout,
+} from '../placement-workspace'
 
 const scheme33 = importSchemeJson(b33).scheme
 const scheme34 = importSchemeJson(b34).scheme
@@ -12,7 +17,10 @@ describe('coordinate workspace for imported objects', () => {
     const anchors33 = anchorCoordinates(scheme33)
     expect(anchors33).toMatchObject({ L0: 540, L1: 603, Z0: 738, Z1: 1071, E: 1134 })
     const post = scheme33.placements[0]!
-    expect(placementCoordinates(post, anchors33)).toEqual({ x: 20, y: 579 })
+    // Стойка шаблона получила расстояние {d300}: её место выводится из шкалы и не изменилось.
+    expect(post).toMatchObject({ distance: { by: 'marker', approach: 'left', marker: 'd300' } })
+    expect(() => placementCoordinates(post, anchors33)).toThrow('нужна шкала листа')
+    expect(schemeLayout(scheme33).coordinates(post)).toEqual({ x: 20, y: 579 })
     const text = scheme33.placements[1]!
     expect(placementCoordinates(text, anchors33)).toEqual({ x: 810, y: 605 })
 

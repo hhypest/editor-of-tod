@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { schemeSchema, upgradeTitleBlock } from './model.ts'
+import { approachSchema, distanceMarkerSchema, schemeSchema, upgradeTitleBlock } from './model.ts'
 import { decisionEvidenceSchema, speedConditionsSchema } from './decision-evidence-schema.ts'
 
 const text = z.string().max(5_000)
@@ -112,6 +112,10 @@ export const placementDraftSchema = z.discriminatedUnion('kind', [
     stand: z.enum(['left', 'right']),
     signCodes: text,
     distanceLabel: text,
+    // Копии, записанные до формата v10, этих полей не содержат: стойка без расстояния.
+    distanceMode: z.union([distanceMarkerSchema, z.enum(['own', 'none'])]).default('none'),
+    approach: approachSchema.default('right'),
+    distanceMetres: text.default(''),
   }),
   z.strictObject({
     ...baseDraft,

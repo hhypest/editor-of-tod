@@ -417,6 +417,32 @@ describe('project revision contracts', () => {
     expect(local.deleteRecoveryDraft).not.toHaveBeenCalled()
   })
 
+  it('reports posts left without a distance when a revision stored before v10 is opened', async () => {
+    const session = await openEditedSession()
+    const before = session.imported.value!.scheme
+    // Так выглядит поднятая из базы редакция v9: стойка с текстовой подписью осталась на месте.
+    const upgraded: Scheme = {
+      ...before,
+      placements: before.placements.map((placement) =>
+        placement.kind === 'sign-post'
+          ? { ...placement, distance: null, distanceLabel: 'за переездом' }
+          : placement,
+      ),
+    }
+    const postId = upgraded.placements.find((placement) => placement.kind === 'sign-post')!.id
+    local.getLocalProject.mockResolvedValue({ ...record(upgraded, 2), storedSchemaVersion: 9 })
+    await session.openLocal(before.id)
+    expect(session.imported.value!.scheme).toBe(upgraded)
+    expect(session.imported.value!.warnings.join(' ')).toContain(`У стоек № ${postId}`)
+    // Редакция, уже сохранённая в текущем формате, повторно не предупреждает.
+    local.getLocalProject.mockResolvedValue({
+      ...record(upgraded, 3),
+      storedSchemaVersion: upgraded.schemaVersion,
+    })
+    await session.openLocal(before.id)
+    expect(session.imported.value!.warnings.join(' ')).not.toContain('У стоек')
+  })
+
   it('does not show a late save error in a different session', async () => {
     const session = await openEditedSession()
     const response = deferred<ProjectRecord>()

@@ -226,7 +226,8 @@ describe('preliminary B.33/B.34 layout', () => {
         placements.some(
           (item) =>
             item.kind === 'sign-post' &&
-            item.distanceLabel === (location === 'in' ? '{n100}' : '{d300}'),
+            item.distance?.by === 'marker' &&
+            item.distance.marker === (location === 'in' ? 'n100' : 'd300'),
         ),
       ).toBe(true)
       expect(rebuildTemplatePlacements(scheme).scheme.placements).toEqual(placements)
@@ -319,7 +320,19 @@ describe('preliminary B.33/B.34 layout', () => {
 
   it('composes out-of-settlement posts as on figures B.33/B.34', () => {
     const posts = buildTemplatePlacements(example(40, 'out', 'two')).flatMap((item) =>
-      item.kind === 'sign-post' ? [[item.signIds.join('+'), item.distanceLabel]] : [],
+      item.kind === 'sign-post'
+        ? [
+            [
+              item.signIds.join('+'),
+              // Расстояние стойки: поле этапа 2, «0» у начала работ или его нет (за зоной).
+              !item.distance
+                ? null
+                : item.distance.by === 'marker'
+                  ? `{${item.distance.marker}}`
+                  : String(item.distance.metres),
+            ],
+          ]
+        : [],
     )
     expect(posts).toEqual([
       ['1.25', '{d300}'],
@@ -378,7 +391,11 @@ describe('preliminary B.33/B.34 layout', () => {
       parameters: { ...scheme.parameters, approachSpeedKmh: 80 },
     })
     const first = buildTemplatePlacements(faster).find((item) => item.kind === 'sign-post')
-    expect(first).toMatchObject({ signIds: ['1.25', '3.24_60_ж'], distanceLabel: '{n100}' })
+    expect(first).toMatchObject({
+      signIds: ['1.25', '3.24_60_ж'],
+      distance: { by: 'marker', approach: 'left', marker: 'n100' },
+      distanceLabel: null,
+    })
     const unknown = schemeSchema.parse({
       ...scheme,
       parameters: { ...scheme.parameters, approachSpeedKmh: null },

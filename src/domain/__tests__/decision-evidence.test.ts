@@ -12,7 +12,7 @@ import { createSchemeDetailsDraft, applySchemeDetails } from '../edit-details'
 import { recoveryWriteSchema } from '../recovery'
 import { markState, setMark } from '../review-marks'
 import { reviewScheme } from '../review-scheme'
-import { v8Snapshot } from '../../../tests/fixtures/old-version'
+import { v8Snapshot, v9Snapshot } from '../../../tests/fixtures/old-version'
 import fixture from '../../../tests/fixtures/legacy-b34-manual.json?raw'
 
 const now = '2030-05-01T00:00:00.000Z'
@@ -111,10 +111,11 @@ describe('historical decision evidence in format v9', () => {
     const previous = v8Snapshot(original)
     const migrated = importSchemeJson(JSON.stringify(previous))
     expect(migrated.format).toBe('scheme-v8')
-    expect(migrated.scheme.schemaVersion).toBe(9)
+    expect(migrated.scheme.schemaVersion).toBe(10)
     expect(migrated.scheme.parameters.speedConditions).toEqual({ road: '', vehicle: '' })
     expect(migrated.scheme.decisionEvidence).toEqual({ speed: null, regulation: null })
-    expect(migrated.scheme.placements).toEqual(previous.placements)
+    // Стойки получили расстояние из прежней подписи; в записи прежнего формата они те же.
+    expect(v9Snapshot(migrated.scheme).placements).toEqual(previous.placements)
     expect(migrated.scheme.source).toEqual(previous.source)
     expect(migrated.scheme.reviewMarks).toEqual(previous.reviewMarks)
     expect(migrated.scheme.id).toBe(previous.id)

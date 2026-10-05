@@ -2,12 +2,14 @@
 import { elementLabels } from '../domain/placement-labels'
 import { computed, ref, watch } from 'vue'
 import {
-  anchorCoordinates,
   movePlacement,
-  placementCoordinates,
+  schemeLayout,
+  stepPostDistance,
   WORKSPACE_HEIGHT,
   WORKSPACE_WIDTH,
 } from '../domain/placement-workspace'
+import { postCaption, postMetres, snapPostMetres } from '../domain/post-distance'
+import { decimalComma } from '../domain/number-format'
 import type { Scheme } from '../domain/model'
 import { figureDimensions } from '../domain/figure-dimensions'
 import { templateLabel } from '../domain/registry'
@@ -32,7 +34,8 @@ const drag = ref<Drag | null>(null)
 const error = ref('')
 const catalog = ref<Set<string>>(new Set())
 const catalogUnavailable = ref(false)
-const anchors = computed(() => anchorCoordinates(props.scheme))
+const layout = computed(() => schemeLayout(props.scheme))
+const anchors = computed(() => layout.value.anchors)
 const { rules } = useNormativeRules()
 const dimensions = computed(() => figureDimensions(props.scheme, rules.value))
 const guides = computed(() =>
@@ -44,7 +47,7 @@ const guides = computed(() =>
 const outsideCount = computed(
   () =>
     props.scheme.placements.filter((placement) => {
-      const { x, y } = placementCoordinates(placement, anchors.value)
+      const { x, y } = layout.value.coordinates(placement)
       return x < 0 || x > WORKSPACE_WIDTH || y < 0 || y > WORKSPACE_HEIGHT
     }).length,
 )
@@ -72,7 +75,7 @@ watch(
 
 function left(placement: Placement): number {
   return (
-    placementCoordinates(placement, anchors.value).x +
+    layout.value.coordinates(placement).x +
     (drag.value?.id === placement.id ? drag.value.deltaX : 0)
   )
 }
@@ -83,7 +86,7 @@ function top(placement: Placement): number {
       ? (placement.fontSizeSvg ?? 14)
       : 0
   return (
-    placementCoordinates(placement, anchors.value).y -
+    layout.value.coordinates(placement).y -
     baselineAdjustment +
     (drag.value?.id === placement.id ? drag.value.deltaY : 0)
   )
@@ -135,7 +138,42 @@ function onKeydown(event: KeyboardEvent, placement: Placement): void {
   const deltaX = event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0
   const deltaY = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0
   emit('select', placement.id)
+  // У стойки с расстоянием стрелки влево и вправо меняют расстояние: 5 м, с Shift — 10 м.
+  if (placement.kind === 'sign-post' && placement.distance && deltaX !== 0) {
+    try {
+      emit(
+        'apply',
+        stepPostDistance(props.scheme, placement.id, Math.sign(deltaX) * (event.shiftKey ? 10 : 5)),
+      )
+      error.value = ''
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : 'Не удалось переместить объект.'
+    }
+    return
+  }
   applyMovement(placement.id, deltaX, deltaY)
+}
+
+/**
+ * Подпись расстояния у стойки. Во время перетаскивания показывает расстояние, которое стойка
+ * получит, если её отпустить: «≈ 180 м».
+ */
+function distanceCaption(placement: Placement): string {
+  if (placement.kind !== 'sign-post') return ''
+  const distances = props.scheme.parameters.signDistancesMetres
+  if (!placement.distance) return placement.distanceLabel ? 'без расстояния' : ''
+  const moving = drag.value?.id === placement.id ? drag.value.deltaX : 0
+  if (!moving) {
+    const metres = postMetres(placement.distance, distances)
+    return metres === null ? 'расстояние не заполнено' : postCaption(placement.distance, distances)
+  }
+  const { scale, coordinates } = layout.value
+  const { approach } = placement.distance
+  const metres = snapPostMetres(
+    scale.metres(approach, coordinates(placement).x + moving),
+    scale.stops(approach),
+  )
+  return `≈ ${decimalComma(metres)} м`
 }
 
 function nameFor(placement: Placement): string {
@@ -151,8 +189,10 @@ function nameFor(placement: Placement): string {
       <div>
         <h2 id="workspace-title">Рабочая область объектов</h2>
         <p class="hint">
-          Условные координаты проекта: перетащите объект или выделите его и нажмите стрелку (Shift +
-          стрелка — 10 единиц). Изменение попадёт в историю и сохранится после сохранения проекта.
+          Перетащите объект или выделите его и нажмите стрелку (Shift + стрелка — 10 единиц). У
+          стойки подписано расстояние до начала работ: перенос влево или вправо меняет его, а
+          стрелки сдвигают на 5 м (с Shift — на 10 м). Изменение попадёт в историю и сохранится
+          после сохранения проекта.
         </p>
       </div>
       <label for="workspace-zoom">
@@ -245,7 +285,11 @@ function nameFor(placement: Placement): string {
             :aria-label="nameFor(placement)"
             :aria-pressed="selectedId === placement.id"
             :disabled="locked"
-            :title="`${nameFor(placement)} · ${placement.position.anchor}`"
+            :title="
+              placement.kind === 'sign-post' && placement.distance
+                ? `${nameFor(placement)} · ${distanceCaption(placement)}`
+                : `${nameFor(placement)} · ${placement.position.anchor}`
+            "
             @click="emit('select', placement.id)"
             @pointerdown="beginDrag($event, placement)"
             @pointermove="updateDrag"
@@ -265,6 +309,14 @@ function nameFor(placement: Placement): string {
               </span>
               <span v-if="placement.stand === 'right'" class="pin" aria-hidden="true" />
               <small class="object-id">№ {{ placement.id }}</small>
+              <small
+                v-if="distanceCaption(placement)"
+                class="post-distance"
+                :class="{ moving: drag?.id === placement.id && drag.deltaX !== 0 }"
+                data-post-distance
+              >
+                {{ distanceCaption(placement) }}
+              </small>
             </template>
             <template v-else-if="placement.elementKind === 'text'">
               <span
@@ -490,6 +542,22 @@ select {
   color: #183a57;
   font-size: 12px;
   font-weight: 700;
+}
+.post-distance {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #fff3c4;
+  color: #4a3b00;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.post-distance.moving {
+  background: #183a57;
+  color: #fff;
 }
 .element {
   display: flex;

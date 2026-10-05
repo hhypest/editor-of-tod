@@ -1,4 +1,5 @@
 import type { Scheme } from './model'
+import { distanceTitles } from './normative-defaults'
 import type { SheetNode } from './sheet-drawing'
 
 /**
@@ -38,6 +39,13 @@ export function releaseProblems(scheme: Scheme, nodes: readonly SheetNode[] = []
   const reported = new Set<string>()
   for (const placement of scheme.placements) {
     if (placement.kind !== 'sign-post') continue
+    if (placement.distance?.by === 'marker' && distances[placement.distance.marker] === null) {
+      const marker = `{${placement.distance.marker}}`
+      reported.add(marker)
+      problems.push(
+        `Стойка № ${placement.id}: не заполнено расстояние «${distanceTitles[placement.distance.marker]}» на этапе 2.`,
+      )
+    }
     const unresolved = (placement.distanceLabel?.match(/\{[^{}]*\}/g) ?? []).filter((marker) => {
       const key = marker.slice(1, -1)
       return !Object.hasOwn(distances, key) || distances[key as keyof typeof distances] === null

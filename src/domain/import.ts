@@ -9,7 +9,9 @@ import {
   schemeV6Schema,
   schemeV7Schema,
   schemeV8Schema,
+  schemeV9Schema,
   upgradeSchemeV8,
+  upgradeSchemeV9,
   upgradeSchemeV7,
   upgradeSchemeV4,
   upgradeSchemeV5,
@@ -48,10 +50,28 @@ export interface ImportResult {
     | 'scheme-v7'
     | 'scheme-v8'
     | 'scheme-v9'
+    | 'scheme-v10'
   warnings: string[]
 }
 
 /** До v7 скорость на подходе вне населённого пункта не вводилась. */
+/**
+ * Стойки прежнего формата, подпись расстояния которых не удалось перевести в метры. Сообщение
+ * показывается при открытии и файла, и проекта из локальной базы, сохранённого до v10.
+ */
+export function freePostWarning(scheme: Scheme): string[] {
+  const ids = scheme.placements.flatMap((placement) =>
+    placement.kind === 'sign-post' && !placement.distance && placement.distanceLabel
+      ? [placement.id]
+      : [],
+  )
+  return ids.length
+    ? [
+        `У стоек № ${ids.join(', ')} расстояние записано текстом и не переведено в метры: они остались на прежнем месте листа. Укажите расстояние до начала работ на этапе 3.`,
+      ]
+    : []
+}
+
 function approachWarning(scheme: Scheme): string[] {
   return scheme.parameters.approachSpeedKmh === null
     ? [
@@ -321,12 +341,15 @@ function migrateLegacy(
     source: { kind: 'legacy-html-v1', importedAt: now, originalJson },
   }
 
-  const parsed = schemeSchema.safeParse(candidate)
+  // Прежний файл описывается в формате v9 и поднимается общей миграцией: расстояния стоек
+  // выводятся из их подписей так же, как у сохранённых проектов.
+  const parsed = schemeV9Schema.safeParse(candidate)
   if (!parsed.success) invalidIssue(parsed.error.issues)
+  const scheme = upgradeSchemeV9(parsed.data)
   return {
-    scheme: parsed.data,
+    scheme,
     format: 'legacy-v1',
-    warnings: [...warnings, ...approachWarning(parsed.data)],
+    warnings: [...warnings, ...approachWarning(scheme)],
   }
 }
 
@@ -334,6 +357,13 @@ export function importSchemeJson(
   json: string,
   options: { id?: string; now?: string } = {},
 ): ImportResult {
+  const result = readSchemeJson(json, options)
+  return result.format === 'scheme-v10'
+    ? result
+    : { ...result, warnings: [...result.warnings, ...freePostWarning(result.scheme)] }
+}
+
+function readSchemeJson(json: string, options: { id?: string; now?: string }): ImportResult {
   if (new TextEncoder().encode(json).length > MAX_PROJECT_FILE_BYTES) {
     throw new SchemeImportError('too-large', 'Файл проекта больше 32 МБ.')
   }
@@ -442,11 +472,22 @@ export function importSchemeJson(
   }
 
   if ('schemaVersion' in value && value.schemaVersion === 9) {
+    const parsed = schemeV9Schema.safeParse(value)
+    if (!parsed.success) invalidIssue(parsed.error.issues)
+    const scheme = upgradeSchemeV9(parsed.data)
+    return {
+      scheme,
+      format: 'scheme-v9',
+      warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
+    }
+  }
+
+  if ('schemaVersion' in value && value.schemaVersion === 10) {
     const parsed = schemeSchema.safeParse(value)
     if (!parsed.success) invalidIssue(parsed.error.issues)
     return {
       scheme: parsed.data,
-      format: 'scheme-v9',
+      format: 'scheme-v10',
       warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
     }
   }
@@ -467,7 +508,7 @@ export function importSchemeJson(
 
   throw new SchemeImportError(
     'unsupported-version',
-    'Версия проекта не поддерживается. Поддерживаются v: 1 и schemaVersion: 2–9.',
+    'Версия проекта не поддерживается. Поддерживаются v: 1 и schemaVersion: 2–10.',
   )
 }
 

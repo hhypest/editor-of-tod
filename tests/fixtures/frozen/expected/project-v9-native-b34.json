@@ -53,7 +53,12 @@
       "signIds": [
         "1.25"
       ],
-      "distanceLabel": "{d300}"
+      "distanceLabel": null,
+      "distance": {
+        "by": "marker",
+        "approach": "left",
+        "marker": "d300"
+      }
     },
     {
       "kind": "sign-post",
@@ -71,7 +76,12 @@
         "3.24_70",
         "3.20"
       ],
-      "distanceLabel": "{d250}"
+      "distanceLabel": null,
+      "distance": {
+        "by": "marker",
+        "approach": "left",
+        "marker": "d250"
+      }
     },
     {
       "kind": "sign-post",
@@ -89,7 +99,12 @@
         "3.24",
         "1.20.2"
       ],
-      "distanceLabel": "{d150}"
+      "distanceLabel": null,
+      "distance": {
+        "by": "marker",
+        "approach": "left",
+        "marker": "d150"
+      }
     },
     {
       "kind": "sign-post",
@@ -106,7 +121,12 @@
       "signIds": [
         "3.24_40"
       ],
-      "distanceLabel": "{d50}"
+      "distanceLabel": null,
+      "distance": {
+        "by": "marker",
+        "approach": "left",
+        "marker": "d50"
+      }
     },
     {
       "kind": "sign-post",
@@ -124,7 +144,12 @@
         "8.2.1_38",
         "1.25"
       ],
-      "distanceLabel": "0"
+      "distanceLabel": null,
+      "distance": {
+        "by": "metres",
+        "approach": "left",
+        "metres": 0
+      }
     },
     {
       "kind": "sign-post",
@@ -142,7 +167,8 @@
         "3.20",
         "3.31"
       ],
-      "distanceLabel": null
+      "distanceLabel": null,
+      "distance": null
     },
     {
       "kind": "sign-post",
@@ -160,7 +186,12 @@
         "1.25",
         "8.2.1_38"
       ],
-      "distanceLabel": "0"
+      "distanceLabel": null,
+      "distance": {
+        "by": "metres",
+        "approach": "right",
+        "metres": 0
+      }
     },
     {
       "kind": "sign-post",
@@ -177,7 +208,12 @@
       "signIds": [
         "3.24_40"
       ],
-      "distanceLabel": "{d50}"
+      "distanceLabel": null,
+      "distance": {
+        "by": "marker",
+        "approach": "right",
+        "marker": "d50"
+      }
     },
     {
       "kind": "sign-post",
@@ -195,7 +231,12 @@
         "1.20.3",
         "3.24"
       ],
-      "distanceLabel": "{d150}"
+      "distanceLabel": null,
+      "distance": {
+        "by": "marker",
+        "approach": "right",
+        "marker": "d150"
+      }
     },
     {
       "kind": "sign-post",
@@ -213,7 +254,12 @@
         "3.20",
         "3.24_70"
       ],
-      "distanceLabel": "{d250}"
+      "distanceLabel": null,
+      "distance": {
+        "by": "marker",
+        "approach": "right",
+        "marker": "d250"
+      }
     },
     {
       "kind": "sign-post",
@@ -230,7 +276,12 @@
       "signIds": [
         "1.25"
       ],
-      "distanceLabel": "{d300}"
+      "distanceLabel": null,
+      "distance": {
+        "by": "marker",
+        "approach": "right",
+        "marker": "d300"
+      }
     },
     {
       "kind": "sign-post",
@@ -248,7 +299,8 @@
         "3.31",
         "3.20"
       ],
-      "distanceLabel": null
+      "distanceLabel": null,
+      "distance": null
     },
     {
       "kind": "element",
@@ -439,7 +491,8 @@
       "signIds": [
         "1.25"
       ],
-      "distanceLabel": "{d150}"
+      "distanceLabel": "{d150}",
+      "distance": null
     }
   ],
   "nextPlacementId": 23,
@@ -532,7 +585,7 @@
       "markedAt": "2026-09-26T13:00:00.000Z"
     }
   },
-  "schemaVersion": 9,
+  "schemaVersion": 10,
   "decisionEvidence": {
     "speed": {
       "recordedAt": "2026-09-26T14:00:00.000Z",

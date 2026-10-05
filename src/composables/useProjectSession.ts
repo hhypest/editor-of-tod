@@ -5,6 +5,7 @@ import {
   MAX_PROJECT_FILE_BYTES,
   SchemeImportError,
   type ImportResult,
+  freePostWarning,
 } from '../domain/import'
 import type { Scheme } from '../domain/model'
 import { reportError } from '../services/diagnostics'
@@ -279,7 +280,7 @@ export function useProjectSession(onProjectOpened: () => void) {
 
   function saveV5(): void {
     if (imported.value && !editorDirty.value) {
-      downloadJson(exportSchemeJson(imported.value.scheme), 'v9')
+      downloadJson(exportSchemeJson(imported.value.scheme), 'v10')
     }
   }
 
@@ -303,7 +304,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     beginSession()
     imported.value = {
       scheme,
-      format: 'scheme-v9',
+      format: 'scheme-v10',
       warnings: [
         PU66_LINKED_WARNING,
         'Вариант выбран по длине фронта работ, нормативная проверка и расстановка знаков не выполнены.',
@@ -363,12 +364,18 @@ export function useProjectSession(onProjectOpened: () => void) {
     { save: saveLocalProject, restore: restoreLocalRevision },
   )
 
-  function openProjectRecord(scheme: Scheme, revision: number): void {
+  function openProjectRecord(scheme: Scheme, revision: number, storedSchemaVersion?: number): void {
     beginSession()
     imported.value = {
       scheme,
-      format: 'scheme-v9',
-      warnings: ['Схема не прошла нормативную проверку.'],
+      format: 'scheme-v10',
+      warnings: [
+        'Схема не прошла нормативную проверку.',
+        // Редакция записана в прежнем формате: то же сообщение, что при открытии файла.
+        ...(storedSchemaVersion !== undefined && storedSchemaVersion < scheme.schemaVersion
+          ? freePostWarning(scheme)
+          : []),
+      ],
     }
     history.value = startHistory(scheme)
     selectedPlacementId.value = scheme.placements[0]?.id ?? null
@@ -393,7 +400,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     localNotice.value = ''
     try {
       const record = await getLocalProject(id)
-      openProjectRecord(record.scheme, record.revision)
+      openProjectRecord(record.scheme, record.revision, record.storedSchemaVersion)
     } catch (cause) {
       showLocalError(cause)
     } finally {
@@ -515,7 +522,7 @@ export function useProjectSession(onProjectOpened: () => void) {
       beginSession(record.sessionId)
       imported.value = {
         scheme: record.scheme,
-        format: 'scheme-v9',
+        format: 'scheme-v10',
         warnings: ['Восстановлена рабочая копия; проверьте ввод и сохраните проект.'],
       }
       history.value = startHistory(record.scheme)
