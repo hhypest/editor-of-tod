@@ -30,6 +30,13 @@ function example(
     location: 'out',
     approachSpeedKmh: '90',
     yellowTemporarySigns: true,
+    workConditions: {
+      kind: 'short',
+      durationHours: 5,
+      daylight: 'day',
+      regulatorsPresent: true,
+      sectionMetres: null,
+    },
   })
   return schemeSchema.parse({
     ...base,
@@ -44,6 +51,30 @@ function example(
 }
 
 describe('preliminary B.33/B.34 layout', () => {
+  it('uses device-section length as well as the short front for priority signs', () => {
+    const base = example(25, 'out', 'signs')
+    expect(() => buildTemplatePlacements(base)).toThrow('Выбранный режим')
+    const finding = reviewScheme(base).find((item) => item.id === 'b34-traffic')
+    expect(finding?.markBlocked).toBeTruthy()
+    expect(finding?.detail).toContain('ГОСТ Р 58350')
+    expect(finding?.detail).toContain('50 м')
+  })
+  it('allows two regulators above 500 in the specialist profile and preserves imported objects', () => {
+    const base = example(18, 'out', 'two')
+    const built = rebuildTemplatePlacements(base).scheme
+    const outside = {
+      ...built,
+      parameters: {
+        ...built.parameters,
+        regulation: { ...built.parameters.regulation, hourly: '501' },
+      },
+    }
+    expect(buildTemplatePlacements(outside).length).toBeGreaterThan(0)
+    expect(
+      reviewScheme(outside).find((item) => item.id === 'b34-traffic')?.markBlocked,
+    ).toBeUndefined()
+    expect(outside.placements).toBe(built.placements)
+  })
   it('requires exactly one regulator on each approach after manual moves', () => {
     for (const front of [18, 40]) {
       const built = rebuildTemplatePlacements(example(front, 'out', 'two')).scheme
@@ -115,7 +146,7 @@ describe('preliminary B.33/B.34 layout', () => {
     ).toContain('регулировщиков: 1 из 2')
   })
 
-  it('puts two regulators before the work zone for each direction (ODM 12.7.2, table 5)', () => {
+  it('puts two regulators before the work zone for each direction (ODM 13.7.3, table 5)', () => {
     for (const front of [18, 40]) {
       const scheme = example(front, 'out', 'two')
       const anchors = anchorCoordinates(scheme)
@@ -213,7 +244,7 @@ describe('preliminary B.33/B.34 layout', () => {
       ...scheme,
       parameters: {
         ...scheme.parameters,
-        regulation: { ...scheme.parameters.regulation, hourly: '250' },
+        regulation: { ...scheme.parameters.regulation, hourly: '251' },
       },
     })
     expect(() => buildTemplatePlacements(inadequate)).toThrow(TemplateBuildError)
@@ -273,7 +304,7 @@ describe('preliminary B.33/B.34 layout', () => {
           regulation: { ...scheme.parameters.regulation, hourly },
         },
       })
-      expect(() => buildTemplatePlacements(candidate)).toThrow('интенсивность менее 250')
+      expect(() => buildTemplatePlacements(candidate)).toThrow(TemplateBuildError)
     }
   })
 

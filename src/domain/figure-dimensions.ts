@@ -19,7 +19,7 @@ export type FigureDimension = {
  * ODM 218.6.019-2016. The drawing units are only a schematic projection;
  * they must not be used to infer physical sign positions or distances.
  *
- * Б.34 со знаками приоритета 2.6/2.7: отгон задан п. 4.1.8.3 ОДМ (нормативный параметр
+ * Б.34 со знаками приоритета 2.6/2.7: отгон задан таблицей И.1, примечанием 3 ГОСТ Р 58350 (нормативный параметр
  * `odm-signs-taper`), а не размером на рисунке, поэтому сравнивается с ним.
  */
 export function figureDimensions(

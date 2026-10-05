@@ -14,6 +14,7 @@ async function seed(request: APIRequestContext) {
       data: (
         await createSampleWorkbook({
           ...card,
+          length: 40,
           section: `Учебный жизненный цикл (${99001 + index})`,
           kilometre: 701 + index,
         })

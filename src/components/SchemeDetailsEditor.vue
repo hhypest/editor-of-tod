@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { templateLabel } from '../domain/registry'
+import { CROSSING_FRONT_LIMIT_METRES } from '../domain/crossing-limits'
+import { templateLabel, selectTemplateByWorkFront } from '../domain/registry'
+import { workSectionMetres } from '../domain/work-traffic'
+import { frontLimit } from '../domain/work-conditions'
+import WorkConditionsFields from './WorkConditionsFields.vue'
 import { computed, ref, watch } from 'vue'
 import {
   applySchemeDetails,
@@ -165,20 +169,48 @@ function restoreAll(): void {
   markDirty()
 }
 
-/** Рекомендация ОДМ по введённым, ещё не применённым данным формы. */
+/** Профиль переезда по введённым, ещё не применённым данным формы. */
 const advice = computed(() => {
   const { regulation, speedStagesKmh, workZones } = draft.value.parameters
+  const zone = workZones[props.scheme.template.code]
+  const conditions = draft.value.parameters.workConditions
+  const workConditions = {
+    ...conditions,
+    durationHours: draftNumber(conditions.durationHours),
+    sectionMetres: draftNumber(conditions.sectionMetres),
+  }
   return adviseRegulation(
     {
       hourly: regulation.hourly,
       limitedVisibility: regulation.vis,
       straight: regulation.straight,
       zoneSpeedKmh: draftNumber(speedStagesKmh[2]),
-      taperMetres: draftNumber(workZones.b34?.taperMetres),
-      frontMetres: draftNumber(workZones.b34?.workMetres),
+      taperMetres: draftNumber(zone?.taperMetres),
+      frontMetres: draftNumber(zone?.workMetres),
+      sectionMetres:
+        workConditions.sectionMetres ??
+        (zone &&
+        [zone.taperMetres, zone.bufferMetres, zone.workMetres].every(
+          (value) => draftNumber(value) !== null,
+        )
+          ? workSectionMetres({
+              taperMetres: draftNumber(zone.taperMetres)!,
+              bufferMetres: draftNumber(zone.bufferMetres)!,
+              workMetres: draftNumber(zone.workMetres)!,
+            })
+          : null),
+      workConditions,
     },
     normativeRules.value,
   )
+})
+const frontPreview = computed(() => {
+  const value = draftNumber(
+    draft.value.parameters.workZones[props.scheme.template.code]?.workMetres,
+  )
+  return value !== null && value > 0
+    ? templateLabel(selectTemplateByWorkFront(value).code)
+    : 'не определён'
 })
 
 function applyAdvice(): void {
@@ -190,6 +222,16 @@ function applyAdvice(): void {
 function useHourly(value: string): void {
   if (props.locked) return
   draft.value.parameters.regulation.hourly = value
+  markDirty()
+}
+
+function usePu66Front(): void {
+  if (props.locked) return
+  const maximum = frontLimit(props.scheme)
+  const zone = draft.value.parameters.workZones[props.scheme.template.code]
+  if (!zone || maximum === null || maximum <= 0) return
+  zone.workMetres = String(maximum)
+  draft.value.parameters.frontFromPu66 = true
   markDirty()
 }
 
@@ -244,7 +286,7 @@ function discard(): void {
 function applyDraft(): void {
   if (props.locked) return
   try {
-    const updated = applySchemeDetails(props.scheme, draft.value)
+    const updated = applySchemeDetails(props.scheme, draft.value, normativeRules.value)
     dirty.value = false
     error.value = ''
     status.value = 'Правки применены к проекту. Сохраните проект; файл JSON можно скачать отдельно.'
@@ -293,9 +335,24 @@ function applyDraft(): void {
       <fieldset v-if="!mode || mode === 'geometry'" :disabled="locked">
         <legend>Параметры схемы</legend>
         <p class="hint">
-          Расстояния вводятся в метрах, скорости — в км/ч. Для созданного в редакторе проекта
-          изменение фронта через границу 30 м требует нового проекта с другим вариантом.
+          Расстояния вводятся в метрах, скорости — в км/ч. По введённому фронту будет выбран
+          {{ frontPreview }}. Отгон и буфер не меняют вариант. При смене варианта объекты
+          сохраняются; соберите шаблон заново и повторите проверку листа.
         </p>
+        <p class="hint">
+          Предел фронта редактора: {{ CROSSING_FRONT_LIMIT_METRES }} м. Дополнительно фронт
+          ограничен п. 8 закреплённой ПУ-66:
+          {{ frontLimit(scheme) ?? 'не указан — обновите связь с заполненной карточкой' }} м.
+        </p>
+        <button
+          v-if="(frontLimit(scheme) ?? 0) > 0"
+          type="button"
+          :disabled="locked"
+          @click="usePu66Front"
+        >
+          Взять фронт из п. 8 ПУ-66
+        </button>
+        <WorkConditionsFields v-model="draft.parameters.workConditions" />
         <h3>Местоположение, скорость и типоразмер знаков</h3>
         <div class="fields with-marks">
           <label
@@ -406,16 +463,16 @@ function applyDraft(): void {
         </div>
         <div class="checks">
           <label class="checkbox"
-            ><input v-model="draft.parameters.frontFromPu66" type="checkbox" />
+            ><input :checked="draft.parameters.frontFromPu66" type="checkbox" disabled />
             Фронт взят из ПУ-66 (проверьте размер на месте)
           </label>
           <label class="checkbox"
             ><input v-model="draft.parameters.regulation.vis" type="checkbox" />
-            Видимость ограничена
+            Видимость встречного автомобиля ограничена
           </label>
           <label class="checkbox"
             ><input v-model="draft.parameters.regulation.straight" type="checkbox" />
-            Прямой участок дороги
+            Прямой участок; регулировщик виден с обоих концов рабочей зоны
           </label>
         </div>
         <Pu66NormsPanel
@@ -440,7 +497,7 @@ function applyDraft(): void {
                 ? 'Рекомендация по подтверждённым нормативным параметрам'
                 : 'Подсказка с неподтверждёнными параметрами'
             }}:
-            {{ advice.mode ? regulationModeLabels[advice.mode] : 'нет данных' }}
+            {{ advice.mode ? regulationModeLabels[advice.mode] : 'требуется проверка условий' }}
           </h3>
           <p v-for="reason in advice.reasons" :key="reason">{{ reason }}</p>
           <p v-for="warning in advice.warnings" :key="warning" class="warning">{{ warning }}</p>
@@ -458,7 +515,7 @@ function applyDraft(): void {
             {{
               advice.verified
                 ? 'Рекомендация считается по введённым данным и ничего не выбирает сама; решение и его обоснование остаются за составителем.'
-                : `Не подтверждены: ${advice.unconfirmed.join('; ')}. Для них действуют значения прототипа. Подтвердите их по тексту ОДМ в «Реестры» → «Нормативные параметры»; до этого способ пропуска выберите сами в поле «Регулирование Б.34».`
+                : `Не подтверждены: ${advice.unconfirmed.join('; ')}. Для них действуют значения прототипа. Подтвердите параметры по текстам ОДМ и ГОСТ Р 58350 в «Реестры» → «Нормативные параметры»; до этого способ пропуска выберите сами в поле «Регулирование Б.34».`
             }}
           </p>
         </section>
@@ -491,6 +548,7 @@ function applyDraft(): void {
               >Фронт работ, м
               <input
                 v-model="draft.parameters.workZones[code]!.workMetres"
+                @input="draft.parameters.frontFromPu66 = false"
                 type="text"
                 inputmode="decimal"
             /></label>

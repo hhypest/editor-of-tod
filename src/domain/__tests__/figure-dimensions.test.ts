@@ -36,7 +36,7 @@ describe('dimension chains read from ODM figures B.33/B.34', () => {
     expect(dimensions[1]?.endX).toBe(dimensions[2]?.startX)
     expect(dimensions[2]?.endX).toBe(dimensions[3]?.startX)
     expect(dimensions[3]?.endX).toBeGreaterThan(dimensions[3]?.startX ?? 0)
-    expect(figureDimensions(project('50', '10', '15')).every((part) => part.agreesWithFigure)).toBe(
+    expect(figureDimensions(project('45', '10', '15')).every((part) => part.agreesWithFigure)).toBe(
       true,
     )
   })
@@ -62,7 +62,7 @@ describe('dimension chains read from ODM figures B.33/B.34', () => {
     )
   })
 
-  it('compares the B.34 taper with ODM 4.1.8.3 when priority signs 2.6/2.7 are chosen', () => {
+  it('compares the B.34 taper with GOST R 58350 table И.1 note 3 when priority signs 2.6/2.7 are chosen', () => {
     const withSigns = (taper: string) => {
       const scheme = project('21.5', taper, '10')
       return {
@@ -75,7 +75,7 @@ describe('dimension chains read from ODM figures B.33/B.34', () => {
     }
     const [entry] = figureDimensions(withSigns('15'))
     expect(entry).toMatchObject({ figureLabel: '15 м', agreesWithFigure: true })
-    expect(entry?.basis).toContain('4.1.8.3')
+    expect(entry?.basis).toContain('таблица И.1, примечание 3')
     expect(figureDimensions(withSigns('10'))[0]?.agreesWithFigure).toBe(false)
     // Подтверждённое значение отгона заменяет значение прототипа.
     const rules = { ...PROTOTYPE_RULES, signsTaperMetres: 20 }

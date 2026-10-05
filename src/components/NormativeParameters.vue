@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   parameterDefinitions,
+  confirmationMatchesDefinition,
   valueProblem,
   type ParameterDefinition,
   type ParameterState,
@@ -103,7 +104,9 @@ function inUse(
   definition: ParameterDefinition,
   state: ParameterState | null,
 ): ParameterValue | null {
-  return state?.confirmation?.value ?? definition.fallback
+  return confirmationMatchesDefinition(definition, state?.confirmation)
+    ? state!.confirmation!.value
+    : definition.fallback
 }
 
 function open(definition: ParameterDefinition, state: ParameterState | null): void {
@@ -115,7 +118,11 @@ function open(definition: ParameterDefinition, state: ParameterState | null): vo
     return
   }
   openId.value = definition.id
-  const initial = state?.suggestion ?? state?.confirmation?.value ?? definition.fallback
+  const initial =
+    state?.suggestion ??
+    (confirmationMatchesDefinition(definition, state?.confirmation)
+      ? state!.confirmation!.value
+      : definition.fallback)
   form.note = ''
   if (definition.type === 'number') {
     form.number = typeof initial === 'number' ? String(initial) : ''
@@ -214,11 +221,13 @@ function highlighted(text: string): Array<{ text: string; number: boolean }> {
   <section class="parameters" aria-labelledby="parameters-title">
     <h2 id="parameters-title">Нормативные параметры</h2>
     <p class="hint">
-      Числа, которые программа использует в подсказках и сборке схемы. Для каждого указан документ и
-      пункт: программа находит пункт в PDF действующей редакции из «Нормативных документов»,
-      показывает цитату и предлагает значение. Проверьте его по тексту и подтвердите. Пока параметр
-      не подтверждён, действует значение прототипа, а подсказка способа пропуска не применяется.
-      После появления новой редакции программа сравнит пункт и попросит подтвердить значение заново.
+      Числа, которые программа использует в подсказках и сборке схемы. Для параметров документов
+      указан документ и пункт: программа находит пункт в PDF действующей редакции из «Нормативных
+      документов», показывает цитату и предлагает значение. Проверьте его по тексту и подтвердите.
+      Пока параметр не подтверждён, действует значение прототипа, а подсказка способа пропуска не
+      применяется. После появления новой редакции программа сравнит пункт и попросит подтвердить
+      значение заново. Профиль переезда и доля часа пик — отдельные решения специалиста: укажите их
+      основание; загрузка стандарта их не подтверждает.
     </p>
     <p>
       Подтверждено {{ confirmedCount }} из {{ parameterDefinitions.length }}.

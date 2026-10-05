@@ -1,11 +1,76 @@
 import { expect, test, type Page } from '@playwright/test'
 import { textPdf } from '../../server/__tests__/pdf-fixture'
+import type { ParameterState } from '../../src/domain/normative-parameters'
 
 async function openDocuments(page: Page) {
   await page.goto('/')
   await page.getByRole('button', { name: 'Реестры', exact: true }).click()
   await page.getByRole('button', { name: 'Нормативные документы', exact: true }).click()
   return page.locator('.library')
+}
+
+for (const variant of [
+  {
+    name: 'obsolete document',
+    documentLabel: 'ОДМ 218.6.019-2016',
+    clause: 'таблица И.1, примечание 3',
+    suggestion: null,
+    expected: '15',
+  },
+  {
+    name: 'obsolete clause',
+    documentLabel: 'ГОСТ Р 58350-2019',
+    clause: 'п. 4.1.8.3',
+    suggestion: null,
+    expected: '15',
+  },
+  {
+    name: 'current confirmation',
+    documentLabel: 'ГОСТ Р 58350-2019',
+    clause: 'таблица И.1, примечание 3',
+    suggestion: null,
+    expected: '99',
+  },
+  {
+    name: 'new document suggestion',
+    documentLabel: 'ОДМ 218.6.019-2016',
+    clause: 'п. 4.1.8.3',
+    suggestion: 17,
+    expected: '17',
+  },
+]) {
+  test(`the confirmation form uses ${variant.name} safely`, async ({ page }) => {
+    const state: ParameterState = {
+      id: 'odm-signs-taper',
+      status: { kind: 'changed', previous: variant.documentLabel },
+      document: { id: 2, label: 'ГОСТ Р 58350-2019', sha256: 'synthetic' },
+      quote: null,
+      suggestion: variant.suggestion,
+      amendments: [],
+      confirmation: {
+        id: 1,
+        parameterId: 'odm-signs-taper',
+        documentId: 1,
+        documentLabel: variant.documentLabel,
+        clause: variant.clause,
+        page: null,
+        quote: '',
+        fragment: '',
+        value: 99,
+        confirmedBy: 'Учебный составитель',
+        confirmedAt: '2026-01-01',
+        note: 'Учебное основание',
+      },
+    }
+    await page.route('**/api/normative-parameters', (route) => route.fulfill({ json: [state] }))
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Реестры', exact: true }).click()
+    await page.getByRole('button', { name: 'Нормативные параметры', exact: true }).click()
+    const item = page.locator('[data-parameter="odm-signs-taper"]')
+    await expect(item.locator('.status').first()).toContainText(variant.documentLabel)
+    await item.getByRole('button', { name: 'Проверить и подтвердить' }).click()
+    await expect(item.getByLabel('Значение, м', { exact: true })).toHaveValue(variant.expected)
+  })
 }
 
 test('PDF title wins over filename; manual edits survive file changes and previews expire', async ({

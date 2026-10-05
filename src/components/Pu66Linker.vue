@@ -241,6 +241,11 @@ onMounted(load)
                 {{ preview.revision }} · {{ new Date(preview.updatedAt).toLocaleString('ru-RU') }}
               </td>
             </tr>
+            <tr>
+              <th scope="row">Длина в границах переезда (п. 8 ПУ-66), м</th>
+              <td>{{ scheme.crossing.snapshot?.crossingRoadLengthMetres ?? 'не закреплено' }}</td>
+              <td>{{ preview.crossingRoadLengthMetres ?? 'не указана' }}</td>
+            </tr>
           </tbody>
         </table>
       </div>

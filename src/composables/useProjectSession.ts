@@ -303,7 +303,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     beginSession()
     imported.value = {
       scheme,
-      format: 'scheme-v7',
+      format: 'scheme-v8',
       warnings: [
         PU66_LINKED_WARNING,
         'Вариант выбран по длине фронта работ, нормативная проверка и расстановка знаков не выполнены.',
@@ -367,7 +367,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     beginSession()
     imported.value = {
       scheme,
-      format: 'scheme-v7',
+      format: 'scheme-v8',
       warnings: ['Схема не прошла нормативную проверку.'],
     }
     history.value = startHistory(scheme)
@@ -515,7 +515,7 @@ export function useProjectSession(onProjectOpened: () => void) {
       beginSession(record.sessionId)
       imported.value = {
         scheme: record.scheme,
-        format: 'scheme-v7',
+        format: 'scheme-v8',
         warnings: ['Восстановлена рабочая копия; проверьте ввод и сохраните проект.'],
       }
       history.value = startHistory(record.scheme)

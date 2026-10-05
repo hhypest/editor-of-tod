@@ -163,8 +163,8 @@ describe('vector A4 sheet', () => {
     expect(joined).not.toContain('светлое время')
     expect(joined).not.toContain('УГИБДД')
     expect(joined).not.toContain('зачехлены')
-    expect(all).toContain(
-      '1. Пропуск транспорта регулируют два регулировщика у начала и конца места работ (решение составителя).',
+    expect(joined).toContain(
+      '1. Пропуск транспорта регулируют два регулировщика у начала и конца места работ (ОДМ 218.6.019-2016, п. 13.7.3).',
     )
     expect(all).toContain(
       '2. Регулировщиков устанавливать не ближе 15 м до рабочей зоны (ОДМ 218.6.019, таблица 5).',
@@ -198,6 +198,7 @@ describe('vector A4 sheet', () => {
       axisLabel: '24 км 7 пк',
       roadName: 'Учебная дорога Б',
       crossingWidthMetres: '6,10',
+      crossingRoadLengthMetres: 40,
       revision: 1,
       updatedAt: '2026-09-28T10:00:00.000Z',
     })

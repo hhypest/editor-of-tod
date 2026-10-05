@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { CROSSING_FRONT_LIMIT_METRES } from '../domain/crossing-limits'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   createSchemeFromPu66,
@@ -14,6 +15,9 @@ import type { Pu66SchemeRecord } from '../domain/pu66-snapshot'
 import { selectTemplateByWorkFront, templateLabel } from '../domain/registry'
 import { getPu66SchemeRecord, listPu66Cards, type Pu66ListEntry } from '../services/local-pu66'
 import Pu66CardPicker from './Pu66CardPicker.vue'
+import WorkConditionsFields from './WorkConditionsFields.vue'
+import { cellNumber } from '../domain/pu66-norms'
+import type { SchemeDetailsDraft } from '../domain/edit-details'
 
 const props = defineProps<{ locked?: boolean; active?: boolean }>()
 const emit = defineEmits<{ create: [scheme: Scheme]; importPu66: [] }>()
@@ -30,6 +34,33 @@ const input = reactive<NewSchemeInput>({
   yellowTemporarySigns: false,
 })
 const { rules } = useNormativeRules()
+const workConditions = ref<SchemeDetailsDraft['parameters']['workConditions']>({
+  kind: 'unknown',
+  durationHours: '',
+  daylight: 'unknown',
+  regulatorsPresent: false,
+  sectionMetres: '',
+})
+function conditionsInput(): Scheme['parameters']['workConditions'] {
+  const conditions = workConditions.value
+  return {
+    ...conditions,
+    durationHours: conditions.durationHours.trim()
+      ? (parsed(conditions.durationHours) ?? NaN)
+      : null,
+    sectionMetres: conditions.sectionMetres.trim()
+      ? (parsed(conditions.sectionMetres) ?? NaN)
+      : null,
+  }
+}
+
+function usePu66Front(): void {
+  if (props.locked || busy.value) return
+  const maximum = card.value ? cellNumber(card.value.crossingRoadLengthMetres) : null
+  if (maximum === null || maximum <= 0) return
+  input.frontMetres = String(maximum)
+  input.frontFromPu66 = true
+}
 
 function parsed(value: string): number | null {
   const normalized = value.trim().replace(',', '.')
@@ -119,6 +150,7 @@ async function loadCards(): Promise<void> {
 }
 
 async function chooseCard(key: string): Promise<void> {
+  input.frontFromPu66 = false
   card.value = null
   error.value = ''
   if (!key) return
@@ -135,11 +167,13 @@ async function chooseCard(key: string): Promise<void> {
 }
 
 function forgetCard(): void {
+  input.frontFromPu66 = false
   cardKey.value = ''
   card.value = null
 }
 
 async function create(): Promise<void> {
+  input.workConditions = conditionsInput()
   error.value = ''
   const current = ++attempt
   busy.value = true
@@ -248,6 +282,8 @@ watch(
               <dd>{{ card.roadName || 'не указана' }}</dd>
               <dt>Ширина проезжей части, м</dt>
               <dd>{{ card.crossingWidthMetres ?? 'не указана' }}</dd>
+              <dt>Длина в границах переезда (п. 8 ПУ-66), м</dt>
+              <dd>{{ card.crossingRoadLengthMetres ?? 'не указана' }}</dd>
             </dl>
             <button type="button" class="secondary" @click="forgetCard">Выбрать другую</button>
           </div>
@@ -267,7 +303,13 @@ watch(
           </label>
           <label
             >Фронт работ, м
-            <input v-model="input.frontMetres" type="text" inputmode="decimal" required />
+            <input
+              v-model="input.frontMetres"
+              type="text"
+              inputmode="decimal"
+              required
+              @input="input.frontFromPu66 = false"
+            />
           </label>
           <label
             >Отвод, м
@@ -278,6 +320,18 @@ watch(
             <input v-model="input.bufferMetres" type="text" inputmode="decimal" required />
           </label>
         </div>
+        <button
+          v-if="card && (cellNumber(card.crossingRoadLengthMetres) ?? 0) > 0"
+          type="button"
+          @click="usePu66Front"
+        >
+          Взять фронт из п. 8 ПУ-66
+        </button>
+        <p class="hint">
+          Предел фронта редактора: {{ CROSSING_FRONT_LIMIT_METRES }} м. Длина п. 8 выбранной ПУ-66
+          дополнительно ограничивает фронт; отгон и буфер учитываются отдельно.
+        </p>
+        <WorkConditionsFields v-model="workConditions" />
         <p v-if="choice" class="hint" role="status">
           По длине фронта предварительно выбран вариант
           <strong>{{ templateLabel(choice.code) }}</strong

@@ -107,7 +107,7 @@ export function typesizeRowForCategory(category: Cell): string | null {
   const value = text(category).toUpperCase().replace(/\s+/g, '')
   if (/^(1|I)[АAБ]$/u.test(value)) return 'работы на дорогах IА и IБ категории'
   if (/^(1|I)(В|B)?$/u.test(value)) return 'четыре и более полос'
-  if (/^(3|4|III|IV)$/u.test(value)) return 'две и три полосы'
+  if (/^(2|3|4|II|III|IV)$/u.test(value)) return 'две и три полосы'
   if (/^(5|V)$/u.test(value)) return 'одна полоса'
   return null
 }

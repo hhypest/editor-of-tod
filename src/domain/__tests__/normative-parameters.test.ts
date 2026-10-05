@@ -7,6 +7,7 @@ import {
   rulesFrom,
   suggestValue,
   valueProblem,
+  WORK_TRAFFIC_KEYS,
   type ParameterState,
 } from '../normative-parameters'
 
@@ -18,9 +19,64 @@ const share = parameterDefinition('peak-hour-share')!
 
 /** Вымышленная формулировка пункта с числами, не текст документа. */
 const clause =
-  '5.4.4 Учебное условие. Знаки допускаются на участках протяженностью менее 45 м с интенсивностью движения менее 260 авт/ч в двух направлениях. Прочие условия.'
+  '6.4.4 Учебное условие. Знаки допускаются на участках протяженностью менее 45 м с интенсивностью движения менее 260 авт/ч в двух направлениях. Прочие условия.'
 
 describe('normative parameters', () => {
+  it('requires the complete paired table with ordered positive bounds', () => {
+    const definition = parameterDefinition('gost-work-traffic')!
+    if (definition.type !== 'table') throw new Error('Expected table')
+    expect(valueProblem(definition, definition.fallback)).toBeNull()
+    expect(valueProblem(definition, { [WORK_TRAFFIC_KEYS.signsLength]: '50' })).toContain(
+      'все четыре',
+    )
+    expect(
+      valueProblem(definition, {
+        ...definition.fallback,
+        [WORK_TRAFFIC_KEYS.signsHourly]: '0',
+      }),
+    ).toContain('положительными')
+    expect(
+      valueProblem(definition, {
+        ...definition.fallback,
+        [WORK_TRAFFIC_KEYS.signsLength]: '301',
+      }),
+    ).toContain('не должны превышать')
+    expect(
+      valueProblem(definition, {
+        ...definition.fallback,
+        [WORK_TRAFFIC_KEYS.signsHourly]: '501',
+      }),
+    ).toContain('не должны превышать')
+  })
+  it('does not reuse a confirmation after the document or clause was corrected', () => {
+    const definition = parameterDefinition('odm-signs-taper')!
+    const state: ParameterState = {
+      id: definition.id,
+      status: { kind: 'confirmed' },
+      document: null,
+      quote: null,
+      suggestion: null,
+      amendments: [],
+      confirmation: {
+        id: 1,
+        parameterId: definition.id,
+        documentId: 1,
+        documentLabel: 'ОДМ 218.6.019-2016',
+        clause: 'п. 4.1.8.3',
+        page: 1,
+        quote: '',
+        fragment: '',
+        value: 99,
+        confirmedBy: 'Учебный составитель',
+        confirmedAt: '2030-01-01',
+        note: 'Учебное основание',
+      },
+    }
+    const rules = rulesFrom([state])
+    expect(rules.signsTaperMetres).toBe(15)
+    expect(rules.confirmed[definition.id]).toBe(false)
+    expect(rules.sources[definition.id]).toContain('ГОСТ Р 58350')
+  })
   it('suggests values found in the clause text', () => {
     expect(suggestValue(signs, { text: clause })).toBe(260)
     expect(suggestValue(length, { text: clause })).toBe(45)
@@ -30,6 +86,19 @@ describe('normative parameters', () => {
       suggestValue(table, { text: '', rows: ['Скорость, км/ч', '30 12', '50 34', 'Примечание'] }),
     ).toEqual({ '30': '12', '50': '34' })
     expect(suggestValue(typesize, { text: 'Таблица 1', rows: ['I 1 Дороги'] })).toBeNull()
+  })
+
+  it('extracts the signs taper from the wording of table И.1 note 3', () => {
+    const definition = parameterDefinition('odm-signs-taper')!
+    // Вымышленное значение, короткий фрагмент формулировки вместо текста стандарта.
+    expect(
+      suggestValue(definition, {
+        text: 'Учебная таблица: 17 м при регулировании с помощью знаков 2.6 и 2.7.',
+      }),
+    ).toBe(17)
+    expect(
+      suggestValue(definition, { text: 'Учебная таблица: 18 м - с помощью знаков 2.6 и 2.7.' }),
+    ).toBe(18)
   })
 
   it('compares editions by the sentence with the value', () => {
@@ -62,7 +131,7 @@ describe('normative parameters', () => {
       peakHourShare: null,
     })
     expect(PROTOTYPE_RULES.regulatorDistance[40]).toBe(15)
-    expect(PROTOTYPE_RULES.sources['odm-signs-hourly']).toBe('ОДМ 218.6.019, п. 5.4.4')
+    expect(PROTOTYPE_RULES.sources['odm-signs-hourly']).toBe('ОДМ 218.6.019, п. 6.4.4')
     expect(regulationVerified(PROTOTYPE_RULES)).toBe(false)
 
     const confirmation = {
@@ -70,7 +139,7 @@ describe('normative parameters', () => {
       parameterId: 'odm-signs-hourly',
       documentId: 1,
       documentLabel: 'ОДМ 218.6.019-2030',
-      clause: 'п. 5.4.4',
+      clause: 'п. 6.4.4',
       page: 3,
       quote: clause,
       fragment: relevantFragment(signs, clause),
@@ -91,7 +160,7 @@ describe('normative parameters', () => {
     const current = rulesFrom([state('confirmed')])
     expect(current.signsHourly).toBe(260)
     expect(current.confirmed['odm-signs-hourly']).toBe(true)
-    expect(current.sources['odm-signs-hourly']).toBe('ОДМ 218.6.019-2030, п. 5.4.4')
+    expect(current.sources['odm-signs-hourly']).toBe('ОДМ 218.6.019-2030, п. 6.4.4')
     // Подтверждение по прежней редакции продолжает действовать, но не считается проверенным.
     const previous = rulesFrom([state('same-text')])
     expect(previous.signsHourly).toBe(260)

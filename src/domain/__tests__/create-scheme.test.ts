@@ -30,7 +30,7 @@ const options = {
 describe('scheme conditions without a pinned card (older projects and tests)', () => {
   it('starts B.34 with only entered measurements and supports editing and JSON roundtrip', () => {
     const scheme = createUnlinkedScheme(input, options)
-    expect(scheme.schemaVersion).toBe(7)
+    expect(scheme.schemaVersion).toBe(8)
     expect(scheme.crossing).toEqual({
       referenceId: 'TEST-NEW',
       source: 'entered-by-editor',
@@ -60,7 +60,7 @@ describe('scheme conditions without a pinned card (older projects and tests)', (
     const withText = savePlacement(edited, placement)
     expect(importSchemeJson(exportSchemeJson(withText))).toMatchObject({
       scheme: withText,
-      format: 'scheme-v7',
+      format: 'scheme-v8',
     })
     expect(withText.source).toEqual({ kind: 'created-in-editor' })
     // Расстояния выбранного местоположения подставлены по нормативным параметрам.
@@ -89,7 +89,7 @@ describe('scheme conditions without a pinned card (older projects and tests)', (
     const scheme = createUnlinkedScheme(input, options)
     const draft = createSchemeDetailsDraft(scheme)
     draft.parameters.workZones.b34!.workMetres = '31'
-    expect(() => applySchemeDetails(scheme, draft)).toThrow('workZones.b34.workMetres')
+    expect(applySchemeDetails(scheme, draft).template.code).toBe('b33')
   })
 
   it.each([
@@ -113,6 +113,7 @@ describe('project created from a local PU-66 card', () => {
     axisLabel: '24 км 7 пк',
     roadName: 'Учебная дорога Б',
     crossingWidthMetres: 6.5,
+    crossingRoadLengthMetres: 40,
     revision: 3,
     updatedAt: '2026-09-28T10:00:00.000Z',
   }
@@ -135,6 +136,7 @@ describe('project created from a local PU-66 card', () => {
         axisLabel: '24 км 7 пк',
         roadName: 'Учебная дорога Б',
         crossingWidthMetres: 6.5,
+        crossingRoadLengthMetres: 40,
         revision: 3,
         updatedAt: '2026-09-28T10:00:00.000Z',
       },

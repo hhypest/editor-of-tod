@@ -1,10 +1,15 @@
+import { CROSSING_FRONT_LIMIT_METRES } from './crossing-limits'
 import type { Scheme } from './model'
 import { figureDimensions } from './figure-dimensions'
-import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
+import { PROTOTYPE_RULES, REGULATION_PARAMETERS, type NormativeRules } from './normative-parameters'
 import { templateLabel } from './registry'
 import { anchorCoordinates, placementCoordinates } from './placement-workspace'
 import { dangerousSectionMetres, usesTwoRegulators } from './template-placements'
 import { ZONE_PLATE } from './sign-code'
+import { parseHourly } from './regulation-advice'
+import { effectiveWorkSection } from './work-traffic'
+import { railRegulationMode } from './rail-regulation'
+import { workConditionProblems, frontLimit } from './work-conditions'
 import {
   distanceTitles,
   expectedTypesize,
@@ -216,7 +221,7 @@ export function reviewScheme(
     basis: JSON.stringify([
       scheme.template,
       { ...parameters, locationText: undefined, directions: undefined },
-      { ...rules, sources: undefined, confirmed: undefined },
+      { ...rules, sources: undefined, confirmed: undefined, evidence: undefined },
       placements,
     ]),
   })
@@ -327,7 +332,48 @@ export function reviewScheme(
     })
   }
 
+  const conditionsProblems = workConditionProblems(scheme, rules)
+  findings.push({
+    id: 'work-conditions',
+    kind: 'verify',
+    title: 'Срок работ и границы переезда',
+    detail: `Сверьте продолжительность работ, светлое время суток, постоянное присутствие регулировщиков и длину фронта по п. 8 ПУ-66. Предел фронта редактора — ${CROSSING_FRONT_LIMIT_METRES} м; отгон и буфер отдельно. Для Б.33 — два регулировщика (ОДМ 218.6.019-2016, п. 7.3.1, рис. Б.33). Условия Б.34: ГОСТ Р 58350-2019, п. 6.1.3, приложение Д; ОДМ, пп. 6.4, 13.7.5. Границы по приказу № 402: до шлагбаума, при его отсутствии — 10 м от ближайшего рельса.`,
+    ...(conditionsProblems.length ? { markBlocked: conditionsProblems.join(' ') } : {}),
+    path: 'parameters.workConditions.kind',
+    basis: JSON.stringify([
+      parameters.workConditions,
+      frontMetres,
+      frontLimit(scheme),
+      parameters.regulation,
+      'rail-regulation-v2',
+      CROSSING_FRONT_LIMIT_METRES,
+      rules.workTraffic,
+      rules.signsHourly,
+      rules.alternateHourly,
+      rules.signsLengthMetres,
+      rules.shortTermHours,
+      rules.confirmed['gost-short-term-hours'],
+      rules.evidence['gost-short-term-hours'],
+      REGULATION_PARAMETERS.map((id) => [id, rules.confirmed[id], rules.evidence[id]]),
+    ]),
+  })
   if (scheme.template.code === 'b34') {
+    const section = effectiveWorkSection(parameters.workZones.b34, parameters.workConditions)
+    const decision = railRegulationMode(
+      {
+        frontMetres: frontMetres ?? null,
+        sectionMetres: section,
+        hourly: parseHourly(parameters.regulation.hourly),
+        limitedVisibility: parameters.regulation.vis,
+        straight: parameters.regulation.straight,
+        daylight: parameters.workConditions.daylight,
+      },
+      rules,
+    )
+    const incompatible =
+      conditionsProblems.length > 0 ||
+      (parameters.regulation.mode === 'signs' &&
+        parameters.workZones.b34?.taperMetres !== rules.signsTaperMetres)
     const regulators = placements.filter(
       (placement) => placement.kind === 'element' && placement.elementKind === 'reg',
     ).length
@@ -335,9 +381,33 @@ export function reviewScheme(
       id: 'b34-traffic',
       kind: 'verify',
       title: 'Условия движения для Б.34',
-      detail: `На листе размещено регулировщиков: ${regulators}. Подпись к рисунку Б.34 указывает на регулировщика при интенсивности более ${rules.signsHourly} авт./ч в двух направлениях или ограниченной видимости (${rules.sources['odm-signs-hourly']}). Оцените условия на месте и зафиксируйте решение составителя.`,
+      detail: `На листе размещено регулировщиков: ${regulators}; участок между устройствами ${section ?? 'не введён'} м, фронт ${frontMetres ?? 'не введён'} м. Б.34: знаки при потоке менее ${Math.min(rules.signsHourly, rules.workTraffic.signsHourly)} авт/ч, участке менее ${Math.min(rules.signsLengthMetres, rules.workTraffic.signsLength)} м и обеспеченной видимости (${rules.sources['gost-work-traffic']}; ${rules.sources['odm-signs-hourly']}). От этой границы до ${Math.min(rules.alternateHourly, rules.workTraffic.alternateHourly)} авт/ч включительно предлагается один при дневных работах, прямом коротком участке и видимости с обоих концов (ОДМ, п. 13.7.5); свыше — два. При ограниченной видимости — два. Рекомендация: ${decision ?? 'нет данных'}. Постоянное присутствие — ОДМ, п. 6.4.3. Таблица Д.1 не задаёт количество регулировщиков; для сочетаний вне её строк сверяется применимость краткосрочной схемы Б.34. Два допустимы и в нижних диапазонах.`,
+      ...(incompatible
+        ? {
+            markBlocked: `Выбранный режим, отгон или условия работ не соответствуют Б.34: ${conditionsProblems.join(' ') || 'проверьте отгон для знаков'}.`,
+          }
+        : {}),
       path: 'placements',
-      basis: JSON.stringify([parameters.regulation, parameters.location, regulators]),
+      basis: JSON.stringify([
+        parameters.regulation,
+        parameters.workConditions,
+        parameters.location,
+        regulators,
+        section,
+        decision,
+        'rail-regulation-v2',
+        rules.workTraffic,
+        rules.signsLengthMetres,
+        rules.signsHourly,
+        rules.alternateHourly,
+        rules.signsTaperMetres,
+        rules.sources['gost-work-traffic'],
+        rules.sources['odm-signs-length'],
+        rules.sources['odm-signs-hourly'],
+        rules.sources['odm-alternate-hourly'],
+        rules.sources['odm-signs-taper'],
+        REGULATION_PARAMETERS.map((id) => [id, rules.confirmed[id], rules.evidence[id]]),
+      ]),
     })
   }
 
@@ -350,7 +420,7 @@ export function reviewScheme(
       id: 'legacy-visibility',
       kind: 'verify',
       title: 'Видимость на участке',
-      detail: `В исходном файле HTML-прототипа видимость встречного автомобиля отмечена как ${legacyVisibility ? 'обеспеченная' : 'необеспеченная'}, а в проекте флаг «Видимость ограничена» ${parameters.regulation.vis ? 'установлен' : 'снят'}. Проекты, импортированные до исправления, получили обратное значение. Проверьте флаг на этапе 2 до выбора регулирования.`,
+      detail: `В исходном файле HTML-прототипа видимость встречного автомобиля отмечена как ${legacyVisibility ? 'обеспеченная' : 'необеспеченная'}, а в проекте флаг «Видимость встречного автомобиля ограничена» ${parameters.regulation.vis ? 'установлен' : 'снят'}. Проекты, импортированные до исправления, получили обратное значение. Проверьте флаг на этапе 2 до выбора регулирования.`,
       path: 'parameters',
     })
   }
@@ -398,7 +468,7 @@ export function reviewScheme(
 
 /**
  * Два регулировщика стоят у начала и конца места работ, каждый не ближе расстояния по табл. 5
- * ОДМ до рабочей зоны Z0–Z1 со стороны своего направления (п. 12.7.2). Пункт появляется, только
+ * ОДМ до рабочей зоны Z0–Z1 со стороны своего направления (п. 13.7.3). Пункт появляется, только
  * если на листе это не так или расстояние не определено: примечание листа — требование, а этот
  * пункт сверяет с ним фактические объекты.
  */

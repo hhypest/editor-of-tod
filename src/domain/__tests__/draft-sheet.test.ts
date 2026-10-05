@@ -92,6 +92,7 @@ describe('provisional print projection', () => {
       axisLabel: '12 км 3 пк',
       roadName: 'Условная дорога',
       crossingWidthMetres: 8,
+      crossingRoadLengthMetres: 40,
       revision: 17,
       updatedAt: '2026-09-25T12:00:00.000Z',
     })

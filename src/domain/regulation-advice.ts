@@ -1,3 +1,4 @@
+import { CROSSING_FRONT_LIMIT_METRES } from './crossing-limits'
 import {
   PROTOTYPE_RULES,
   REGULATION_PARAMETERS,
@@ -5,11 +6,15 @@ import {
   regulationVerified,
   type NormativeRules,
 } from './normative-parameters.ts'
+import { workTrafficDecision, shortTermWork, type WorkConditions } from './work-traffic.ts'
+import { railRegulationMode } from './rail-regulation.ts'
+import { selectTemplateByWorkFront } from './registry.ts'
 
 /**
  * Объяснимая подсказка способа пропуска транспорта для схемы Б.34. Пороги, протяжённость,
  * отгон и таблица расстояний берутся из нормативных параметров («Реестры» → «Нормативные
- * параметры»): составитель подтверждает их по тексту действующей редакции ОДМ 218.6.019.
+ * параметры»). Условия подтверждаются по текстам ОДМ и ГОСТ; отдельного подтверждения
+ * профиля переезда нет.
  * Пока хотя бы один параметр не подтверждён, подсказка только объясняет расчёт и не
  * применяется из интерфейса.
  */
@@ -28,6 +33,9 @@ export type RegulationInput = {
   taperMetres: number | null
   /** Протяжённость участка работ (фронт), м; null — не введена. */
   frontMetres: number | null
+  /** Полная протяжённость участка между первым и последним устройствами. */
+  sectionMetres: number | null
+  workConditions?: WorkConditions
 }
 
 export type RegulationAdvice = {
@@ -59,59 +67,78 @@ export function adviseRegulation(
   const hourly = parseHourly(input.hourly)
   const reasons: string[] = []
   const warnings: string[] = []
-  const signsSource = rules.sources['odm-signs-hourly']
-  let mode: RegulationMode | null
-
-  const tooLong =
-    input.frontMetres !== null && input.frontMetres >= rules.signsLengthMetres
-      ? `протяжённость участка работ ${input.frontMetres} м — ${rules.signsLengthMetres} м и более`
-      : null
-  if (hourly === null) {
-    mode = null
-    reasons.push(
-      'Интенсивность не введена: без часовой интенсивности рекомендация не даётся. Её можно подсчитать или пересчитать из суточной по ПУ-66 с подтверждённой долей часа пик.',
+  if (!shortTermWork(input.workConditions, rules))
+    warnings.push(
+      `Укажите краткосрочные работы и продолжительность не более ${rules.shortTermHours} ч; без этих условий подсказку применять нельзя (${rules.sources['gost-short-term-hours']}).`,
     )
-  } else if (
-    hourly < rules.signsHourly &&
-    !input.limitedVisibility &&
-    !tooLong &&
-    input.frontMetres === null
-  ) {
-    // Знаки допускаются только при участке короче предела: без длины рекомендации нет.
-    mode = null
+  const section = input.sectionMetres
+  const mode = railRegulationMode(
+    {
+      variant:
+        input.frontMetres === null ? 'b34' : selectTemplateByWorkFront(input.frontMetres).code,
+      frontMetres: input.frontMetres,
+      sectionMetres: section,
+      hourly,
+      limitedVisibility: input.limitedVisibility,
+      straight: input.straight,
+      daylight: input.workConditions?.daylight ?? 'unknown',
+    },
+    rules,
+  )
+  const signs = Math.min(rules.signsHourly, rules.workTraffic.signsHourly)
+  const one = Math.min(rules.alternateHourly, rules.workTraffic.alternateHourly)
+  const maximum = CROSSING_FRONT_LIMIT_METRES
+  reasons.push(
+    `Б.34 при обеспеченной видимости и участке менее ${Math.min(rules.signsLengthMetres, rules.workTraffic.signsLength)} м: менее ${signs} авт./ч — знаки 2.6/2.7; от ${signs} до ${one} включительно — один при выполненных условиях ОДМ, п. 13.7.5; свыше ${one} — два. При ограниченной видимости и для Б.33 — два. Пороги: ${rules.sources['gost-work-traffic']}; ${rules.sources['odm-signs-hourly']}; ${rules.sources['odm-alternate-hourly']}. Предел фронта редактора ${maximum} м, дополнительно действует п. 8 ПУ-66.`,
+  )
+  if (mode === null) {
     reasons.push(
-      `Интенсивность ${hourly} авт./ч — менее ${rules.signsHourly} авт./ч, но протяжённость участка работ не введена: знаки 2.6 и 2.7 допускаются только при участке менее ${rules.signsLengthMetres} м (${rules.sources['odm-signs-length']}). Укажите длину рабочей зоны.`,
+      hourly === null
+        ? 'Интенсивность не введена: нужна часовая интенсивность в двух направлениях. Пересчёт из ПУ-66 допустим только с подтверждённой долей часа пик.'
+        : `Проверьте фронт работ (положительный, не более ${maximum} м) и длину участка между устройствами.`,
     )
-  } else if (hourly < rules.signsHourly && !input.limitedVisibility && !tooLong) {
-    mode = 'signs'
+  } else if (mode === 'signs') {
     reasons.push(
-      `Интенсивность ${hourly} авт./ч в двух направлениях — менее ${rules.signsHourly} авт./ч, участок ${input.frontMetres} м — менее ${rules.signsLengthMetres} м, видимость встречного автомобиля не ограничена: очерёдность можно установить знаками 2.6 и 2.7 (${signsSource}).`,
+      `Интенсивность ${hourly} авт./ч — менее ${signs}, видимость встречного автомобиля обеспечена: применяются знаки 2.6 и 2.7. Основание: ${rules.sources['odm-signs-hourly']}; ${rules.sources['gost-work-traffic']}.`,
     )
   } else {
-    const cause =
-      hourly >= rules.signsHourly
-        ? `интенсивность ${hourly} авт./ч — ${rules.signsHourly} авт./ч и более`
-        : (tooLong ?? 'видимость встречного автомобиля ограничена')
-    if (input.straight && !input.limitedVisibility) {
-      mode = 'one'
-      reasons.push(
-        `Знаки 2.6/2.7 не подходят: ${cause} (${signsSource}). Участок прямой, регулировщик виден с обоих концов места работ — возможен один регулировщик (ОДМ 218.6.019, п. 12.7.3).`,
+    reasons.push(
+      mode === 'one'
+        ? 'Один регулировщик: дневные работы, прямой участок и видимость с обоих концов. Проверьте все условия ОДМ 218.6.019, п. 13.7.5; требуется постоянное присутствие (п. 6.4.3).'
+        : 'Два регулировщика размещаются у начала и конца места работ; необходимы согласованные действия, связь и постоянное присутствие (ОДМ 218.6.019, пп. 13.7.3–13.7.5, п. 6.4.3).',
+    )
+    if (!input.workConditions?.regulatorsPresent)
+      warnings.push(
+        'Подтвердите постоянное присутствие регулировщиков в течение всего срока работ.',
       )
-    } else {
-      mode = 'two'
-      reasons.push(
-        `Знаки 2.6/2.7 не подходят: ${cause} (${signsSource}). ${
-          input.limitedVisibility
-            ? 'При ограниченной видимости'
-            : 'Участок не отмечен как прямой, и'
-        } один регулировщик не виден с обоих концов места работ — нужны два регулировщика у начала и конца (ОДМ 218.6.019, пп. 12.7.2–12.7.3).`,
+    if (
+      hourly !== null &&
+      hourly >= signs &&
+      hourly <= one &&
+      (input.workConditions?.daylight !== 'day' || !input.straight)
+    )
+      warnings.push(
+        'Для одного регулировщика не подтверждены дневные работы или прямой участок: предлагаются два регулировщика.',
       )
-    }
   }
-
-  if (hourly !== null && hourly > rules.alternateHourly)
+  const normative = workTrafficDecision(
+    section,
+    hourly,
+    input.limitedVisibility,
+    rules,
+    input.workConditions,
+  )
+  if (
+    normative === 'outside' ||
+    normative === 'unknown' ||
+    (mode === 'signs' && normative !== 'signs')
+  )
     warnings.push(
-      `Интенсивность выше ${rules.alternateHourly} авт./ч — верхней границы поочерёдного пропуска по одной полосе (${rules.sources['odm-alternate-hourly']}). Проверьте допустимость такого пропуска, время работ и другие способы организации движения; число регулировщиков из этого порога не выводится.`,
+      `Сверьте применимость краткосрочной схемы по фактической длине участка и интенсивности. Таблица Д.1 использует строгий порог «менее ${Math.min(rules.signsHourly, rules.workTraffic.signsHourly)} авт./ч» и сочетания длины/потока; её значения не задают количество регулировщиков. Сверьте условия Б.34 с действующим текстом (${rules.sources['gost-work-traffic']}).`,
+    )
+  if (section !== null)
+    reasons.push(
+      `Протяжённость участка — ${section} м (${input.workConditions?.sectionMetres !== null && input.workConditions?.sectionMetres !== undefined ? 'измеренные границы устройств' : `предварительно: отгон + буфер + фронт ${input.frontMetres ?? 'не введён'} м`}). Сверьте фактические границы направляющих устройств и расстояние видимости встречного автомобиля по ГОСТ Р 52289.`,
     )
   if (mode === 'signs' && input.taperMetres !== rules.signsTaperMetres)
     warnings.push(
@@ -140,7 +167,15 @@ export function adviseRegulation(
     reasons,
     warnings,
     regulatorDistanceMetres,
-    verified: regulationVerified(rules),
+    verified:
+      mode !== null &&
+      section !== null &&
+      input.frontMetres !== null &&
+      section >= input.frontMetres &&
+      (mode === 'signs' || regulatorDistanceMetres !== null) &&
+      regulationVerified(rules) &&
+      shortTermWork(input.workConditions, rules) &&
+      (mode === 'signs' || input.workConditions?.regulatorsPresent === true),
     unconfirmed,
   }
 }

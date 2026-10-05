@@ -44,7 +44,7 @@ describe('live draft review', () => {
     ).toEqual(['place', 'developer', 'work', 'responsible', 'approver', 'agreement', 'placements'])
     expect(
       initialFindings.filter((finding) => finding.kind === 'verify').map((finding) => finding.id),
-    ).toEqual(['crossing', 'template', 'figure-dimensions', 'b34-traffic'])
+    ).toEqual(['crossing', 'template', 'figure-dimensions', 'work-conditions', 'b34-traffic'])
 
     const draft = createSchemeDetailsDraft(initial)
     draft.parameters.locationText = 'Учебный участок'
@@ -113,6 +113,7 @@ describe('live draft review', () => {
       axisLabel: 'Учебная ось',
       roadName: 'Условная дорога',
       crossingWidthMetres: 8,
+      crossingRoadLengthMetres: 40,
       revision: 2,
       updatedAt: '2026-09-26T12:00:00.000Z',
     })

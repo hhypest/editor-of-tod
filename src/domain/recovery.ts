@@ -57,6 +57,21 @@ export const detailsDraftSchema = z.strictObject({
         last: text.nullable(),
       }),
       workZones: z.strictObject({ b33: zone.nullable(), b34: zone.nullable() }),
+      workConditions: z
+        .strictObject({
+          kind: z.enum(['unknown', 'short', 'long']),
+          durationHours: text,
+          daylight: z.enum(['unknown', 'day', 'night']),
+          regulatorsPresent: z.boolean(),
+          sectionMetres: text,
+        })
+        .default({
+          kind: 'unknown',
+          durationHours: '',
+          daylight: 'unknown',
+          regulatorsPresent: false,
+          sectionMetres: '',
+        }),
     }),
   ),
   // Копии восстановления до 30.09.2026 хранят реквизиты v5 — они переводятся в v6 при чтении.
