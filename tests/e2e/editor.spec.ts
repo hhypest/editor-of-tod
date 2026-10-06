@@ -1531,4 +1531,10 @@ test('post distance in metres drives the place on the sheet, the caption and the
   await expect(sheet).toContainText('400 м')
   await expect(sheet).toContainText('180 м')
   await expect(sheet).not.toContainText('{d')
+
+  // Справа ступени 250 и 180 м: интервал 70 м вне диапазона п. 5.4.22 — пункт для сверки.
+  const interval = page.locator('.checks li', { hasText: 'Интервал между знаками 3.24' })
+  await expect(interval).toContainText('подход справа')
+  await expect(interval).toContainText('180 м): 70 м')
+  await expect(interval).toContainText('ГОСТ Р 58350')
 })

@@ -32,3 +32,40 @@ export function drawnSignBase(code: string): string | null {
   if (/^8\.1\.1_\d+$/.test(code)) return '8.1.1'
   return ZONE_PLATE.test(code) ? '8.2.1' : null
 }
+
+/** Знак дополнительной информации (табличка); 8.22 — знаки «Препятствие», не таблички. */
+export function isPlate(code: string): boolean {
+  return code.startsWith('8.') && !code.startsWith('8.22')
+}
+
+/**
+ * Столбцы стойки слева направо: знак и таблички под ним. Табличка относится к знаку, с
+ * которым применена, и размещается непосредственно под ним (ГОСТ Р 52289-2019, п. 5.9.1).
+ * В списке знаков стойки табличка принадлежит предыдущему знаку; табличка 8.2.1 — соседнему
+ * знаку 1.25, с которым её ставит шаблон (п. 5.9.5), даже если он записан после неё. Стойка из
+ * одних табличек рисует каждую отдельным столбцом.
+ */
+export function postColumns(signIds: readonly string[]): number[][] {
+  const columns = new Map<number, number[]>()
+  const loose: number[][] = []
+  const main = (from: number, step: 1 | -1): number | null => {
+    for (let index = from; index >= 0 && index < signIds.length; index += step)
+      if (!isPlate(signIds[index]!)) return index
+    return null
+  }
+  signIds.forEach((code, index) => {
+    if (!isPlate(code)) columns.set(index, [index])
+  })
+  signIds.forEach((code, index) => {
+    if (!isPlate(code)) return
+    const previous = main(index - 1, -1)
+    const next = main(index + 1, 1)
+    const warning = (target: number | null) =>
+      target !== null && /^1\.25(_|$)/.test(signIds[target]!)
+    const owner =
+      /^8\.2\.1(_|$)/.test(code) && warning(next) && !warning(previous) ? next : (previous ?? next)
+    if (owner === null) loose.push([index])
+    else columns.get(owner)!.push(index)
+  })
+  return [...[...columns.entries()].sort(([a], [b]) => a - b).map(([, items]) => items), ...loose]
+}
