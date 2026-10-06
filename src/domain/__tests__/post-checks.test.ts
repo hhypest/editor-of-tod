@@ -136,6 +136,49 @@ describe('intervals between consecutive 3.24 signs (ГОСТ Р 52289, п. 5.4.2
     expect(stepIntervalProblems(repeated, PROTOTYPE_RULES)).toBeNull()
   })
 
+  it('treats the same limit after a different one as a separate step', () => {
+    const scheme = example('out')
+    const zoneSpeed = scheme.placements.find(
+      (placement) =>
+        placement.kind === 'sign-post' && placement.templateSlot === 'post2:L:zone-speed',
+    )!
+    const { templateSlot: _slot, ...manual } = zoneSpeed as Extract<
+      Scheme['placements'][number],
+      { kind: 'sign-post' }
+    >
+    const raised = schemeSchema.parse({
+      ...scheme,
+      nextPlacementId: scheme.nextPlacementId + 1,
+      placements: [
+        ...scheme.placements,
+        {
+          ...manual,
+          id: scheme.nextPlacementId,
+          generatedByTemplate: false,
+          signIds: ['3.24_70_ж'],
+          distance: { by: 'metres', approach: 'left', metres: 100 },
+        },
+      ],
+    })
+    // 70 (250) → 50 (150) → 70 (100) → 40 (50): последние два интервала по 50 м.
+    expect(speedSteps(raised, 'left').map((step) => [step.kmh, step.metres])).toEqual([
+      [70, 250],
+      [50, 150],
+      [70, 100],
+      [40, 50],
+    ])
+    expect(
+      stepIntervalProblems(raised, PROTOTYPE_RULES)!.problems.map((problem) => [
+        problem.from.kmh,
+        problem.to.kmh,
+        problem.gapMetres,
+      ]),
+    ).toEqual([
+      [50, 70, 50],
+      [70, 40, 50],
+    ])
+  })
+
   it('skips posts without a distance and an undefined location', () => {
     const scheme = withDistances(example('out'), { d150: 180 })
     const free = schemeSchema.parse({

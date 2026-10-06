@@ -25,25 +25,25 @@ export type StepIntervalProblem = {
 }
 
 /**
- * Ступени ограничения скорости одного подхода: для каждого значения 3.24 — самая дальняя от
- * начала работ стойка, с которой это ограничение начинается. Повтор того же значения ближе к
- * работам ступенью не считается. Стойки без расстояния не участвуют: их место на местности
- * программе неизвестно (ADR-0008).
+ * Ступени ограничения скорости одного подхода в порядке движения к месту работ. Знаки 3.24
+ * упорядочены по расстоянию; подряд идущие знаки с одним значением — одна ступень, она
+ * начинается с самого дальнего из них (повтор действующего ограничения ступенью не считается).
+ * То же значение после другого — новая ступень: 70 → 50 → 70 → 40 даёт четыре ступени.
+ * Стойки без расстояния не участвуют: их место на местности программе неизвестно (ADR-0008).
  */
 export function speedSteps(scheme: Scheme, approach: Approach): SpeedStep[] {
-  const first = new Map<number, SpeedStep>()
+  const signs: SpeedStep[] = []
   for (const placement of scheme.placements) {
     if (placement.kind !== 'sign-post' || placement.distance?.approach !== approach) continue
     const metres = postMetres(placement.distance, scheme.parameters.signDistancesMetres)
     if (metres === null) continue
     for (const code of placement.signIds) {
       const kmh = speedSignKmh(code)
-      if (kmh === null) continue
-      const known = first.get(kmh)
-      if (!known || metres > known.metres) first.set(kmh, { kmh, metres, postId: placement.id })
+      if (kmh !== null) signs.push({ kmh, metres, postId: placement.id })
     }
   }
-  return [...first.values()].sort((a, b) => b.metres - a.metres || b.kmh - a.kmh)
+  signs.sort((a, b) => b.metres - a.metres || b.kmh - a.kmh || a.postId - b.postId)
+  return signs.filter((sign, index) => sign.kmh !== signs[index - 1]?.kmh)
 }
 
 /**

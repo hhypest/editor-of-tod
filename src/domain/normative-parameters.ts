@@ -432,6 +432,9 @@ export const parameterRejectionSchema = z.strictObject({
 })
 export type ParameterRejectionField = z.infer<typeof parameterRejectionSchema>['field']
 
+/** Таблицы диапазонов по местоположению: обе строки обязательны. */
+const RANGE_PARAMETERS: readonly string[] = ['gost-warning-distance', 'gost-speed-step-interval']
+
 /** Проверка значения по описанию параметра; возвращает текст ошибки или null. */
 export function valueProblem(
   definition: ParameterDefinition,
@@ -462,6 +465,20 @@ export function valueProblem(
     )
       return 'Границы для знаков не должны превышать границы таблицы Д.1.'
   }
+  // Без строки или с перевёрнутым диапазоном правило для местоположения не действует: проверка
+  // молча пропускалась бы при параметре, показанном как подтверждённый.
+  if (RANGE_PARAMETERS.includes(definition.id)) {
+    for (const key of Object.values(WARNING_RANGE_KEYS)) {
+      const parsed = range(value[key])
+      if (!parsed || parsed[0] <= 0)
+        return `Заполните строку «${key}» диапазоном от меньшего положительного числа к большему, например «50–100»; подписи строк должны сохраняться.`
+    }
+  }
+  if (
+    definition.id === 'gost-plate-limit' &&
+    Object.values(PLATE_LIMIT_KEYS).some((key) => !(key in value))
+  )
+    return 'Заполните обе строки п. 5.9.1; подписи строк должны сохраняться.'
   const rows = Object.entries(value)
   if (!rows.length) return 'Таблица пуста.'
   const bad = rows.find(([, cell]) => !definition.valuePattern.test(cell))
