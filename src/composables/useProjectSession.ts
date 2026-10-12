@@ -5,7 +5,7 @@ import {
   MAX_PROJECT_FILE_BYTES,
   SchemeImportError,
   type ImportResult,
-  freePostWarning,
+  storedFormatWarnings,
 } from '../domain/import'
 import type { Scheme } from '../domain/model'
 import { reportError } from '../services/diagnostics'
@@ -368,9 +368,9 @@ export function useProjectSession(onProjectOpened: () => void) {
       format: 'scheme-v10',
       warnings: [
         'Схема не прошла нормативную проверку.',
-        // Редакция записана в прежнем формате: то же сообщение, что при открытии файла.
-        ...(storedSchemaVersion !== undefined && storedSchemaVersion < scheme.schemaVersion
-          ? freePostWarning(scheme)
+        // Редакция записана в прежнем формате: те же сообщения, что при открытии файла.
+        ...(storedSchemaVersion !== undefined
+          ? storedFormatWarnings(storedSchemaVersion, scheme)
           : []),
       ],
     }

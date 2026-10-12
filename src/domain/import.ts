@@ -72,6 +72,26 @@ export function freePostWarning(scheme: Scheme): string[] {
     : []
 }
 
+/**
+ * Форматы v2–v4 не хранили разрешённую скорость на подходе: при обновлении подставлено значение
+ * прежних версий по умолчанию (60 км/ч), а местоположение осталось «не определено». Сообщение
+ * показывается при открытии и файла, и проекта из локальной базы, записанного в этих форматах.
+ */
+export function legacySpeedWarning(storedSchemaVersion: number, scheme: Scheme): string[] {
+  return storedSchemaVersion >= 2 && storedSchemaVersion <= 4
+    ? [
+        `Разрешённая скорость на подходе в формате v${storedSchemaVersion} не хранилась: подставлено ${scheme.parameters.approachSpeedKmh ?? '—'} км/ч — значение прежних версий по умолчанию. Укажите местоположение на этапе 2 и проверьте разрешённую скорость и ступени скорости.`,
+      ]
+    : []
+}
+
+/** Сообщения при открытии редакции, записанной в прежнем формате (файл или локальная база). */
+export function storedFormatWarnings(storedSchemaVersion: number, scheme: Scheme): string[] {
+  return storedSchemaVersion < scheme.schemaVersion
+    ? [...legacySpeedWarning(storedSchemaVersion, scheme), ...freePostWarning(scheme)]
+    : []
+}
+
 function approachWarning(scheme: Scheme): string[] {
   return scheme.parameters.approachSpeedKmh === null
     ? [
@@ -358,9 +378,11 @@ export function importSchemeJson(
   options: { id?: string; now?: string } = {},
 ): ImportResult {
   const result = readSchemeJson(json, options)
-  return result.format === 'scheme-v10'
-    ? result
-    : { ...result, warnings: [...result.warnings, ...freePostWarning(result.scheme)] }
+  const stored = result.format === 'legacy-v1' ? 1 : Number(result.format.slice('scheme-v'.length))
+  return {
+    ...result,
+    warnings: [...result.warnings, ...storedFormatWarnings(stored, result.scheme)],
+  }
 }
 
 function readSchemeJson(json: string, options: { id?: string; now?: string }): ImportResult {
