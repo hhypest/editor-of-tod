@@ -718,9 +718,12 @@ export class RegistryStore {
         .get(checked.id) as
         (Pick<StoredRow, 'revision' | 'updated_at'> & { scheme_json: string }) | undefined
       if ((previous?.revision ?? 0) !== expectedRevision) throw new RevisionConflict()
+      // Снимок прежнего формата переписывается даже без правок: иначе после «Сохранить проект»
+      // база сохранила бы прежний формат и сообщения о нём повторялись бы при каждом открытии.
       if (
         !forceRevision &&
         previous &&
+        storedVersion(previous.scheme_json).storedSchemaVersion === checked.schemaVersion &&
         JSON.stringify(this.parseProject(previous.scheme_json)) === payload
       ) {
         this.db.exec('COMMIT')

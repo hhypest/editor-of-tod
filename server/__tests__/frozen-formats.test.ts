@@ -168,8 +168,14 @@ describe('frozen files of previous formats', () => {
           expect(first.schemaVersion).toBe(CURRENT_PROJECT_VERSION)
           expect(first.placements).toHaveLength(2)
           expect(second.parameters.locationText).toBe('Учебный участок, вторая редакция')
+          // Сохранение без правок переписывает снимок прежнего формата в текущий: сообщения о
+          // прежнем формате при следующем открытии не повторяются (замечание Codex к PR #148).
+          const resaved = store.saveProject(second, 2).revision
+          expect(resaved).toBe(storedVersion! < CURRENT_PROJECT_VERSION ? 3 : 2)
+          expect(store.getProject(project!.id)!.storedSchemaVersion).toBe(CURRENT_PROJECT_VERSION)
+          expect(store.saveProject(second, resaved).revision).toBe(resaved)
           const edited = { ...second, parameters: { ...second.parameters, locationText: 'Правка' } }
-          expect(store.saveProject(edited, 2).revision).toBe(3)
+          expect(store.saveProject(edited, resaved).revision).toBe(resaved + 1)
         } else {
           expect(store.listProjects()).toEqual([])
         }
