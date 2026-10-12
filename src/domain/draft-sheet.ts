@@ -42,7 +42,7 @@ export type DraftSheet = {
   createdAt: string
   referenceId: string
   template: 'b33' | 'b34'
-  /** Порог выбора варианта: фронт до значения включительно — Б.34 (решение проекта). */
+  /** Порог выбора варианта: фронт до значения включительно — Б.34; печатается только на черновике. */
   b34MaxFrontMetres: number
   location: string
   crossingFromPu66: {

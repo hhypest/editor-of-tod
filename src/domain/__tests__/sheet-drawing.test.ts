@@ -232,6 +232,20 @@ describe('vector A4 sheet', () => {
     )
   })
 
+  it('cites the ODM figure on the release sheet and keeps the variant rule on the draft only', () => {
+    const source = (release: boolean) =>
+      flatten(drawSheet(projectDraftSheet(scheme()), { ...options, release }).nodes).find(
+        (node): node is Extract<SheetNode, { t: 'text' }> =>
+          node.t === 'text' && node.cls === 'source-line',
+      )?.text
+    expect(source(true)).toBe(
+      'Схема по ОДМ 218.6.019-2016, приложение Б, рис. Б.34: пропуск встречных направлений по одной полосе.',
+    )
+    expect(source(false)).toBe(
+      'Схема по ОДМ 218.6.019-2016, приложение Б, рис. Б.34: пропуск встречных направлений по одной полосе. Выбор варианта (решение проекта): фронт работ до 30 м включительно — Б.34, более — Б.33.',
+    )
+  })
+
   it('prints the regulator distance requirement for B.33 as well', () => {
     const project = createUnlinkedScheme({
       referenceId: 'TEST-B33',
