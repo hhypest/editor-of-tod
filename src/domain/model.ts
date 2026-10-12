@@ -267,16 +267,10 @@ function checkModernScheme(
       path: ['parameters', 'workZones', scheme.template.code],
       message: 'Для выбранного варианта нужны размеры зоны работ',
     })
-  } else if (
-    scheme.source.kind === 'created-in-editor' &&
-    (activeZone.workMetres < 30 ? 'b34' : 'b33') !== scheme.template.code
-  ) {
-    context.addIssue({
-      code: 'custom',
-      path: ['parameters', 'workZones', scheme.template.code, 'workMetres'],
-      message: 'Длина фронта не соответствует выбранному варианту Б.33/Б.34',
-    })
   }
+  // Соответствие фронта и варианта — правило проекта с настраиваемым порогом, а не
+  // инвариант хранения: проект, сохранённый при прежнем пороге, должен открываться.
+  // Расхождение показывает проверка листа (пункт «Вариант и длина фронта»).
 }
 
 /** Read-only validator for files and SQLite revisions produced before native project creation. */

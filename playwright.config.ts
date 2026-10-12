@@ -11,6 +11,10 @@ const executable = process.env.TOD_E2E_EXE
 export default defineConfig({
   testDir: './tests/e2e',
   workers: 1,
+  // На агентах GitHub (особенно Windows) обращение к 127.0.0.1 изредка обрывается сетевой
+  // ошибкой самого агента (net::ERR_NO_BUFFER_SPACE). Такой сценарий повторяется; прошедший со
+  // второй попытки помечается в отчёте как «flaky», постоянная ошибка по-прежнему роняет запуск.
+  retries: process.env.CI ? 2 : 0,
   use: {
     ...devices['Desktop Chrome'],
     baseURL: executable ? 'http://127.0.0.1:4100' : 'http://127.0.0.1:5173',

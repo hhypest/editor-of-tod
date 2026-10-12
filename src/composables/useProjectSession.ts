@@ -308,9 +308,6 @@ export function useProjectSession(onProjectOpened: () => void) {
       warnings: [
         PU66_LINKED_WARNING,
         'Вариант выбран по длине фронта работ, нормативная проверка и расстановка знаков не выполнены.',
-        ...(scheme.parameters.workZones[scheme.template.code]?.workMetres === 30
-          ? ['Ровно 30 м: требуется предметная сверка применимости варианта.']
-          : []),
       ],
     }
     history.value = startHistory(scheme)

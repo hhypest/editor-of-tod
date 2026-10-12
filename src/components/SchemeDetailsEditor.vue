@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { CROSSING_FRONT_LIMIT_METRES } from '../domain/crossing-limits'
 import { templateLabel, selectTemplateByWorkFront } from '../domain/registry'
 import { workSectionMetres } from '../domain/work-traffic'
 import { frontLimit } from '../domain/work-conditions'
@@ -17,6 +16,8 @@ import {
   draftDefaultsFields,
   resetDraftToNormative,
   SchemeEditError,
+  switchTemplateToRule,
+  templateByRule,
   type SchemeDetailsDraft,
 } from '../domain/edit-details'
 import {
@@ -218,9 +219,18 @@ const frontPreview = computed(() => {
     draft.value.parameters.workZones[props.scheme.template.code]?.workMetres,
   )
   return value !== null && value > 0
-    ? templateLabel(selectTemplateByWorkFront(value).code)
+    ? templateLabel(selectTemplateByWorkFront(value, normativeRules.value).code)
     : 'не определён'
 })
+
+/** Вариант по действующему порогу, если сохранённый проект с ним расходится. */
+const ruleTemplate = computed(() => templateByRule(props.scheme, normativeRules.value))
+function switchTemplate(): void {
+  if (props.locked || dirty.value || !ruleTemplate.value) return
+  emit('apply', switchTemplateToRule(props.scheme, normativeRules.value))
+  status.value =
+    'Вариант сменён по правилу проекта. Соберите шаблон заново на этапе 3 и сохраните проект.'
+}
 
 function applyAdvice(): void {
   if (props.locked || !advice.value.mode || !advice.value.verified) return
@@ -404,10 +414,24 @@ function applyDraft(): void {
           сохраняются; соберите шаблон заново и повторите проверку листа.
         </p>
         <p class="hint">
-          Предел фронта редактора: {{ CROSSING_FRONT_LIMIT_METRES }} м. Дополнительно фронт
-          ограничен п. 8 закреплённой ПУ-66:
+          Наибольший фронт работ на переезде: {{ normativeRules.frontLimitMetres }} м ({{
+            normativeRules.sources['project-front-limit']
+          }}). Фронт до {{ normativeRules.b34MaxFrontMetres }} м включительно — Б.34, больше — Б.33.
+          Дополнительно фронт ограничен п. 8 закреплённой ПУ-66:
           {{ frontLimit(scheme) ?? 'не указан — обновите связь с заполненной карточкой' }} м.
         </p>
+        <div v-if="ruleTemplate" class="warning" data-variant-mismatch>
+          <p>
+            Выбран {{ templateLabel(scheme.template.code) }}, а по правилу проекта для этого фронта
+            нужен {{ templateLabel(ruleTemplate) }}. Проект мог быть сохранён при прежнем правиле.
+            Смена варианта сохраняет объекты и снимает отметки проверки; шаблон соберите заново на
+            этапе 3.
+          </p>
+          <button type="button" :disabled="locked || dirty" @click="switchTemplate">
+            Сменить вариант на {{ templateLabel(ruleTemplate) }}
+          </button>
+          <p v-if="dirty" class="hint">Сначала примените или отмените ввод формы.</p>
+        </div>
         <button
           v-if="(frontLimit(scheme) ?? 0) > 0"
           type="button"

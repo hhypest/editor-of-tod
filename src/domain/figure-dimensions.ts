@@ -65,8 +65,9 @@ export function figureDimensions(
       title: 'Фронт работ',
       enteredMetres: zone.workMetres,
       figureLabel: longFront ? 'min 30 м' : 'max 30 м*',
-      // B.34's "max 30" includes the boundary. The project-specific choice
-      // of B.33 at exactly 30 m is checked separately in review-scheme.ts.
+      // Размерные обозначения рисунков ОДМ («max 30», «min 30»), а не порог выбора варианта.
+      // Порог — решение проекта `project-b34-max-front`; расхождение варианта с ним
+      // показывает пункт «Вариант и длина фронта» (review-scheme.ts).
       agreesWithFigure: longFront ? zone.workMetres >= 30 : zone.workMetres <= 30,
       startX: Z0,
       endX: Z1,

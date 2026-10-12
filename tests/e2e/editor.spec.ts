@@ -5,7 +5,8 @@ import { zipSync } from 'fflate'
 import { PNG } from 'pngjs'
 import { createSampleWorkbook, sampleCards } from '../../scripts/generate-pu66-samples'
 import { fictionalMethodology, fictionalSignStandard } from '../../server/__tests__/pdf-fixture'
-import { importSchemeJson } from '../../src/domain/import'
+import { createUnlinkedScheme } from '../../src/domain/create-scheme'
+import { exportSchemeJson, importSchemeJson } from '../../src/domain/import'
 import { reviewScheme } from '../../src/domain/review-scheme'
 import { setMark } from '../../src/domain/review-marks'
 import { rebuildTemplatePlacements } from '../../src/domain/template-placements'
@@ -300,6 +301,49 @@ test('restores applied edits and unapplied fields after the window closes', asyn
     (await (await request.get(`${api}/api/projects/${saved.id}`)).json()).scheme.parameters
       .signDistancesMetres,
   ).toMatchObject({ n100: 90, n50: 45 })
+})
+
+test('a project saved with B.33 at 30 m opens as is and switches the variant only on request', async ({
+  page,
+}) => {
+  const scheme = createUnlinkedScheme(
+    {
+      referenceId: 'TEST-VARIANT',
+      locationText: 'Учебный участок',
+      directionLeft: 'А',
+      directionRight: 'Б',
+      frontMetres: '31',
+      taperMetres: '8',
+      bufferMetres: '15',
+      speedStagesKmh: ['70', '50', '40'],
+      location: 'out',
+      approachSpeedKmh: '90',
+      yellowTemporarySigns: false,
+    },
+    { id: randomUUID(), now: '2026-10-12T10:00:00.000Z' },
+  )
+  // Так сохранялись проекты при прежнем правиле «30 м и более — Б.33».
+  scheme.parameters.workZones.b33!.workMetres = 30
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Открыть файл', exact: true }).click()
+  await page.locator('#scheme-file').setInputFiles({
+    name: `variant-${randomUUID()}.json`,
+    mimeType: 'application/json',
+    buffer: Buffer.from(exportSchemeJson(scheme)),
+  })
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  await expect(page.getByRole('heading', { name: 'Зона Б.33', exact: true })).toBeVisible()
+  const warning = page.locator('[data-variant-mismatch]')
+  await expect(warning).toContainText('нужен Б.34')
+  await warning.getByRole('button', { name: 'Сменить вариант на Б.34' }).click()
+  await expect(page.getByRole('heading', { name: 'Зона Б.34', exact: true })).toBeVisible()
+  await expect(warning).toHaveCount(0)
+  await expect(
+    page
+      .getByRole('heading', { name: 'Зона Б.34', exact: true })
+      .locator('..')
+      .getByLabel('Фронт работ, м', { exact: true }),
+  ).toHaveValue('30')
 })
 
 test('two windows protect a live copy, transfer it after closing and send the legacy source only once', async ({
@@ -1531,4 +1575,10 @@ test('post distance in metres drives the place on the sheet, the caption and the
   await expect(sheet).toContainText('400 м')
   await expect(sheet).toContainText('180 м')
   await expect(sheet).not.toContainText('{d')
+
+  // Справа ступени 250 и 180 м: интервал 70 м вне диапазона п. 5.4.22 — пункт для сверки.
+  const interval = page.locator('.checks li', { hasText: 'Интервал между знаками 3.24' })
+  await expect(interval).toContainText('подход справа')
+  await expect(interval).toContainText('180 м): 70 м')
+  await expect(interval).toContainText('ГОСТ Р 58350')
 })

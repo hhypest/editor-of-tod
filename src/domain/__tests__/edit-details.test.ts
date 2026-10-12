@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { reactive } from 'vue'
 import fixture from '../../../tests/fixtures/manual-v1.json?raw'
-import { applySchemeDetails, createSchemeDetailsDraft, SchemeEditError } from '../edit-details'
+import {
+  applySchemeDetails,
+  createSchemeDetailsDraft,
+  SchemeEditError,
+  switchTemplateToRule,
+  templateByRule,
+} from '../edit-details'
+import { createUnlinkedScheme } from '../create-scheme'
+import { PROTOTYPE_RULES } from '../normative-parameters'
+import { reviewScheme } from '../review-scheme'
+import { setMark } from '../review-marks'
 import { exportSchemeJson, importSchemeJson } from '../import'
 import { detailsDraftSchema } from '../recovery'
 
@@ -70,6 +80,77 @@ describe('editing imported project details', () => {
     const draft = createSchemeDetailsDraft(source)
     draft.titleBlock.work.description = 'x'.repeat(5_001)
     expect(() => applySchemeDetails(source, draft)).toThrow('titleBlock.work.description')
+  })
+})
+
+/** B.33 с фронтом 30 м: так сохранялись проекты при прежнем правиле «30 м и более — Б.33». */
+function savedB33At30() {
+  const scheme = createUnlinkedScheme(
+    {
+      referenceId: 'TEST-VARIANT',
+      locationText: 'Учебный участок',
+      directionLeft: 'А',
+      directionRight: 'Б',
+      frontMetres: '31',
+      taperMetres: '8',
+      bufferMetres: '15',
+      speedStagesKmh: ['70', '50', '40'],
+      location: 'out',
+      approachSpeedKmh: '90',
+      yellowTemporarySigns: false,
+    },
+    { id: '55740b36-080a-4cbe-9476-e71ffb1ab47f', now: '2026-10-12T10:00:00.000Z' },
+  )
+  scheme.parameters.workZones.b33!.workMetres = 30
+  return importSchemeJson(exportSchemeJson(scheme)).scheme
+}
+
+describe('variant chosen by the configurable front threshold', () => {
+  it('keeps a saved variant while the front is unchanged and does not re-check the old limit', () => {
+    const saved = savedB33At30()
+    expect(saved.template.code).toBe('b33')
+    const draft = createSchemeDetailsDraft(saved)
+    draft.parameters.locationText = 'Другой участок'
+    const edited = applySchemeDetails(saved, draft)
+    expect(edited.template.code).toBe('b33')
+    expect(templateByRule(edited, PROTOTYPE_RULES)).toBe('b34')
+
+    const tooLong = structuredClone(saved)
+    tooLong.parameters.workZones.b33!.workMetres = 46
+    const other = createSchemeDetailsDraft(tooLong)
+    other.parameters.locationText = 'Другой участок'
+    expect(applySchemeDetails(tooLong, other).parameters.workZones.b33?.workMetres).toBe(46)
+    other.parameters.workZones.b33!.workMetres = '47'
+    expect(() => applySchemeDetails(tooLong, other)).toThrow(
+      'наибольший фронт работ на переезде 45 м',
+    )
+  })
+
+  it('re-selects the variant by the threshold when the front changes', () => {
+    const saved = savedB33At30()
+    const draft = createSchemeDetailsDraft(saved)
+    draft.parameters.workZones.b33!.workMetres = '29'
+    const edited = applySchemeDetails(saved, draft)
+    expect(edited.template.code).toBe('b34')
+    expect(edited.parameters.workZones).toMatchObject({ b33: null, b34: { workMetres: 29 } })
+    const strict = { ...PROTOTYPE_RULES, b34MaxFrontMetres: 25 }
+    expect(applySchemeDetails(saved, draft, strict).template.code).toBe('b33')
+  })
+
+  it('switches the variant only on an explicit request and clears earlier marks', () => {
+    const saved = savedB33At30()
+    const marked = setMark(saved, reviewScheme(saved), 'template', true)
+    expect(Object.keys(marked.reviewMarks)).toContain('template')
+    const switched = switchTemplateToRule(marked, PROTOTYPE_RULES)
+    expect(switched.template).toMatchObject({ code: 'b34', reviewStatus: 'not-verified' })
+    expect(switched.parameters.workZones.b33).toBeNull()
+    expect(switched.parameters.workZones.b34?.workMetres).toBe(30)
+    expect(switched.reviewMarks).toEqual({})
+    expect(switched.placements).toEqual(marked.placements)
+    expect(marked.template.code).toBe('b33')
+    expect(templateByRule(switched, PROTOTYPE_RULES)).toBeNull()
+    expect(reviewScheme(switched).some((finding) => finding.id === 'variant-front')).toBe(false)
+    expect(switchTemplateToRule(switched, PROTOTYPE_RULES)).toBe(switched)
   })
 })
 

@@ -147,14 +147,23 @@ describe('railway-crossing regulation after normative acceptance', () => {
     expect(() => project(45.001)).toThrow()
     const draft = createSchemeDetailsDraft(scheme)
     draft.parameters.workZones.b33!.workMetres = '45.001'
-    expect(() => applySchemeDetails(scheme, draft)).toThrow('предел фронта редактора')
+    expect(() => applySchemeDetails(scheme, draft)).toThrow(
+      'наибольший фронт работ на переезде 45 м',
+    )
     scheme.parameters.workZones.b33!.workMetres = 46
     const opened = importSchemeJson(exportSchemeJson(scheme)).scheme
     expect(opened.parameters.workZones.b33?.workMetres).toBe(46)
-    expect(() => rebuildTemplatePlacements(opened)).toThrow('предел фронта редактора')
-    expect(reviewScheme(opened).find((f) => f.id === 'work-conditions')?.markBlocked).toContain(
-      'предел фронта редактора',
+    expect(() => rebuildTemplatePlacements(opened)).toThrow(
+      'наибольший фронт работ на переезде 45 м',
     )
+    expect(reviewScheme(opened).find((f) => f.id === 'work-conditions')?.markBlocked).toContain(
+      'наибольший фронт работ на переезде 45 м',
+    )
+    // Предел — решение проекта: при большем значении остаётся только ограничение п. 8 ПУ-66.
+    const wider = { ...PROTOTYPE_RULES, frontLimitMetres: 50 }
+    const blocked = reviewScheme(opened, wider).find((f) => f.id === 'work-conditions')?.markBlocked
+    expect(blocked).not.toContain('наибольший фронт')
+    expect(blocked).toContain('из п. 8 ПУ-66')
   })
   it('keeps table Д.1 semantics and removes the editable crossing profile', () => {
     expect(workTrafficDecision(41.5, 250, false, PROTOTYPE_RULES, conditions)).toBe('regulators')

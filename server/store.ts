@@ -135,7 +135,7 @@ const initialNormativeEntries: NormativeDraft[] = [
     description:
       'Пример схемы для двухполосной дороги при краткосрочных работах; подпись говорит о зоне более 30 м, рисунок содержит обозначение min 30.',
     application:
-      'Правило проекта для длины от 30 м. Случай ровно 30 м требует предметной сверки из-за расхождения подписи и размерного обозначения.',
+      'Решение проекта по практике технических специалистов: фронт работ более 30 м (параметр «Наибольший фронт работ для схемы Б.34»). Подписи и размерные обозначения рисунков ОДМ расходятся, поэтому порог настраивается в реестре нормативных параметров.',
     sourceUrl:
       'https://rosavtodor.gov.ru/about/upravlenie-fda/upravlenie-nauchno-tekhnicheskikh-issledovaniy--i-informatsionnykh-tekhnologiy/tekhnicheskoe-regulirovanie/otraslevye-dorozhnye-metodicheskie-dokumenty/14520',
     reviewStatus: 'needs-review',
@@ -150,7 +150,7 @@ const initialNormativeEntries: NormativeDraft[] = [
     description:
       'Пример схемы для двухполосной дороги при краткосрочных работах; подпись говорит о зоне менее 30 м, рисунок содержит обозначение max 30.',
     application:
-      'Правило проекта для длины менее 30 м. Условия регулирования движения по интенсивности и видимости следует сверять отдельно.',
+      'Решение проекта по практике технических специалистов: фронт работ до 30 м включительно (параметр «Наибольший фронт работ для схемы Б.34»). Условия регулирования движения по интенсивности и видимости следует сверять отдельно.',
     sourceUrl:
       'https://rosavtodor.gov.ru/about/upravlenie-fda/upravlenie-nauchno-tekhnicheskikh-issledovaniy--i-informatsionnykh-tekhnologiy/tekhnicheskoe-regulirovanie/otraslevye-dorozhnye-metodicheskie-dokumenty/14520',
     reviewStatus: 'needs-review',

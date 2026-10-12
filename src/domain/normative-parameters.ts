@@ -14,8 +14,11 @@ import { normalizeQuote } from './document-text.ts'
 export type ParameterSource =
   | { kind: 'clause'; documentCode: string; clause: string }
   | { kind: 'table'; documentCode: string; table: string; clause: string }
-  /** Решение составителя без пункта документа: основание записывается при подтверждении. */
-  | { kind: 'decision' }
+  /**
+   * Решение составителя или проекта без пункта документа: основание записывается при
+   * подтверждении. `label` — как называть источник в подсказках и на листе.
+   */
+  | { kind: 'decision'; label?: string }
 
 export type NumberParameter = {
   id: string
@@ -88,6 +91,12 @@ export const SETTLEMENT_DISTANCE_KEYS = {
 export const WARNING_RANGE_KEYS = {
   out: 'Вне населённого пункта',
   in: 'В населённом пункте',
+} as const
+
+/** Строки таблицы наибольшего числа табличек под одним знаком (ГОСТ Р 52289, п. 5.9.1). */
+export const PLATE_LIMIT_KEYS = {
+  general: 'С одним знаком',
+  temporaryOutside: 'С временным знаком вне населённых пунктов',
 } as const
 
 export const parameterDefinitions: readonly ParameterDefinition[] = [
@@ -202,6 +211,37 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
     min: 5,
     max: 60,
     pattern: /с шагом не более (\d+) км\/ч/u,
+  },
+  {
+    id: 'gost-speed-step-interval',
+    title: 'Расстояние между последовательными знаками 3.24 при ступенчатом ограничении скорости',
+    unit: 'м',
+    usedIn:
+      'Предупреждение об интервале между ступенями 3.24 вне диапазона (перед местами работ пункт допускает ступени по ГОСТ Р 58350)',
+    source: { kind: 'clause', documentCode: GOST_RULES, clause: '5.4.22' },
+    type: 'table',
+    keyLabel: 'Местоположение',
+    valueLabel: 'Диапазон, м',
+    fallback: {
+      [WARNING_RANGE_KEYS.out]: '100–150',
+      [WARNING_RANGE_KEYS.in]: '50–100',
+    },
+    valuePattern: /^\d{1,4}\s*[–-]\s*\d{1,4}$/,
+  },
+  {
+    id: 'gost-plate-limit',
+    title: 'Наибольшее число табличек под одним знаком',
+    unit: 'шт.',
+    usedIn: 'Предупреждение о числе табличек под знаком на стойке',
+    source: { kind: 'clause', documentCode: GOST_RULES, clause: '5.9.1' },
+    type: 'table',
+    keyLabel: 'Знак',
+    valueLabel: 'Табличек, не более',
+    fallback: {
+      [PLATE_LIMIT_KEYS.general]: '2',
+      [PLATE_LIMIT_KEYS.temporaryOutside]: '1',
+    },
+    valuePattern: /^[1-9]$/,
   },
   {
     id: 'gost-sign-typesize',
@@ -354,6 +394,30 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
     valuePattern: /^\d{1,4}\s*[–-]\s*\d{1,4}$/,
   },
   {
+    id: 'project-b34-max-front',
+    title: 'Наибольший фронт работ для схемы Б.34 (включительно)',
+    unit: 'м',
+    usedIn:
+      'Выбор варианта по фронту работ: до значения включительно — Б.34, больше — Б.33. Подписи рисунков ОДМ («менее 30 м», «более 30 м») и размерные обозначения (max 30, min 30) расходятся, поэтому порог — решение проекта',
+    source: { kind: 'decision', label: 'решение проекта по практике технических специалистов' },
+    type: 'number',
+    fallback: 30,
+    min: 1,
+    max: 100,
+  },
+  {
+    id: 'project-front-limit',
+    title: 'Наибольший фронт работ на железнодорожном переезде',
+    unit: 'м',
+    usedIn:
+      'Предел фронта при создании и правке проекта, подсказка способа пропуска; отгон и буфер не входят, дополнительно действует длина по п. 8 ПУ-66',
+    source: { kind: 'decision', label: 'решение проекта: техническое ограничение для переездов' },
+    type: 'number',
+    fallback: 45,
+    min: 1,
+    max: 200,
+  },
+  {
     id: 'peak-hour-share',
     title: 'Доля часа пик в суточной интенсивности (для данных ПУ-66)',
     unit: '',
@@ -395,6 +459,9 @@ export const parameterRejectionSchema = z.strictObject({
 })
 export type ParameterRejectionField = z.infer<typeof parameterRejectionSchema>['field']
 
+/** Таблицы диапазонов по местоположению: обе строки обязательны. */
+const RANGE_PARAMETERS: readonly string[] = ['gost-warning-distance', 'gost-speed-step-interval']
+
 /** Проверка значения по описанию параметра; возвращает текст ошибки или null. */
 export function valueProblem(
   definition: ParameterDefinition,
@@ -425,6 +492,20 @@ export function valueProblem(
     )
       return 'Границы для знаков не должны превышать границы таблицы Д.1.'
   }
+  // Без строки или с перевёрнутым диапазоном правило для местоположения не действует: проверка
+  // молча пропускалась бы при параметре, показанном как подтверждённый.
+  if (RANGE_PARAMETERS.includes(definition.id)) {
+    for (const key of Object.values(WARNING_RANGE_KEYS)) {
+      const parsed = range(value[key])
+      if (!parsed || parsed[0] <= 0)
+        return `Заполните строку «${key}» диапазоном от меньшего положительного числа к большему, например «50–100»; подписи строк должны сохраняться.`
+    }
+  }
+  if (
+    definition.id === 'gost-plate-limit' &&
+    Object.values(PLATE_LIMIT_KEYS).some((key) => !(key in value))
+  )
+    return 'Заполните обе строки п. 5.9.1; подписи строк должны сохраняться.'
   const rows = Object.entries(value)
   if (!rows.length) return 'Таблица пуста.'
   const bad = rows.find(([, cell]) => !definition.valuePattern.test(cell))
@@ -544,6 +625,13 @@ export type NormativeRules = {
   signsTaperMetres: number
   regulatorDistance: Readonly<Record<number, number>>
   speedStepKmh: number
+  /** Диапазон расстояния между последовательными знаками 3.24; null — значение не разобрано. */
+  speedStepInterval: Readonly<{
+    in: readonly [number, number] | null
+    out: readonly [number, number] | null
+  }>
+  /** Наибольшее число табличек под одним знаком: общее и для временного знака вне нас. пункта. */
+  plateLimit: Readonly<{ general: number; temporaryOutside: number }>
   typesize: Readonly<Record<string, string>>
   /** Разрешённая скорость по умолчанию на подходе: в населённом пункте и вне его. */
   allowedSpeedKmh: Readonly<{ in: number; out: number }>
@@ -571,6 +659,10 @@ export type NormativeRules = {
     out: readonly [number, number] | null
   }>
   peakHourShare: number | null
+  /** Наибольший фронт для Б.34 включительно; больше — Б.33 (решение проекта). */
+  b34MaxFrontMetres: number
+  /** Наибольший фронт работ на переезде (решение проекта); отгон и буфер не входят. */
+  frontLimitMetres: number
   /** Параметр подтверждён для действующей редакции. */
   confirmed: Readonly<Record<string, boolean>>
   /** Основание ручной проверки: редакция, изменения и конкретная запись подтверждения. */
@@ -605,7 +697,7 @@ export function confirmationMatchesDefinition(
 
 function sourceLabel(definition: ParameterDefinition, documentLabel?: string): string {
   const source = definition.source
-  if (source.kind === 'decision') return 'решение составителя'
+  if (source.kind === 'decision') return source.label ?? 'решение составителя'
   const place = source.kind === 'table' ? source.clause : `п. ${source.clause}`
   return `${documentLabel ?? source.documentCode}, ${place}`
 }
@@ -707,6 +799,11 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
       ]),
     ),
     speedStepKmh: number('gost-speed-step'),
+    speedStepInterval: {
+      in: range(table('gost-speed-step-interval')[WARNING_RANGE_KEYS.in]),
+      out: range(table('gost-speed-step-interval')[WARNING_RANGE_KEYS.out]),
+    },
+    plateLimit: tableNumbers('gost-plate-limit', PLATE_LIMIT_KEYS),
     typesize: table('gost-sign-typesize'),
     allowedSpeedKmh: { in: number('pdd-speed-settlement'), out: number('pdd-speed-outside') },
     pddSpeedLimits: {
@@ -730,6 +827,8 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
       out: range(table('gost-warning-distance')[WARNING_RANGE_KEYS.out]),
     },
     peakHourShare: (values['peak-hour-share'] as number | null) ?? null,
+    b34MaxFrontMetres: number('project-b34-max-front'),
+    frontLimitMetres: number('project-front-limit'),
     confirmed,
     evidence,
     sources,

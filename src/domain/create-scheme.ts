@@ -1,4 +1,3 @@
-import { CROSSING_FRONT_LIMIT_METRES } from './crossing-limits'
 import { defaultLegacyParameters, schemeSchema, type Scheme } from './model'
 import { linkPu66Card } from './link-pu66'
 import {
@@ -78,11 +77,11 @@ export function createUnlinkedScheme(
   if (!input.referenceId.trim()) {
     throw new SchemeCreationError('Укажите локальный идентификатор переезда.')
   }
+  const rules = options.rules ?? PROTOTYPE_RULES
   const workMetres = positiveNumber(input.frontMetres, 'фронт работ')
-  const profileMaximum = CROSSING_FRONT_LIMIT_METRES
-  if (workMetres > profileMaximum)
+  if (workMetres > rules.frontLimitMetres)
     throw new SchemeCreationError(
-      `Фронт работ превышает предел фронта редактора ${profileMaximum} м.`,
+      `Фронт работ превышает наибольший фронт работ на переезде ${rules.frontLimitMetres} м (${rules.sources['project-front-limit']}).`,
     )
   const taperMetres = positiveNumber(input.taperMetres, 'отвод')
   const bufferMetres = positiveNumber(input.bufferMetres, 'буфер')
@@ -95,7 +94,7 @@ export function createUnlinkedScheme(
   const speeds = input.speedStagesKmh.map((value, index) =>
     positiveNumber(value, `скорость ${index + 1}`),
   ) as [number, number, number]
-  const { code } = selectTemplateByWorkFront(workMetres)
+  const { code } = selectTemplateByWorkFront(workMetres, rules)
   const zone = {
     taperMetres,
     bufferMetres,

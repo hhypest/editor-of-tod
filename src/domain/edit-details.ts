@@ -1,4 +1,3 @@
-import { CROSSING_FRONT_LIMIT_METRES } from './crossing-limits'
 import { schemeSchema, type Scheme, type WorkZone } from './model'
 import {
   changeApproachSpeed,
@@ -236,7 +235,7 @@ function parseZone(zone: WorkZoneDraft | null, name: string): WorkZone | null {
 export function applySchemeDetails(
   scheme: Scheme,
   draft: SchemeDetailsDraft,
-  _rules: NormativeRules = PROTOTYPE_RULES,
+  rules: NormativeRules = PROTOTYPE_RULES,
 ): Scheme {
   const { parameters } = draft
   draft.titleBlock.responsible.forEach((person, index) => {
@@ -303,26 +302,24 @@ export function applySchemeDetails(
     },
   }
   const zone = candidate.parameters.workZones[scheme.template.code]
-  if (zone && zone.workMetres > CROSSING_FRONT_LIMIT_METRES)
+  const previousFront = scheme.parameters.workZones[scheme.template.code]?.workMetres
+  // Предел проверяется при изменении фронта: проект, сохранённый при прежнем пределе,
+  // открывается и правится, а замечание о фронте показывает проверка (work-conditions).
+  if (zone && zone.workMetres !== previousFront && zone.workMetres > rules.frontLimitMetres)
     throw new SchemeEditError(
-      `Фронт ${zone.workMetres} м превышает предел фронта редактора ${CROSSING_FRONT_LIMIT_METRES} м.`,
+      `Фронт ${zone.workMetres} м превышает наибольший фронт работ на переезде ${rules.frontLimitMetres} м (${rules.sources['project-front-limit']}).`,
     )
   const maximum = frontLimit(scheme)
   if (zone && maximum !== null && maximum > 0 && zone.workMetres > maximum)
     throw new SchemeEditError(
       `Фронт ${zone.workMetres} м превышает длину ${maximum} м из п. 8 ПУ-66. Отгон и буфер вводятся отдельно.`,
     )
-  if (zone) {
-    const { code } = selectTemplateByWorkFront(zone.workMetres)
-    if (code !== scheme.template.code) {
-      candidate.template = { ...scheme.template, code, reviewStatus: 'not-verified' }
-      candidate.parameters.workZones = {
-        b33: code === 'b33' ? zone : null,
-        b34: code === 'b34' ? zone : null,
-      }
-      // Keep hand placed objects, but invalidate all earlier manual acceptance after the switch.
-      candidate.reviewMarks = {}
-    }
+  // Вариант выбирается заново только при изменении фронта. Проект, вариант которого
+  // расходится с действующим порогом (например, сохранённый при прежнем правиле), открывается
+  // как есть; сменить вариант можно явно — switchTemplateToRule.
+  if (zone && zone.workMetres !== previousFront) {
+    const { code } = selectTemplateByWorkFront(zone.workMetres, rules)
+    if (code !== scheme.template.code) moveZoneToTemplate(candidate, code, zone)
   }
   const checked = schemeSchema.safeParse(candidate)
   if (!checked.success) {
@@ -332,4 +329,41 @@ export function applySchemeDetails(
     )
   }
   return checked.data
+}
+
+function moveZoneToTemplate(
+  candidate: Pick<Scheme, 'template' | 'reviewMarks'> & {
+    parameters: { workZones: Scheme['parameters']['workZones'] }
+  },
+  code: 'b33' | 'b34',
+  zone: WorkZone,
+): void {
+  candidate.template = { ...candidate.template, code, reviewStatus: 'not-verified' }
+  candidate.parameters.workZones = {
+    b33: code === 'b33' ? zone : null,
+    b34: code === 'b34' ? zone : null,
+  }
+  // Keep hand placed objects, but invalidate all earlier manual acceptance after the switch.
+  candidate.reviewMarks = {}
+}
+
+/** Вариант по действующему порогу, если он расходится с выбранным; иначе null. */
+export function templateByRule(scheme: Scheme, rules: NormativeRules): 'b33' | 'b34' | null {
+  const zone = scheme.parameters.workZones[scheme.template.code]
+  if (!zone || !(zone.workMetres > 0)) return null
+  const { code } = selectTemplateByWorkFront(zone.workMetres, rules)
+  return code === scheme.template.code ? null : code
+}
+
+/**
+ * Явная смена варианта по действующему порогу. Объекты сохраняются (шаблон пересобирается
+ * отдельно на этапе 3), отметки ручной проверки снимаются.
+ */
+export function switchTemplateToRule(scheme: Scheme, rules: NormativeRules): Scheme {
+  const code = templateByRule(scheme, rules)
+  const zone = scheme.parameters.workZones[scheme.template.code]
+  if (!code || !zone) return scheme
+  const candidate = JSON.parse(JSON.stringify(scheme)) as Scheme
+  moveZoneToTemplate(candidate, code, { ...zone, labels: { ...zone.labels } })
+  return schemeSchema.parse(candidate)
 }

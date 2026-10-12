@@ -1,5 +1,4 @@
 import type { NormativeRules } from './normative-parameters'
-import { CROSSING_FRONT_LIMIT_METRES } from './crossing-limits'
 
 /** ГОСТ Р 58350-2019, Д.1 and ОДМ 218.6.019-2016, 6.4, 7.3.1, 13.7.5.
  * Д.1 governs signs/signals, not the number of staff. For the short-work templates,
@@ -26,7 +25,7 @@ export function railRegulationMode(
     input.frontMetres === null ||
     !Number.isFinite(input.frontMetres) ||
     input.frontMetres <= 0 ||
-    input.frontMetres > CROSSING_FRONT_LIMIT_METRES
+    input.frontMetres > rules.frontLimitMetres
   )
     return null
   if (input.variant === 'b33') return 'two'

@@ -22,6 +22,32 @@ const clause =
   '6.4.4 Учебное условие. Знаки допускаются на участках протяженностью менее 45 м с интенсивностью движения менее 260 авт/ч в двух направлениях. Прочие условия.'
 
 describe('normative parameters', () => {
+  it('requires both location rows with an ordered positive range and both plate rows', () => {
+    for (const id of ['gost-speed-step-interval', 'gost-warning-distance']) {
+      const definition = parameterDefinition(id)!
+      if (definition.type !== 'table') throw new Error('Expected table')
+      const [outside, settlement] = Object.keys(definition.fallback) as [string, string]
+      expect(valueProblem(definition, definition.fallback)).toBeNull()
+      expect(valueProblem(definition, { [outside]: '100–150' })).toContain(settlement)
+      expect(valueProblem(definition, { [outside]: '100–150', 'В городе': '50–100' })).toContain(
+        'подписи строк',
+      )
+      expect(
+        valueProblem(definition, { ...definition.fallback, [settlement]: '150–100' }),
+      ).toContain('от меньшего')
+      expect(valueProblem(definition, { ...definition.fallback, [outside]: '0–150' })).toContain(
+        outside,
+      )
+    }
+    const plates = parameterDefinition('gost-plate-limit')!
+    if (plates.type !== 'table') throw new Error('Expected table')
+    expect(valueProblem(plates, plates.fallback)).toBeNull()
+    expect(valueProblem(plates, { 'С одним знаком': '2' })).toContain('обе строки')
+    expect(valueProblem(plates, { ...plates.fallback, 'С одним знаком': '0' })).toContain(
+      'Недопустимое значение',
+    )
+  })
+
   it('requires the complete paired table with ordered positive bounds', () => {
     const definition = parameterDefinition('gost-work-traffic')!
     if (definition.type !== 'table') throw new Error('Expected table')
