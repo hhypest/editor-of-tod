@@ -3,6 +3,7 @@ import { PHONE_PATTERN, responsibleFromLegacy } from './title-block.ts'
 import { pu66SnapshotSchema } from './pu66-snapshot.ts'
 import { decisionEvidenceSchema, speedConditionsSchema } from './decision-evidence-schema.ts'
 import { adoptPostDistances, DISTANCE_MARKERS } from './post-distance.ts'
+import { legacySpeedInputFingerprint, speedInputFingerprint } from './speed-evidence-input.ts'
 
 const finite = z.number().finite()
 const text = z.string().max(5_000)
@@ -559,11 +560,35 @@ export function upgradeSchemeV8(value: unknown): Scheme {
  */
 export function upgradeSchemeV9(value: unknown): Scheme {
   const previous = schemeV9Schema.parse(value)
+  const placements = adoptPostDistances(previous)
   return schemeSchema.parse({
     ...previous,
     schemaVersion: 10,
-    placements: adoptPostDistances(previous),
+    placements,
+    decisionEvidence: carrySpeedEvidence(previous, placements),
   })
+}
+
+/**
+ * Запись основания скорости v9 считала отпечаток по стойкам v9. Если он совпадает со стойками
+ * файла, исходные данные с момента записи не менялись — отпечаток пересчитывается по
+ * обновлённым стойкам, и запись остаётся действующей. Иначе запись переносится как есть и
+ * остаётся устаревшей (замечание Codex к PR #150).
+ */
+function carrySpeedEvidence(
+  previous: z.infer<typeof schemeV9Schema>,
+  placements: Parameters<typeof speedInputFingerprint>[0]['placements'],
+): z.infer<typeof schemeV9Schema>['decisionEvidence'] {
+  const speed = previous.decisionEvidence.speed
+  if (!speed || speed.inputFingerprint !== legacySpeedInputFingerprint(previous))
+    return previous.decisionEvidence
+  return {
+    ...previous.decisionEvidence,
+    speed: {
+      ...speed,
+      inputFingerprint: speedInputFingerprint({ parameters: previous.parameters, placements }),
+    },
+  }
 }
 
 export function parseStoredScheme(value: unknown): Scheme {
