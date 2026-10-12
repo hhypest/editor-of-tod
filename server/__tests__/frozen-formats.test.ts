@@ -9,6 +9,7 @@ import { exportSchemeJson, importSchemeJson } from '../../src/domain/import'
 import { parseStoredScheme, schemeSchema } from '../../src/domain/model'
 import { schemeLayout } from '../../src/domain/placement-workspace'
 import { reviewScheme } from '../../src/domain/review-scheme'
+import { decisionEvidenceState } from '../../src/domain/decision-evidence'
 import { switchLocation } from '../../src/domain/normative-defaults'
 import { PROTOTYPE_RULES } from '../../src/domain/normative-parameters'
 import { RegistryStore, SCHEMA_VERSION } from '../store'
@@ -97,6 +98,25 @@ describe('frozen files of previous formats', () => {
             Math.abs(layout.coordinates(placement).x - stored),
             `стойка № ${placement.id}`,
           ).toBeLessThanOrEqual(3)
+      }
+      // Записанные основания остаются действующими после обновления формата (v9 → v10 меняет
+      // стойки, отпечаток скорости пересчитывается миграцией — замечание Codex к PR #150).
+      const evidence = (original as { decisionEvidence?: Record<string, unknown> }).decisionEvidence
+      for (const kind of ['speed', 'regulation'] as const)
+        if (evidence?.[kind])
+          expect(decisionEvidenceState(scheme, kind, PROTOTYPE_RULES).status, kind).toBe('current')
+      if (evidence?.speed) {
+        // Стойки, изменённые после записи, делают запись устаревшей и после обновления.
+        const changed = JSON.parse(text) as { placements: Array<Record<string, unknown>> }
+        const post = changed.placements.find((item) => item.kind === 'sign-post')!
+        post.signIds = [...(post.signIds as string[]), '3.25']
+        expect(
+          decisionEvidenceState(
+            importSchemeJson(JSON.stringify(changed)).scheme,
+            'speed',
+            PROTOTYPE_RULES,
+          ).status,
+        ).toBe('stale')
       }
       // Проверки листа не должны падать на проекте, поднятом из старого формата.
       expect(() => reviewScheme(scheme)).not.toThrow()
