@@ -381,13 +381,16 @@ describe('local SQLite registries', () => {
     try {
       expect(store.getProject(scheme.id)?.scheme).toEqual(upgraded)
       expect(store.getProjectRevision(scheme.id, 1)?.scheme).toEqual(upgraded)
-      expect(store.saveProject(schemeSchema.parse(upgraded), 1).revision).toBe(1)
+      // Сохранение без правок записывает снимок в текущем формате (редакция 2), повторное — нет.
+      expect(store.saveProject(schemeSchema.parse(upgraded), 1).revision).toBe(2)
+      expect(store.getProject(scheme.id)?.storedSchemaVersion).toBe(10)
+      expect(store.saveProject(schemeSchema.parse(upgraded), 2).revision).toBe(2)
       const edited = {
         ...scheme,
         parameters: { ...scheme.parameters, locationText: 'Новая редакция' },
       }
-      expect(store.saveProject(edited, 1).revision).toBe(2)
-      expect(store.restoreProject(scheme.id, 1, 2)?.scheme).toEqual(scheme)
+      expect(store.saveProject(edited, 2).revision).toBe(3)
+      expect(store.restoreProject(scheme.id, 1, 3)?.scheme).toEqual(scheme)
     } finally {
       store.close()
     }
@@ -397,7 +400,7 @@ describe('local SQLite registries', () => {
         .prepare('SELECT revision, scheme_json FROM project_revisions ORDER BY revision')
         .all() as { revision: number; scheme_json: string }[]
       expect(records.map((record) => JSON.parse(record.scheme_json).schemaVersion)).toEqual([
-        2, 10, 10,
+        2, 10, 10, 10,
       ])
       expect(JSON.parse(records[0]!.scheme_json)).toEqual(previous)
     } finally {
@@ -455,7 +458,8 @@ describe('local SQLite registries', () => {
     try {
       expect(store.getProject(scheme.id)?.scheme).toEqual(upgraded)
       expect(store.getProjectRevision(scheme.id, 1)?.scheme).toEqual(upgraded)
-      expect(store.saveProject(schemeSchema.parse(upgraded), 1).revision).toBe(1)
+      // Без правок снимок переписывается в текущий формат новой редакцией; первая не меняется.
+      expect(store.saveProject(schemeSchema.parse(upgraded), 1).revision).toBe(2)
     } finally {
       store.close()
     }
