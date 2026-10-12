@@ -151,11 +151,18 @@ export async function listParameterStates(
   const states: ParameterState[] = []
   for (const definition of parameterDefinitions) {
     const confirmation = latest.get(definition.id) ?? null
+    // Подтверждение, записанное до нынешней проверки значения (например, без обязательной строки
+    // таблицы), показывается как недействующее, а не как подтверждённое.
+    const problem = confirmation ? valueProblem(definition, confirmation.value) : null
     const source = definition.source
     if (source.kind === 'decision') {
       states.push({
         id: definition.id,
-        status: confirmation ? { kind: 'confirmed' } : { kind: 'unconfirmed' },
+        status: problem
+          ? { kind: 'invalid', problem }
+          : confirmation
+            ? { kind: 'confirmed' }
+            : { kind: 'unconfirmed' },
         document: null,
         quote: null,
         suggestion: null,
@@ -235,6 +242,7 @@ export async function listParameterStates(
     const fragment = confirmationFragment(store, definition, quote, amendments)
     let status: ParameterState['status']
     if (!confirmation) status = { kind: 'unconfirmed' }
+    else if (problem) status = { kind: 'invalid', problem }
     else if (!confirmationMatchesDefinition(definition, confirmation))
       status = {
         kind: 'changed',

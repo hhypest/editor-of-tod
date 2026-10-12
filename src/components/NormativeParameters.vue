@@ -78,6 +78,12 @@ function statusText(definition: ParameterDefinition, state: ParameterState | nul
   if (!status) return 'Загрузка…'
   if (status.kind === 'confirmed')
     return `Подтверждено ${confirmation!.confirmedAt}, ${confirmation!.confirmedBy}.`
+  if (status.kind === 'invalid')
+    return `Подтверждение ${confirmation!.confirmedAt} не действует: ${status.problem} ${
+      definition.fallback === null
+        ? 'Без подтверждения значение не используется'
+        : 'Расчёты используют значение прототипа'
+    } — подтвердите заново.`
   if (status.kind === 'same-text')
     return `Подтверждено по ${status.previous}. В действующей редакции фрагмент пункта не изменился — подтвердите по ней.`
   if (status.kind === 'changed')

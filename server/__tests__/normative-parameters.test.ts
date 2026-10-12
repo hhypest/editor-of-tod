@@ -295,6 +295,43 @@ describe('normative parameters from library documents', () => {
     expect(state(states, 'odm-signs-hourly').confirmation?.value).toBe(999)
     expect(rulesFrom(states).signsHourly).toBe(250)
   })
+  it('shows a stored table confirmation without a required row as not in force', async () => {
+    const store = library()
+    const document = await add(store, methodology(520), {})
+    const definition = parameterDefinitions.find(
+      (item) => item.id === 'odm-sign-distances-outside',
+    )!
+    if (definition.type !== 'table' || definition.source.kind !== 'table')
+      throw new Error('Expected table')
+    // Так могло быть записано до проверки строк: строки 1.25 нет, остальные изменены.
+    store.addParameterConfirmation({
+      parameterId: definition.id,
+      documentId: document.id,
+      documentLabel: 'ОДМ 218.6.019-2016',
+      clause: definition.source.clause,
+      page: 2,
+      quote: '',
+      fragment: '',
+      value: {
+        'Первая ступень 3.24 и знак 3.20': '240',
+        'Вторая ступень 3.24 и сужение 1.20': '140',
+        'Знак скорости в зоне работ 3.24': '40',
+      },
+      confirmedBy: 'Учебный составитель',
+      confirmedAt: '2030-01-01',
+      note: 'стр. 2',
+    })
+    const states = await listParameterStates(store, now)
+    expect(state(states, definition.id).status).toEqual({
+      kind: 'invalid',
+      problem:
+        'Нет строки «Знак 1.25 «Дорожные работы»»: заполните её; подписи строк должны сохраняться.',
+    })
+    const rules = rulesFrom(states)
+    expect(rules.confirmed[definition.id]).toBe(false)
+    expect(rules.signDistances).toMatchObject({ d300: 300, d250: 250, d150: 150, d50: 50 })
+  })
+
   it('quotes the GOST tables and invalidates confirmation when a relevant amendment takes effect', async () => {
     const store = library()
     const document = await add(

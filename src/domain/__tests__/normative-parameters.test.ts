@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   parameterDefinition,
+  parameterDefinitions,
   PROTOTYPE_RULES,
   regulationVerified,
   relevantFragment,
@@ -9,6 +10,7 @@ import {
   valueProblem,
   WORK_TRAFFIC_KEYS,
   type ParameterState,
+  type TableParameter,
 } from '../normative-parameters'
 
 const signs = parameterDefinition('odm-signs-hourly')!
@@ -22,6 +24,79 @@ const clause =
   '6.4.4 Учебное условие. Знаки допускаются на участках протяженностью менее 45 м с интенсивностью движения менее 260 авт/ч в двух направлениях. Прочие условия.'
 
 describe('normative parameters', () => {
+  it('does not let a confirmed table without a required row act as confirmed', () => {
+    const tables = parameterDefinitions.filter(
+      (definition): definition is TableParameter =>
+        definition.type === 'table' && Boolean(definition.requiredRows?.length),
+    )
+    expect(tables.map((definition) => definition.id).sort()).toEqual([
+      'gost-plate-limit',
+      'gost-sign-distances-settlement',
+      'gost-speed-step-interval',
+      'gost-warning-distance',
+      'gost-work-traffic',
+      'odm-sign-distances-outside',
+      'pdd-speed-outside-conditions',
+    ])
+    for (const definition of tables) {
+      // Каждая обязательная строка есть в значении прототипа.
+      expect(Object.keys(definition.fallback)).toEqual(
+        expect.arrayContaining([...definition.requiredRows!]),
+      )
+      for (const row of definition.requiredRows!) {
+        const changed = Object.fromEntries(
+          Object.entries(definition.fallback).filter(([key]) => key !== row),
+        )
+        expect(valueProblem(definition, changed), `${definition.id}: ${row}`).not.toBeNull()
+        const state: ParameterState = {
+          id: definition.id,
+          status: { kind: 'confirmed' },
+          document: null,
+          quote: null,
+          suggestion: null,
+          confirmation: {
+            id: 1,
+            parameterId: definition.id,
+            documentId: 1,
+            documentLabel:
+              definition.source.kind === 'decision' ? '' : `${definition.source.documentCode}-2030`,
+            clause:
+              definition.source.kind === 'table'
+                ? definition.source.clause
+                : definition.source.kind === 'clause'
+                  ? `п. ${definition.source.clause}`
+                  : '',
+            page: 1,
+            quote: '',
+            fragment: '',
+            value: changed,
+            confirmedBy: 'Учебный составитель',
+            confirmedAt: '2030-01-01',
+            note: 'Подтверждено до проверки строк',
+          },
+          amendments: [],
+        }
+        const rules = rulesFrom([state])
+        expect(rules.confirmed[definition.id], `${definition.id}: ${row}`).toBe(false)
+        expect(rules.parameterBasis[definition.id]!.value).toEqual(definition.fallback)
+        // Полная таблица с тем же подтверждением действует.
+        const complete = rulesFrom([
+          { ...state, confirmation: { ...state.confirmation!, value: definition.fallback } },
+        ])
+        expect(complete.confirmed[definition.id], definition.id).toBe(true)
+      }
+    }
+  })
+
+  it('names the missing row of a distance table', () => {
+    const distances = parameterDefinition('odm-sign-distances-outside')!
+    if (distances.type !== 'table') throw new Error('Expected table')
+    const { 'Знак 1.25 «Дорожные работы»': _missing, ...rest } = distances.fallback
+    expect(valueProblem(distances, { ...rest, 'Знак 1.25': '300' })).toBe(
+      'Нет строки «Знак 1.25 «Дорожные работы»»: заполните её; подписи строк должны сохраняться.',
+    )
+  })
+
   it('requires both location rows with an ordered positive range and both plate rows', () => {
     for (const id of ['gost-speed-step-interval', 'gost-warning-distance']) {
       const definition = parameterDefinition(id)!

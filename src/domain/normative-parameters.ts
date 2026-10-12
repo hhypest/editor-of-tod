@@ -48,6 +48,11 @@ export type TableParameter = {
   fallback: Record<string, string>
   /** Строка таблицы в тексте: ключ и значение (первые две группы). */
   rowPattern?: RegExp
+  /**
+   * Строки, без которых таблица не действует: по их подписям расчёты берут числа. Подтверждение
+   * без такой строки (записанное до проверки строк или с переименованной строкой) не действует.
+   */
+  requiredRows?: readonly string[]
   /** Допустимые значения ячеек. */
   valuePattern: RegExp
 }
@@ -132,6 +137,7 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
       [WORK_TRAFFIC_KEYS.alternateLength]: '300',
       [WORK_TRAFFIC_KEYS.alternateHourly]: '500',
     },
+    requiredRows: Object.values(WORK_TRAFFIC_KEYS),
     valuePattern: /^\d{1,4}$/,
   },
   {
@@ -226,6 +232,7 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
       [WARNING_RANGE_KEYS.out]: '100–150',
       [WARNING_RANGE_KEYS.in]: '50–100',
     },
+    requiredRows: Object.values(WARNING_RANGE_KEYS),
     valuePattern: /^\d{1,4}\s*[–-]\s*\d{1,4}$/,
   },
   {
@@ -241,6 +248,7 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
       [PLATE_LIMIT_KEYS.general]: '2',
       [PLATE_LIMIT_KEYS.temporaryOutside]: '1',
     },
+    requiredRows: Object.values(PLATE_LIMIT_KEYS),
     valuePattern: /^[1-9]$/,
   },
   {
@@ -307,6 +315,7 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
       [PDD_OUTSIDE_SPEED_KEYS.children]: '60',
       [PDD_OUTSIDE_SPEED_KEYS.peopleTruck]: '60',
     },
+    requiredRows: Object.values(PDD_OUTSIDE_SPEED_KEYS),
     valuePattern: /^(?:[1-9]\d?|1[0-2]\d|130)$/,
   },
   {
@@ -359,6 +368,7 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
       [OUTSIDE_DISTANCE_KEYS.d150]: '150',
       [OUTSIDE_DISTANCE_KEYS.d50]: '50',
     },
+    requiredRows: Object.values(OUTSIDE_DISTANCE_KEYS),
     valuePattern: /^\d{1,4}$/,
   },
   {
@@ -375,6 +385,7 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
       [SETTLEMENT_DISTANCE_KEYS.n100]: '100',
       [SETTLEMENT_DISTANCE_KEYS.n50]: '50',
     },
+    requiredRows: Object.values(SETTLEMENT_DISTANCE_KEYS),
     valuePattern: /^\d{1,4}$/,
   },
   {
@@ -391,6 +402,7 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
       [WARNING_RANGE_KEYS.out]: '150–300',
       [WARNING_RANGE_KEYS.in]: '50–100',
     },
+    requiredRows: Object.values(WARNING_RANGE_KEYS),
     valuePattern: /^\d{1,4}\s*[–-]\s*\d{1,4}$/,
   },
   {
@@ -509,6 +521,9 @@ export function valueProblem(
     Object.values(PLATE_LIMIT_KEYS).some((key) => !(key in value))
   )
     return 'Заполните обе строки п. 5.9.1; подписи строк должны сохраняться.'
+  const missing = definition.requiredRows?.find((key) => !(key in value))
+  if (missing !== undefined)
+    return `Нет строки «${missing}»: заполните её; подписи строк должны сохраняться.`
   const rows = Object.entries(value)
   if (!rows.length) return 'Таблица пуста.'
   const bad = rows.find(([, cell]) => !definition.valuePattern.test(cell))
@@ -576,6 +591,11 @@ export type ParameterStatus =
   /** Подтверждено по прежней редакции; в действующей фрагмент изменился или не найден. */
   | { kind: 'changed'; previous: string }
   | { kind: 'unconfirmed' }
+  /**
+   * Подтверждение записано, но значение не проходит текущую проверку (например, в таблице нет
+   * обязательной строки). Расчёты используют значение прототипа до нового подтверждения.
+   */
+  | { kind: 'invalid'; problem: string }
   /** Документа с этим обозначением нет в библиотеке или действующая редакция не определена. */
   | { kind: 'no-document' }
 
@@ -591,6 +611,7 @@ export const parameterStateSchema = z.strictObject({
     z.strictObject({ kind: z.literal('same-text'), previous: z.string() }),
     z.strictObject({ kind: z.literal('changed'), previous: z.string() }),
     z.strictObject({ kind: z.literal('unconfirmed') }),
+    z.strictObject({ kind: z.literal('invalid'), problem: z.string() }),
     z.strictObject({ kind: z.literal('no-document') }),
   ]),
   document: z
@@ -718,7 +739,11 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
   const parameterBasis: Record<string, ParameterBasis> = {}
   for (const definition of parameterDefinitions) {
     const state = byId.get(definition.id)
-    const matches = confirmationMatchesDefinition(definition, state?.confirmation)
+    // Подтверждение, которое не проходит текущую проверку значения, не действует целиком: иначе
+    // недостающая строка таблицы молча заменялась бы числом прототипа при подтверждённом статусе.
+    const matches =
+      confirmationMatchesDefinition(definition, state?.confirmation) &&
+      valueProblem(definition, state!.confirmation!.value) === null
     values[definition.id] = matches ? state!.confirmation!.value : fallbackValue(definition)
     confirmed[definition.id] = matches && state?.status.kind === 'confirmed'
     evidence[definition.id] =
@@ -775,17 +800,17 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
   const number = (id: string) => values[id] as number
   const table = (id: string) => values[id] as Record<string, string>
   /**
-   * Строки таблицы по известным подписям. Составитель может переименовать строку при
-   * подтверждении; тогда для неё действует значение прототипа.
+   * Строки таблицы по известным подписям. Подписи — обязательные строки параметра: таблица без
+   * них не проходит `valueProblem` и выше заменена значением прототипа целиком.
    */
   const tableNumbers = <K extends string>(id: string, keys: Readonly<Record<K, string>>) => {
-    const definition = parameterDefinition(id) as TableParameter
-    const confirmedRows = table(id)
+    const rows = table(id)
     return Object.fromEntries(
-      (Object.entries(keys) as Array<[K, string]>).map(([field, key]) => [
-        field,
-        Number(confirmedRows[key] ?? definition.fallback[key]),
-      ]),
+      (Object.entries(keys) as Array<[K, string]>).map(([field, key]) => {
+        const cell = rows[key]
+        if (cell === undefined) throw new Error(`Нет строки «${key}» параметра ${id}.`)
+        return [field, Number(cell)]
+      }),
     ) as Record<K, number>
   }
   return {
