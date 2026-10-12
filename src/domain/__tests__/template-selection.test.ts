@@ -21,8 +21,13 @@ describe('work front length selection policy', () => {
     for (const id of ['project-b34-max-front', 'project-front-limit']) {
       expect(parameterDefinition(id)?.source.kind).toBe('decision')
     }
-    expect(PROTOTYPE_RULES.sources['project-b34-max-front']).toContain('решение проекта')
-    expect(PROTOTYPE_RULES.sources['project-front-limit']).toContain('техническое ограничение')
+    // Основание — рисунки ОДМ (ответ составителя 12.10.2026); граница 30 м — решение проекта.
+    expect(PROTOTYPE_RULES.sources['project-b34-max-front']).toBe(
+      'ОДМ 218.6.019-2016, рис. Б.33 и Б.34; граница относится к Б.34 по решению проекта',
+    )
+    expect(PROTOTYPE_RULES.sources['project-front-limit']).toBe(
+      'ОДМ 218.6.019-2016, рис. Б.33 и Б.34',
+    )
     const changed = { ...PROTOTYPE_RULES, b34MaxFrontMetres: 25 }
     expect(selectTemplateByWorkFront(25, changed)).toEqual({ code: 'b34' })
     expect(selectTemplateByWorkFront(26, changed)).toEqual({ code: 'b33' })

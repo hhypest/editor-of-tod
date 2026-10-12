@@ -52,8 +52,9 @@ export type CrossingRecord = CrossingDraft & { revision: number; updatedAt: stri
 export type NormativeRecord = NormativeDraft & { revision: number; updatedAt: string }
 
 /**
- * Вариант по фронту работ — решение проекта, а не нормативное утверждение: до порога
- * включительно Б.34, больше — Б.33 (параметр «Наибольший фронт работ для схемы Б.34»).
+ * Вариант по фронту работ: до порога включительно Б.34, больше — Б.33 (параметр «Наибольший
+ * фронт работ для схемы Б.34»). Число — из рисунков Б.33/Б.34 ОДМ, отнесение самой границы
+ * к Б.34 — решение проекта: подписи рисунков и размерные обозначения расходятся.
  */
 export function selectTemplateByWorkFront(
   lengthMetres: number,
