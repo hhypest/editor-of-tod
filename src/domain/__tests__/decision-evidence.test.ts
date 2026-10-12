@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { importSchemeJson, exportSchemeJson } from '../import'
 import { schemeSchema, parseStoredScheme } from '../model'
-import { parameterDefinitions, rulesFrom, type ParameterState } from '../normative-parameters'
+import {
+  parameterBasisFingerprint,
+  parameterDefinitions,
+  rulesFrom,
+  type ParameterState,
+} from '../normative-parameters'
+import { evidenceFingerprint } from '../evidence-fingerprint'
 import {
   decisionEvidenceState,
   recordSpeedDecision,
@@ -173,6 +179,91 @@ describe('historical decision evidence in format v9', () => {
     if (post.kind !== 'sign-post') throw new Error('Expected sign post')
     post.signIds = ['3.25']
     expect(decisionEvidenceState(renewed, 'speed', rules).status).toBe('stale')
+  })
+  it('keeps speed evidence after moving posts or editing other signs, not after speed sign changes', () => {
+    const rules = rulesFrom(states())
+    const base = scheme()
+    // Стойке со знаком 3.24 задаётся расстояние по полю этапа 2 (v10).
+    for (const item of base.placements)
+      if (item.kind === 'sign-post' && item.signIds.some((code) => code.startsWith('3.24')))
+        item.distance = { by: 'marker', approach: 'left', marker: 'd150' }
+    const recorded = recordSpeedDecision(base, rules, 'Учебная сверка знаков', now)
+    const posts = () =>
+      recorded.placements.filter(
+        (item): item is Extract<(typeof recorded.placements)[number], { kind: 'sign-post' }> =>
+          item.kind === 'sign-post',
+      )
+    const speedPost = posts().find((post) => post.signIds.some((code) => code.startsWith('3.24')))!
+    const otherPost = posts().find(
+      (post) => !post.signIds.some((code) => /^3\.(24|25|31)/.test(code)),
+    )!
+    expect(speedPost.distance).not.toBeNull()
+    // Сдвиг на листе, перестановка стороны и подписи, правка прочих знаков — решение то же.
+    speedPost.position = { ...speedPost.position, offsetXSvg: speedPost.position.offsetXSvg + 40 }
+    speedPost.side = speedPost.side === 'up' ? 'down' : 'up'
+    otherPost.signIds = [...otherPost.signIds, '8.2.1']
+    otherPost.position = { ...otherPost.position, offsetYSvg: otherPost.position.offsetYSvg + 15 }
+    recorded.placements.reverse()
+    expect(decisionEvidenceState(recorded, 'speed', rules).status).toBe('current')
+    // Расстояние знака скорости в метрах — часть решения: и через поле этапа 2, и своё число.
+    const d150 = recorded.parameters.signDistancesMetres.d150
+    recorded.parameters.signDistancesMetres.d150 = 180
+    expect(decisionEvidenceState(recorded, 'speed', rules).status).toBe('stale')
+    recorded.parameters.signDistancesMetres.d150 = d150
+    expect(decisionEvidenceState(recorded, 'speed', rules).status).toBe('current')
+    speedPost.distance = { by: 'metres', approach: 'left', metres: 333 }
+    expect(decisionEvidenceState(recorded, 'speed', rules).status).toBe('stale')
+  })
+  it('keeps evidence recorded before the narrowed fingerprint until the posts change', () => {
+    const rules = rulesFrom(states())
+    const recorded = recordSpeedDecision(scheme(), rules, 'Учебная сверка знаков', now)
+    const p = recorded.parameters
+    // Так считала отпечаток прежняя версия программы: стойки целиком.
+    recorded.decisionEvidence.speed!.inputFingerprint = evidenceFingerprint([
+      p.location,
+      p.speedConditions,
+      p.approachSpeedKmh,
+      p.speedStagesKmh,
+      recorded.placements.filter((item) => item.kind === 'sign-post'),
+    ])
+    expect(decisionEvidenceState(recorded, 'speed', rules).status).toBe('current')
+  })
+  it('keeps evidence when a new program version renames a parameter or its source', () => {
+    const rules = rulesFrom(states())
+    const recorded = recordRegulationDecision(
+      recordSpeedDecision(scheme(), rules, 'Учебная сверка', now),
+      rules,
+      'Учебный выбор',
+      now,
+    )
+    // Новая версия программы: другое название и подпись источника у тех же оснований.
+    const renamed = { ...rules, parameterBasis: { ...rules.parameterBasis } }
+    for (const [id, basis] of Object.entries(rules.parameterBasis)) {
+      const source = `${basis.source} (уточнённая подпись)`
+      renamed.parameterBasis[id] = {
+        ...basis,
+        title: `${basis.title} — новое название`,
+        source,
+        fingerprint: parameterBasisFingerprint(
+          rules.evidence[id]!,
+          basis.amendments,
+          basis.value,
+          source,
+          basis.confirmed,
+        ),
+      }
+    }
+    expect(decisionEvidenceState(recorded, 'speed', renamed).status).toBe('current')
+    expect(decisionEvidenceState(recorded, 'regulation', renamed).status).toBe('current')
+    // Новое подтверждение (другая запись журнала) — основание изменилось.
+    const reconfirmed = states().map((state) =>
+      state.id === 'odm-signs-hourly'
+        ? { ...state, confirmation: { ...state.confirmation!, id: 999 } }
+        : state,
+    )
+    expect(decisionEvidenceState(recorded, 'regulation', rulesFrom(reconfirmed)).status).toBe(
+      'stale',
+    )
   })
   it.each(['mode', 'duration', 'buffer', 'visibility'] as const)(
     'invalidates regulatory evidence after changing %s',

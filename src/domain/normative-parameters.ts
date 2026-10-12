@@ -805,13 +805,13 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
             confirmedAt: state!.confirmation!.confirmedAt,
           }
         : null,
-      fingerprint: evidenceFingerprint([
-        evidence[definition.id],
+      fingerprint: parameterBasisFingerprint(
+        evidence[definition.id]!,
         state?.amendmentDocuments ?? [],
-        values[definition.id],
-        sources[definition.id],
-        confirmed[definition.id],
-      ]),
+        values[definition.id] ?? null,
+        sources[definition.id]!,
+        confirmed[definition.id]!,
+      ),
     }
   }
   const number = (id: string) => values[id] as number
@@ -879,6 +879,21 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
     sources,
     parameterBasis,
   }
+}
+
+/**
+ * Отпечаток основания параметра в записанном решении. Подпись источника `source` входит в него
+ * по историческим причинам; при сравнении записей подставляется подпись из самой записи, чтобы
+ * переименование источника в новой версии программы не делало запись устаревшей (issue #99).
+ */
+export function parameterBasisFingerprint(
+  evidence: string,
+  amendments: readonly unknown[],
+  value: ParameterValue | null,
+  source: string,
+  confirmed: boolean,
+): string {
+  return evidenceFingerprint([evidence, amendments, value, source, confirmed])
 }
 
 /** «150–300» → [150, 300]; неразборчивое значение — null. */

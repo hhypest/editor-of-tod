@@ -1,7 +1,12 @@
 import { type DecisionEvidence, type ParameterBasis } from './decision-evidence-schema'
 import { evidenceFingerprint } from './evidence-fingerprint'
 import { schemeSchema, type Scheme } from './model'
-import { REGULATION_PARAMETERS, type NormativeRules } from './normative-parameters'
+import {
+  parameterBasisFingerprint,
+  REGULATION_PARAMETERS,
+  type NormativeRules,
+} from './normative-parameters'
+import { postMetres } from './post-distance'
 import { pddSpeedReference } from './pdd-speed'
 import { adviseRegulation, type RegulationInput } from './regulation-advice'
 import { effectiveWorkSection } from './work-traffic'
@@ -13,7 +18,44 @@ const speedParameterIds = (rules: NormativeRules) =>
 function bases(ids: readonly string[], rules: NormativeRules): ParameterBasis[] {
   return ids.map((id) => ({ ...rules.parameterBasis[id]! }))
 }
+/** Знаки, от которых зависит решение о скорости: ограничение и его отмена. */
+const SPEED_DECISION_SIGN = /^3\.(?:24|25|31)(?:_|$)/
+
+/**
+ * Знаки скорости на листе для отпечатка решения: подход, расстояние в метрах и коды знаков 3.24,
+ * 3.25 и 3.31. Координаты на листе, номера стоек и прочие знаки в отпечаток не входят: их
+ * изменение не меняет решения о скорости (issue #99). Стойка без расстояния учитывается по
+ * составу знаков — её места на местности программа не знает (ADR-0008).
+ */
+function speedSigns(scheme: Scheme) {
+  return scheme.placements
+    .flatMap((item) => {
+      if (item.kind !== 'sign-post') return []
+      const codes = item.signIds.filter((code) => SPEED_DECISION_SIGN.test(code)).sort()
+      if (!codes.length) return []
+      return [
+        {
+          approach: item.distance?.approach ?? null,
+          metres: item.distance
+            ? postMetres(item.distance, scheme.parameters.signDistancesMetres)
+            : null,
+          codes,
+        },
+      ]
+    })
+    .map((item) => JSON.stringify(item))
+    .sort()
+}
 function speedInput(scheme: Scheme) {
+  const p = scheme.parameters
+  return [p.location, p.speedConditions, p.approachSpeedKmh, p.speedStagesKmh, speedSigns(scheme)]
+}
+/**
+ * Отпечаток записей, сделанных до issue #99: включал стойки целиком. Совпадение с ним тоже
+ * означает, что исходные данные не менялись, — иначе обновление программы сделало бы все
+ * прежние записи устаревшими.
+ */
+function legacySpeedInput(scheme: Scheme) {
   const p = scheme.parameters
   return [
     p.location,
@@ -22,6 +64,33 @@ function speedInput(scheme: Scheme) {
     p.speedStagesKmh,
     scheme.placements.filter((item) => item.kind === 'sign-post'),
   ]
+}
+/**
+ * Основание параметра не изменилось. Название параметра и подпись источника — тексты программы,
+ * а не основание: их правка в новой версии запись не снимает (issue #99).
+ */
+function sameParameterBasis(saved: ParameterBasis, rules: NormativeRules): boolean {
+  const current = rules.parameterBasis[saved.id]
+  if (!current) return false
+  const essential = ({
+    title: _title,
+    source: _source,
+    fingerprint: _print,
+    ...rest
+  }: ParameterBasis) => rest
+  if (evidenceFingerprint(essential(saved)) !== evidenceFingerprint(essential(current)))
+    return false
+  // Отпечаток включает подпись источника: текущий пересчитывается с подписью из записи.
+  return (
+    saved.fingerprint ===
+    parameterBasisFingerprint(
+      rules.evidence[saved.id] ?? '',
+      current.amendments,
+      current.value,
+      saved.source,
+      current.confirmed,
+    )
+  )
 }
 export function regulationInput(scheme: Scheme): RegulationInput {
   const p = scheme.parameters
@@ -126,16 +195,16 @@ export function decisionEvidenceState(
   const snapshot = scheme.decisionEvidence[kind]
   if (!snapshot) return { status: 'missing', reasons: ['Снимок оснований ещё не записан.'] }
   const reasons: string[] = []
-  const input = kind === 'speed' ? speedInput(scheme) : regulationBasis(scheme)
-  if (snapshot.inputFingerprint !== evidenceFingerprint(input))
+  const inputs =
+    kind === 'speed' ? [speedInput(scheme), legacySpeedInput(scheme)] : [regulationBasis(scheme)]
+  if (!inputs.some((input) => snapshot.inputFingerprint === evidenceFingerprint(input)))
     reasons.push('Изменены исходные условия, выбранное решение или знаки.')
   const ids = kind === 'speed' ? speedParameterIds(rules) : [...REGULATION_PARAMETERS]
   if (
     snapshot.parameters.length !== ids.length ||
     ids.some((id) => {
       const saved = snapshot.parameters.find((item) => item.id === id)
-      const current = rules.parameterBasis[id]
-      return !saved || !current || evidenceFingerprint(saved) !== evidenceFingerprint(current)
+      return !saved || !sameParameterBasis(saved, rules)
     })
   )
     reasons.push(
