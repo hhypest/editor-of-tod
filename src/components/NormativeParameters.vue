@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   parameterDefinitions,
-  confirmationMatchesDefinition,
+  valueInForce,
   valueProblem,
   type ParameterDefinition,
   type ParameterState,
@@ -110,13 +110,12 @@ function valueText(definition: ParameterDefinition, value: ParameterValue | null
     .join('; ')
 }
 
+/** Значение «в действии» — по тому же правилу, что и расчёты (`rulesFrom`). */
 function inUse(
   definition: ParameterDefinition,
   state: ParameterState | null,
 ): ParameterValue | null {
-  return confirmationMatchesDefinition(definition, state?.confirmation)
-    ? state!.confirmation!.value
-    : definition.fallback
+  return valueInForce(definition, state?.confirmation)
 }
 
 function open(definition: ParameterDefinition, state: ParameterState | null): void {
@@ -128,11 +127,8 @@ function open(definition: ParameterDefinition, state: ParameterState | null): vo
     return
   }
   openId.value = definition.id
-  const initial =
-    state?.suggestion ??
-    (confirmationMatchesDefinition(definition, state?.confirmation)
-      ? state!.confirmation!.value
-      : definition.fallback)
+  // Недействующее подтверждение в форму не переносится: она начинается со значения в действии.
+  const initial = state?.suggestion ?? inUse(definition, state)
   form.note = ''
   if (definition.type === 'number') {
     form.number = typeof initial === 'number' ? String(initial) : ''

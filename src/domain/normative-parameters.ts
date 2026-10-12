@@ -697,10 +697,6 @@ export type NormativeRules = {
   parameterBasis: Readonly<Record<string, ParameterBasis>>
 }
 
-function fallbackValue(definition: ParameterDefinition): ParameterValue | null {
-  return definition.fallback
-}
-
 /** A confirmation belongs to its original document and clause, including after a rule correction. */
 export function confirmationMatchesDefinition(
   definition: ParameterDefinition,
@@ -717,6 +713,29 @@ export function confirmationMatchesDefinition(
     (confirmation.documentLabel === source.documentCode ||
       confirmation.documentLabel.startsWith(`${source.documentCode}-`))
   )
+}
+
+/**
+ * Подтверждение действует: относится к документу и пункту параметра и его значение проходит
+ * текущую проверку (`valueProblem`). Расчёты и показ значения «в действии» следуют одному правилу:
+ * недействующее подтверждение заменяется значением прототипа целиком.
+ */
+export function confirmationInForce(
+  definition: ParameterDefinition,
+  confirmation: ParameterConfirmation | null | undefined,
+): confirmation is ParameterConfirmation {
+  return (
+    confirmationMatchesDefinition(definition, confirmation) &&
+    valueProblem(definition, confirmation!.value) === null
+  )
+}
+
+/** Значение, которым пользуются расчёты: действующее подтверждение или значение прототипа. */
+export function valueInForce(
+  definition: ParameterDefinition,
+  confirmation: ParameterConfirmation | null | undefined,
+): ParameterValue | null {
+  return confirmationInForce(definition, confirmation) ? confirmation.value : definition.fallback
 }
 
 function sourceLabel(definition: ParameterDefinition, documentLabel?: string): string {
@@ -741,10 +760,8 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
     const state = byId.get(definition.id)
     // Подтверждение, которое не проходит текущую проверку значения, не действует целиком: иначе
     // недостающая строка таблицы молча заменялась бы числом прототипа при подтверждённом статусе.
-    const matches =
-      confirmationMatchesDefinition(definition, state?.confirmation) &&
-      valueProblem(definition, state!.confirmation!.value) === null
-    values[definition.id] = matches ? state!.confirmation!.value : fallbackValue(definition)
+    const matches = confirmationInForce(definition, state?.confirmation)
+    values[definition.id] = valueInForce(definition, state?.confirmation)
     confirmed[definition.id] = matches && state?.status.kind === 'confirmed'
     evidence[definition.id] =
       state && (state.document || state.confirmation || state.amendments.length)

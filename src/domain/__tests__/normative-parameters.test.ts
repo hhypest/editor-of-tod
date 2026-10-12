@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  confirmationInForce,
   parameterDefinition,
   parameterDefinitions,
   PROTOTYPE_RULES,
@@ -7,6 +8,7 @@ import {
   relevantFragment,
   rulesFrom,
   suggestValue,
+  valueInForce,
   valueProblem,
   WORK_TRAFFIC_KEYS,
   type ParameterState,
@@ -79,11 +81,17 @@ describe('normative parameters', () => {
         const rules = rulesFrom([state])
         expect(rules.confirmed[definition.id], `${definition.id}: ${row}`).toBe(false)
         expect(rules.parameterBasis[definition.id]!.value).toEqual(definition.fallback)
+        // Список параметров показывает то же значение, что используют расчёты.
+        expect(confirmationInForce(definition, state.confirmation)).toBe(false)
+        expect(valueInForce(definition, state.confirmation)).toEqual(definition.fallback)
         // Полная таблица с тем же подтверждением действует.
         const complete = rulesFrom([
           { ...state, confirmation: { ...state.confirmation!, value: definition.fallback } },
         ])
         expect(complete.confirmed[definition.id], definition.id).toBe(true)
+        expect(
+          valueInForce(definition, { ...state.confirmation!, value: definition.fallback }),
+        ).toBe(definition.fallback)
       }
     }
   })
