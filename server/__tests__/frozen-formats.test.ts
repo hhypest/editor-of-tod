@@ -9,6 +9,8 @@ import { exportSchemeJson, importSchemeJson } from '../../src/domain/import'
 import { parseStoredScheme, schemeSchema } from '../../src/domain/model'
 import { schemeLayout } from '../../src/domain/placement-workspace'
 import { reviewScheme } from '../../src/domain/review-scheme'
+import { switchLocation } from '../../src/domain/normative-defaults'
+import { PROTOTYPE_RULES } from '../../src/domain/normative-parameters'
 import { RegistryStore, SCHEMA_VERSION } from '../store'
 
 /**
@@ -98,6 +100,22 @@ describe('frozen files of previous formats', () => {
       }
       // Проверки листа не должны падать на проекте, поднятом из старого формата.
       expect(() => reviewScheme(scheme)).not.toThrow()
+      // v2–v4 не хранили разрешённую скорость: подстановка объявляется при открытии, а пункт
+      // «Местоположение» просит проверить скорость после выбора (issue #100).
+      const speedNotice = imported.warnings.filter((warning) => warning.includes('не хранилась'))
+      if (original.schemaVersion <= 4) {
+        expect(speedNotice).toEqual([
+          `Разрешённая скорость на подходе в формате v${original.schemaVersion} не хранилась: подставлено 60 км/ч — значение прежних версий по умолчанию. Укажите местоположение на этапе 2 и проверьте разрешённую скорость и ступени скорости.`,
+        ])
+        expect(scheme.parameters.location).toBe('auto')
+        expect(reviewScheme(scheme).find((finding) => finding.id === 'location')?.detail).toContain(
+          'Разрешённая скорость на подходе сейчас 60 км/ч',
+        )
+        // Выбор «вне населённого пункта» заменяет подставленные 60 км/ч значением по умолчанию.
+        expect(switchLocation(scheme.parameters, 'out', PROTOTYPE_RULES).approachSpeedKmh).toBe(90)
+      } else {
+        expect(speedNotice.filter((warning) => warning.includes('формате v'))).toEqual([])
+      }
       // Тот же снимок, прочитанный из истории SQLite, даёт тот же проект.
       expect(parseStoredScheme(JSON.parse(text))).toEqual(scheme)
       // Сохранение в текущем формате и повторное открытие ничего не меняют.

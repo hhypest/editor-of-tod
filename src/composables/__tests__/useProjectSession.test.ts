@@ -443,6 +443,24 @@ describe('project revision contracts', () => {
     expect(session.imported.value!.warnings.join(' ')).not.toContain('У стоек')
   })
 
+  it('reports the substituted approach speed when a revision stored as v2–v4 is opened', async () => {
+    const session = await openEditedSession()
+    const before = session.imported.value!.scheme
+    const upgraded: Scheme = {
+      ...before,
+      parameters: { ...before.parameters, location: 'auto', approachSpeedKmh: 60 },
+    }
+    local.getLocalProject.mockResolvedValue({ ...record(upgraded, 2), storedSchemaVersion: 4 })
+    await session.openLocal(before.id)
+    expect(session.imported.value!.warnings.join(' ')).toContain(
+      'Разрешённая скорость на подходе в формате v4 не хранилась: подставлено 60 км/ч',
+    )
+    // Редакции v5 и позже хранили скорость: сообщения нет.
+    local.getLocalProject.mockResolvedValue({ ...record(upgraded, 3), storedSchemaVersion: 5 })
+    await session.openLocal(before.id)
+    expect(session.imported.value!.warnings.join(' ')).not.toContain('не хранилась')
+  })
+
   it('does not show a late save error in a different session', async () => {
     const session = await openEditedSession()
     const response = deferred<ProjectRecord>()
