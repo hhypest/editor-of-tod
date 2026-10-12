@@ -110,11 +110,10 @@ describe('live draft review', () => {
     expect(afterEdit).toContain('distance-d50')
   })
 
-  it('keeps PU-66 and the 30 m boundary on the manual checklist after linking', () => {
+  it('keeps PU-66 on the manual checklist after linking and chooses B.34 at 30 m', () => {
     const project = newProject('30')
-    expect(reviewScheme(project).find((finding) => finding.id === 'boundary-30')?.kind).toBe(
-      'verify',
-    )
+    expect(project.template.code).toBe('b34')
+    expect(reviewScheme(project).some((finding) => finding.id === 'variant-front')).toBe(false)
     const linked = linkPu66Card(project, {
       referenceId: 'TEST-PU66',
       location: 'Учебный километр',
@@ -130,7 +129,7 @@ describe('live draft review', () => {
       'редакция ПУ-66 № 2',
     )
     expect(findings.find((finding) => finding.id === 'template')?.kind).toBe('verify')
-    expect(findings.some((finding) => finding.id === 'boundary-30')).toBe(true)
+    expect(findings.some((finding) => finding.id === 'variant-front')).toBe(false)
   })
 
   it('removes the figure size difference after correction, but keeps manual applicability checks', () => {
@@ -143,14 +142,39 @@ describe('live draft review', () => {
     expect(findings.some((finding) => finding.id === 'b34-traffic')).toBe(true)
     expect(findings.some((finding) => finding.id === 'template')).toBe(true)
 
-    const longFront = reviewScheme(newProject('30'))
+    const longFront = reviewScheme(newProject('31'))
     expect(longFront.find((finding) => finding.id === 'figure-dimensions')?.detail).toContain(
       'участок перед фронтом 12 м (на рисунке 15 м)',
     )
     expect(longFront.some((finding) => finding.id === 'b34-traffic')).toBe(false)
   })
 
-  it('treats an imported B.34 with exactly 30 m as a variant conflict, not as a false figure-size error', () => {
+  it('opens a B.33 project saved at 30 m as is and reports the variant mismatch', () => {
+    const b33 = newProject('31')
+    const saved = {
+      ...b33,
+      parameters: {
+        ...b33.parameters,
+        workZones: {
+          ...b33.parameters.workZones,
+          b33: { ...b33.parameters.workZones.b33!, workMetres: 30 },
+        },
+      },
+    }
+    const opened = importSchemeJson(JSON.stringify(saved)).scheme
+    expect(opened.template.code).toBe('b33')
+    const finding = reviewScheme(opened).find((item) => item.id === 'variant-front')
+    expect(finding).toMatchObject({ kind: 'verify', path: 'parameters' })
+    expect(finding?.markBlocked).toBeUndefined()
+    expect(finding?.detail).toContain('до 30 м включительно — Б.34')
+    expect(finding?.detail).toContain('«Сменить вариант на Б.34»')
+    // При пороге 30 м и 30,01 м вариант Б.33 совпадает с правилом.
+    expect(reviewScheme(newProject('30.01')).some((item) => item.id === 'variant-front')).toBe(
+      false,
+    )
+  })
+
+  it('treats an imported B.34 with exactly 30 m as consistent, not as a figure-size error', () => {
     const scheme = importSchemeJson(legacyB34).scheme
     const atBoundary = {
       ...scheme,
@@ -163,8 +187,19 @@ describe('live draft review', () => {
       },
     }
     const findings = reviewScheme(atBoundary)
-    expect(findings.some((finding) => finding.id === 'variant-front')).toBe(true)
+    expect(findings.some((finding) => finding.id === 'variant-front')).toBe(false)
     expect(findings.some((finding) => finding.id === 'figure-dimensions')).toBe(false)
+    const tooLong = {
+      ...atBoundary,
+      parameters: {
+        ...atBoundary.parameters,
+        workZones: {
+          ...atBoundary.parameters.workZones,
+          b34: { ...atBoundary.parameters.workZones.b34!, workMetres: 30.5 },
+        },
+      },
+    }
+    expect(reviewScheme(tooLong).some((finding) => finding.id === 'variant-front')).toBe(true)
   })
 
   it('flags a legacy project whose visibility flag was copied without inversion', () => {

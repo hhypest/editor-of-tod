@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { CROSSING_FRONT_LIMIT_METRES } from '../domain/crossing-limits'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   createSchemeFromPu66,
@@ -150,7 +149,9 @@ const choice = computed(() => {
   const value = input.frontMetres.trim().replace(',', '.')
   if (!/^\d+(?:\.\d+)?$/.test(value)) return null
   const number = Number(value)
-  return Number.isFinite(number) && number > 0 ? selectTemplateByWorkFront(number) : null
+  return Number.isFinite(number) && number > 0
+    ? selectTemplateByWorkFront(number, rules.value)
+    : null
 })
 
 async function loadCards(): Promise<void> {
@@ -351,18 +352,18 @@ watch(
           Взять фронт из п. 8 ПУ-66
         </button>
         <p class="hint">
-          Предел фронта редактора: {{ CROSSING_FRONT_LIMIT_METRES }} м. Длина п. 8 выбранной ПУ-66
-          дополнительно ограничивает фронт; отгон и буфер учитываются отдельно.
+          Наибольший фронт работ на переезде: {{ rules.frontLimitMetres }} м ({{
+            rules.sources['project-front-limit']
+          }}). Длина п. 8 выбранной ПУ-66 дополнительно ограничивает фронт; отгон и буфер
+          учитываются отдельно.
         </p>
         <WorkConditionsFields v-model="workConditions" />
         <p v-if="choice" class="hint" role="status">
           По длине фронта предварительно выбран вариант
           <strong>{{ templateLabel(choice.code) }}</strong
-          >.
-          <span v-if="choice.boundaryNeedsReview">
-            Ровно 30 м: Б.33 по подтверждённому правилу проекта; подписи и размеры рисунков ОДМ
-            различаются.
-          </span>
+          >. Фронт до {{ rules.b34MaxFrontMetres }} м включительно — Б.34, больше — Б.33 ({{
+            rules.sources['project-b34-max-front']
+          }}).
         </p>
         <fieldset class="location" :disabled="locked || busy">
           <legend>Где проходят работы</legend>

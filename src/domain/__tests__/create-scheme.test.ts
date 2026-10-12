@@ -8,6 +8,7 @@ import {
 import { applySchemeDetails, createSchemeDetailsDraft } from '../edit-details'
 import { newTextDraft, savePlacement } from '../edit-placements'
 import { exportSchemeJson, importSchemeJson } from '../import'
+import { PROTOTYPE_RULES } from '../normative-parameters'
 
 const input: NewSchemeInput & { referenceId: string } = {
   referenceId: 'TEST-NEW',
@@ -75,19 +76,34 @@ describe('scheme conditions without a pinned card (older projects and tests)', (
     expect(scheme.parameters).toMatchObject({ location: 'out', approachSpeedKmh: 90 })
   })
 
-  it('chooses B.33 at 30 m, keeps the inactive variant empty and checks active zone', () => {
-    const scheme = createUnlinkedScheme({ ...input, frontMetres: '30' }, options)
+  it('chooses B.34 at 30 m, B.33 above 30 m, keeps the inactive variant empty and checks active zone', () => {
+    const boundary = createUnlinkedScheme({ ...input, frontMetres: '30' }, options)
+    expect(boundary.template.code).toBe('b34')
+    expect(boundary.parameters.workZones.b33).toBeNull()
+    const scheme = createUnlinkedScheme({ ...input, frontMetres: '30.5' }, options)
     expect(scheme.template.code).toBe('b33')
     expect(scheme.parameters.workZones.b34).toBeNull()
-    expect(scheme.parameters.workZones.b33?.workMetres).toBe(30)
+    expect(scheme.parameters.workZones.b33?.workMetres).toBe(30.5)
     const missing = createSchemeDetailsDraft(scheme)
     missing.parameters.workZones.b33 = null
     expect(() => applySchemeDetails(scheme, missing)).toThrow('parameters.workZones.b33')
   })
 
+  it('uses the configured threshold and front limit of the project', () => {
+    const rules = { ...PROTOTYPE_RULES, b34MaxFrontMetres: 20, frontLimitMetres: 25 }
+    expect(
+      createUnlinkedScheme({ ...input, frontMetres: '21' }, { ...options, rules }).template.code,
+    ).toBe('b33')
+    expect(() =>
+      createUnlinkedScheme({ ...input, frontMetres: '26' }, { ...options, rules }),
+    ).toThrow('наибольший фронт работ на переезде 25 м')
+  })
+
   it('does not silently keep B.34 after the native work front crosses 30 m', () => {
     const scheme = createUnlinkedScheme(input, options)
     const draft = createSchemeDetailsDraft(scheme)
+    draft.parameters.workZones.b34!.workMetres = '30'
+    expect(applySchemeDetails(scheme, draft).template.code).toBe('b34')
     draft.parameters.workZones.b34!.workMetres = '31'
     expect(applySchemeDetails(scheme, draft).template.code).toBe('b33')
   })

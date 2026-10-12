@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { selectTemplateByWorkFront, templateLabel } from '../domain/registry'
+import { useNormativeRules } from '../composables/useNormativeRules'
+
+const { rules } = useNormativeRules()
 
 const lengthText = ref('')
 const suggestion = computed(() => {
   if (!lengthText.value.trim()) return null
   const value = Number(lengthText.value.trim().replace(',', '.'))
   if (!Number.isFinite(value) || value <= 0) return null
-  return selectTemplateByWorkFront(value)
+  return selectTemplateByWorkFront(value, rules.value)
 })
 </script>
 
@@ -25,12 +28,9 @@ const suggestion = computed(() => {
     <p v-if="lengthText && !suggestion" role="alert">Укажите положительное число в метрах.</p>
     <p v-if="suggestion" role="status">
       По принятому правилу проекта: <strong>{{ templateLabel(suggestion.code) }}</strong
-      >.
-      <span v-if="suggestion.boundaryNeedsReview"
-        >При ровно 30 м выбран Б.33 по подтверждённому правилу проекта; подписи и размерные
-        обозначения ОДМ различаются. Применимость остальных элементов схемы проверьте
-        отдельно.</span
-      >
+      >. Фронт до {{ rules.b34MaxFrontMetres }} м включительно — Б.34, больше — Б.33 ({{
+        rules.sources['project-b34-max-front']
+      }}).
     </p>
     <p class="hint">
       Показан только выбор по длине: условия пропуска транспорта, видимость, интенсивность и

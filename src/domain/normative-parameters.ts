@@ -14,8 +14,11 @@ import { normalizeQuote } from './document-text.ts'
 export type ParameterSource =
   | { kind: 'clause'; documentCode: string; clause: string }
   | { kind: 'table'; documentCode: string; table: string; clause: string }
-  /** Решение составителя без пункта документа: основание записывается при подтверждении. */
-  | { kind: 'decision' }
+  /**
+   * Решение составителя или проекта без пункта документа: основание записывается при
+   * подтверждении. `label` — как называть источник в подсказках и на листе.
+   */
+  | { kind: 'decision'; label?: string }
 
 export type NumberParameter = {
   id: string
@@ -391,6 +394,30 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
     valuePattern: /^\d{1,4}\s*[–-]\s*\d{1,4}$/,
   },
   {
+    id: 'project-b34-max-front',
+    title: 'Наибольший фронт работ для схемы Б.34 (включительно)',
+    unit: 'м',
+    usedIn:
+      'Выбор варианта по фронту работ: до значения включительно — Б.34, больше — Б.33. Подписи рисунков ОДМ («менее 30 м», «более 30 м») и размерные обозначения (max 30, min 30) расходятся, поэтому порог — решение проекта',
+    source: { kind: 'decision', label: 'решение проекта по практике технических специалистов' },
+    type: 'number',
+    fallback: 30,
+    min: 1,
+    max: 100,
+  },
+  {
+    id: 'project-front-limit',
+    title: 'Наибольший фронт работ на железнодорожном переезде',
+    unit: 'м',
+    usedIn:
+      'Предел фронта при создании и правке проекта, подсказка способа пропуска; отгон и буфер не входят, дополнительно действует длина по п. 8 ПУ-66',
+    source: { kind: 'decision', label: 'решение проекта: техническое ограничение для переездов' },
+    type: 'number',
+    fallback: 45,
+    min: 1,
+    max: 200,
+  },
+  {
     id: 'peak-hour-share',
     title: 'Доля часа пик в суточной интенсивности (для данных ПУ-66)',
     unit: '',
@@ -632,6 +659,10 @@ export type NormativeRules = {
     out: readonly [number, number] | null
   }>
   peakHourShare: number | null
+  /** Наибольший фронт для Б.34 включительно; больше — Б.33 (решение проекта). */
+  b34MaxFrontMetres: number
+  /** Наибольший фронт работ на переезде (решение проекта); отгон и буфер не входят. */
+  frontLimitMetres: number
   /** Параметр подтверждён для действующей редакции. */
   confirmed: Readonly<Record<string, boolean>>
   /** Основание ручной проверки: редакция, изменения и конкретная запись подтверждения. */
@@ -666,7 +697,7 @@ export function confirmationMatchesDefinition(
 
 function sourceLabel(definition: ParameterDefinition, documentLabel?: string): string {
   const source = definition.source
-  if (source.kind === 'decision') return 'решение составителя'
+  if (source.kind === 'decision') return source.label ?? 'решение составителя'
   const place = source.kind === 'table' ? source.clause : `п. ${source.clause}`
   return `${documentLabel ?? source.documentCode}, ${place}`
 }
@@ -796,6 +827,8 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
       out: range(table('gost-warning-distance')[WARNING_RANGE_KEYS.out]),
     },
     peakHourShare: (values['peak-hour-share'] as number | null) ?? null,
+    b34MaxFrontMetres: number('project-b34-max-front'),
+    frontLimitMetres: number('project-front-limit'),
     confirmed,
     evidence,
     sources,

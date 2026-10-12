@@ -62,8 +62,12 @@ watch(
 
 function sourceText(definition: ParameterDefinition, state: ParameterState | null): string {
   const source = definition.source
-  if (source.kind === 'decision')
-    return 'Решение составителя; основание записывается при подтверждении.'
+  if (source.kind === 'decision') {
+    const label = source.label
+      ? `${source.label[0]!.toUpperCase()}${source.label.slice(1)}`
+      : 'Решение составителя'
+    return `${label}; основание записывается при подтверждении.`
+  }
   const place = source.kind === 'table' ? source.clause : `п. ${source.clause}`
   return `${state?.document?.label ?? source.documentCode}, ${place}`
 }

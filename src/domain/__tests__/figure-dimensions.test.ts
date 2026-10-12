@@ -23,8 +23,8 @@ function project(frontMetres: string, taperMetres: string, bufferMetres: string)
 }
 
 describe('dimension chains read from ODM figures B.33/B.34', () => {
-  it('includes the exit taper only on B.33, including at the project boundary of 30 m', () => {
-    const dimensions = figureDimensions(project('30', '5', '15'))
+  it('includes the exit taper only on B.33, including just above the project threshold of 30 m', () => {
+    const dimensions = figureDimensions(project('30.5', '5', '15'))
     expect(dimensions.map(({ part, figureLabel }) => [part, figureLabel])).toEqual([
       ['entry', '5–10 м'],
       ['buffer', '15 м'],

@@ -1,8 +1,7 @@
-import { CROSSING_FRONT_LIMIT_METRES } from './crossing-limits'
 import type { Scheme } from './model'
 import { figureDimensions } from './figure-dimensions'
 import { PROTOTYPE_RULES, REGULATION_PARAMETERS, type NormativeRules } from './normative-parameters'
-import { templateLabel } from './registry'
+import { selectTemplateByWorkFront, templateLabel } from './registry'
 import { anchorCoordinates, placementCoordinates } from './placement-workspace'
 import { dangerousSectionMetres, usesTwoRegulators } from './template-placements'
 import { ZONE_PLATE } from './sign-code'
@@ -268,6 +267,9 @@ export function reviewScheme(
         // снималась бы при каждом добавлении параметра в программу.
         speedStepInterval: undefined,
         plateLimit: undefined,
+        // Расхождение варианта и порога показывает пункт «Вариант и длина фронта».
+        b34MaxFrontMetres: undefined,
+        frontLimitMetres: undefined,
       },
       placements,
     ]),
@@ -424,13 +426,18 @@ export function reviewScheme(
   }
 
   const frontMetres = parameters.workZones[scheme.template.code]?.workMetres
-  if (frontMetres !== undefined && (frontMetres < 30 ? 'b34' : 'b33') !== scheme.template.code) {
+  const ruleTemplate =
+    frontMetres !== undefined && frontMetres > 0
+      ? selectTemplateByWorkFront(frontMetres, rules).code
+      : null
+  if (ruleTemplate !== null && ruleTemplate !== scheme.template.code) {
     findings.push({
       id: 'variant-front',
       kind: 'verify',
       title: 'Вариант и длина фронта',
-      detail: `В импортированном проекте выбран ${templateLabel(scheme.template.code)} при фронте ${frontMetres} м. По подтверждённому правилу проекта нужен ${frontMetres < 30 ? 'Б.34' : 'Б.33'}. Проверьте исходный лист перед правкой.`,
+      detail: `Выбран ${templateLabel(scheme.template.code)} при фронте ${decimalComma(frontMetres!)} м. По правилу проекта фронт до ${decimalComma(rules.b34MaxFrontMetres)} м включительно — Б.34, больше — Б.33 (${rules.sources['project-b34-max-front']}), поэтому нужен ${templateLabel(ruleTemplate)}. Проект мог быть сохранён при прежнем правиле или импортирован. Чтобы перейти, нажмите на этапе 2 «Сменить вариант на ${templateLabel(ruleTemplate)}» и пересоберите шаблон на этапе 3. Если вариант оставлен сознательно, отметьте пункт после сверки.`,
       path: 'parameters',
+      basis: JSON.stringify([scheme.template.code, frontMetres, rules.b34MaxFrontMetres]),
     })
   }
 
@@ -439,7 +446,7 @@ export function reviewScheme(
     id: 'work-conditions',
     kind: 'verify',
     title: 'Срок работ и границы переезда',
-    detail: `Сверьте продолжительность работ, светлое время суток, постоянное присутствие регулировщиков и длину фронта по п. 8 ПУ-66. Предел фронта редактора — ${CROSSING_FRONT_LIMIT_METRES} м; отгон и буфер отдельно. Для Б.33 — два регулировщика (ОДМ 218.6.019-2016, п. 7.3.1, рис. Б.33). Условия Б.34: ГОСТ Р 58350-2019, п. 6.1.3, приложение Д; ОДМ, пп. 6.4, 13.7.5. Границы по приказу № 402: до шлагбаума, при его отсутствии — 10 м от ближайшего рельса.`,
+    detail: `Сверьте продолжительность работ, светлое время суток, постоянное присутствие регулировщиков и длину фронта по п. 8 ПУ-66. Наибольший фронт работ на переезде — ${rules.frontLimitMetres} м (${rules.sources['project-front-limit']}); отгон и буфер отдельно. Для Б.33 — два регулировщика (ОДМ 218.6.019-2016, п. 7.3.1, рис. Б.33). Условия Б.34: ГОСТ Р 58350-2019, п. 6.1.3, приложение Д; ОДМ, пп. 6.4, 13.7.5. Границы по приказу № 402: до шлагбаума, при его отсутствии — 10 м от ближайшего рельса.`,
     ...(conditionsProblems.length ? { markBlocked: conditionsProblems.join(' ') } : {}),
     path: 'parameters.workConditions.kind',
     basis: JSON.stringify([
@@ -448,7 +455,7 @@ export function reviewScheme(
       frontLimit(scheme),
       parameters.regulation,
       'rail-regulation-v2',
-      CROSSING_FRONT_LIMIT_METRES,
+      rules.frontLimitMetres,
       rules.workTraffic,
       rules.signsHourly,
       rules.alternateHourly,
@@ -523,17 +530,6 @@ export function reviewScheme(
       kind: 'verify',
       title: 'Видимость на участке',
       detail: `В исходном файле HTML-прототипа видимость встречного автомобиля отмечена как ${legacyVisibility ? 'обеспеченная' : 'необеспеченная'}, а в проекте флаг «Видимость встречного автомобиля ограничена» ${parameters.regulation.vis ? 'установлен' : 'снят'}. Проекты, импортированные до исправления, получили обратное значение. Проверьте флаг на этапе 2 до выбора регулирования.`,
-      path: 'parameters',
-    })
-  }
-
-  if (parameters.workZones[scheme.template.code]?.workMetres === 30) {
-    findings.push({
-      id: 'boundary-30',
-      kind: 'verify',
-      title: 'Фронт работ ровно 30 м',
-      detail:
-        'Б.33 выбран по подтверждённому правилу проекта. Подпись и размерное обозначение ОДМ различаются; проверьте применимость остальных условий схемы.',
       path: 'parameters',
     })
   }

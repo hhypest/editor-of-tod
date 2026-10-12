@@ -2,7 +2,7 @@
 
 exports[`review and drawing baseline before A3 > preserves findings, acknowledgment fingerprints and sheet nodes: ../../../tests/fixtures/legacy-b34-manual.json 1`] = `
 {
-  "drawingSha256": "75e455b41e659e98ef2f3118632caa4994d4797b345028a8a25da581730facef",
+  "drawingSha256": "ad9968c3b4244324759162f38538b686dc099d4a8b41a7d48c058c3edbeeabf4",
   "findings": [
     {
       "fingerprint": "3e6242d83c21d40b",
@@ -47,7 +47,7 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "0fe243e3229953a8",
+      "fingerprint": "8c18a14ca143ecaf",
       "id": "work-conditions",
       "kind": "verify",
       "markBlocked": "Б.33/Б.34: укажите краткосрочные работы и продолжительность не более 24 ч (ГОСТ Р 58350, п. 3.5). Проверьте фронт, длину участка между устройствами и часовую интенсивность в двух направлениях. Выбранный режим не соответствует условиям Б.34: при ограниченной видимости или потоке свыше верхней границы нужны два регулировщика; знаки допускаются только при обеспеченной видимости, потоке менее нормативной границы и участке между устройствами менее нормативной длины. Для одного требуется подтверждение светлого времени суток и прямого участка.",
@@ -88,7 +88,7 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
 
 exports[`review and drawing baseline before A3 > preserves findings, acknowledgment fingerprints and sheet nodes: ../../../tests/fixtures/legacy-v1-new-fields.json 1`] = `
 {
-  "drawingSha256": "158cd3f97638ae17f0c9e816781fc958cf0abe6f43475207391b5453ed173dfb",
+  "drawingSha256": "502ff9b4d2df5a32638e4e8187a3a63500a4ab874d41220c53103136768db7c4",
   "findings": [
     {
       "fingerprint": "3e6242d83c21d40b",
@@ -121,7 +121,7 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "b2869fdcda0f628c",
+      "fingerprint": "fd38036ce36d3da1",
       "id": "work-conditions",
       "kind": "verify",
       "markBlocked": "Б.33/Б.34: укажите краткосрочные работы и продолжительность не более 24 ч (ГОСТ Р 58350, п. 3.5). Подтвердите постоянное присутствие регулировщиков в течение всего срока работ (ОДМ, п. 6.4.3).",
@@ -174,7 +174,7 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
 
 exports[`review and drawing baseline before A3 > preserves findings, acknowledgment fingerprints and sheet nodes: ../../../tests/fixtures/manual-v1.json 1`] = `
 {
-  "drawingSha256": "18ebbcce02d204dcd270127b1068a4d6c158ced66712f15a396fa66fcf67c3fe",
+  "drawingSha256": "b3c81cf546a927db32bcee7c9864093164fc1aab8c354b04aea7ac03abe37b02",
   "findings": [
     {
       "fingerprint": "3e6242d83c21d40b",
@@ -213,7 +213,7 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "8c0b5f4d1c013be3",
+      "fingerprint": "1039dec3f632e940",
       "id": "work-conditions",
       "kind": "verify",
       "markBlocked": "Б.33/Б.34: укажите краткосрочные работы и продолжительность не более 24 ч (ГОСТ Р 58350, п. 3.5). Подтвердите постоянное присутствие регулировщиков в течение всего срока работ (ОДМ, п. 6.4.3).",
@@ -254,7 +254,7 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
 
 exports[`review and drawing baseline before A3 > preserves findings, acknowledgment fingerprints and sheet nodes: ../../../tests/fixtures/review-b33-v4.json 1`] = `
 {
-  "drawingSha256": "f2c4b35ad903cb36420588789331a1556ad44cf12b346f5e90f190243e7b5b2e",
+  "drawingSha256": "8b1e66f3ee6f33e2ae5128e7b7fd4bc738763734e95dd4e9151695faffbd25a7",
   "findings": [
     {
       "fingerprint": "3e6242d83c21d40b",
@@ -299,7 +299,7 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "7073eb7ba0947073",
+      "fingerprint": "894f1d76ad415970",
       "id": "work-conditions",
       "kind": "verify",
       "markBlocked": "Б.33/Б.34: укажите краткосрочные работы и продолжительность не более 24 ч (ГОСТ Р 58350, п. 3.5). Подтвердите постоянное присутствие регулировщиков в течение всего срока работ (ОДМ, п. 6.4.3).",
@@ -346,7 +346,7 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
 
 exports[`review and drawing baseline before A3 > preserves findings, acknowledgment fingerprints and sheet nodes: ../../../tests/fixtures/review-b34-v4.json 1`] = `
 {
-  "drawingSha256": "685ff121e4b8c6684f0496111124b04385da89d55b1a442620b7797430a64a23",
+  "drawingSha256": "5786f1cad91ddc4e49c7f26d7b4a802517fcb3307dc44101188cf848259d7150",
   "findings": [
     {
       "fingerprint": "3e6242d83c21d40b",
@@ -391,7 +391,7 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
       "markBlocked": undefined,
     },
     {
-      "fingerprint": "0fe243e3229953a8",
+      "fingerprint": "8c18a14ca143ecaf",
       "id": "work-conditions",
       "kind": "verify",
       "markBlocked": "Б.33/Б.34: укажите краткосрочные работы и продолжительность не более 24 ч (ГОСТ Р 58350, п. 3.5). Проверьте фронт, длину участка между устройствами и часовую интенсивность в двух направлениях. Выбранный режим не соответствует условиям Б.34: при ограниченной видимости или потоке свыше верхней границы нужны два регулировщика; знаки допускаются только при обеспеченной видимости, потоке менее нормативной границы и участке между устройствами менее нормативной длины. Для одного требуется подтверждение светлого времени суток и прямого участка.",

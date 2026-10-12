@@ -1,4 +1,3 @@
-import { CROSSING_FRONT_LIMIT_METRES } from './crossing-limits'
 import type { Scheme } from './model'
 import type { NormativeRules } from './normative-parameters'
 import { cellNumber } from './pu66-norms'
@@ -25,9 +24,9 @@ export function workConditionProblems(scheme: Scheme, rules: NormativeRules): st
     problems.push(
       `Б.33/Б.34: укажите краткосрочные работы и продолжительность не более ${rules.shortTermHours} ч (${rules.sources['gost-short-term-hours']}).`,
     )
-  if (zone && zone.workMetres > CROSSING_FRONT_LIMIT_METRES)
+  if (zone && zone.workMetres > rules.frontLimitMetres)
     problems.push(
-      `Фронт ${zone.workMetres} м превышает предел фронта редактора ${CROSSING_FRONT_LIMIT_METRES} м. Отгон и буфер проверяются отдельно.`,
+      `Фронт ${zone.workMetres} м превышает наибольший фронт работ на переезде ${rules.frontLimitMetres} м (${rules.sources['project-front-limit']}). Отгон и буфер проверяются отдельно.`,
     )
   const maximum = frontLimit(scheme)
   if (scheme.crossing.source === 'local-pu66' && (maximum === null || maximum <= 0))

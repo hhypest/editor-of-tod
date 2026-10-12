@@ -42,6 +42,8 @@ export type DraftSheet = {
   createdAt: string
   referenceId: string
   template: 'b33' | 'b34'
+  /** Порог выбора варианта: фронт до значения включительно — Б.34 (решение проекта). */
+  b34MaxFrontMetres: number
   location: string
   crossingFromPu66: {
     location: string
@@ -137,6 +139,7 @@ export function projectDraftSheet(
     createdAt: scheme.createdAt,
     referenceId: scheme.crossing.referenceId,
     template: scheme.template.code,
+    b34MaxFrontMetres: rules.b34MaxFrontMetres,
     location: scheme.parameters.locationText,
     crossingFromPu66:
       scheme.crossing.source === 'local-pu66'

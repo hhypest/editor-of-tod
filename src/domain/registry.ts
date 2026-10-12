@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters.ts'
 
 const label = z.string().trim().max(240)
 const requiredLabel = label.min(1)
@@ -50,15 +51,18 @@ export type NormativeDraft = z.infer<typeof normativeDraftSchema>
 export type CrossingRecord = CrossingDraft & { revision: number; updatedAt: string }
 export type NormativeRecord = NormativeDraft & { revision: number; updatedAt: string }
 
-/** Project selection policy, not an automatic statement of regulatory compliance. */
-export function selectTemplateByWorkFront(lengthMetres: number): {
-  code: 'b33' | 'b34'
-  boundaryNeedsReview: boolean
-} {
+/**
+ * Вариант по фронту работ — решение проекта, а не нормативное утверждение: до порога
+ * включительно Б.34, больше — Б.33 (параметр «Наибольший фронт работ для схемы Б.34»).
+ */
+export function selectTemplateByWorkFront(
+  lengthMetres: number,
+  rules: Pick<NormativeRules, 'b34MaxFrontMetres'> = PROTOTYPE_RULES,
+): { code: 'b33' | 'b34' } {
   if (!Number.isFinite(lengthMetres) || lengthMetres <= 0) {
     throw new RangeError('Длина фронта работ должна быть положительным числом в метрах.')
   }
-  return { code: lengthMetres < 30 ? 'b34' : 'b33', boundaryNeedsReview: lengthMetres === 30 }
+  return { code: lengthMetres <= rules.b34MaxFrontMetres ? 'b34' : 'b33' }
 }
 
 /** Обозначение рисунка ОДМ для кода шаблона: «Б.33», «Б.34» (кириллица, с точкой). */

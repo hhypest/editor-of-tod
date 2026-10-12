@@ -1,4 +1,3 @@
-import { CROSSING_FRONT_LIMIT_METRES } from './crossing-limits'
 import {
   PROTOTYPE_RULES,
   REGULATION_PARAMETERS,
@@ -75,7 +74,9 @@ export function adviseRegulation(
   const mode = railRegulationMode(
     {
       variant:
-        input.frontMetres === null ? 'b34' : selectTemplateByWorkFront(input.frontMetres).code,
+        input.frontMetres === null
+          ? 'b34'
+          : selectTemplateByWorkFront(input.frontMetres, rules).code,
       frontMetres: input.frontMetres,
       sectionMetres: section,
       hourly,
@@ -87,9 +88,9 @@ export function adviseRegulation(
   )
   const signs = Math.min(rules.signsHourly, rules.workTraffic.signsHourly)
   const one = Math.min(rules.alternateHourly, rules.workTraffic.alternateHourly)
-  const maximum = CROSSING_FRONT_LIMIT_METRES
+  const maximum = rules.frontLimitMetres
   reasons.push(
-    `Б.34 при обеспеченной видимости и участке менее ${Math.min(rules.signsLengthMetres, rules.workTraffic.signsLength)} м: менее ${signs} авт./ч — знаки 2.6/2.7; от ${signs} до ${one} включительно — один при выполненных условиях ОДМ, п. 13.7.5; свыше ${one} — два. При ограниченной видимости и для Б.33 — два. Пороги: ${rules.sources['gost-work-traffic']}; ${rules.sources['odm-signs-hourly']}; ${rules.sources['odm-alternate-hourly']}. Предел фронта редактора ${maximum} м, дополнительно действует п. 8 ПУ-66.`,
+    `Б.34 при обеспеченной видимости и участке менее ${Math.min(rules.signsLengthMetres, rules.workTraffic.signsLength)} м: менее ${signs} авт./ч — знаки 2.6/2.7; от ${signs} до ${one} включительно — один при выполненных условиях ОДМ, п. 13.7.5; свыше ${one} — два. При ограниченной видимости и для Б.33 — два. Пороги: ${rules.sources['gost-work-traffic']}; ${rules.sources['odm-signs-hourly']}; ${rules.sources['odm-alternate-hourly']}. Наибольший фронт работ на переезде ${maximum} м (${rules.sources['project-front-limit']}), дополнительно действует п. 8 ПУ-66.`,
   )
   if (mode === null) {
     reasons.push(
