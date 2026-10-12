@@ -97,6 +97,59 @@ for (const variant of [
   })
 }
 
+test('an invalid table confirmation shows and prefills the prototype table in force', async ({
+  page,
+}) => {
+  // Подтверждение без строки «Знак 1.25…», записанное до проверки строк: в действии прототип.
+  const state: ParameterState = {
+    id: 'odm-sign-distances-outside',
+    status: {
+      kind: 'invalid',
+      problem:
+        'Нет строки «Знак 1.25 «Дорожные работы»»: заполните её; подписи строк должны сохраняться.',
+    },
+    document: { id: 1, label: 'ОДМ 218.6.019-2016', sha256: 'synthetic' },
+    quote: null,
+    suggestion: null,
+    amendments: [],
+    confirmation: {
+      id: 1,
+      parameterId: 'odm-sign-distances-outside',
+      documentId: 1,
+      documentLabel: 'ОДМ 218.6.019-2016',
+      clause: 'рисунки Б.33 и Б.34',
+      page: 2,
+      quote: '',
+      fragment: '',
+      value: {
+        'Знак 1.25': '280',
+        'Первая ступень 3.24 и знак 3.20': '240',
+        'Вторая ступень 3.24 и сужение 1.20': '140',
+        'Знак скорости в зоне работ 3.24': '40',
+      },
+      confirmedBy: 'Учебный составитель',
+      confirmedAt: '2026-01-01',
+      note: 'стр. 2',
+    },
+  }
+  await page.route('**/api/normative-parameters', (route) => route.fulfill({ json: [state] }))
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Реестры', exact: true }).click()
+  await page.getByRole('button', { name: 'Нормативные параметры', exact: true }).click()
+  const item = page.locator('[data-parameter="odm-sign-distances-outside"]')
+  await expect(item.locator('.status').first()).toContainText('не действует')
+  await expect(item.locator('.value').first()).toContainText('Знак 1.25 «Дорожные работы» → 300')
+  await expect(item.locator('.value').first()).not.toContainText('240')
+  await item.getByRole('button', { name: 'Проверить и подтвердить' }).click()
+  const inputs = item.locator('table.rows input')
+  await expect(inputs.first()).toBeVisible()
+  const values = await inputs.evaluateAll((elements) =>
+    elements.map((element) => (element as HTMLInputElement).value),
+  )
+  expect(values).toEqual(expect.arrayContaining(['Знак 1.25 «Дорожные работы»', '300', '250']))
+  expect(values).not.toContain('240')
+})
+
 test('PDF title wins over filename; manual edits survive file changes and previews expire', async ({
   page,
 }) => {
