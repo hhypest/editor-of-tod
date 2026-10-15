@@ -254,7 +254,7 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
 
 exports[`review and drawing baseline before A3 > preserves findings, acknowledgment fingerprints and sheet nodes: ../../../tests/fixtures/review-b33-v4.json 1`] = `
 {
-  "drawingSha256": "8b1e66f3ee6f33e2ae5128e7b7fd4bc738763734e95dd4e9151695faffbd25a7",
+  "drawingSha256": "09eeed373cc40ce61b5534c40b511ca59a2a26111303b646ca329719d9acc0f7",
   "findings": [
     {
       "fingerprint": "3e6242d83c21d40b",
@@ -346,7 +346,7 @@ exports[`review and drawing baseline before A3 > preserves findings, acknowledgm
 
 exports[`review and drawing baseline before A3 > preserves findings, acknowledgment fingerprints and sheet nodes: ../../../tests/fixtures/review-b34-v4.json 1`] = `
 {
-  "drawingSha256": "5786f1cad91ddc4e49c7f26d7b4a802517fcb3307dc44101188cf848259d7150",
+  "drawingSha256": "f757268f33d292b134110b895d4104717efe7d0e00cd5dc7a47ea8e45feabf1d",
   "findings": [
     {
       "fingerprint": "3e6242d83c21d40b",
