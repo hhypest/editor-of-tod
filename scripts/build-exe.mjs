@@ -3,7 +3,6 @@
 // По умолчанию собирается Windows x64. Интерфейс из dist/ встраивается в файл,
 // данные при запуске создаются в private-data рядом с программой.
 import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import {
   copyFileSync,
   existsSync,
@@ -17,6 +16,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import { inject } from 'postject'
+import { CHECKSUMS_FILE, writeChecksums } from './release-checksums.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const releaseDirectory = join(root, 'release')
@@ -133,12 +133,18 @@ copyFileSync(notices, join(releaseDirectory, 'THIRD_PARTY_LICENSES.txt'))
 copyFileSync(join(root, 'LICENSE'), join(releaseDirectory, 'LICENSE.txt'))
 copyFileSync(join(root, 'LICENSE.ru.md'), join(releaseDirectory, 'LICENSE.ru.txt'))
 
-const sha256 = createHash('sha256').update(readFileSync(output)).digest('hex')
+// 6. Контрольные суммы всех передаваемых файлов (docs/release.md).
+const checksums = writeChecksums(releaseDirectory, [
+  outputName,
+  'LICENSE.txt',
+  'LICENSE.ru.txt',
+  'THIRD_PARTY_LICENSES.txt',
+])
 const megabytes = (statSync(output).size / 1024 / 1024).toFixed(1)
 console.log(
-  `\nГотово: ${relative(root, output)} (${megabytes} МБ, Node.js ${process.versions.node})`,
+  `\nГотово: ${relative(root, output)} (${megabytes} МБ, версия ${packageJson.version}, Node.js ${process.versions.node})`,
 )
-console.log(`SHA-256: ${sha256}`)
+console.log(`SHA-256 (${CHECKSUMS_FILE}):\n${checksums}`)
 console.log(
-  'Рядом: LICENSE.txt, LICENSE.ru.txt, THIRD_PARTY_LICENSES.txt — передавайте вместе с программой.',
+  `Рядом: LICENSE.txt, LICENSE.ru.txt, THIRD_PARTY_LICENSES.txt, ${CHECKSUMS_FILE} — передавайте вместе с программой.`,
 )

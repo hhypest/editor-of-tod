@@ -46,6 +46,35 @@ async function importSampleCards(request: APIRequestContext): Promise<void> {
   expect(applied.ok()).toBe(true)
 }
 
+/**
+ * Загружает вымышленный каталог знаков с редакцией (один нарисованный PNG 1.25): без каталога
+ * с редакцией печать и выпуск листа заблокированы. Повторная загрузка того же архива допустима,
+ * поэтому сценарий не зависит от того, запускался ли до него другой.
+ */
+async function importSampleSignCatalog(request: APIRequestContext): Promise<void> {
+  const image = new PNG({ width: 8, height: 8 })
+  image.data.fill(255)
+  const png = PNG.sync.write(image)
+  const archive = Buffer.from(
+    zipSync({ 'PNG с номером/1.25.png': png, 'PNG без номера/1.25.png': png }),
+  )
+  const signs = {
+    archive: { name: 'synthetic.zip', data: archive.toString('base64') },
+    documentCode: 'УЧЕБНЫЙ ИСТОЧНИК',
+    edition: 'демо',
+    pdf: null,
+  }
+  const headers = { Origin: origin }
+  const preview = await request.post(`${api}/api/signs/import/preview`, { headers, data: signs })
+  expect(preview.ok()).toBe(true)
+  const plan = await preview.json()
+  const applied = await request.post(`${api}/api/signs/import/apply`, {
+    headers,
+    data: { ...signs, expectedFingerprint: plan.fingerprint },
+  })
+  expect(applied.ok()).toBe(true)
+}
+
 /** Вкладка «Новый проект»: при наличии сохранённых проектов стартовая вкладка — «Мои проекты». */
 async function openNewProjectTab(page: Page): Promise<void> {
   await page
@@ -494,29 +523,7 @@ test('imports synthetic station PU-66 and a generated PNG ZIP through the local 
     data: { files: [file], expectedFingerprint: plan.fingerprint },
   })
   expect(applied.ok()).toBe(true)
-  const image = new PNG({ width: 8, height: 8 })
-  image.data.fill(255)
-  const png = PNG.sync.write(image)
-  const archive = Buffer.from(
-    zipSync({ 'PNG с номером/1.25.png': png, 'PNG без номера/1.25.png': png }),
-  )
-  const signs = {
-    archive: { name: 'synthetic.zip', data: archive.toString('base64') },
-    documentCode: 'УЧЕБНЫЙ ИСТОЧНИК',
-    edition: 'демо',
-    pdf: null,
-  }
-  const signPreview = await request.post(`${api}/api/signs/import/preview`, {
-    headers,
-    data: signs,
-  })
-  expect(signPreview.ok()).toBe(true)
-  const signPlan = await signPreview.json()
-  const signApply = await request.post(`${api}/api/signs/import/apply`, {
-    headers,
-    data: { ...signs, expectedFingerprint: signPlan.fingerprint },
-  })
-  expect(signApply.ok()).toBe(true)
+  await importSampleSignCatalog(request)
   await page.goto('/')
   await page.getByRole('button', { name: 'Реестры', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Локальные реестры' })).toBeVisible()
@@ -627,6 +634,8 @@ test('release sheet drops the draft mark and downloads a PNG', async ({ page, re
   }
   await page.route('**/api/normative-parameters', (route) => route.fulfill({ json: [pddState] }))
   await importSampleCards(request)
+  // Каталог с редакцией нужен для выпуска; раньше его оставлял предыдущий сценарий.
+  await importSampleSignCatalog(request)
   await page.goto('/')
   await fillNewProject(page, '12 км 3 пк', '90001:12:3')
   await page.getByRole('button', { name: 'Создать проект' }).click()
@@ -755,7 +764,9 @@ test('release requires distances, objects, location and type size but allows pap
   await page.route('**/api/signs/catalog', (route) =>
     route.fulfill({ json: { documentCode: 'УЧЕБНЫЙ', edition: 'демо', id: 1 } }),
   )
-  await page.route('**/api/signs/1.25/image?rev=1', (route) =>
+  // Адрес изображения содержит и `cache`, и `rev` (`signImageUrl`): шаблон без параметров
+  // запроса, иначе запрос уходит на сервер и сценарий зависит от каталога предыдущих.
+  await page.route('**/api/signs/1.25/image?*', (route) =>
     route.fulfill({ contentType: 'image/png', body: PNG.sync.write(png) }),
   )
   await page.route('**/api/signs/1.25/metadata?rev=1', (route) =>
@@ -1007,7 +1018,8 @@ test('attaches standards, switches the sign catalog to a new edition and flags t
     buffer: Buffer.from(zipSync({ 'PNG с номером/1.25.png': png, 'PNG без номера/1.25.png': png })),
   })
   await page.getByRole('button', { name: 'Просмотреть изменения знаков' }).click()
-  await expect(page.getByText(/(?:Новые|Изменённые) изображения/).first()).toBeVisible()
+  // На пустой базе 1.25 — новый знак, после других сценариев — изменённое изображение.
+  await expect(page.getByText(/Новые знаки|Изменённые изображения/).first()).toBeVisible()
   await page.getByRole('button', { name: 'Подтвердить каталог и создать копию SQLite' }).click()
   await expect(page.getByText(/Текущий набор: ГОСТ Р 99290, редакция 2024/)).toBeVisible()
 
