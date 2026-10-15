@@ -3,10 +3,16 @@ name: Windows exe
 # Собирает переносной editor-of-tod.exe и проверяет его браузерными тестами.
 # Запускается только вручную (Actions → Windows exe → Run workflow): по правилам
 # репозитория приложение не публикуется автоматически. Файл сохраняется как
-# артефакт этого запуска. Для выпуска выберите в «Use workflow from» тег версии
-# (docs/release.md): тег должен совпадать с версией в package.json.
+# артефакт этого запуска. Для выпуска укажите в поле «Тег версии» тег, например
+# 0.2.0-rc.1 (docs/release.md): собирается коммит тега, тег должен совпадать
+# с версией в package.json. Без тега собирается выбранная ветка — для проверки.
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Тег версии для выпуска (например, 0.2.0-rc.1); пусто — выбранная ветка'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -16,6 +22,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag != '' && format('refs/tags/{0}', inputs.tag) || '' }}
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -24,16 +32,21 @@ jobs:
         id: version
         shell: pwsh
         env:
+          INPUT_TAG: ${{ inputs.tag }}
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $commit = git rev-parse --short HEAD
-          if ($env:REF_TYPE -eq 'tag' -and $env:REF_NAME -ne $version) {
-            throw "Тег $env:REF_NAME не совпадает с версией $version в package.json."
+          # Тег из поля запуска или тег, с которого запущен процесс (gh workflow run --ref).
+          $tag = if ($env:INPUT_TAG) { $env:INPUT_TAG } elseif ($env:REF_TYPE -eq 'tag') { $env:REF_NAME } else { '' }
+          if ($tag -and $tag -ne $version) {
+            throw "Тег $tag не совпадает с версией $version в package.json."
           }
+          $source = if ($tag) { "тег $tag" } else { "ветка $env:REF_NAME" }
           "version=$version" >> $env:GITHUB_OUTPUT
           "commit=$commit" >> $env:GITHUB_OUTPUT
+          "source=$source" >> $env:GITHUB_OUTPUT
       - run: npm ci
       - run: npm run build:exe
       - run: npx playwright install chromium
@@ -45,11 +58,10 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
           COMMIT: ${{ steps.version.outputs.commit }}
-          REF_TYPE: ${{ github.ref_type }}
-          REF_NAME: ${{ github.ref_name }}
+          SOURCE: ${{ steps.version.outputs.source }}
         run: |
           $lines = @(
-            "### editor-of-tod $env:VERSION ($env:COMMIT, $env:REF_TYPE $env:REF_NAME)",
+            "### editor-of-tod $env:VERSION ($env:COMMIT, $env:SOURCE)",
             '',
             'SHA-256 файлов артефакта (`release/SHA256SUMS.txt`):',
             '',
