@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import b33 from '../../../tests/fixtures/manual-v1.json?raw'
 import b34 from '../../../tests/fixtures/legacy-b34-manual.json?raw'
+import reviewB34 from '../../../tests/fixtures/review-b34-v4.json?raw'
 import { createUnlinkedScheme } from '../create-scheme'
 import { applySchemeDetails, createSchemeDetailsDraft } from '../edit-details'
 import { newSignDraft, savePlacement } from '../edit-placements'
 import { projectDraftSheet } from '../draft-sheet'
 import { importSchemeJson } from '../import'
 import { linkPu66Card } from '../link-pu66'
+import { movePlacement } from '../placement-workspace'
 import {
   drawableWithoutImage,
   drawSheet,
@@ -264,6 +266,36 @@ describe('vector A4 sheet', () => {
     expect(all.join(' ')).toContain(
       'Регулировщиков устанавливать не ближе 15 м до рабочей зоны (ОДМ 218.6.019, таблица 5).',
     )
+  })
+
+  it('bounds the cover car by the drawn body, not by the editable height field', () => {
+    const project = importSchemeJson(reviewB34).scheme
+    const car = project.placements.find(
+      (placement) => placement.kind === 'element' && placement.elementKind === 'car',
+    )
+    if (!car || car.kind !== 'element') throw new Error('Expected a cover car')
+    // Кузов символа truck рисуется с сохранением пропорций 120×50, знак 4.2.2 — внутри кузова.
+    const bodyHeight = (car.sizeSvg.width * 50) / 120
+    const drawing = drawSheet(projectDraftSheet(project), options)
+    const box = drawing.objectBoxes.find((item) => item.id === car.id)
+    expect(box?.extent).toEqual([
+      car.position.offsetXSvg - 3,
+      car.position.ySvg - 3,
+      car.sizeSvg.width + 6,
+      bodyHeight + 6,
+    ])
+    // Машина у нижнего края листа: кузов внутри, хотя прежнее поле высоты выходило за лист
+    // и блокировало печать (замечание Codex к PR #152).
+    const inside = movePlacement(project, car.id, 0, 1140 - car.position.ySvg)
+    expect(objectsOutside(drawSheet(projectDraftSheet(inside), options))).not.toContain(car.id)
+    // Видимый кузов за листом — выход фиксируется.
+    const outside = movePlacement(
+      project,
+      car.id,
+      0,
+      SHEET_HEIGHT - bodyHeight + 1 - car.position.ySvg,
+    )
+    expect(objectsOutside(drawSheet(projectDraftSheet(outside), options))).toContain(car.id)
   })
 
   it('prints the carriageway width as recorded and never derives a lane width', () => {

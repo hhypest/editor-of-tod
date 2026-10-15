@@ -360,14 +360,26 @@ function drawElement(
   const mandatory = signImageCode('4.2.2', available)
   if (item.elementKind === 'car') {
     const bodyHeight = (w * 50) / 120
+    // Знак 4.2.2 — на самом автомобиле прикрытия (ответ приёмки 15.10.2026, issue #95):
+    // по центру кузова символа truck (кузов в viewBox 120×50 занимает x 4–76, y 10–38).
+    const signSize = (bodyHeight * 28) / 50
     return {
       nodes: [
         { t: 'symbol', id: 'truck', x, y, w, h: bodyHeight },
-        { t: 'line', x1: x + 6, y1: y + bodyHeight - 4, x2: x + 6, y2: y + h - 22, sw: 1.5 },
-        { t: 'rect', x: x - 1, y: y + h - 23, w: 23, h: 23, fill: '#333' },
-        { t: 'sign', x, y: y + h - 22, w: 21, h: 21, code: mandatory },
+        {
+          t: 'sign',
+          x: x + (w * 4) / 120 + ((w * 72) / 120 - signSize) / 2,
+          y: y + (bodyHeight * 10) / 50,
+          w: signSize,
+          h: signSize,
+          code: mandatory,
+        },
       ],
-      box,
+      // Рисунок машины заканчивается на bodyHeight (символ truck сохраняет пропорции 120×50),
+      // поэтому рамка объекта следует за рисунком, а не за редактируемым полем высоты: иначе
+      // машина у края листа блокирует печать невидимым выходом либо, наоборот, уменьшенное
+      // поле скрывает видимый выход (замечание Codex к PR #152).
+      box: [x - 3, y - 3, w + 6, bodyHeight + 6],
       codes: [mandatory],
     }
   }

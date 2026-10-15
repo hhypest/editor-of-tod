@@ -106,7 +106,7 @@ describe('intervals between consecutive 3.24 signs (ГОСТ Р 52289, п. 5.4.2
     expect(item.detail).toContain('250 м) и «50»')
     expect(item.detail).toContain('180 м): 70 м')
     expect(item.detail).toContain('ГОСТ Р 58350; его п. 6.1.4.3 своих интервалов не задаёт')
-    expect(item.detail).toContain('по таблице Е.3')
+    expect(item.detail).toContain('таблица Е.3 задаёт только скорости по этапам')
   })
 
   it('counts a limit from its farthest post and ignores a repeated sign closer to the works', () => {

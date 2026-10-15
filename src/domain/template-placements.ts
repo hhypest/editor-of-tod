@@ -36,9 +36,10 @@ function checkConditions(scheme: Scheme, rules: NormativeRules): void {
       'На этапе 2 укажите разрешённую скорость на подходе: от неё считаются ступени скорости в населённом пункте.',
     )
   }
-  // Два регулировщика (Б.33 всегда, Б.34 по решению) ставятся по табл. 5 ОДМ: скорость в зоне
-  // должна быть в таблице, иначе минимальное расстояние не определено.
-  if (usesTwoRegulators(scheme)) {
+  // Регулировщики ставятся по табл. 5 ОДМ: скорость в зоне должна быть в таблице, иначе
+  // минимальное расстояние не определено. Два — Б.33 всегда, Б.34 по решению; один —
+  // Б.34 при пропуске одним регулировщиком (п. 13.7.5; приёмка 15.10.2026, issue #94).
+  if (usesTwoRegulators(scheme) || parameters.regulation.mode === 'one') {
     const zoneSpeed = parameters.speedStagesKmh[2]
     if (rules.regulatorDistance[zoneSpeed] === undefined) {
       const speeds = Object.keys(rules.regulatorDistance).join(', ')
@@ -307,7 +308,12 @@ export function buildTemplatePlacements(
         [0.78, 491, 24, 17],
       ] as const)
         element('pit', 'Z0', 0, y, width, height, fraction)
-    if (parameters.regulation.mode === 'one') element('reg', 'Z0', -11, 366, 22, 30, 0.25)
+    if (parameters.regulation.mode === 'one') {
+      // Один регулировщик — со стороны начала работ, не ближе расстояния по табл. 5 до
+      // рабочей зоны (ОДМ 218.6.019-2016, п. 13.7.5, табл. 5; ответ приёмки 15.10.2026, #94).
+      const leftX = Math.min(anchors.L0 - 100, anchors.Z0 - regulatorUnits)
+      element('reg', 'L0', Math.round(leftX - anchors.L0), 366, 22, 30)
+    }
     if (parameters.regulation.mode === 'two') twoRegulators(-100, 40, 366)
   }
   return placements

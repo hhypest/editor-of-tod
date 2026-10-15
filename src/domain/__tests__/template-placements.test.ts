@@ -155,6 +155,53 @@ describe('preliminary B.33/B.34 layout', () => {
     ).toContain('регулировщиков: 1 из 2')
   })
 
+  it('places the single regulator outside the work zone at table 5 distance (ODM 13.7.5, #94)', () => {
+    const built = rebuildTemplatePlacements(example(18, 'out', 'one')).scheme
+    const anchors = anchorCoordinates(built)
+    const regulators = built.placements.filter(
+      (item) => item.kind === 'element' && item.elementKind === 'reg',
+    )
+    expect(regulators).toHaveLength(1)
+    const { x } = placementCoordinates(regulators[0]!, anchors)
+    const unitsPerMetre = (anchors.Z1 - anchors.Z0) / built.parameters.workZones.b34!.workMetres
+    expect(x).toBeLessThan(anchors.Z0)
+    expect(anchors.Z0 - x).toBeGreaterThanOrEqual(15 * unitsPerMetre - 1)
+    expect(reviewScheme(built).some((finding) => finding.id === 'regulator-distance')).toBe(false)
+  })
+
+  it('blocks release when the single regulator is in the zone or closer than table 5 (#94)', () => {
+    const built = rebuildTemplatePlacements(example(18, 'out', 'one')).scheme
+    const anchors = anchorCoordinates(built)
+    const regulator = built.placements.find(
+      (item) => item.kind === 'element' && item.elementKind === 'reg',
+    )!
+    const { x } = placementCoordinates(regulator, anchors)
+    const unitsPerMetre = (anchors.Z1 - anchors.Z0) / built.parameters.workZones.b34!.workMetres
+    const finding = (scheme: Scheme) =>
+      reviewScheme(scheme).find((item) => item.id === 'regulator-distance')
+    const inZone = movePlacement(built, regulator.id, (anchors.Z0 + anchors.Z1) / 2 - x, 0)
+    expect(finding(inZone)?.detail).toContain('стоит над рабочей зоной')
+    expect(finding(inZone)?.markBlocked).toContain('Выпуск недоступен')
+    const tooClose = movePlacement(built, regulator.id, anchors.Z0 - 5 * unitsPerMetre - x, 0)
+    expect(finding(tooClose)?.detail).toContain('не ближе 15 м')
+    expect(() => setMark(tooClose, reviewScheme(tooClose), 'regulator-distance', true)).toThrow(
+      'Выпуск недоступен',
+    )
+  })
+
+  it('refuses to place the single regulator when the zone speed is not in table 5 (#94)', () => {
+    const base = example(18, 'out', 'one')
+    const scheme = {
+      ...base,
+      parameters: {
+        ...base.parameters,
+        speedStagesKmh: [70, 50, 45] as [number, number, number],
+      },
+    }
+    expect(() => buildTemplatePlacements(scheme)).toThrow(TemplateBuildError)
+    expect(() => buildTemplatePlacements(scheme)).toThrow('45 км/ч нет в таблице')
+  })
+
   it('puts two regulators before the work zone for each direction (ODM 13.7.3, table 5)', () => {
     for (const front of [18, 40]) {
       const scheme = example(front, 'out', 'two')
