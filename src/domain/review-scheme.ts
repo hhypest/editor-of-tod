@@ -380,7 +380,7 @@ export function reviewScheme(
         )
         .join(
           '; ',
-        )}. Тот же пункт допускает перед местами производства работ ступенчатое ограничение по ГОСТ Р 58350; его п. 6.1.4.3 своих интервалов не задаёт и отсылает к ГОСТ Р 52289, но допускает ступени по этапам по таблице Е.3. Если ступени поставлены по этапам, сверьте их с таблицей Е.3, иначе исправьте расстояния стоек на этапе 3. Стойки без расстояния в проверке не участвуют.`,
+        )}. Тот же пункт допускает перед местами производства работ ступенчатое ограничение по ГОСТ Р 58350; его п. 6.1.4.3 своих интервалов не задаёт и отсылает к ГОСТ Р 52289, а таблица Е.3 задаёт только скорости по этапам, интервалов не содержит (сверено при приёмке 15.10.2026). Если ступени поставлены по этапам работ, после сверки отметьте пункт «Проверено», иначе исправьте расстояния стоек на этапе 3. Стойки без расстояния в проверке не участвуют.`,
       path: 'placements',
       basis: JSON.stringify([
         intervals,
@@ -570,9 +570,9 @@ export function reviewScheme(
 /**
  * Регулировщики на листе должны соответствовать выбранному способу пропуска. Два (Б.33 всегда,
  * Б.34 по выбору) стоят у начала и конца места работ, каждый вне рабочей зоны Z0–Z1 и не ближе
- * расстояния по табл. 5 ОДМ со стороны своего направления (п. 13.7.3). При одном регулировщике
- * (п. 13.7.5) проверяется только их число: место одного регулировщика нормативно не сверено,
- * шаблон ставит его у места работ.
+ * расстояния по табл. 5 ОДМ со стороны своего направления (п. 13.7.3). Один регулировщик
+ * (п. 13.7.5) стоит вне рабочей зоны и не ближе расстояния по табл. 5 до неё — место одного
+ * регулировщика подтверждено составителем при приёмке 15.10.2026 (issue #94).
  * Несоответствие нельзя принять отметкой: пункт блокирует выпуск листа, пока объекты не
  * исправлены (решение владельца 05.10.2026 по CR-02). Без замечаний пункт не показывается.
  */
@@ -595,13 +595,47 @@ function regulatorDistanceFinding(scheme: Scheme, rules: NormativeRules): Review
     (placement) => placement.kind === 'element' && placement.elementKind === 'reg',
   )
   if (!two) {
-    if (regulators.length === expected) return null
-    const detail = `Выбран пропуск транспорта одним регулировщиком (ОДМ 218.6.019-2016, п. 13.7.5), на листе регулировщиков: ${regulators.length} из ${expected}. Пересоберите шаблон на этапе 3 или исправьте объекты.`
+    if (regulators.length !== expected) {
+      const detail = `Выбран пропуск транспорта одним регулировщиком (ОДМ 218.6.019-2016, п. 13.7.5), на листе регулировщиков: ${regulators.length} из ${expected}. Пересоберите шаблон на этапе 3 или исправьте объекты.`
+      return {
+        ...base,
+        detail,
+        markBlocked: `Выпуск недоступен, пока регулировщики на листе не соответствуют способу пропуска. ${detail}`,
+        basis: JSON.stringify([expected, regulators]),
+      }
+    }
+    // Один регулировщик стоит вне рабочей зоны и не ближе расстояния по табл. 5 до неё
+    // (ответ приёмки 15.10.2026, issue #94).
+    const required = rules.regulatorDistance[zoneSpeed]
+    if (required === undefined) {
+      const detail = `Скорости в зоне ${zoneSpeed} км/ч нет в таблице расстояний от регулировщика до рабочей зоны (${source}). Укажите на этапе 2 третью ступень скорости из таблицы: ${Object.keys(rules.regulatorDistance).join(', ')} км/ч.`
+      return {
+        ...base,
+        detail,
+        markBlocked: `Выпуск недоступен. ${detail}`,
+        basis: JSON.stringify([zoneSpeed, scheme.placements]),
+      }
+    }
+    const anchors = anchorCoordinates(scheme)
+    const unitsPerMetre = (anchors.Z1 - anchors.Z0) / zone.workMetres
+    const problems: string[] = []
+    for (const regulator of regulators) {
+      const { x } = placementCoordinates(regulator, anchors)
+      if (x >= anchors.Z0 && x <= anchors.Z1) {
+        problems.push(`№ ${regulator.id} стоит над рабочей зоной`)
+        continue
+      }
+      const metres = (x < anchors.Z0 ? anchors.Z0 - x : x - anchors.Z1) / unitsPerMetre
+      if (metres < required - 0.5)
+        problems.push(`№ ${regulator.id} — примерно ${Math.round(metres)} м до рабочей зоны`)
+    }
+    if (!problems.length) return null
+    const detail = `Один регулировщик должен стоять вне рабочей зоны, не ближе ${required} м до неё при скорости в зоне ${zoneSpeed} км/ч (${source}): ${problems.join('; ')}. Пересоберите шаблон на этапе 3 или исправьте объекты.`
     return {
       ...base,
       detail,
       markBlocked: `Выпуск недоступен, пока регулировщики на листе не соответствуют способу пропуска. ${detail}`,
-      basis: JSON.stringify([expected, regulators]),
+      basis: JSON.stringify([required, expected, regulators]),
     }
   }
   const required = rules.regulatorDistance[zoneSpeed]
