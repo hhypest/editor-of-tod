@@ -264,6 +264,13 @@ function undoTaperOffer(): void {
   taperUndo.value = null
   markDirty()
 }
+/**
+ * Черновик заменён целиком («Отменить ввод», применённые правки, восстановление копии): прежнее
+ * значение поля относится к выброшенному вводу, «Вернуть» его не возвращает.
+ */
+watch(draft, () => {
+  taperUndo.value = null
+})
 /** Ручная правка поля после подстановки делает «Вернуть» неактуальным. */
 watch(
   () => draft.value.parameters.workZones.b34?.taperMetres,

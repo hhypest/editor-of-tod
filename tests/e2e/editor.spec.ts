@@ -1608,6 +1608,16 @@ test('switching the B.34 mode offers the taper length, applied and undone only b
   const offer = page.locator('.taper-offer')
   await expect(taper).toHaveValue('10')
   await expect(offer).toHaveCount(0)
+  // «Отменить ввод» выбрасывает подстановки вместе с «Вернуть», даже если после сброса в поле то
+  // же число, что подставлено последним (10 → 15 → 10): прежний ввод 15 м не воскресает.
+  await page.getByLabel('Регулирование Б.34').selectOption('signs')
+  await offer.getByRole('button', { name: 'Подставить отвод 15 м' }).click()
+  await page.getByLabel('Регулирование Б.34').selectOption('two')
+  await offer.getByRole('button', { name: 'Подставить отвод 10 м' }).click()
+  await expect(offer.getByRole('button', { name: 'Вернуть прежний отвод' })).toBeVisible()
+  await page.getByRole('button', { name: 'Отменить ввод' }).click()
+  await expect(taper).toHaveValue('10')
+  await expect(offer).toHaveCount(0)
   // Знаки 2.6/2.7: предлагается 15 м по табл. И.1, введённое значение не меняется само.
   await page.getByLabel('Регулирование Б.34').selectOption('signs')
   await expect(offer).toContainText('Для знаков приоритета 2.6/2.7 отвод — 15 м')
