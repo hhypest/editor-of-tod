@@ -33,6 +33,8 @@ import { settlementSteps } from '../domain/template-placements'
 import NormativeMark from './NormativeMark.vue'
 import type { Scheme } from '../domain/model'
 import { adviseRegulation, regulationModeLabels } from '../domain/regulation-advice'
+import { taperSuggestion } from '../domain/taper-suggestion'
+import { decimalComma } from '../domain/number-format'
 import { useNormativeRules } from '../composables/useNormativeRules'
 import Pu66NormsPanel from './Pu66NormsPanel.vue'
 import { formatPhone, PHONE_PLACEHOLDER } from '../domain/title-block'
@@ -59,6 +61,8 @@ const dirty = ref(false)
 const error = ref('')
 const status = ref('')
 const zoneCodes = ['b33', 'b34'] as const
+/** Отвод Б.34 до подстановки предложения: «Вернуть» восстанавливает его, пока поле не правили. */
+const taperUndo = ref<{ previous: string; applied: string } | null>(null)
 
 function addZone(code: 'b33' | 'b34'): void {
   if (props.locked || draft.value.parameters.workZones[code]) return
@@ -76,6 +80,7 @@ watch(
   (scheme) => {
     draft.value = createSchemeDetailsDraft(scheme)
     dirty.value = false
+    taperUndo.value = null
     emit('dirty', false)
   },
 )
@@ -231,6 +236,41 @@ function switchTemplate(): void {
   status.value =
     'Вариант сменён по правилу проекта. Соберите шаблон заново на этапе 3 и сохраните проект.'
 }
+
+/** Предложение отвода Б.34 по выбранному в форме способу пропуска (issue #104). */
+const taperOffer = computed(() =>
+  taperSuggestion(
+    {
+      template: props.scheme.template.code,
+      mode: draft.value.parameters.regulation.mode,
+      taperMetres: draftNumber(draft.value.parameters.workZones.b34?.taperMetres),
+    },
+    normativeRules.value,
+  ),
+)
+function applyTaperOffer(): void {
+  const zone = draft.value.parameters.workZones.b34
+  if (props.locked || !zone || !taperOffer.value) return
+  const applied = String(taperOffer.value.metres)
+  taperUndo.value = { previous: zone.taperMetres, applied }
+  zone.taperMetres = applied
+  markDirty()
+  status.value = `Отвод Б.34: подставлено ${decimalComma(applied)} м. Примените правки и пересоберите шаблон на этапе 3.`
+}
+function undoTaperOffer(): void {
+  const zone = draft.value.parameters.workZones.b34
+  if (props.locked || !zone || !taperUndo.value) return
+  zone.taperMetres = taperUndo.value.previous
+  taperUndo.value = null
+  markDirty()
+}
+/** Ручная правка поля после подстановки делает «Вернуть» неактуальным. */
+watch(
+  () => draft.value.parameters.workZones.b34?.taperMetres,
+  (value) => {
+    if (taperUndo.value && value !== taperUndo.value.applied) taperUndo.value = null
+  },
+)
 
 function applyAdvice(): void {
   if (props.locked || !advice.value.mode || !advice.value.verified) return
@@ -693,6 +733,25 @@ function applyDraft(): void {
               <input v-model="draft.parameters.workZones[code]!.labels.work" type="text"
             /></label>
           </div>
+          <p
+            v-if="code === 'b34' && (taperOffer || taperUndo)"
+            class="hint taper-offer"
+            role="status"
+          >
+            <template v-if="taperOffer">
+              {{ taperOffer.text }}
+              <button type="button" :disabled="locked" @click="applyTaperOffer">
+                Подставить отвод {{ decimalComma(taperOffer.metres) }} м
+              </button>
+            </template>
+            <template v-if="taperUndo">
+              Отвод заменён: было
+              {{ taperUndo.previous.trim() ? `${taperUndo.previous} м` : 'пусто' }}.
+              <button type="button" :disabled="locked" @click="undoTaperOffer">
+                Вернуть прежний отвод
+              </button>
+            </template>
+          </p>
         </div>
       </fieldset>
 
@@ -934,6 +993,13 @@ legend {
 }
 .fields.compact {
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+}
+/* Предложение отвода — под полями размеров зоны Б.34. */
+.taper-offer {
+  margin: 0.6rem 0 0;
+}
+.taper-offer button {
+  margin-left: 0.4rem;
 }
 label {
   display: block;

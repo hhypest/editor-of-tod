@@ -34,14 +34,16 @@ export function figureDimensions(
   const prioritySigns = !longFront && scheme.parameters.regulation.mode === 'signs'
   const entryMatches = longFront
     ? zone.taperMetres >= 5 && zone.taperMetres <= 10
-    : zone.taperMetres === (prioritySigns ? rules.signsTaperMetres : 10)
+    : zone.taperMetres === (prioritySigns ? rules.signsTaperMetres : rules.b34TaperMetres)
 
   const dimensions: FigureDimension[] = [
     {
       part: 'entry',
       title: 'Отвод перед работами',
       enteredMetres: zone.taperMetres,
-      figureLabel: longFront ? '5–10 м' : prioritySigns ? `${rules.signsTaperMetres} м` : '10 м',
+      figureLabel: longFront
+        ? '5–10 м'
+        : `${prioritySigns ? rules.signsTaperMetres : rules.b34TaperMetres} м`,
       ...(prioritySigns
         ? {
             basis: `для знаков 2.6/2.7 — ${rules.signsTaperMetres} м, ${rules.sources['odm-signs-taper']}`,

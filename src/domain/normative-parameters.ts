@@ -354,6 +354,18 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
     max: 130,
   },
   {
+    id: 'odm-b34-taper',
+    title: 'Длина отвода на рисунке Б.34 при регулировщиках (значение по умолчанию)',
+    unit: 'м',
+    usedIn:
+      'Предложение отвода при переходе Б.34 от знаков 2.6/2.7 к регулировщикам; сравнение размерной цепочки с рисунком Б.34',
+    source: { kind: 'table', documentCode: ODM, table: 'Б.34', clause: 'рисунок Б.34' },
+    type: 'number',
+    fallback: 10,
+    min: 1,
+    max: 100,
+  },
+  {
     id: 'odm-sign-distances-outside',
     title: 'Расстояния от стоек до начала работ вне населённого пункта (значения по умолчанию)',
     unit: 'м',
@@ -647,6 +659,8 @@ export type NormativeRules = {
   signsLengthMetres: number
   alternateHourly: number
   signsTaperMetres: number
+  /** Отвод на рисунке Б.34 при регулировщиках (значение по умолчанию). */
+  b34TaperMetres: number
   regulatorDistance: Readonly<Record<number, number>>
   speedStepKmh: number
   /** Диапазон расстояния между последовательными знаками 3.24; null — значение не разобрано. */
@@ -837,6 +851,7 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
     signsLengthMetres: number('odm-signs-length'),
     alternateHourly: number('odm-alternate-hourly'),
     signsTaperMetres: number('odm-signs-taper'),
+    b34TaperMetres: number('odm-b34-taper'),
     regulatorDistance: Object.fromEntries(
       Object.entries(table('odm-regulator-distance')).map(([speed, metres]) => [
         Number(speed),
