@@ -44,6 +44,9 @@ const props = defineProps<{
   locked?: boolean
   mode?: 'source' | 'geometry' | 'title'
   recovery?: { details: SchemeDetailsDraft | null } | null
+  /** Итог перестройки типовых объектов после применения правок (issue #106). */
+  templateNotice?: string
+  templateNoticeError?: boolean
 }>()
 const emit = defineEmits<{
   apply: [scheme: Scheme]
@@ -423,8 +426,9 @@ function applyDraft(): void {
   <section aria-labelledby="details-title">
     <h2 id="details-title">{{ heading }}</h2>
     <p class="hint">
-      Изменения применяются к открытой копии проекта после нажатия «Применить правки». Они не
-      переставляют знаки и не подтверждают соответствие схемы нормам.
+      Изменения применяются к открытой копии проекта после нажатия «Применить правки». Собранный
+      черновой шаблон перестраивается по новым параметрам, ручные объекты остаются; правки не
+      подтверждают соответствие схемы нормам.
     </p>
     <form @submit.prevent="applyDraft" @input="markDirty" @change="markDirty">
       <fieldset v-if="!mode || mode === 'source'" :disabled="locked">
@@ -922,6 +926,14 @@ function applyDraft(): void {
 
       <p v-if="error" class="error" role="alert">{{ error }}</p>
       <p v-if="status" class="hint" role="status">{{ status }}</p>
+      <p
+        v-if="templateNotice && !dirty"
+        :class="templateNoticeError ? 'error' : 'hint'"
+        :role="templateNoticeError ? 'alert' : 'status'"
+        data-test="template-notice"
+      >
+        {{ templateNotice }}
+      </p>
       <div class="actions">
         <button type="submit" class="primary" :disabled="locked || !dirty">Применить правки</button>
         <button type="button" :disabled="locked || !dirty" @click="discard">Отменить ввод</button>

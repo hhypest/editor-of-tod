@@ -1641,3 +1641,53 @@ test('switching the B.34 mode offers the taper length, applied and undone only b
   await taper.fill('12')
   await expect(offer).toHaveCount(0)
 })
+
+test('stage 2 edits rebuild a built template in one undoable step and report the changes', async ({
+  page,
+  request,
+}) => {
+  await importSampleCards(request)
+  await page.goto('/')
+  await fillNewProject(page, '12 км 3 пк', '90001:12:3')
+  await page.getByRole('button', { name: 'Создать проект' }).click()
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  await page.getByLabel('Регулирование Б.34').selectOption('two')
+  await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('300')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
+  await page.getByRole('button', { name: 'Собрать черновой шаблон' }).click()
+  const meta = page.locator('.project-meta')
+  const count = async () => Number(/объектов (\d+)/.exec((await meta.textContent()) ?? '')![1])
+  const built = await count()
+  expect(built).toBeGreaterThan(10)
+
+  // Этап 2: в населённом пункте — шаблон перестраивается сразу после «Применить правки».
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  const location = page.locator('[data-field="parameters.location"]:visible')
+  await location.selectOption('in')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  const notice = page.locator('[data-test="template-notice"]')
+  await expect(notice).toContainText('Типовые объекты перестроены по новым параметрам')
+  await expect(notice).toContainText('скорость в зоне слева')
+  await expect(notice).toContainText('Ручные объекты сохранены.')
+  const settled = await count()
+  expect(settled).toBeLessThan(built)
+  // То же сообщение на этапе 3.
+  await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Типовые объекты перестроены' }),
+  ).toBeVisible()
+
+  // Одна отмена возвращает и местоположение, и объекты.
+  await page.getByText('Действия с проектом', { exact: true }).click()
+  await page.getByRole('button', { name: 'Отменить действие', exact: true }).click()
+  await expect.poll(count).toBe(built)
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  await expect(location).toHaveValue('out')
+
+  // Правка, не влияющая на раскладку, объекты не трогает и сообщения не даёт.
+  await page.getByLabel('Видимость встречного автомобиля ограничена').check()
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await expect(notice).toHaveCount(0)
+  expect(await count()).toBe(built)
+})

@@ -10,6 +10,7 @@ import {
 import type { Scheme } from '../domain/model'
 import { reportError } from '../services/diagnostics'
 import { rebuildTemplatePlacements, TemplateBuildError } from '../domain/template-placements'
+import { autoRebuildTemplate } from '../domain/template-rebuild'
 import { useNormativeRules } from './useNormativeRules'
 import { clearPinsAfterSignChange, pinSignImages, usedSignCodes } from '../domain/sign-images'
 import {
@@ -415,6 +416,25 @@ export function useProjectSession(onProjectOpened: () => void) {
     modifiedSinceLocalSave.value = true
   }
 
+  /**
+   * Правки этапа 2: если шаблон уже собран и изменились параметры раскладки, типовые объекты
+   * перестраиваются в том же действии истории (П5, issue #106). Ручные объекты не трогаются.
+   */
+  function onDetailsApplied(scheme: Scheme): void {
+    if (!imported.value) return
+    const result = autoRebuildTemplate(imported.value.scheme, scheme, normativeRules.value)
+    templateMessage.value = ''
+    templateError.value = ''
+    const applied = result.kind === 'rebuilt' ? result.scheme : scheme
+    onProjectApplied(applied)
+    if (result.kind === 'rebuilt') {
+      templateMessage.value = result.message
+      if (!applied.placements.some((placement) => placement.id === selectedPlacementId.value))
+        selectedPlacementId.value = null
+    }
+    if (result.kind === 'failed') templateError.value = result.message
+  }
+
   function buildDraftTemplate(): void {
     if (!imported.value || editorDirty.value || localBusy.value) return
     templateMessage.value = ''
@@ -574,6 +594,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     selectedPlacementId,
     templateMessage,
     templateError,
+    onDetailsApplied,
     signPinMessage,
     editorDirty,
     hasUnsavedWork,
