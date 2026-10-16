@@ -44,6 +44,9 @@ const props = defineProps<{
   locked?: boolean
   mode?: 'source' | 'geometry' | 'title'
   recovery?: { details: SchemeDetailsDraft | null } | null
+  /** Итог перестройки типовых объектов после применения правок (issue #106). */
+  templateNotice?: string
+  templateNoticeError?: boolean
 }>()
 const emit = defineEmits<{
   apply: [scheme: Scheme]
@@ -234,7 +237,7 @@ function switchTemplate(): void {
   if (props.locked || dirty.value || !ruleTemplate.value) return
   emit('apply', switchTemplateToRule(props.scheme, normativeRules.value))
   status.value =
-    'Вариант сменён по правилу проекта. Соберите шаблон заново на этапе 3 и сохраните проект.'
+    'Вариант сменён по правилу проекта. Собранный шаблон перестраивается под новый вариант (итог — ниже); если шаблон ещё не собирали, соберите его на этапе 3. Сохраните проект.'
 }
 
 /** Предложение отвода Б.34 по выбранному в форме способу пропуска (issue #104). */
@@ -255,7 +258,7 @@ function applyTaperOffer(): void {
   taperUndo.value = { previous: zone.taperMetres, applied }
   zone.taperMetres = applied
   markDirty()
-  status.value = `Отвод Б.34: подставлено ${decimalComma(applied)} м. Примените правки и пересоберите шаблон на этапе 3.`
+  status.value = `Отвод Б.34: подставлено ${decimalComma(applied)} м. Примените правки: собранный шаблон перестроится по новому отводу.`
 }
 function undoTaperOffer(): void {
   const zone = draft.value.parameters.workZones.b34
@@ -423,8 +426,9 @@ function applyDraft(): void {
   <section aria-labelledby="details-title">
     <h2 id="details-title">{{ heading }}</h2>
     <p class="hint">
-      Изменения применяются к открытой копии проекта после нажатия «Применить правки». Они не
-      переставляют знаки и не подтверждают соответствие схемы нормам.
+      Изменения применяются к открытой копии проекта после нажатия «Применить правки». Собранный
+      черновой шаблон перестраивается по новым параметрам, ручные объекты остаются; правки не
+      подтверждают соответствие схемы нормам.
     </p>
     <form @submit.prevent="applyDraft" @input="markDirty" @change="markDirty">
       <fieldset v-if="!mode || mode === 'source'" :disabled="locked">
@@ -741,7 +745,7 @@ function applyDraft(): void {
             /></label>
           </div>
           <p
-            v-if="code === 'b34' && (taperOffer || taperUndo)"
+            v-if="code === 'b34' && draft.parameters.workZones.b34 && (taperOffer || taperUndo)"
             class="hint taper-offer"
             role="status"
           >
@@ -922,6 +926,14 @@ function applyDraft(): void {
 
       <p v-if="error" class="error" role="alert">{{ error }}</p>
       <p v-if="status" class="hint" role="status">{{ status }}</p>
+      <p
+        v-if="templateNotice && !dirty"
+        :class="templateNoticeError ? 'error' : 'hint'"
+        :role="templateNoticeError ? 'alert' : 'status'"
+        data-test="template-notice"
+      >
+        {{ templateNotice }}
+      </p>
       <div class="actions">
         <button type="submit" class="primary" :disabled="locked || !dirty">Применить правки</button>
         <button type="button" :disabled="locked || !dirty" @click="discard">Отменить ввод</button>

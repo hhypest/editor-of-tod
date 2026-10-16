@@ -10,6 +10,7 @@ import {
 import type { Scheme } from '../domain/model'
 import { reportError } from '../services/diagnostics'
 import { rebuildTemplatePlacements, TemplateBuildError } from '../domain/template-placements'
+import { autoRebuildTemplate } from '../domain/template-rebuild'
 import { useNormativeRules } from './useNormativeRules'
 import { clearPinsAfterSignChange, pinSignImages, usedSignCodes } from '../domain/sign-images'
 import {
@@ -107,6 +108,9 @@ export function useProjectSession(onProjectOpened: () => void) {
     pendingDetails.value = null
     pendingPlacement.value = null
     recoveryStatus.value = 'idle'
+    // Итог сборки шаблона относится к открытому проекту и его текущему состоянию.
+    templateMessage.value = ''
+    templateError.value = ''
   }
 
   async function clearRecovery(sessionId: string): Promise<void> {
@@ -415,6 +419,36 @@ export function useProjectSession(onProjectOpened: () => void) {
     modifiedSinceLocalSave.value = true
   }
 
+  /**
+   * Правки этапа 2: если шаблон уже собран и изменились параметры раскладки, типовые объекты
+   * перестраиваются в том же действии истории (П5, issue #106). Ручные объекты не трогаются.
+   */
+  function onDetailsApplied(scheme: Scheme): void {
+    if (!imported.value) return
+    let result: ReturnType<typeof autoRebuildTemplate>
+    try {
+      result = autoRebuildTemplate(imported.value.scheme, scheme, normativeRules.value)
+    } catch (cause) {
+      // Непредвиденная ошибка перестройки не должна терять применённые правки этапа 2.
+      reportError('Перестройка шаблона после правок этапа 2', cause)
+      result = {
+        kind: 'failed',
+        message:
+          'Правки применены, но типовые объекты не перестроены и остались прежними. Соберите шаблон на этапе 3.',
+      }
+    }
+    templateMessage.value = ''
+    templateError.value = ''
+    const applied = result.kind === 'rebuilt' ? result.scheme : scheme
+    onProjectApplied(applied)
+    if (result.kind === 'rebuilt') {
+      templateMessage.value = result.message
+      if (!applied.placements.some((placement) => placement.id === selectedPlacementId.value))
+        selectedPlacementId.value = null
+    }
+    if (result.kind === 'failed') templateError.value = result.message
+  }
+
   function buildDraftTemplate(): void {
     if (!imported.value || editorDirty.value || localBusy.value) return
     templateMessage.value = ''
@@ -492,6 +526,9 @@ export function useProjectSession(onProjectOpened: () => void) {
     history.value = undoEdit(history.value)
     imported.value = { ...imported.value, scheme: history.value.present }
     modifiedSinceLocalSave.value = true
+    // Сообщение о перестройке шаблона описывало отменённое действие.
+    templateMessage.value = ''
+    templateError.value = ''
   }
 
   function stepForward(): void {
@@ -500,6 +537,8 @@ export function useProjectSession(onProjectOpened: () => void) {
     history.value = redoEdit(history.value)
     imported.value = { ...imported.value, scheme: history.value.present }
     modifiedSinceLocalSave.value = true
+    templateMessage.value = ''
+    templateError.value = ''
   }
 
   async function openRecovery(sessionId: string): Promise<void> {
@@ -574,6 +613,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     selectedPlacementId,
     templateMessage,
     templateError,
+    onDetailsApplied,
     signPinMessage,
     editorDirty,
     hasUnsavedWork,

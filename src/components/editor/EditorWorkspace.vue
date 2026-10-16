@@ -39,6 +39,7 @@ const {
   templateError,
   selectedPlacementId,
   onProjectApplied,
+  onDetailsApplied,
   detailsDirty,
   placementDirty,
   recoverySeed,
@@ -147,8 +148,9 @@ const inProject = computed(() =>
         <p class="eyebrow">Этап 2 из 4</p>
         <h1>Схема движения</h1>
         <p>
-          Размеры и параметры выбранного рисунка ОДМ. Изменение чисел не перемещает уже поставленные
-          знаки.
+          Размеры и параметры выбранного рисунка ОДМ. Если черновой шаблон уже собран, после
+          «Применить правки» его типовые объекты перестраиваются по новым параметрам; ручные объекты
+          остаются на месте.
         </p>
       </div>
       <div class="variant-summary">
@@ -246,7 +248,9 @@ const inProject = computed(() =>
       :mode="detailsMode"
       :recovery="recoverySeed"
       :locked="placementDirty || localBusy"
-      @apply="onProjectApplied"
+      :template-notice="templateError || templateMessage"
+      :template-notice-error="Boolean(templateError)"
+      @apply="onDetailsApplied"
       @dirty="detailsDirty = $event"
       @draft="pendingDetails = $event"
     />
