@@ -107,6 +107,19 @@ async function amendmentsFor(
           (clause) => new RegExp(`(?<![\\d.])${clause.replace(/\./g, '\\.')}(?!\\d|\\.\\d)`, 'u'),
         )
       : []
+  // Значения с рисунков (`рисунок Б.34`, `рисунки Б.33 и Б.34`): изменение, упоминающее рисунок
+  // в любой форме («рисунке Б.34», «рис. Б.34»), тоже относится к параметру.
+  const figures =
+    source.kind === 'table' && /рисун/iu.test(source.clause)
+      ? (source.clause.match(/[А-ЯA-Z]\.\d+/gu) ?? []).map(
+          (figure) =>
+            new RegExp(
+              // «рисунки Б.33 и Б.34», «рис. Б.32, Б.34» — рисунок может стоять в перечне.
+              `(?:рисун\\p{L}*|рис\\.)\\s*(?:[А-ЯA-Z]\\.\\d+\\s*(?:,|и)\\s*)*${figure.replace('.', '\\.')}(?!\\d|\\.\\d)`,
+              'iu',
+            ),
+        )
+      : []
   const result: string[] = []
   for (const amendment of documents.filter((document) => document.amendsId === baseId)) {
     const status = statuses.get(amendment.id)
@@ -115,7 +128,8 @@ async function amendmentsFor(
     if (
       source.documentCode === 'ПДД' ||
       tableMention.test(text) ||
-      clauses.some((mention) => mention.test(text))
+      clauses.some((mention) => mention.test(text)) ||
+      figures.some((mention) => mention.test(text))
     )
       result.push(`${amendment.code} (${amendment.edition})`)
   }
