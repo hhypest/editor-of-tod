@@ -237,7 +237,7 @@ function switchTemplate(): void {
   if (props.locked || dirty.value || !ruleTemplate.value) return
   emit('apply', switchTemplateToRule(props.scheme, normativeRules.value))
   status.value =
-    'Вариант сменён по правилу проекта. Соберите шаблон заново на этапе 3 и сохраните проект.'
+    'Вариант сменён по правилу проекта. Собранный шаблон перестраивается под новый вариант (итог — ниже); если шаблон ещё не собирали, соберите его на этапе 3. Сохраните проект.'
 }
 
 /** Предложение отвода Б.34 по выбранному в форме способу пропуска (issue #104). */
@@ -258,7 +258,7 @@ function applyTaperOffer(): void {
   taperUndo.value = { previous: zone.taperMetres, applied }
   zone.taperMetres = applied
   markDirty()
-  status.value = `Отвод Б.34: подставлено ${decimalComma(applied)} м. Примените правки и пересоберите шаблон на этапе 3.`
+  status.value = `Отвод Б.34: подставлено ${decimalComma(applied)} м. Примените правки: собранный шаблон перестроится по новому отводу.`
 }
 function undoTaperOffer(): void {
   const zone = draft.value.parameters.workZones.b34
@@ -745,7 +745,7 @@ function applyDraft(): void {
             /></label>
           </div>
           <p
-            v-if="code === 'b34' && (taperOffer || taperUndo)"
+            v-if="code === 'b34' && draft.parameters.workZones.b34 && (taperOffer || taperUndo)"
             class="hint taper-offer"
             role="status"
           >

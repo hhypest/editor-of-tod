@@ -1684,6 +1684,8 @@ test('stage 2 edits rebuild a built template in one undoable step and report the
   await expect.poll(count).toBe(built)
   await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
   await expect(location).toHaveValue('out')
+  // Сообщение описывало отменённое действие и исчезает вместе с ним.
+  await expect(notice).toHaveCount(0)
 
   // Правка, не влияющая на раскладку, объекты не трогает и сообщения не даёт.
   await page.getByLabel('Видимость встречного автомобиля ограничена').check()
