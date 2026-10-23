@@ -159,7 +159,7 @@ onMounted(load)
   <section aria-labelledby="pu66-lifecycle-title">
     <h2 id="pu66-lifecycle-title">Действующие и исключённые ПУ-66</h2>
     <p>
-      Исключение убирает карточку из выбора новых проектов и ежегодной сверки. Книги, редакции и
+      Исключение убирает карточку из выбора новых проектов и ежегодной сверки. Книги, версии и
       сохранённые проекты остаются в базе. Перед изменением создаётся резервная копия.
     </p>
     <div class="controls">
@@ -186,7 +186,7 @@ onMounted(load)
             :disabled="disabled"
           />
           <strong>{{ card.referenceId }}</strong> — {{ card.location }} ·
-          {{ card.roadName || 'дорога не указана' }} · редакция {{ card.revision }}</label
+          {{ card.roadName || 'дорога не указана' }} · версия {{ card.revision }}</label
         >
         <p v-if="card.status.excluded && card.status.event">
           Исключена {{ card.status.event.date }} · {{ card.status.event.actor }} ·
@@ -205,7 +205,7 @@ onMounted(load)
       <ul>
         <li v-for="event in history" :key="event.id">
           {{ event.date }} · {{ event.action === 'exclude' ? 'Исключение' : 'Возврат' }} ·
-          {{ event.actor }} · редакция {{ event.cardRevision }}.
+          {{ event.actor }} · версия {{ event.cardRevision }}.
           {{ event.reason ? exclusionReasons[event.reason] : '' }} {{ event.comment }}
           <span v-if="event.successorKey">Преемник: {{ event.successorKey }}.</span>
         </li>
@@ -272,12 +272,12 @@ onMounted(load)
       </p>
       <p v-if="plan.successor">
         Преемник: {{ plan.successor.referenceId }} · {{ plan.successor.location }} ·
-        {{ plan.successor.roadName }} · редакция {{ plan.successor.revision }}. Проекты
+        {{ plan.successor.roadName }} · версия {{ plan.successor.revision }}. Проекты
         перепривязываются вручную после сравнения данных.
       </p>
       <ul>
         <li v-for="card in plan.items" :key="card.referenceId">
-          {{ card.referenceId }} — {{ card.location }} · {{ card.roadName }} · редакция
+          {{ card.referenceId }} — {{ card.location }} · {{ card.roadName }} · версия
           {{ card.revision }}
         </li>
       </ul>

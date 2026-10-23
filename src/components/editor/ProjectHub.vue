@@ -41,7 +41,7 @@ const {
       <h1 id="projects-heading">Проекты схем</h1>
       <p>
         Продолжите сохранённый проект, начните новую схему по карточке ПУ-66 или откройте файл
-        проекта (JSON), полученный от коллеги или из прежней версии программы.
+        проекта, полученный от коллеги или из прежней версии программы.
       </p>
     </div>
     <section v-if="recoveryCopies.length" class="module" aria-labelledby="recovery-heading">
@@ -78,12 +78,12 @@ const {
       class="setup-guide module"
       aria-labelledby="setup-heading"
     >
-      <p class="eyebrow">Первый запуск · локальная SQLite готова</p>
+      <p class="eyebrow">Первый запуск · база на этом компьютере готова</p>
       <h2 id="setup-heading">Наполните реестры на этом компьютере</h2>
       <p>
-        Локальная база находится в private-data/registry.sqlite. Добавьте недостающие реестры: знаки
-        из PDF ГОСТ Р 52290 и книги ПУ-66. Файлы выбираются с этого компьютера; после просмотра
-        изменений подтвердите запись.
+        База находится в папке данных на этом компьютере. Добавьте недостающие реестры: знаки из PDF
+        ГОСТ Р 52290 и книги ПУ-66. Файлы выбираются с этого компьютера; после просмотра изменений
+        подтвердите запись.
       </p>
       <p>
         <button type="button" class="link-button" @click="emit('help', 'first-run')">
@@ -108,8 +108,7 @@ const {
             >ПУ-66: {{ setupStatus.cards ? `${setupStatus.cards} в базе` : 'пока нет' }}</strong
           >
           <p>
-            Без карточек ПУ-66 новый проект не создаётся. Выберите сразу все XLSX (до 100 книг); для
-            пробы можно создать вымышленные книги командой npm run samples:pu66.
+            Без карточек ПУ-66 новый проект не создаётся. Выберите сразу все XLSX (до 100 книг).
           </p>
           <button type="button" @click="emit('setup-import', 'pu66-import')">
             {{ setupStatus.cards ? 'Открыть карточки' : 'Импортировать ПУ-66' }}
@@ -162,7 +161,7 @@ const {
     />
     <section v-show="projectTab === 'file'" class="module" aria-labelledby="import-title">
       <h2 id="import-title">Открыть файл проекта</h2>
-      <label for="scheme-file" class="file-label">Файл .json с вашего компьютера</label>
+      <label for="scheme-file" class="file-label">Файл проекта с вашего компьютера</label>
       <input
         id="scheme-file"
         type="file"
@@ -171,9 +170,9 @@ const {
         @change="onFileSelected"
       />
       <p class="hint">
-        Файл проекта скачивается кнопкой «Скачать файл проекта (JSON)». Подходят файлы всех прежних
-        версий программы (v1 и schemaVersion 2–9) размером до 32 МБ. Открытый файл не попадает в
-        «Мои проекты», пока вы не нажмёте «Сохранить проект».
+        Файл проекта скачивается кнопкой «Скачать файл проекта». Подходят файлы текущей и прежних
+        версий программы размером до 32 МБ. Открытый файл не попадает в «Мои проекты», пока вы не
+        нажмёте «Сохранить проект».
       </p>
       <p v-if="loading" class="hint" role="status">Проверяем файл…</p>
       <p v-if="errorMessage" class="error" role="alert">{{ errorMessage }}</p>

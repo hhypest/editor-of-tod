@@ -46,7 +46,7 @@ export class ParameterConfirmationConflict extends RevisionConflict {
   constructor() {
     super()
     this.message =
-      'Редакция документа изменилась. Обновите список параметров и сверьте новую цитату перед подтверждением; введённые данные сохранены.'
+      'Версия документа изменилась. Обновите список параметров и сверьте новую цитату перед подтверждением; введённые данные сохранены.'
   }
 }
 
@@ -386,7 +386,7 @@ export async function confirmParameter(
   const current = currentDocument(store.listDocuments(), source.documentCode, today)
   if (!current)
     throw new InvalidParameter(
-      `Прикрепите действующую редакцию ${source.documentCode} в библиотеке.`,
+      `Прикрепите действующую версию ${source.documentCode} в библиотеке.`,
       400,
       'no-document',
       'document',

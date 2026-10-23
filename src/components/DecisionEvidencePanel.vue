@@ -97,7 +97,7 @@ function valueText(value: number | Record<string, string> | null) {
                 parameter.currentDocument && parameter.currentDocument.id !== parameter.document?.id
               "
             >
-              Действующая редакция при записи: {{ parameter.currentDocument.label }}; подтверждение
+              Действующая версия при записи: {{ parameter.currentDocument.label }}; подтверждение
               значения относится к прежнему источнику.</span
             >
             <span v-for="amendment in parameter.amendments" :key="amendment.id">

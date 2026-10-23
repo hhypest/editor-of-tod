@@ -125,10 +125,10 @@ async function apply(): Promise<void> {
     if (props.scheme !== openScheme || props.locked || key.value !== selected.referenceId) return
     if (latest.revision !== selected.revision || latest.updatedAt !== selected.updatedAt) {
       preview.value = null
-      throw new Error('Карточка обновлена. Обновите список и проверьте новую редакцию.')
+      throw new Error('Карточка обновлена. Обновите список и проверьте новую версию.')
     }
     emit('apply', linkPu66Card(openScheme, latest))
-    notice.value = `Редакция № ${latest.revision} закреплена в открытом проекте. Сохраните черновик или JSON-копию.`
+    notice.value = `Версия № ${latest.revision} закреплена в открытом проекте. Сохраните проект на этом компьютере или скачайте файл проекта.`
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Не удалось закрепить карточку.'
   } finally {
@@ -162,15 +162,15 @@ onMounted(load)
       Статус карточки недоступен. Обновите список перед выпуском.
     </p>
     <p class="hint">
-      Выберите карточку из локального реестра и проверьте её данные перед закреплением. В JSON
-      попадут только показанные ниже поля, номер редакции и время обновления записи. Выбор карточки
-      не подтверждает её актуальность и не считается нормативной проверкой.
+      Выберите карточку из локального реестра и проверьте её данные перед закреплением. В проект
+      попадут только показанные ниже поля, номер версии и время обновления записи. Выбор карточки не
+      подтверждает её актуальность и не считается нормативной проверкой.
     </p>
     <p>
       Сейчас:
       <strong>{{ scheme.crossing.referenceId }}</strong>
       <template v-if="scheme.crossing.source === 'local-pu66'">
-        · локальная редакция № {{ scheme.crossing.snapshot.revision }} ({{
+        · локальная версия № {{ scheme.crossing.snapshot.revision }} ({{
           new Date(scheme.crossing.snapshot.updatedAt).toLocaleString('ru-RU')
         }})
       </template>
@@ -192,7 +192,7 @@ onMounted(load)
       <p class="hint" role="status">
         {{
           reviewStatus.kind === 'unverified'
-            ? 'Для этой редакции ПУ-66 сверка линейным подразделением не зарегистрирована.'
+            ? 'Для этой версии ПУ-66 сверка линейным подразделением не зарегистрирована.'
             : reviewStatus.kind === 'current'
               ? `Сверка зарегистрирована ${selectedVerification?.verifiedAt}; следующий срок — ${reviewStatus.nextDue}.`
               : `Срок ежегодной сверки наступил или прошёл (${reviewStatus.nextDue}). Уточните актуальность карточки.`
@@ -235,7 +235,7 @@ onMounted(load)
               <td>{{ preview.crossingWidthMetres ?? 'не указана' }}</td>
             </tr>
             <tr>
-              <th scope="row">Редакция и время обновления</th>
+              <th scope="row">Версия и время обновления</th>
               <td>{{ scheme.crossing.snapshot?.revision ?? 'не закреплено' }}</td>
               <td>
                 {{ preview.revision }} · {{ new Date(preview.updatedAt).toLocaleString('ru-RU') }}
@@ -255,7 +255,7 @@ onMounted(load)
         :disabled="busy || locked || alreadyLinked"
         @click="apply"
       >
-        {{ alreadyLinked ? 'Эта редакция уже закреплена' : 'Закрепить выбранную редакцию' }}
+        {{ alreadyLinked ? 'Эта версия уже закреплена' : 'Закрепить выбранную версию' }}
       </button>
     </div>
     <p v-if="error" class="error" role="alert">{{ error }}</p>

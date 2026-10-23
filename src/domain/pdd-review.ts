@@ -8,7 +8,7 @@ export function pddFindings(scheme: Scheme, rules: NormativeRules) {
     .filter((id) => id.startsWith('pdd-'))
     .sort()
     .map((id) => [id, rules.evidence[id]])
-  const edition = rules.pddDocument?.label ?? 'ПДД: действующая редакция не определена в библиотеке'
+  const edition = rules.pddDocument?.label ?? 'ПДД: действующая версия не определена в библиотеке'
   const basis = (data: unknown) =>
     JSON.stringify(['pdd-review-v1', rules.pddDocument, evidence, data])
   const checks = [
@@ -63,7 +63,7 @@ export function pddFindings(scheme: Scheme, rules: NormativeRules) {
     ...(!rules.pddDocument
       ? {
           markBlocked:
-            'Добавьте ПДД (постановление от 23.10.1993 № 1090) в библиотеку, укажите редакцию и дату введения. Затем сверяйте условия по этому документу.',
+            'Добавьте ПДД (постановление от 23.10.1993 № 1090) в библиотеку, укажите версию и дату введения. Затем сверяйте условия по этому документу.',
         }
       : {}),
   }))

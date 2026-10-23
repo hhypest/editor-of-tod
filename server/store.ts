@@ -105,7 +105,7 @@ export class InvalidPu66Lifecycle extends Error {}
 
 export class ProjectTooLarge extends Error {
   constructor() {
-    super('Черновик больше 32 МБ. Скачайте JSON-копию проекта.')
+    super('Черновик больше 32 МБ. Скачайте файл проекта, чтобы сохранить его отдельно.')
   }
 }
 
@@ -639,13 +639,17 @@ export class RegistryStore {
     }
     const sha256 = stored.source.originalJsonSha256
     if (typeof sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(sha256)) {
-      throw new Error('Повреждена ссылка на исходный JSON проекта в локальной базе.')
+      throw new Error(
+        'Ссылка на исходный файл проекта повреждена. Восстановите проект из резервной копии.',
+      )
     }
     const row = this.db
       .prepare('SELECT original_json FROM project_sources WHERE sha256 = ?')
       .get(sha256) as { original_json: string } | undefined
     if (!row || createHash('sha256').update(row.original_json, 'utf8').digest('hex') !== sha256) {
-      throw new Error('Исходный JSON проекта отсутствует или повреждён в локальной базе.')
+      throw new Error(
+        'Исходный файл проекта отсутствует или повреждён. Восстановите проект из резервной копии.',
+      )
     }
     const { originalJsonSha256: _hash, ...source } = stored.source
     void _hash

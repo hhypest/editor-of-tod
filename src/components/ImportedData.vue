@@ -83,11 +83,11 @@ watch(
 )
 const signArchive = ref<File | null>(null)
 const signPdf = ref<File | null>(null)
-/** Документ библиотеки, с которым сверен архив; пусто — код и редакция вводятся вручную. */
+/** Документ библиотеки, с которым сверен архив; пусто — код и версия вводятся вручную. */
 const signDocumentId = ref<number | ''>('')
 const documents = ref<DocumentRecord[]>([])
 const today = localCalendarDate(new Date())
-/** Основные документы для знаков: действующая редакция первой. */
+/** Основные документы для знаков: действующая версия первой. */
 const signDocuments = computed(() => {
   const statuses = documentStatuses(documents.value, today)
   return documents.value
@@ -132,7 +132,7 @@ function verificationStatus(card: Crossing): string {
     card.verification?.verifiedAt ?? null,
     localCalendarDate(new Date()),
   )
-  if (status.kind === 'unverified') return 'Сверка этой редакции не зарегистрирована.'
+  if (status.kind === 'unverified') return 'Сверка этой версии не зарегистрирована.'
   const suffix = `Следующий срок: ${status.nextDue}.`
   if (status.kind === 'due') return `Сверить сегодня. ${suffix}`
   if (status.kind === 'overdue') return `Срок сверки прошёл. ${suffix}`
@@ -227,7 +227,7 @@ async function applySigns(): Promise<void> {
     if (signPdfInput.value) signPdfInput.value.value = ''
     await load()
     emit('signsUpdated')
-    signNotice.value = `Знаки: новых ${result.added}, изменено изображений ${result.changedCodes.length}, сменилась только редакция источника у ${result.relabelled}, исключено из текущего набора ${result.retired}. ${result.backup ? `Копия SQLite: private-data/backups/${result.backup}.` : 'Изменений нет.'}`
+    signNotice.value = `Знаки: новых ${result.added}, изменено изображений ${result.changedCodes.length}, сменилась только версия источника у ${result.relabelled}, исключено из текущего набора ${result.retired}. ${result.backup ? `Резервная копия: private-data/backups/${result.backup}.` : 'Изменений нет.'}`
   } catch (cause) {
     signPlan.value = null
     signError.value = `${cause instanceof Error ? cause.message : 'Не удалось записать каталог.'} Повторите просмотр перед записью.`
@@ -305,7 +305,7 @@ async function saveVerification(): Promise<void> {
     })
     await load()
     await loadVerificationHistory(verificationKey.value)
-    notice.value = 'Результат сверки записан для выбранной редакции ПУ-66.'
+    notice.value = 'Результат сверки записан для выбранной версии ПУ-66.'
     verifiedAt.value = ''
     verifiedBy.value = ''
   } catch (cause) {
@@ -366,8 +366,8 @@ onMounted(load)
       <p>
         Выберите до {{ MAX_WEB_PU66_FILES }} разрешённых файлов XLSX размером до 4 МБ каждый (всего
         до 40 МБ) — один просмотр и одна резервная копия на пакет. Сначала просмотрите план, затем
-        подтвердите запись. Книги отправляются только локальному процессу на этом компьютере; перед
-        изменением SQLite создаётся резервная копия.
+        подтвердите запись. Книги обрабатываются только на этом компьютере; перед изменением базы
+        создаётся резервная копия.
       </p>
       <label>
         Книги ПУ-66
@@ -396,8 +396,8 @@ onMounted(load)
               item.action === 'add'
                 ? 'новая карточка'
                 : item.action === 'update'
-                  ? `обновление редакции ${item.currentRevision}`
-                  : `редакция ${item.currentRevision} без изменений`
+                  ? `обновление версии ${item.currentRevision}`
+                  : `версия ${item.currentRevision} без изменений`
             }}.
             <template v-if="item.status?.excluded && item.status.event">
               <p>
@@ -442,7 +442,7 @@ onMounted(load)
           "
           @click="applyImport"
         >
-          Подтвердить импорт и создать копию SQLite
+          Подтвердить импорт и создать резервную копию
         </button>
       </div>
     </div>
@@ -456,7 +456,7 @@ onMounted(load)
         {{ card.crossingWidthMetres ?? 'не указана' }} м; длина пересечения:
         {{ card.crossingRoadLengthMetres ?? 'не указана' }} м; автомобили в сутки:
         {{ card.carCountPerDay ?? 'не указано' }}.
-        <small>Локальный ключ: {{ card.referenceId }}; редакция {{ card.revision }}.</small>
+        <small>Локальный ключ: {{ card.referenceId }}; версия {{ card.revision }}.</small>
         <small>{{ verificationStatus(card) }}</small>
         <small v-if="card.verification">
           Дата: {{ card.verification.verifiedAt }}; выверил(а): {{ card.verification.verifiedBy }}.
@@ -468,15 +468,15 @@ onMounted(load)
       <h4>Учёт ежегодной сверки ПУ-66</h4>
       <p>
         Линейное подразделение выверяет ПУ-66 30 января каждого года. Импорт Excel не отмечает
-        карточку как выверенную. Записывайте результат только после фактической сверки; новая
-        редакция файла потребует отдельной записи.
+        карточку как выверенную. Записывайте результат только после фактической сверки; новая версия
+        файла потребует отдельной записи.
       </p>
       <label>
         Карточка
         <select v-model="verificationKey" :disabled="busy" required>
           <option value="">Выберите карточку</option>
           <option v-for="card in crossings" :key="card.referenceId" :value="card.referenceId">
-            {{ card.location }} · редакция {{ card.revision }}
+            {{ card.location }} · версия {{ card.revision }}
           </option>
         </select>
       </label>
@@ -496,7 +496,7 @@ onMounted(load)
       <p v-else-if="!verificationHistory.length">Записей пока нет.</p>
       <ul v-else>
         <li v-for="(record, index) in verificationHistory" :key="index">
-          Редакция {{ record.cardRevision }} · сверена {{ record.verifiedAt }} ·
+          Версия {{ record.cardRevision }} · сверена {{ record.verifiedAt }} ·
           {{ record.verifiedBy }} · запись внесена {{ record.recordedAt }}
         </li>
       </ul>
@@ -509,16 +509,16 @@ onMounted(load)
       <div class="verification-form">
         <p>
           Для PDF без таблиц изображений (например, отсканированного) каталог можно загрузить из
-          архива с парами PNG «с номером» и «без номера». Укажите редакцию ГОСТ, с которой сверяли
+          архива с парами PNG «с номером» и «без номера». Укажите версию ГОСТ, с которой сверяли
           архив. Файлы остаются только в локальной базе, перед заменой создаётся резервная копия.
-          Отсутствующие в новом архиве коды исключаются из текущего каталога, прежние редакции PNG
-          сохраняются в SQLite.
+          Отсутствующие в новом архиве коды исключаются из текущего каталога, прежние версии PNG
+          сохраняются в базе на этом компьютере.
         </p>
         <p v-if="locked" role="status">Сначала примените или отмените правки открытого проекта.</p>
         <label
           >Документ из библиотеки
           <select v-model="signDocumentId" :disabled="signBusy || locked" @change="signPlan = null">
-            <option value="">Не выбран — указать код и редакцию вручную</option>
+            <option value="">Не выбран — указать код и версию вручную</option>
             <option v-for="item in signDocuments" :key="item.document.id" :value="item.document.id">
               {{ documentLabel(item.document)
               }}{{ item.document.title ? ` — ${item.document.title}` : ''
@@ -535,8 +535,8 @@ onMounted(load)
           </select>
         </label>
         <p v-if="!signDocuments.length" class="hint">
-          PDF стандарта можно прикрепить в «Реестры» → «Нормативные документы»: тогда код, редакция
-          и хеш PDF берутся из библиотеки, а приложение подскажет, когда каталог знаков устарел.
+          PDF стандарта можно прикрепить в «Реестры» → «Нормативные документы»: тогда код, версия и
+          хеш PDF берутся из библиотеки, а приложение подскажет, когда каталог знаков устарел.
         </p>
         <template v-if="signDocumentId === ''">
           <label
@@ -548,7 +548,7 @@ onMounted(load)
               @input="signPlan = null"
           /></label>
           <label
-            >Редакция
+            >Версия
             <input
               v-model="signEdition"
               maxlength="120"
@@ -585,10 +585,10 @@ onMounted(load)
         <div v-if="signPlan" class="import-plan">
           <p>
             В архиве {{ signPlan.signCount }} знаков: новых {{ signPlan.added }}, с изменённым
-            изображением {{ signPlan.changedCodes.length }}, сменится только редакция источника
+            изображением {{ signPlan.changedCodes.length }}, сменится только версия источника
             {{ signPlan.relabelled }}, без изменений {{ signPlan.unchanged }}, исключается из
             текущего набора {{ signPlan.retired }}. Источник: {{ signPlan.source.documentCode }},
-            редакция {{ signPlan.source.edition
+            версия {{ signPlan.source.edition
             }}{{
               signPlan.source.pdfSha256
                 ? `, PDF SHA-256 ${signPlan.source.pdfSha256}`
@@ -603,7 +603,7 @@ onMounted(load)
             <summary>Исключаются из текущего набора · {{ signPlan.retiredCodes.length }}</summary>
             <p class="codes">{{ signPlan.retiredCodes.join(', ') }}</p>
             <p class="hint">
-              Проекты с закреплёнными редакциями продолжат показывать прежние PNG из истории; новые
+              Проекты с закреплёнными версиями продолжат показывать прежние PNG из истории; новые
               стойки эти коды не получат.
             </p>
           </details>
@@ -629,27 +629,27 @@ onMounted(load)
             "
             @click="applySigns"
           >
-            Подтвердить каталог и создать копию SQLite
+            Подтвердить каталог и создать резервную копию
           </button>
         </div>
       </div>
     </details>
     <p v-if="signCatalog">
-      Текущий набор: {{ signCatalog.documentCode }}, редакция {{ signCatalog.edition }},
+      Текущий набор: {{ signCatalog.documentCode }}, версия {{ signCatalog.edition }},
       {{ signCatalog.signCount }} знаков; импорт {{ signCatalog.importedAt }}.
     </p>
     <p v-if="catalogStatus.kind === 'outdated'" class="error" role="status">
       В библиотеке действует {{ documentLabel(catalogStatus.document) }}, а каталог знаков загружен
-      по редакции {{ catalogStatus.catalogEdition }}. Извлеките знаки из PDF новой редакции и
+      по версии {{ catalogStatus.catalogEdition }}. Извлеките знаки из PDF новой версии и
       перезакрепите знаки в проектах после проверки.
     </p>
-    <p v-else-if="signs.length">Для прежнего импорта редакция источника не указана.</p>
+    <p v-else-if="signs.length">Для прежнего импорта версия источника не указана.</p>
     <p>Найдено {{ signs.length }} знаков. Поиск показывает первые 48 совпадений.</p>
     <label for="sign-search">Номер знака</label>
     <input id="sign-search" v-model="search" type="search" placeholder="Например, 3.24_40_ж" />
 
     <div v-if="referenced.length" class="referenced">
-      <h4>Знаки открытого JSON-проекта</h4>
+      <h4>Знаки открытого проекта</h4>
       <ul>
         <li v-for="item in referenced" :key="item.code">
           {{ item.code }} — {{ item.found ? 'есть в каталоге' : 'не найден в каталоге' }}

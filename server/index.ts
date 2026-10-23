@@ -97,20 +97,30 @@ function json(res: ServerResponse, status: number, data: unknown): void {
 
 async function readJson(req: IncomingMessage, maxBytes = 64 * 1024): Promise<unknown> {
   if (!req.headers['content-type']?.startsWith('application/json')) {
-    throw new RequestError(415, 'Нужен Content-Type: application/json.')
+    throw new RequestError(
+      415,
+      'Программа не смогла выполнить действие. Перезапустите её и повторите.',
+    )
   }
   const chunks: Buffer[] = []
   let size = 0
   for await (const chunk of req) {
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
     size += bytes.length
-    if (size > maxBytes) throw new RequestError(413, 'Размер JSON-запроса превышен.')
+    if (size > maxBytes)
+      throw new RequestError(
+        413,
+        'Слишком много данных для одного действия. Скачайте файл проекта, перезапустите программу и повторите.',
+      )
     chunks.push(bytes)
   }
   try {
     return JSON.parse(Buffer.concat(chunks).toString('utf8'))
   } catch {
-    throw new RequestError(400, 'Некорректный JSON.')
+    throw new RequestError(
+      400,
+      'Программа не смогла прочитать данные. Перезапустите её и повторите действие.',
+    )
   }
 }
 
@@ -184,7 +194,10 @@ async function serveBuiltApp(
     res.end(body)
   } catch (error) {
     if (error instanceof RequestError) throw error
-    throw new RequestError(404, 'Сборка не найдена. Выполните npm run build перед npm run local.')
+    throw new RequestError(
+      404,
+      'Файлы интерфейса не найдены. Переустановите программу и повторите запуск.',
+    )
   }
 }
 
@@ -303,7 +316,11 @@ export function createRegistryServer(
           projectId(revisionPath[1]!),
           Number(revisionPath[2]),
         )
-        if (!record) throw new RequestError(404, 'Редакция проекта не найдена.')
+        if (!record)
+          throw new RequestError(
+            404,
+            'Версия проекта не найдена. Обновите список проектов и повторите действие.',
+          )
         json(res, 200, record)
       } else if (req.method === 'GET' && revisionListPath) {
         const id = projectId(revisionListPath[1]!)
@@ -440,9 +457,10 @@ export function createRegistryServer(
           'rev',
         )
         if (rev === null || !/^[1-9]\d*$/.test(rev) || !Number.isSafeInteger(Number(rev)))
-          throw new RequestError(400, 'Укажите редакцию изображения знака.')
+          throw new RequestError(400, 'Укажите версию изображения знака.')
         const metadata = store.getSignMetadata(code, Number(rev))
-        if (!metadata) throw new RequestError(404, 'Редакция изображения знака не найдена.')
+        if (!metadata)
+          throw new RequestError(404, 'Версия изображения знака не найдена. Обновите каталог.')
         json(res, 200, metadata)
       } else if (req.method === 'GET' && /^\/api\/signs\/[^/]+\/image$/.test(pathname)) {
         const code = decodeKey(pathname.slice('/api/signs/'.length, -'/image'.length))
@@ -455,7 +473,7 @@ export function createRegistryServer(
         const numbered = params.get('numbered') === '1'
         const rev = params.get('rev')
         if (rev !== null && (!/^[1-9]\d*$/.test(rev) || !Number.isSafeInteger(Number(rev))))
-          throw new RequestError(400, 'Неверная редакция изображения знака.')
+          throw new RequestError(400, 'Неверная версия изображения знака.')
         const asset = store.getSignPng(code, numbered, rev === null ? undefined : Number(rev))
         if (!asset) throw new RequestError(404, 'Изображение знака не найдено.')
         const etag = `"${createHash('sha256').update(asset).digest('hex')}"`
@@ -528,7 +546,11 @@ export function createRegistryServer(
         const id = projectId(restorePath[1]!)
         const { sourceRevision, expectedRevision } = projectRestoreSchema.parse(await readJson(req))
         const restored = store.restoreProject(id, sourceRevision, expectedRevision)
-        if (!restored) throw new RequestError(404, 'Редакция проекта не найдена.')
+        if (!restored)
+          throw new RequestError(
+            404,
+            'Версия проекта не найдена. Обновите список проектов и повторите действие.',
+          )
         json(res, 200, restored)
       } else if (req.method === 'POST' && pathname === '/api/backup') {
         json(res, 201, { filename: await store.createBackup() })

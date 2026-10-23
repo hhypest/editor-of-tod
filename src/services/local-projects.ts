@@ -31,7 +31,7 @@ async function request(
         'unavailable',
         'Локальная база недоступна. Повторите сохранение после восстановления связи.',
       )
-    throw new Error('Локальная база недоступна. Запустите npm run dev или npm run local.')
+    throw new Error('Программа не отвечает. Перезапустите её и повторите действие.')
   }
   let body: unknown
   try {

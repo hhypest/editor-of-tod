@@ -105,7 +105,7 @@ function show(value: string | number | null): string {
     <p v-if="error" class="error">{{ error }}</p>
     <template v-if="norms">
       <p v-if="norms.revision !== pinnedRevision" class="warning">
-        В локальной базе редакция карточки {{ norms.revision }}, в проекте закреплена
+        В локальной базе версия карточки {{ norms.revision }}, в проекте закреплена
         {{ pinnedRevision }}. Показаны сведения из базы.
       </p>
       <dl>

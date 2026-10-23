@@ -66,7 +66,7 @@ const saveState = computed(() => {
       : 'Есть неприменённый ввод'
   if (modifiedSinceLocalSave.value)
     return recoveryStatus.value === 'saved'
-      ? 'Копия восстановления записана · сохраните редакцию'
+      ? 'Копия восстановления записана · сохраните версию'
       : 'Есть несохранённые правки'
   return localRevision.value === null ? 'Не сохранён' : 'Сохранён'
 })
@@ -77,7 +77,10 @@ async function refreshSetupStatus(): Promise<void> {
       fetch('/api/pu66'),
       fetch('/api/signs'),
     ])
-    if (!cardsResponse.ok || !signsResponse.ok) throw new Error('Локальный API недоступен.')
+    if (!cardsResponse.ok || !signsResponse.ok)
+      throw new Error(
+        'Не удалось прочитать данные на этом компьютере. Перезапустите программу и повторите действие.',
+      )
     const [cards, signs]: [unknown, unknown] = await Promise.all([
       cardsResponse.json(),
       signsResponse.json(),
@@ -87,13 +90,14 @@ async function refreshSetupStatus(): Promise<void> {
     setupError.value = ''
   } catch {
     setupStatus.value = null
-    setupError.value = 'Не удалось открыть локальные реестры. Проверьте, что npm run dev запущен.'
+    setupError.value =
+      'Не удалось открыть реестры на этом компьютере. Перезапустите программу и повторите действие.'
   }
 }
 
 function onSignsUpdated(): void {
   signCatalogVersion.value++
-  // Смена документов меняет действующие редакции нормативных параметров.
+  // Смена документов меняет действующие версии нормативных параметров.
   void reloadNormativeRules()
   void refreshSetupStatus()
 }
@@ -305,8 +309,8 @@ const referencedSignIds = computed(() =>
             ><small>Нормативная проверка выполняется отдельно.</small>
           </div>
           <p v-if="imported.scheme.crossing.source === 'local-pu66'" class="private-note">
-            В проекте есть ограниченные сведения ПУ-66. Не публикуйте JSON и лист без разрешённой
-            передачи.
+            В проекте есть ограниченные сведения ПУ-66. Не публикуйте файл проекта и лист без
+            разрешённой передачи.
           </p>
         </template>
         <div v-else class="preview-empty">

@@ -220,7 +220,7 @@ function applyDraft(): void {
     selectedId.value = id
     dirty.value = false
     error.value = ''
-    status.value = `Объект ${id} применён к проекту. Сохраните проект; файл JSON можно скачать отдельно.`
+    status.value = `Объект ${id} применён к проекту. Сохраните проект; отдельный файл можно скачать в действиях с проектом.`
     emit('select', id)
     emit('apply', updated)
     emit('dirty', false)

@@ -372,7 +372,7 @@ export function useProjectSession(onProjectOpened: () => void) {
       format: 'scheme-v10',
       warnings: [
         'Схема не прошла нормативную проверку.',
-        // Редакция записана в прежнем формате: те же сообщения, что при открытии файла.
+        // Версия записана в прежнем формате: те же сообщения, что при открытии файла.
         ...(storedSchemaVersion !== undefined
           ? storedFormatWarnings(storedSchemaVersion, scheme)
           : []),
@@ -495,13 +495,13 @@ export function useProjectSession(onProjectOpened: () => void) {
         edition: string
       } | null
       if (!Array.isArray(signs) || !catalog || catalog.edition === 'не указана') {
-        throw new Error('Укажите редакцию ГОСТ при импорте каталога знаков.')
+        throw new Error('Укажите версию ГОСТ при импорте каталога знаков.')
       }
       if (imported.value?.scheme !== schemeAtStart)
         throw new Error('Проект изменился; повторите закрепление.')
       const pinned = pinSignImages(schemeAtStart, catalog, signs)
       onProjectApplied(pinned)
-      signPinMessage.value = `Закреплены редакции ${usedSignCodes(pinned).length} кодов PNG. Сохраните проект.`
+      signPinMessage.value = `Закреплены версии ${usedSignCodes(pinned).length} кодов PNG. Сохраните проект.`
     } catch (cause) {
       signPinMessage.value = cause instanceof Error ? cause.message : 'Не удалось закрепить PNG.'
     }

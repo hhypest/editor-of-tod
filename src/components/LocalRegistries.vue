@@ -72,8 +72,7 @@ async function load(): Promise<void> {
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Локальный реестр недоступен.'
     if (error.value === 'Failed to fetch' || error.value.includes('JSON')) {
-      error.value =
-        'Не удалось подключиться к локальному реестру. Запустите npm run dev или npm run local.'
+      error.value = 'Программа не отвечает. Перезапустите её и повторите действие.'
     }
   } finally {
     busy.value = false
@@ -118,7 +117,7 @@ async function saveCrossing(): Promise<void> {
     })
     clearCrossing()
     await load()
-    notice.value = `Карточка ${saved.referenceId} сохранена (редакция ${saved.revision}).`
+    notice.value = `Карточка ${saved.referenceId} сохранена (версия ${saved.revision}).`
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Не удалось сохранить карточку.'
   } finally {
@@ -138,7 +137,7 @@ async function saveNormative(): Promise<void> {
     })
     clearNormative()
     await load()
-    notice.value = `Нормативная запись ${saved.id} сохранена (редакция ${saved.revision}).`
+    notice.value = `Нормативная запись ${saved.id} сохранена (версия ${saved.revision}).`
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Не удалось сохранить запись.'
   } finally {
@@ -167,14 +166,14 @@ onMounted(load)
   <section class="registry" aria-labelledby="registry-title">
     <h2 id="registry-title">Локальные реестры</h2>
     <p>
-      Данные сохраняются в SQLite на этом компьютере. Карточки ПУ-66 не входят в код и не передаются
-      в GitHub. Линейное подразделение ОАО «РЖД» отвечает за их актуализацию.
+      Данные сохраняются в базе на этом компьютере. Карточки ПУ-66 не входят в код и не передаются в
+      GitHub. Линейное подразделение ОАО «РЖД» отвечает за их актуализацию.
     </p>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <p v-if="notice" class="notice" role="status">{{ notice }}</p>
     <button type="button" :disabled="busy" @click="load">Обновить списки</button>
     <button type="button" :disabled="busy" @click="createBackup">
-      Создать резервную копию SQLite
+      Создать резервную копию базы
     </button>
 
     <section aria-labelledby="crossings-title">
@@ -187,7 +186,7 @@ onMounted(load)
       <ul v-else class="record-list">
         <li v-for="row in crossings" :key="row.referenceId">
           <strong>{{ row.referenceId }}</strong> — {{ row.railwayLocation || 'место не указано' }} ·
-          редакция {{ row.revision }} · сверено: {{ row.verifiedAt || 'не указано' }}
+          версия {{ row.revision }} · сверено: {{ row.verifiedAt || 'не указано' }}
           <button type="button" :disabled="busy" @click="editCrossing(row)">Изменить</button>
         </li>
       </ul>
@@ -232,7 +231,7 @@ onMounted(load)
       <ul class="record-list">
         <li v-for="row in normative" :key="row.id">
           <strong>{{ row.documentCode }}</strong> — {{ row.clause }} ·
-          {{ row.reviewStatus === 'checked' ? 'проверено' : 'требует сверки' }} · редакция
+          {{ row.reviewStatus === 'checked' ? 'проверено' : 'требует сверки' }} · версия
           {{ row.revision }}
           <button type="button" :disabled="busy" @click="editNormative(row)">Изменить</button>
         </li>
@@ -253,7 +252,7 @@ onMounted(load)
           <label
             >Документ <input v-model="normativeForm.documentCode" required maxlength="240"
           /></label>
-          <label>Редакция <input v-model="normativeForm.edition" required maxlength="240" /></label>
+          <label>Версия <input v-model="normativeForm.edition" required maxlength="240" /></label>
           <label
             >Пункт или рисунок <input v-model="normativeForm.clause" required maxlength="240"
           /></label>

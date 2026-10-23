@@ -453,7 +453,7 @@ describe('project revision contracts', () => {
     local.getLocalProject.mockResolvedValue({ ...record(upgraded, 2), storedSchemaVersion: 4 })
     await session.openLocal(before.id)
     expect(session.imported.value!.warnings.join(' ')).toContain(
-      'Разрешённая скорость на подходе в формате v4 не хранилась: подставлено 60 км/ч',
+      'Разрешённая скорость на подходе в файле проекта прежней версии не хранилась: подставлено 60 км/ч',
     )
     // Редакции v5 и позже хранили скорость: сообщения нет.
     local.getLocalProject.mockResolvedValue({ ...record(upgraded, 3), storedSchemaVersion: 5 })

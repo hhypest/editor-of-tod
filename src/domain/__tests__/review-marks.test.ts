@@ -129,6 +129,17 @@ describe('manual review marks', () => {
     expect(unmarkedChecks(reopened, reviewScheme(reopened))).toEqual([])
   })
 
+  it('keeps existing marks valid after the terminology change', () => {
+    const finding = reviewScheme(project()).find((item) => item.id === 'template')!
+    const previousWording = {
+      ...finding,
+      title: finding.title.replace(/верси(ями|ям|ях|ей|я|и|ю|й)/g, 'редакци$1'),
+      detail: finding.detail.replace(/верси(ями|ям|ях|ей|я|и|ю|й)/g, 'редакци$1'),
+    }
+    expect(previousWording.detail).toContain('редакцию ОДМ')
+    expect(findingFingerprint(finding)).toBe(findingFingerprint(previousWording))
+  })
+
   it('invalidates only the check whose data changed', () => {
     let scheme = project()
     for (const check of reviewScheme(scheme).filter((finding) => finding.kind === 'verify'))
@@ -169,7 +180,7 @@ describe('manual review marks', () => {
     const signs = reviewScheme(unpinned).find((finding) => finding.id === 'signs')!
     expect(markState(unpinned, signs).status).toBe('blocked')
     expect(() => setMark(unpinned, reviewScheme(unpinned), 'signs', true, now)).toThrow(
-      'Закрепить редакции PNG',
+      'Закрепить версии PNG',
     )
     expect(unmarkedChecks(unpinned, reviewScheme(unpinned)).map((f) => f.id)).toContain('signs')
   })

@@ -26,7 +26,7 @@ export const documentMetaSchema = z.strictObject({
   /** Для изменения к стандарту — документ, который оно изменяет. */
   amendsId: z.number().int().positive().nullable(),
   note: z.string().trim().max(2_000),
-  /** Когда составитель последний раз проверял, что эта редакция действует. */
+  /** Когда составитель последний раз проверял, что эта версия действует. */
   actualCheckedAt: optionalDate,
 })
 export type DocumentMeta = z.infer<typeof documentMetaSchema>
@@ -40,7 +40,7 @@ export const documentRecordSchema = documentMetaSchema.extend({
 })
 export type DocumentRecord = z.infer<typeof documentRecordSchema>
 
-/** «гост р52290-2024» → «ГОСТ Р 52290»: год редакции хранится отдельно. */
+/** «гост р52290-2024» → «ГОСТ Р 52290»: год версии хранится отдельно. */
 export function normalizeDocumentCode(code: string): string {
   if (/^пдд(?:\s+рф|\s*[№N]\s*1090)?$/iu.test(code.trim())) return 'ПДД'
   return code
@@ -107,16 +107,16 @@ export type DocumentStatus =
   | { kind: 'undated' }
   | { kind: 'amendment'; of: number; inForce: boolean }
 
-/** Дата, с которой редакция считается введённой: указанная или 1 января года редакции. */
+/** Дата, с которой версия считается введённой: указанная или 1 января года версии. */
 function effectiveKey(document: DocumentRecord): string | null {
   if (document.effectiveFrom) return document.effectiveFrom
-  // Дата постановления и дата редакции ПДД не определяют вступление изменений в силу.
+  // Дата постановления и дата версии ПДД не определяют вступление изменений в силу.
   if (normalizeDocumentCode(document.code) === 'ПДД') return null
   return /^(19|20)\d{2}$/.test(document.edition) ? `${document.edition}-01-01` : null
 }
 
 /**
- * Статус каждой редакции на дату `today` (YYYY-MM-DD) среди документов с тем же кодом:
+ * Статус каждой версии на дату `today` (YYYY-MM-DD) среди документов с тем же кодом:
  * действующая — последняя введённая; более ранние заменены ею; более поздние ещё не введены.
  */
 export function documentStatuses(
@@ -132,7 +132,7 @@ export function documentStatuses(
       const isPdd =
         normalizeDocumentCode(document.code) === 'ПДД' ||
         (parent !== undefined && normalizeDocumentCode(parent.code) === 'ПДД')
-      // У изменяющего постановления свой код; год редакции тоже не определяет дату введения.
+      // У изменяющего постановления свой код; год версии тоже не определяет дату введения.
       const effective = isPdd ? document.effectiveFrom || null : effectiveKey(document)
       statuses.set(document.id, {
         kind: 'amendment',
@@ -157,7 +157,7 @@ export function documentStatuses(
       else statuses.set(document.id, { kind: 'superseded', by: current!.id })
     }
     for (const document of group.filter((item) => effectiveKey(item) === null)) {
-      // Без даты и года редакция считается действующей, только если она единственная.
+      // Без даты и года версия считается действующей, только если она единственная.
       statuses.set(
         document.id,
         group.length === 1 && normalizeDocumentCode(document.code) !== 'ПДД'
@@ -169,7 +169,7 @@ export function documentStatuses(
   return statuses
 }
 
-/** Действующая редакция документа с данным кодом или null. */
+/** Действующая версия документа с данным кодом или null. */
 export function currentDocument(
   documents: readonly DocumentRecord[],
   code: string,
@@ -187,7 +187,7 @@ export function currentDocument(
   )
 }
 
-/** Ежегодная проверка актуальности: редакция не проверялась больше года. */
+/** Ежегодная проверка актуальности: версия не проверялась больше года. */
 export function actualityCheckDue(document: DocumentRecord, today: string): boolean {
   if (!document.actualCheckedAt) return true
   const next = new Date(`${document.actualCheckedAt}T00:00:00Z`)
@@ -202,8 +202,8 @@ export type CatalogEditionStatus =
   | { kind: 'outdated'; catalogEdition: string; document: DocumentRecord }
 
 /**
- * Совпадает ли редакция источника знаков (каталога или закрепления проекта) с действующей
- * редакцией этого документа в библиотеке.
+ * Совпадает ли версия источника знаков (каталога или закрепления проекта) с действующей
+ * версией этого документа в библиотеке.
  */
 export function catalogEditionStatus(
   source: { documentCode: string; edition: string } | null,

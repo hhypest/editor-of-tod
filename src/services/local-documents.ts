@@ -41,7 +41,7 @@ async function send(path: string, method: string, body?: unknown): Promise<unkno
       body: body === undefined ? undefined : JSON.stringify(body),
     })
   } catch {
-    throw new Error('Локальный реестр недоступен. Запустите npm run dev или npm run local.')
+    throw new Error('Программа не отвечает. Перезапустите её и повторите действие.')
   }
   const result = await localJson(response)
   if (!response.ok)
