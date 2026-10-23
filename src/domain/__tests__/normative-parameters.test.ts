@@ -34,6 +34,7 @@ describe('normative parameters', () => {
     expect(tables.map((definition) => definition.id).sort()).toEqual([
       'gost-plate-limit',
       'gost-sign-distances-settlement',
+      'gost-single-warning-distance',
       'gost-speed-step-interval',
       'gost-warning-distance',
       'gost-work-traffic',
@@ -122,6 +123,13 @@ describe('normative parameters', () => {
         outside,
       )
     }
+    const single = parameterDefinition('gost-single-warning-distance')!
+    if (single.type !== 'table') throw new Error('Expected table')
+    const key = Object.keys(single.fallback)[0]!
+    expect(valueProblem(single, single.fallback)).toBeNull()
+    expect(valueProblem(single, { [key]: '15–10' })).toContain('от меньшего')
+    expect(valueProblem(single, { [key]: '0–15' })).toContain('положительного')
+
     const plates = parameterDefinition('gost-plate-limit')!
     if (plates.type !== 'table') throw new Error('Expected table')
     expect(valueProblem(plates, plates.fallback)).toBeNull()

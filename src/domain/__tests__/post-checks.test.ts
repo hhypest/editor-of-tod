@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { createUnlinkedScheme } from '../create-scheme'
 import { schemeSchema, type Scheme } from '../model'
 import { PROTOTYPE_RULES, rulesFrom, type ParameterState } from '../normative-parameters'
-import { plateCountProblems, speedSignKmh, speedSteps, stepIntervalProblems } from '../post-checks'
+import {
+  plateCountProblems,
+  singleWarningProblems,
+  speedSignKmh,
+  speedSteps,
+  stepIntervalProblems,
+} from '../post-checks'
 import { reviewScheme } from '../review-scheme'
 import { rebuildTemplatePlacements } from '../template-placements'
 
@@ -245,6 +251,79 @@ describe('intervals between consecutive 3.24 signs (ГОСТ Р 52289, п. 5.4.2
     expect(finding(narrow, 'speed-step-interval', rules)!.basis).not.toBe(
       finding(narrow, 'speed-step-interval')!.basis,
     )
+  })
+})
+
+describe('single warning sign at short-term works (ГОСТ Р 52289, п. 5.2.27)', () => {
+  function oneLeftWarning(scheme: Scheme, metres: number, signIds = ['1.25']) {
+    return schemeSchema.parse({
+      ...scheme,
+      placements: scheme.placements.flatMap((placement): Scheme['placements'] => {
+        if (placement.kind !== 'sign-post') return [placement]
+        if (placement.templateSlot === 'post2:L:start') return []
+        if (placement.templateSlot === 'post2:L:warning')
+          return [
+            {
+              ...placement,
+              signIds,
+              distance: { by: 'metres' as const, approach: 'left' as const, metres },
+            },
+          ]
+        return [placement]
+      }),
+    })
+  }
+
+  it('does not warn about the ordinary template with a repeated sign at the start of works', () => {
+    expect(singleWarningProblems(example('in'), PROTOTYPE_RULES)).toBeNull()
+    expect(finding(example('in'), 'single-warning-distance')).toBeUndefined()
+  })
+
+  it('accepts the narrow special case at both range boundaries', () => {
+    for (const metres of [10, 15]) {
+      const scheme = oneLeftWarning(example('in'), metres)
+      expect(singleWarningProblems(scheme, PROTOTYPE_RULES)).toBeNull()
+    }
+  })
+
+  it('names the post, distance, plate and confirmed clause outside the special case', () => {
+    const scheme = oneLeftWarning(example('in'), 100, ['1.25', '8.1.1_100'])
+    expect(singleWarningProblems(scheme, PROTOTYPE_RULES)).toMatchObject({
+      range: [10, 15],
+      problems: [{ approach: 'left', metres: 100, hasDistancePlate: true }],
+    })
+    const item = finding(scheme, 'single-warning-distance')!
+    expect(item).toMatchObject({ kind: 'verify', path: 'placements' })
+    expect(item.detail).toContain('стойка №')
+    expect(item.detail).toContain('100 м, есть табличка 8.1.1')
+    expect(item.detail).toContain('от 10 до 15 м')
+    expect(item.detail).toContain('ГОСТ Р 52289, п. 5.2.27')
+    expect(item.detail).toContain('переносной опоре')
+  })
+
+  it('requires exactly one warning sign, not one post with several warning signs', () => {
+    const scheme = oneLeftWarning(example('in'), 100, ['1.25', '1.25_ж'])
+    expect(singleWarningProblems(scheme, PROTOTYPE_RULES)).toBeNull()
+  })
+
+  it('does not generalize the special case to long works or speed above 40 km/h', () => {
+    const long = oneLeftWarning(example('in'), 100)
+    long.parameters.workConditions.kind = 'long'
+    expect(singleWarningProblems(long, PROTOTYPE_RULES)).toBeNull()
+    const fast = oneLeftWarning(example('in'), 100)
+    fast.parameters.speedStagesKmh[2] = 50
+    expect(singleWarningProblems(fast, PROTOTYPE_RULES)).toBeNull()
+  })
+
+  it('invalidates a manual mark when the parameter evidence changes', () => {
+    const scheme = oneLeftWarning(example('in'), 100)
+    const initial = finding(scheme, 'single-warning-distance')!
+    const confirmed = {
+      ...PROTOTYPE_RULES,
+      confirmed: { ...PROTOTYPE_RULES.confirmed, 'gost-single-warning-distance': true },
+      evidence: { ...PROTOTYPE_RULES.evidence, 'gost-single-warning-distance': 'revision-1' },
+    }
+    expect(finding(scheme, 'single-warning-distance', confirmed)!.basis).not.toBe(initial.basis)
   })
 })
 

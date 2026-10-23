@@ -534,4 +534,57 @@ describe('normative parameters from library documents', () => {
     ])
     expect(state(amended, 'odm-signs-taper').amendments).toEqual([])
   })
+
+  it('tracks amendments № 1 and № 2 for the single warning clause 5.2.27', async () => {
+    const store = library()
+    const document = await add(
+      store,
+      textPdf([
+        [
+          '5.2.27. Учебный текст пункта: при краткосрочных работах знак 1.25 допускается устанавливать на расстоянии 10-15 м от места работ.',
+        ],
+      ]),
+      { code: 'ГОСТ Р 52289', kind: 'rules', edition: '2019', effectiveFrom: '2020-01-01' },
+    )
+    const definition = parameterDefinitions.find(
+      (item) => item.id === 'gost-single-warning-distance',
+    )!
+    await confirmParameter(
+      store,
+      definition.id,
+      {
+        value: definition.fallback,
+        confirmedBy: 'Учебный составитель',
+        note: 'Учебная сверка особого случая',
+        expectedDocumentId: document.id,
+      },
+      now,
+    )
+    expect(rulesFrom(await listParameterStates(store, now)).singleWarningDistance).toEqual([10, 15])
+
+    await add(store, textPdf([['Изменение 1: пункт 5.2.27 изложить в новой редакции.']]), {
+      code: 'Изменение № 1 к ГОСТ Р 52289',
+      edition: '2025',
+      effectiveFrom: '2026-01-01',
+      amendsId: document.id,
+    })
+    const first = await listParameterStates(store, now)
+    expect(state(first, definition.id).status.kind).toBe('changed')
+    expect(state(first, definition.id).amendments).toEqual(['Изменение № 1 к ГОСТ Р 52289 (2025)'])
+
+    await add(store, textPdf([['Изменение 2: уточнить пункт 5.2.27.']]), {
+      code: 'Изменение № 2 к ГОСТ Р 52289',
+      edition: '2026',
+      effectiveFrom: '2026-07-01',
+      amendsId: document.id,
+    })
+    const second = await listParameterStates(store, now)
+    expect(state(second, definition.id).amendments).toEqual([
+      'Изменение № 1 к ГОСТ Р 52289 (2025)',
+      'Изменение № 2 к ГОСТ Р 52289 (2026)',
+    ])
+    const rules = rulesFrom(second)
+    expect(rules.confirmed[definition.id]).toBe(false)
+    expect(rules.parameterBasis[definition.id]?.amendments).toHaveLength(2)
+  })
 })

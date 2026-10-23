@@ -38,6 +38,7 @@ import { decimalComma } from '../domain/number-format'
 import { useNormativeRules } from '../composables/useNormativeRules'
 import Pu66NormsPanel from './Pu66NormsPanel.vue'
 import { formatPhone, PHONE_PLACEHOLDER } from '../domain/title-block'
+import { schemeSettlementSuggestion } from '../domain/settlement-suggestion'
 
 const props = defineProps<{
   scheme: Scheme
@@ -126,6 +127,16 @@ const location = computed({
     markDirty()
   },
 })
+
+const settlementHint = computed(() =>
+  draft.value.parameters.location === 'in' ? null : schemeSettlementSuggestion(props.scheme),
+)
+function applySettlementHint(): void {
+  if (props.locked || !settlementHint.value) return
+  location.value = 'in'
+  status.value =
+    'Местоположение изменено в вводе формы по вашему подтверждению. Проверьте скорость и расстояния, затем примените правки.'
+}
 
 /** Скорость применяется по завершении ввода (`v-model.lazy`): ступени пересчитываются один раз. */
 const approachSpeed = computed({
@@ -493,6 +504,16 @@ function applyDraft(): void {
         </button>
         <WorkConditionsFields v-model="draft.parameters.workConditions" />
         <h3>Местоположение, скорость и типоразмер знаков</h3>
+        <div v-if="settlementHint" class="advice" data-test="settlement-suggestion">
+          <p>
+            В названии дороги из ПУ-66 есть «{{ settlementHint.marker }}». Возможно, место работ
+            находится в населённом пункте. Это предположение по названию дороги, а не вывод о
+            границах населённого пункта.
+          </p>
+          <button type="button" :disabled="locked" @click="applySettlementHint">
+            Подтвердить: в населённом пункте
+          </button>
+        </div>
         <div class="fields with-marks">
           <label
             ><span class="caption">Местоположение</span>
