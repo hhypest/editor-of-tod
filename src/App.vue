@@ -8,13 +8,41 @@ import { reviewScheme } from './domain/review-scheme'
 import { usedSignCodes } from './domain/sign-images'
 import { useProjectSession } from './composables/useProjectSession'
 import { useNormativeRules } from './composables/useNormativeRules'
+import { parameterDefinitions } from './domain/normative-parameters'
+import type { FirstRunStatus } from './presentation/first-run'
 
 import ProjectHub from './components/editor/ProjectHub.vue'
 import RegistryHub from './components/editor/RegistryHub.vue'
 import EditorWorkspace from './components/editor/EditorWorkspace.vue'
 import { useEditorNavigation } from './composables/useEditorNavigation'
-const { reload: reloadNormativeRules, rules: normativeRules } = useNormativeRules()
-const setupStatus = ref<{ cards: number; signs: number } | null>(null)
+const {
+  reload: reloadNormativeRules,
+  rules: normativeRules,
+  states: normativeStates,
+} = useNormativeRules()
+const setupRegistryStatus = ref<{ cards: number; signs: number } | null>(null)
+const setupStatus = computed<FirstRunStatus | null>(() => {
+  if (!setupRegistryStatus.value) return null
+  const confirmed = new Set(
+    normativeStates.value
+      .filter((state) => state.status.kind === 'confirmed')
+      .map((state) => state.id),
+  )
+  const readiness = (definitions: typeof parameterDefinitions) => ({
+    confirmed: definitions.filter((definition) => confirmed.has(definition.id)).length,
+    total: definitions.length,
+  })
+  return {
+    ...setupRegistryStatus.value,
+    parameters: readiness(parameterDefinitions),
+    pdd: readiness(
+      parameterDefinitions.filter(
+        (definition) =>
+          'documentCode' in definition.source && definition.source.documentCode === 'ПДД',
+      ),
+    ),
+  }
+})
 const setupError = ref('')
 const session = useProjectSession(() => showView('source'))
 const {
@@ -86,10 +114,10 @@ async function refreshSetupStatus(): Promise<void> {
       signsResponse.json(),
     ])
     if (!Array.isArray(cards) || !Array.isArray(signs)) throw new Error('Реестры недоступны.')
-    setupStatus.value = { cards: cards.length, signs: signs.length }
+    setupRegistryStatus.value = { cards: cards.length, signs: signs.length }
     setupError.value = ''
   } catch {
-    setupStatus.value = null
+    setupRegistryStatus.value = null
     setupError.value =
       'Не удалось открыть реестры на этом компьютере. Перезапустите программу и повторите действие.'
   }

@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import NewScheme from '../NewScheme.vue'
 import LocalProjects from '../LocalProjects.vue'
+import FirstRunWizard from '../FirstRunWizard.vue'
 import type { ProjectSession } from '../../composables/useProjectSession'
 import type { ProjectTab, SetupImportTarget } from '../../presentation/editor-navigation'
+import type { FirstRunStatus } from '../../presentation/first-run'
 const props = defineProps<{
   session: ProjectSession
   projectTab: ProjectTab
   active: boolean
-  setupStatus: { cards: number; signs: number } | null
+  setupStatus: FirstRunStatus | null
   setupError: string
 }>()
 const emit = defineEmits<{
@@ -73,53 +75,12 @@ const {
         </li>
       </ul>
     </section>
-    <section
-      v-if="setupStatus && (!setupStatus.signs || !setupStatus.cards)"
-      class="setup-guide module"
-      aria-labelledby="setup-heading"
-    >
-      <p class="eyebrow">Первый запуск · база на этом компьютере готова</p>
-      <h2 id="setup-heading">Наполните реестры на этом компьютере</h2>
-      <p>
-        База находится в папке данных на этом компьютере. Добавьте недостающие реестры: знаки из PDF
-        ГОСТ Р 52290 и книги ПУ-66. Файлы выбираются с этого компьютера; после просмотра изменений
-        подтвердите запись.
-      </p>
-      <p>
-        <button type="button" class="link-button" @click="emit('help', 'first-run')">
-          Порядок настройки в справке
-        </button>
-      </p>
-      <ol class="setup-steps">
-        <li>
-          <strong
-            >Знаки: {{ setupStatus.signs ? `${setupStatus.signs} в базе` : 'пока нет' }}</strong
-          >
-          <p>
-            Прикрепите PDF ГОСТ Р 52290 в «Нормативных документах» и извлеките из него знаки (или
-            загрузите ZIP с PNG).
-          </p>
-          <button type="button" @click="emit('setup-import', 'pdf-sign-import')">
-            {{ setupStatus.signs ? 'Открыть каталог' : 'Извлечь знаки из PDF' }}
-          </button>
-        </li>
-        <li>
-          <strong
-            >ПУ-66: {{ setupStatus.cards ? `${setupStatus.cards} в базе` : 'пока нет' }}</strong
-          >
-          <p>
-            Без карточек ПУ-66 новый проект не создаётся. Выберите сразу все XLSX (до 100 книг).
-          </p>
-          <button type="button" @click="emit('setup-import', 'pu66-import')">
-            {{ setupStatus.cards ? 'Открыть карточки' : 'Импортировать ПУ-66' }}
-          </button>
-        </li>
-      </ol>
-      <p class="hint">
-        Импорт не отмечает ежегодную сверку ПУ-66; её регистрирует линейное подразделение после
-        фактической проверки.
-      </p>
-    </section>
+    <FirstRunWizard
+      v-if="setupStatus"
+      :status="setupStatus"
+      @navigate="emit('setup-import', $event)"
+      @help="emit('help', 'first-run')"
+    />
     <p v-if="setupError" class="feedback error" role="alert">{{ setupError }}</p>
     <div class="tabs" role="group" aria-label="Способ открытия проекта">
       <button

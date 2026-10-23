@@ -14,37 +14,6 @@
   border-color: #7aae92;
   color: #154e3d;
 }
-.setup-guide {
-  border-color: #a7c9b5;
-  background: #f8fcf8;
-}
-.setup-guide h2 {
-  margin-bottom: 0.5rem;
-}
-.setup-guide > p {
-  line-height: 1.5;
-}
-.setup-steps {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 0.8rem;
-  padding: 0;
-  list-style: none;
-}
-.setup-steps li {
-  padding: 1rem;
-  border: 1px solid #d3e3d8;
-  border-radius: 0.6rem;
-  background: #fff;
-}
-.setup-steps strong {
-  display: block;
-}
-.setup-steps p {
-  color: #586d65;
-  font-size: 0.88rem;
-  line-height: 1.5;
-}
 .file-label {
   display: block;
   margin-bottom: 0.55rem;

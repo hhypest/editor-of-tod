@@ -115,10 +115,16 @@ export function useEditorNavigation({
     }
   }
   async function openSetupImport(target: SetupImportTarget): Promise<void> {
-    registryTab.value = 'imports'
+    registryTab.value =
+      target === 'normative-documents'
+        ? 'documents'
+        : target === 'normative-parameters'
+          ? 'parameters'
+          : 'imports'
     showView('registries')
     await nextTick()
-    document.getElementById(target)?.scrollIntoView({ block: 'start' })
+    if (target === 'pdf-sign-import' || target === 'pu66-import')
+      document.getElementById(target)?.scrollIntoView({ block: 'start' })
   }
 
   onMounted(() => void chooseStartTab())
