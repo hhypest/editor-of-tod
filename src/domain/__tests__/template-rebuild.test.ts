@@ -180,6 +180,49 @@ describe('automatic rebuild of template objects on stage 2 edits (#106)', () => 
     expect(autoRebuildTemplate(built, visibility, PROTOTYPE_RULES)).toEqual({ kind: 'none' })
   })
 
+  it('recognizes a built template after every original object was edited manually', () => {
+    const built = rebuildTemplatePlacements(example(18, 'in', 'two')).scheme
+    const before = built.placements.reduce(
+      (scheme, placement) => movePlacement(scheme, placement.id, 0, 1),
+      built,
+    )
+    expect(before.placements.every((placement) => !placement.generatedByTemplate)).toBe(true)
+    const next = withParameters(before, { location: 'out', approachSpeedKmh: 90 })
+    const result = autoRebuildTemplate(before, next, PROTOTYPE_RULES)
+    if (result.kind !== 'rebuilt') throw new Error(`Expected rebuild, got ${result.kind}`)
+    expect(manualOf(result.scheme)).toEqual(before.placements)
+    expect(result.changes.added).toEqual(
+      expect.arrayContaining(['первая ступень 3.24 слева', 'скорость в зоне справа']),
+    )
+    expect(result.message).toContain('Изменённых вручную объектов шаблона')
+    expect(new Set(result.scheme.placements.map((placement) => placement.id)).size).toBe(
+      result.scheme.placements.length,
+    )
+  })
+
+  it('reports preserved manual slots even when the generated objects did not change', () => {
+    const withLeftEdit = builtWithManualEdits(18, 'two')
+    const right = withLeftEdit.placements.find((item) => item.templateSlot === 'post2:R:speed1')!
+    const before = movePlacement(withLeftEdit, right.id, 5, 0)
+    const next = withParameters(before, { speedStagesKmh: [60, 50, 40] })
+    const result = autoRebuildTemplate(before, next, PROTOTYPE_RULES)
+    if (result.kind !== 'rebuilt') throw new Error(`Expected notice, got ${result.kind}`)
+    expect(result.changes).toEqual({
+      changed: [],
+      added: [],
+      removed: [],
+      keptSlots: 2,
+      staleSlots: 0,
+    })
+    expect(result.scheme.placements).toEqual(before.placements)
+    expect(result.scheme.nextPlacementId).toBe(before.nextPlacementId)
+    expect(result.scheme.parameters.speedStagesKmh).toEqual([60, 50, 40])
+    expect(result.message).toContain(
+      'Типовые объекты проверены по новым параметрам: изменений нет.',
+    )
+    expect(result.message).toContain('оставленных без замены: 2 — проверьте')
+  })
+
   it('keeps the previous objects and explains why when the new parameters cannot be built', () => {
     const before = rebuildTemplatePlacements(example(18, 'out', 'two')).scheme
     // Знаки 2.6/2.7 с отводом 10 м: шаблон не собирается до отвода по табл. И.1.

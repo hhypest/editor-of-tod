@@ -301,6 +301,38 @@ describe('single warning sign at short-term works (ГОСТ Р 52289, п. 5.2.27
     expect(item.detail).toContain('переносной опоре')
   })
 
+  it('checks only distance plates belonging to the warning sign on a shared post', () => {
+    const otherPlate = oneLeftWarning(example('in'), 10, ['1.25', '3.24_40', '8.1.1_10'])
+    expect(singleWarningProblems(otherPlate, PROTOTYPE_RULES)).toBeNull()
+    const ownPlate = oneLeftWarning(example('in'), 10, ['1.25', '8.1.1_10', '3.24_40'])
+    expect(singleWarningProblems(ownPlate, PROTOTYPE_RULES)?.problems).toEqual([
+      expect.objectContaining({ approach: 'left', metres: 10, hasDistancePlate: true }),
+    ])
+  })
+
+  it('uses the confirmed maximum speed for the special case instead of a fixed threshold', () => {
+    const scheme = oneLeftWarning(example('in'), 100)
+    expect(
+      singleWarningProblems(scheme, { ...PROTOTYPE_RULES, singleWarningMaxSpeedKmh: 30 }),
+    ).toBeNull()
+    scheme.parameters.speedStagesKmh[2] = 50
+    const rules = { ...PROTOTYPE_RULES, singleWarningMaxSpeedKmh: 60 }
+    expect(singleWarningProblems(scheme, rules)).not.toBeNull()
+    expect(finding(scheme, 'single-warning-distance', rules)!.detail).toContain('60 км/ч')
+  })
+
+  it('does not infer a single warning sign when another warning has no assigned approach', () => {
+    const before = oneLeftWarning(example('in'), 100)
+    const scheme = schemeSchema.parse({
+      ...before,
+      placements: before.placements.map((placement) =>
+        placement.templateSlot === 'post2:R:warning' ? { ...placement, distance: null } : placement,
+      ),
+    })
+    expect(singleWarningProblems(scheme, PROTOTYPE_RULES)).toBeNull()
+    expect(reviewScheme(scheme).some((item) => item.title === 'Стойки без расстояния')).toBe(true)
+  })
+
   it('requires exactly one warning sign, not one post with several warning signs', () => {
     const scheme = oneLeftWarning(example('in'), 100, ['1.25', '1.25_ж'])
     expect(singleWarningProblems(scheme, PROTOTYPE_RULES)).toBeNull()

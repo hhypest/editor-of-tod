@@ -114,14 +114,29 @@ export type SingleWarningProblem = {
 export function singleWarningProblems(
   scheme: Scheme,
   rules: NormativeRules,
-): { range: readonly [number, number]; problems: SingleWarningProblem[] } | null {
+): {
+  range: readonly [number, number]
+  maxSpeedKmh: number
+  problems: SingleWarningProblem[]
+} | null {
   if (
     scheme.parameters.workConditions.kind !== 'short' ||
-    scheme.parameters.speedStagesKmh[2] > 40 ||
+    scheme.parameters.speedStagesKmh[2] > rules.singleWarningMaxSpeedKmh ||
     !rules.singleWarningDistance
   )
     return null
   const range = rules.singleWarningDistance
+  // Без подхода хотя бы одного знака нельзя утверждать, что на другом подходе знак одиночный.
+  // Стойки без расстояния по-прежнему перечисляются отдельным пунктом ручной сверки.
+  if (
+    scheme.placements.some(
+      (placement) =>
+        placement.kind === 'sign-post' &&
+        !placement.distance &&
+        placement.signIds.some((code) => /^1\.25(?:_|$)/.test(code)),
+    )
+  )
+    return null
   const problems: SingleWarningProblem[] = []
   for (const approach of ['left', 'right'] as const) {
     const posts = scheme.placements.filter(
@@ -138,9 +153,14 @@ export function singleWarningProblems(
     const post = posts[0]!
     const metres = postMetres(post.distance!, scheme.parameters.signDistancesMetres)
     if (metres === null) continue
-    const hasDistancePlate = post.signIds.some((code) => /^8\.1\.1(?:_|$)/.test(code))
+    const warningColumn = postColumns(post.signIds).find((column) =>
+      /^1\.25(?:_|$)/.test(post.signIds[column[0]!]!),
+    )
+    const hasDistancePlate = Boolean(
+      warningColumn?.slice(1).some((index) => /^8\.1\.1(?:_|$)/.test(post.signIds[index]!)),
+    )
     if (metres < range[0] || metres > range[1] || hasDistancePlate)
       problems.push({ approach, postId: post.id, metres, hasDistancePlate })
   }
-  return problems.length ? { range, problems } : null
+  return problems.length ? { range, maxSpeedKmh: rules.singleWarningMaxSpeedKmh, problems } : null
 }
