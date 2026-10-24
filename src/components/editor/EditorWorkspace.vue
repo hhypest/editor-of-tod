@@ -27,8 +27,8 @@ const {
   localBusy,
   history,
   saveAsNew,
-  saveV5,
-  saveOriginal,
+  exportCurrentProject,
+  exportOriginalProject,
   stepBack,
   stepForward,
   onPu66Linked,
@@ -79,13 +79,13 @@ const inProject = computed(() =>
           <button type="button" :disabled="editorDirty || localBusy" @click="saveAsNew">
             Сохранить как новый проект
           </button>
-          <button type="button" :disabled="editorDirty || localBusy" @click="saveV5">
+          <button type="button" :disabled="editorDirty || localBusy" @click="exportCurrentProject">
             Скачать файл проекта
           </button>
           <button
             v-if="imported.scheme.source.kind === 'legacy-html-v1'"
             type="button"
-            @click="saveOriginal"
+            @click="exportOriginalProject"
           >
             Скачать исходный файл
           </button>

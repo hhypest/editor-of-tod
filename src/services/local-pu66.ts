@@ -6,6 +6,7 @@ import {
   type Pu66VerificationWrite,
 } from '../domain/pu66-review'
 import { localJson } from './json-response'
+import { parseLocalData, requestLocalData } from './local-data'
 import {
   pu66StatusSchema,
   pu66LifecycleEventSchema,
@@ -33,6 +34,16 @@ const pu66ListEntrySchema = z.object({
   verification: verificationSchema.nullable(),
 })
 export type Pu66ListEntry = z.infer<typeof pu66ListEntrySchema>
+
+const importSummarySchema = pu66ListEntrySchema.extend({
+  crossingWidthMetres: z.union([z.number(), z.string()]).nullable(),
+  crossingRoadLengthMetres: z.union([z.number(), z.string()]).nullable(),
+  carCountPerDay: z.union([z.number(), z.string()]).nullable(),
+})
+
+export async function listPu66ImportSummaries() {
+  return parseLocalData(importSummarySchema.array(), await requestLocalData('/api/pu66'))
+}
 
 export const MAX_WEB_PU66_FILES = 100
 export const MAX_WEB_PU66_FILE_BYTES = 4 * 1024 * 1024

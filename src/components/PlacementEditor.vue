@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { listSigns } from '../services/local-signs'
 import { computed, onMounted, ref, watch } from 'vue'
 import {
   createPlacementDraft,
@@ -77,9 +78,7 @@ const currentCodes = computed(() =>
 
 onMounted(async () => {
   try {
-    const response = await fetch('/api/signs')
-    if (!response.ok) throw new Error('Каталог знаков недоступен.')
-    catalog.value = (await response.json()) as SignMeta[]
+    catalog.value = await listSigns()
   } catch {
     catalogError.value =
       'Не удалось открыть локальный каталог PNG. Для стойки сначала загрузите каталог знаков в «Реестры» → «Импорт Excel и знаков».'

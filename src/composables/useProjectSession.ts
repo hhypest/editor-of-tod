@@ -8,6 +8,7 @@ import {
   storedFormatWarnings,
 } from '../domain/import'
 import type { Scheme } from '../domain/model'
+import { loadSignCatalogSnapshot } from '../services/local-signs'
 import { reportError } from '../services/diagnostics'
 import { localApiErrorCode } from '../services/api-error'
 import { rebuildTemplatePlacements, TemplateBuildError } from '../domain/template-placements'
@@ -268,7 +269,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     }
   }
 
-  function downloadJson(content: string, suffix: string): void {
+  function downloadProjectJson(content: string, suffix: string): void {
     const scheme = imported.value?.scheme
     if (!scheme) return
 
@@ -283,15 +284,15 @@ export function useProjectSession(onProjectOpened: () => void) {
     window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
   }
 
-  function saveV5(): void {
+  function exportCurrentProject(): void {
     if (imported.value && !editorDirty.value) {
-      downloadJson(exportSchemeJson(imported.value.scheme), 'v10')
+      downloadProjectJson(exportSchemeJson(imported.value.scheme), 'v10')
     }
   }
 
-  function saveOriginal(): void {
+  function exportOriginalProject(): void {
     if (imported.value?.scheme.source.kind === 'legacy-html-v1') {
-      downloadJson(imported.value.scheme.source.originalJson, 'original_v1')
+      downloadProjectJson(imported.value.scheme.source.originalJson, 'original_v1')
     }
   }
 
@@ -483,18 +484,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     const schemeAtStart = imported.value.scheme
     signPinMessage.value = ''
     try {
-      const [signResponse, catalogResponse] = await Promise.all([
-        fetch('/api/signs'),
-        fetch('/api/signs/catalog'),
-      ])
-      if (!signResponse.ok || !catalogResponse.ok)
-        throw new Error('Локальный каталог PNG недоступен.')
-      const signs = (await signResponse.json()) as Array<{ code: string; revision: number }>
-      const catalog = (await catalogResponse.json()) as {
-        id: number
-        documentCode: string
-        edition: string
-      } | null
+      const { signs, catalog } = await loadSignCatalogSnapshot()
       if (!Array.isArray(signs) || !catalog || catalog.edition === 'не указана') {
         throw new Error('Укажите версию ГОСТ при импорте каталога знаков.')
       }
@@ -627,8 +617,12 @@ export function useProjectSession(onProjectOpened: () => void) {
     openRecovery,
     discardRecovery,
     onFileSelected,
-    saveV5,
-    saveOriginal,
+    exportCurrentProject,
+    exportOriginalProject,
+    /** @deprecated Use exportCurrentProject. Kept during the compatible session refactoring. */
+    saveV5: exportCurrentProject,
+    /** @deprecated Use exportOriginalProject. */
+    saveOriginal: exportOriginalProject,
     createProject,
     saveLocally,
     saveAsNew,

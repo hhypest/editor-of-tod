@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { listSigns } from '../services/local-signs'
 import { elementLabels } from '../domain/placement-labels'
 import { computed, ref, watch } from 'vue'
 import {
@@ -61,9 +62,7 @@ watch(
     catalog.value = new Set()
     catalogUnavailable.value = false
     try {
-      const response = await fetch('/api/signs')
-      if (!response.ok) throw new Error('catalog unavailable')
-      const signs = (await response.json()) as { code: string }[]
+      const signs = await listSigns()
       if (request !== catalogRequest) return
       catalog.value = new Set([...signs.map((sign) => sign.code), ...pinnedCodes])
     } catch {

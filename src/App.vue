@@ -9,6 +9,7 @@ import { usedSignCodes } from './domain/sign-images'
 import { useProjectSession } from './composables/useProjectSession'
 import { useNormativeRules } from './composables/useNormativeRules'
 import { parameterDefinitions } from './domain/normative-parameters'
+import { loadSetupStatus } from './services/setup-status'
 import type { FirstRunStatus } from './presentation/first-run'
 
 import SetupWorkspace from './components/SetupWorkspace.vue'
@@ -149,28 +150,9 @@ let setupRequest = 0
 async function refreshSetupStatus(): Promise<void> {
   const request = ++setupRequest
   try {
-    const [cardsResponse, signsResponse, projectsResponse] = await Promise.all([
-      fetch('/api/pu66'),
-      fetch('/api/signs'),
-      fetch('/api/projects'),
-    ])
-    if (!cardsResponse.ok || !signsResponse.ok || !projectsResponse.ok)
-      throw new Error(
-        'Не удалось прочитать данные на этом компьютере. Перезапустите программу и повторите действие.',
-      )
-    const [cards, signs, projects]: [unknown, unknown, unknown] = await Promise.all([
-      cardsResponse.json(),
-      signsResponse.json(),
-      projectsResponse.json(),
-    ])
-    if (!Array.isArray(cards) || !Array.isArray(signs) || !Array.isArray(projects))
-      throw new Error('Реестры недоступны.')
+    const status = await loadSetupStatus()
     if (request !== setupRequest) return
-    setupRegistryStatus.value = {
-      cards: cards.length,
-      signs: signs.length,
-      projects: projects.length,
-    }
+    setupRegistryStatus.value = status
     setupError.value = ''
   } catch {
     if (request !== setupRequest) return
