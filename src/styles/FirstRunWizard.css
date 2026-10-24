@@ -1,0 +1,83 @@
+.setup-guide {
+  border-color: #a7c9b5;
+  background: #f8fcf8;
+}
+.setup-guide h2,
+.setup-guide h3 {
+  margin-bottom: 0.5rem;
+}
+.setup-guide > p,
+.setup-step p {
+  line-height: 1.5;
+}
+.setup-progress {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+  padding: 0;
+  list-style: none;
+}
+.setup-progress li {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid #d3e3d8;
+  border-radius: 0.6rem;
+  background: #fff;
+  color: #586d65;
+}
+.setup-progress li[aria-current='step'] {
+  border-color: #4d8f6c;
+  box-shadow: inset 3px 0 #4d8f6c;
+  color: #154e3d;
+}
+.setup-progress li[data-ready='true'] small {
+  color: #1d6b45;
+  font-weight: 700;
+}
+.setup-progress span,
+.setup-progress small {
+  font-size: 0.8rem;
+}
+.setup-step {
+  padding: 1rem;
+  border: 1px solid #d3e3d8;
+  border-radius: 0.6rem;
+  background: #fff;
+}
+.setup-readiness {
+  font-weight: 700;
+  color: #154e3d;
+}
+.setup-actions,
+.setup-navigation,
+.setup-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+.setup-navigation {
+  margin-top: 1rem;
+}
+.setup-complete {
+  padding-block: 0.75rem;
+}
+.setup-summary span {
+  flex: 1 1 280px;
+  color: #586d65;
+}
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #185ca5;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+@media (max-width: 760px) {
+  .setup-progress {
+    grid-template-columns: 1fr;
+  }
+}

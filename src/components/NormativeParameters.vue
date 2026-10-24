@@ -13,7 +13,8 @@ import { useNormativeRules } from '../composables/useNormativeRules'
 import { confirmParameter, ParameterRequestError } from '../services/local-normatives'
 import { documentPdfUrl } from '../services/local-documents'
 
-const props = defineProps<{ refreshKey?: number }>()
+const props = defineProps<{ refreshKey?: number; guided?: boolean }>()
+const emit = defineEmits<{ busy: [value: boolean] }>()
 const { states, loading, error: loadError, reload } = useNormativeRules()
 
 const openId = ref<string | null>(null)
@@ -34,6 +35,11 @@ watch(confirmedBy, (value) => {
   }
 })
 const busy = ref(false)
+watch(
+  () => busy.value || loading.value,
+  (value) => emit('busy', value),
+  { immediate: true },
+)
 const error = ref('')
 const errorField = ref<ParameterRejectionField>('request')
 const notice = ref('')
@@ -50,6 +56,27 @@ const items = computed(() =>
     state: states.value.find((state) => state.id === definition.id) ?? null,
   })),
 )
+const guidedIndex = ref(0)
+const shownItems = computed(() =>
+  props.guided ? items.value.slice(guidedIndex.value, guidedIndex.value + 1) : items.value,
+)
+function selectParameter(index: number): void {
+  if (busy.value) return
+  guidedIndex.value = index
+  openId.value = null
+  const item = items.value[index]
+  if (item) open(item.definition, item.state)
+}
+watch(
+  () => [props.guided, states.value.length] as const,
+  () => {
+    if (!props.guided || !states.value.length || openId.value) return
+    const missing = items.value.findIndex((item) => item.state?.status.kind !== 'confirmed')
+    selectParameter(missing < 0 ? 0 : missing)
+  },
+  { immediate: true },
+)
+
 const confirmedCount = computed(
   () => states.value.filter((state) => state.status.kind === 'confirmed').length,
 )
@@ -186,11 +213,21 @@ async function confirm(
     await reload()
     notice.value = `«${definition.title}»: подтверждено значение ${valueText(definition, value)}.`
     openId.value = null
+    if (props.guided) {
+      const next = items.value.findIndex((item) => item.state?.status.kind !== 'confirmed')
+      if (next >= 0) {
+        guidedIndex.value = next
+      }
+    }
   } catch (cause) {
     errorField.value = cause instanceof ParameterRequestError ? cause.field : 'request'
     error.value = cause instanceof Error ? cause.message : 'Не удалось записать подтверждение.'
   } finally {
     busy.value = false
+    if (props.guided && !openId.value) {
+      const item = items.value[guidedIndex.value]
+      if (item) open(item.definition, item.state)
+    }
   }
 }
 
@@ -224,9 +261,9 @@ function highlighted(text: string): Array<{ text: string; number: boolean }> {
 </script>
 
 <template>
-  <section class="parameters" aria-labelledby="parameters-title">
+  <section class="parameters" aria-labelledby="parameters-title" :class="{ guided }">
     <h2 id="parameters-title">Нормативные параметры</h2>
-    <p class="hint">
+    <p v-if="!guided" class="hint">
       Числа, которые программа использует в подсказках и сборке схемы. Для параметров документов
       указан документ и пункт: программа находит пункт в PDF действующей версии из «Нормативных
       документов», показывает цитату и предлагает значение. Проверьте его по тексту и подтвердите.
@@ -235,14 +272,19 @@ function highlighted(text: string): Array<{ text: string; number: boolean }> {
       значение заново. Профиль переезда и доля часа пик — отдельные решения специалиста: укажите их
       основание; загрузка стандарта их не подтверждает.
     </p>
-    <p>
+    <p v-if="!guided || !loadError">
       Подтверждено {{ confirmedCount }} из {{ parameterDefinitions.length }}.
       <button type="button" :disabled="loading" @click="reload">Обновить</button>
     </p>
     <p v-if="loading" role="status">
       Чтение текста документов… При первом запуске это до нескольких секунд.
     </p>
-    <p v-if="loadError" role="alert" class="error">{{ loadError }}</p>
+    <p v-if="loadError" role="alert" class="error">
+      {{ loadError }}
+      <button v-if="guided" type="button" :disabled="loading" @click="reload">
+        Повторить загрузку параметров
+      </button>
+    </p>
     <p v-if="notice" role="status" class="ok-text">{{ notice }}</p>
     <label class="who"
       >Кто подтверждает (для журнала)
@@ -256,9 +298,38 @@ function highlighted(text: string): Array<{ text: string; number: boolean }> {
       />
     </label>
 
+    <div v-if="guided" class="parameter-navigation">
+      <label
+        >Параметр
+        <select
+          :value="guidedIndex"
+          :disabled="busy"
+          @change="selectParameter(Number(($event.target as HTMLSelectElement).value))"
+        >
+          <option v-for="(item, index) in items" :key="item.definition.id" :value="index">
+            {{ index + 1 }}. {{ item.definition.title
+            }}{{ item.state?.status.kind === 'confirmed' ? ' — подтверждён' : '' }}
+          </option>
+        </select>
+      </label>
+      <button
+        type="button"
+        :disabled="busy || guidedIndex === 0"
+        @click="selectParameter(guidedIndex - 1)"
+      >
+        Предыдущий параметр
+      </button>
+      <button
+        type="button"
+        :disabled="busy || guidedIndex === items.length - 1"
+        @click="selectParameter(guidedIndex + 1)"
+      >
+        Следующий параметр
+      </button>
+    </div>
     <ul class="list">
       <li
-        v-for="{ definition, state } in items"
+        v-for="{ definition, state } in shownItems"
         :key="definition.id"
         :data-parameter="definition.id"
       >
@@ -424,6 +495,22 @@ function highlighted(text: string): Array<{ text: string; number: boolean }> {
 </template>
 
 <style scoped>
+.parameters.guided {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+.parameter-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.6rem;
+  margin: 1rem 0;
+}
+.parameter-navigation select {
+  max-width: 100%;
+}
 .parameters {
   margin: 1rem 0;
   padding: 2rem;

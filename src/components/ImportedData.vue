@@ -39,8 +39,9 @@ const props = defineProps<{
   locked: boolean
   /** Меняется при правке библиотеки документов или каталога в другом разделе. */
   refreshKey?: number
+  guided?: boolean
 }>()
-const emit = defineEmits<{ signsUpdated: []; pu66Updated: [] }>()
+const emit = defineEmits<{ signsUpdated: []; pu66Updated: []; busy: [value: boolean] }>()
 type Sign = { code: string; width: number; height: number }
 type Crossing = {
   referenceId: string
@@ -65,6 +66,11 @@ const importFiles = ref<File[]>([])
 const importInput = ref<HTMLInputElement | null>(null)
 const importPlan = ref<Pu66ImportPlan | null>(null)
 const importBusy = ref(false)
+watch(
+  () => importBusy.value,
+  (value) => emit('busy', value),
+  { immediate: true },
+)
 const restoreKeys = ref<string[]>([])
 const restoreActor = ref('')
 const restoreDate = ref(localCalendarDate(new Date()))
@@ -350,16 +356,20 @@ onMounted(load)
 </script>
 
 <template>
-  <section class="imported" aria-labelledby="imported-title">
-    <h2 id="imported-title">Импортированные локальные каталоги</h2>
-    <p>
+  <section class="imported" aria-labelledby="imported-title" :class="{ guided }">
+    <h2 id="imported-title">
+      {{ guided ? 'Выберите книги ПУ-66' : 'Импортированные локальные каталоги' }}
+    </h2>
+    <p v-if="!guided">
       Здесь показана краткая сводка для составителя; отдельная выборка для схемы содержит только её
       реквизиты. Полная исходная книга хранится в локальной базе. Для больших пакетов сохраняется
       командный импорт из TESTING.MD.
     </p>
     <p v-if="error" role="alert" class="error">{{ error }}</p>
     <p v-if="notice" role="status">{{ notice }}</p>
-    <button type="button" :disabled="busy || importBusy" @click="load">Обновить каталоги</button>
+    <button v-if="!guided" type="button" :disabled="busy || importBusy" @click="load">
+      Обновить каталоги
+    </button>
 
     <div class="verification-form">
       <h3 id="pu66-import">Импорт ПУ-66 из Excel</h3>
@@ -447,225 +457,248 @@ onMounted(load)
       </div>
     </div>
 
-    <h3>Локальная сверка импортированных карточек</h3>
-    <p v-if="crossings.length === 0">Импортированных карточек пока нет.</p>
-    <ul v-else>
-      <li v-for="card in crossings" :key="card.referenceId">
-        <strong>{{ card.location }}</strong> ({{ card.section }}) —
-        {{ card.roadName || 'дорога не указана' }}. Ширина:
-        {{ card.crossingWidthMetres ?? 'не указана' }} м; длина пересечения:
-        {{ card.crossingRoadLengthMetres ?? 'не указана' }} м; автомобили в сутки:
-        {{ card.carCountPerDay ?? 'не указано' }}.
-        <small>Локальный ключ: {{ card.referenceId }}; версия {{ card.revision }}.</small>
-        <small>{{ verificationStatus(card) }}</small>
-        <small v-if="card.verification">
-          Дата: {{ card.verification.verifiedAt }}; выверил(а): {{ card.verification.verifiedBy }}.
-        </small>
-      </li>
-    </ul>
-
-    <form v-if="crossings.length" class="verification-form" @submit.prevent="saveVerification">
-      <h4>Учёт ежегодной сверки ПУ-66</h4>
-      <p>
-        Линейное подразделение выверяет ПУ-66 30 января каждого года. Импорт Excel не отмечает
-        карточку как выверенную. Записывайте результат только после фактической сверки; новая версия
-        файла потребует отдельной записи.
-      </p>
-      <label>
-        Карточка
-        <select v-model="verificationKey" :disabled="busy" required>
-          <option value="">Выберите карточку</option>
-          <option v-for="card in crossings" :key="card.referenceId" :value="card.referenceId">
-            {{ card.location }} · версия {{ card.revision }}
-          </option>
-        </select>
-      </label>
-      <label
-        >Фактическая дата сверки
-        <input v-model="verifiedAt" type="date" :max="localCalendarDate(new Date())" required
-      /></label>
-      <label
-        >Линейное подразделение / ответственный
-        <input v-model="verifiedBy" type="text" maxlength="240" required
-      /></label>
-      <button type="submit" :disabled="busy || !selectedCard">Записать результат сверки</button>
-    </form>
-    <div v-if="selectedCard">
-      <h4>История сверок выбранной карточки</h4>
-      <p v-if="historyBusy">Загрузка истории…</p>
-      <p v-else-if="!verificationHistory.length">Записей пока нет.</p>
+    <template v-if="!guided">
+      <h3>Локальная сверка импортированных карточек</h3>
+      <p v-if="crossings.length === 0">Импортированных карточек пока нет.</p>
       <ul v-else>
-        <li v-for="(record, index) in verificationHistory" :key="index">
-          Версия {{ record.cardRevision }} · сверена {{ record.verifiedAt }} ·
-          {{ record.verifiedBy }} · запись внесена {{ record.recordedAt }}
+        <li v-for="card in crossings" :key="card.referenceId">
+          <strong>{{ card.location }}</strong> ({{ card.section }}) —
+          {{ card.roadName || 'дорога не указана' }}. Ширина:
+          {{ card.crossingWidthMetres ?? 'не указана' }} м; длина пересечения:
+          {{ card.crossingRoadLengthMetres ?? 'не указана' }} м; автомобили в сутки:
+          {{ card.carCountPerDay ?? 'не указано' }}.
+          <small>Локальный ключ: {{ card.referenceId }}; версия {{ card.revision }}.</small>
+          <small>{{ verificationStatus(card) }}</small>
+          <small v-if="card.verification">
+            Дата: {{ card.verification.verifiedAt }}; выверил(а):
+            {{ card.verification.verifiedBy }}.
+          </small>
         </li>
       </ul>
-    </div>
 
-    <h3>Каталог дорожных знаков</h3>
-    <PdfSignCatalog :documents="documents" :locked="locked" @applied="onPdfSignsApplied" />
-    <details class="zip-import">
-      <summary id="sign-import">Загрузка знаков из ZIP (прежний способ)</summary>
-      <div class="verification-form">
+      <form v-if="crossings.length" class="verification-form" @submit.prevent="saveVerification">
+        <h4>Учёт ежегодной сверки ПУ-66</h4>
         <p>
-          Для PDF без таблиц изображений (например, отсканированного) каталог можно загрузить из
-          архива с парами PNG «с номером» и «без номера». Укажите версию ГОСТ, с которой сверяли
-          архив. Файлы остаются только в локальной базе, перед заменой создаётся резервная копия.
-          Отсутствующие в новом архиве коды исключаются из текущего каталога, прежние версии PNG
-          сохраняются в базе на этом компьютере.
+          Линейное подразделение выверяет ПУ-66 30 января каждого года. Импорт Excel не отмечает
+          карточку как выверенную. Записывайте результат только после фактической сверки; новая
+          версия файла потребует отдельной записи.
         </p>
-        <p v-if="locked" role="status">Сначала примените или отмените правки открытого проекта.</p>
-        <label
-          >Документ из библиотеки
-          <select v-model="signDocumentId" :disabled="signBusy || locked" @change="signPlan = null">
-            <option value="">Не выбран — указать код и версию вручную</option>
-            <option v-for="item in signDocuments" :key="item.document.id" :value="item.document.id">
-              {{ documentLabel(item.document)
-              }}{{ item.document.title ? ` — ${item.document.title}` : ''
-              }}{{
-                item.status === 'current'
-                  ? ' (действует)'
-                  : item.status === 'superseded'
-                    ? ' (заменён)'
-                    : item.status === 'future'
-                      ? ' (ещё не введён)'
-                      : ''
-              }}
+        <label>
+          Карточка
+          <select v-model="verificationKey" :disabled="busy" required>
+            <option value="">Выберите карточку</option>
+            <option v-for="card in crossings" :key="card.referenceId" :value="card.referenceId">
+              {{ card.location }} · версия {{ card.revision }}
             </option>
           </select>
         </label>
-        <p v-if="!signDocuments.length" class="hint">
-          PDF стандарта можно прикрепить в «Реестры» → «Нормативные документы»: тогда код, версия и
-          хеш PDF берутся из библиотеки, а приложение подскажет, когда каталог знаков устарел.
-        </p>
-        <template v-if="signDocumentId === ''">
-          <label
-            >Документ
-            <input
-              v-model="signDocumentCode"
-              maxlength="120"
-              :disabled="signBusy || locked"
-              @input="signPlan = null"
-          /></label>
-          <label
-            >Версия
-            <input
-              v-model="signEdition"
-              maxlength="120"
-              :disabled="signBusy || locked"
-              @input="signPlan = null"
-          /></label>
-        </template>
-        <label>
-          ZIP знаков (до {{ MAX_WEB_SIGN_ARCHIVE_BYTES / 1024 / 1024 }} МБ)
-          <input
-            ref="signZipInput"
-            type="file"
-            accept=".zip"
-            :disabled="signBusy || locked"
-            @change="changeSignFiles($event, 'zip')"
-          />
-        </label>
-        <label v-if="signDocumentId === ''">
-          PDF ГОСТ для хеша (необязательно, до {{ MAX_WEB_SIGN_PDF_BYTES / 1024 / 1024 }} МБ)
-          <input
-            ref="signPdfInput"
-            type="file"
-            accept=".pdf"
-            :disabled="signBusy || locked"
-            @change="changeSignFiles($event, 'pdf')"
-          />
-        </label>
-        <button type="button" :disabled="signBusy || locked || !signArchive" @click="previewSigns">
-          Просмотреть изменения знаков
-        </button>
-        <p v-if="signBusy" role="status">Проверка или запись локального каталога…</p>
-        <p v-if="signError" role="alert" class="error">{{ signError }}</p>
-        <p v-if="signNotice" role="status">{{ signNotice }}</p>
-        <div v-if="signPlan" class="import-plan">
+        <label
+          >Фактическая дата сверки
+          <input v-model="verifiedAt" type="date" :max="localCalendarDate(new Date())" required
+        /></label>
+        <label
+          >Линейное подразделение / ответственный
+          <input v-model="verifiedBy" type="text" maxlength="240" required
+        /></label>
+        <button type="submit" :disabled="busy || !selectedCard">Записать результат сверки</button>
+      </form>
+      <div v-if="selectedCard">
+        <h4>История сверок выбранной карточки</h4>
+        <p v-if="historyBusy">Загрузка истории…</p>
+        <p v-else-if="!verificationHistory.length">Записей пока нет.</p>
+        <ul v-else>
+          <li v-for="(record, index) in verificationHistory" :key="index">
+            Версия {{ record.cardRevision }} · сверена {{ record.verifiedAt }} ·
+            {{ record.verifiedBy }} · запись внесена {{ record.recordedAt }}
+          </li>
+        </ul>
+      </div>
+
+      <h3>Каталог дорожных знаков</h3>
+      <PdfSignCatalog :documents="documents" :locked="locked" @applied="onPdfSignsApplied" />
+      <details class="zip-import">
+        <summary id="sign-import">Загрузка знаков из ZIP (прежний способ)</summary>
+        <div class="verification-form">
           <p>
-            В архиве {{ signPlan.signCount }} знаков: новых {{ signPlan.added }}, с изменённым
-            изображением {{ signPlan.changedCodes.length }}, сменится только версия источника
-            {{ signPlan.relabelled }}, без изменений {{ signPlan.unchanged }}, исключается из
-            текущего набора {{ signPlan.retired }}. Источник: {{ signPlan.source.documentCode }},
-            версия {{ signPlan.source.edition
-            }}{{
-              signPlan.source.pdfSha256
-                ? `, PDF SHA-256 ${signPlan.source.pdfSha256}`
-                : ', PDF не выбран'
-            }}.
+            Для PDF без таблиц изображений (например, отсканированного) каталог можно загрузить из
+            архива с парами PNG «с номером» и «без номера». Укажите версию ГОСТ, с которой сверяли
+            архив. Файлы остаются только в локальной базе, перед заменой создаётся резервная копия.
+            Отсутствующие в новом архиве коды исключаются из текущего каталога, прежние версии PNG
+            сохраняются в базе на этом компьютере.
           </p>
-          <details v-if="signPlan.addedCodes.length">
-            <summary>Новые знаки · {{ signPlan.addedCodes.length }}</summary>
-            <p class="codes">{{ signPlan.addedCodes.join(', ') }}</p>
-          </details>
-          <details v-if="signPlan.retiredCodes.length" open>
-            <summary>Исключаются из текущего набора · {{ signPlan.retiredCodes.length }}</summary>
-            <p class="codes">{{ signPlan.retiredCodes.join(', ') }}</p>
-            <p class="hint">
-              Проекты с закреплёнными версиями продолжат показывать прежние PNG из истории; новые
-              стойки эти коды не получат.
-            </p>
-          </details>
-          <details v-if="signPlan.changedCodes.length" open>
-            <summary>Изменённые изображения · {{ signPlan.changedCodes.length }}</summary>
-            <ul class="sign-compare">
-              <li v-for="item in signPlan.changedPreviews" :key="item.code">
-                <strong>{{ item.code }}</strong>
-                <img :src="`/api/signs/${encodeURIComponent(item.code)}/image`" alt="Сейчас" />
-                <span aria-hidden="true">→</span>
-                <img :src="item.image" alt="В новом архиве" />
-              </li>
-            </ul>
-            <p v-if="signPlan.changedCodes.length > signPlan.changedPreviews.length" class="hint">
-              Показаны первые {{ signPlan.changedPreviews.length }}; остальные:
-              {{ signPlan.changedCodes.slice(signPlan.changedPreviews.length).join(', ') }}.
-            </p>
-          </details>
+          <p v-if="locked" role="status">
+            Сначала примените или отмените правки открытого проекта.
+          </p>
+          <label
+            >Документ из библиотеки
+            <select
+              v-model="signDocumentId"
+              :disabled="signBusy || locked"
+              @change="signPlan = null"
+            >
+              <option value="">Не выбран — указать код и версию вручную</option>
+              <option
+                v-for="item in signDocuments"
+                :key="item.document.id"
+                :value="item.document.id"
+              >
+                {{ documentLabel(item.document)
+                }}{{ item.document.title ? ` — ${item.document.title}` : ''
+                }}{{
+                  item.status === 'current'
+                    ? ' (действует)'
+                    : item.status === 'superseded'
+                      ? ' (заменён)'
+                      : item.status === 'future'
+                        ? ' (ещё не введён)'
+                        : ''
+                }}
+              </option>
+            </select>
+          </label>
+          <p v-if="!signDocuments.length" class="hint">
+            PDF стандарта можно прикрепить в «Реестры» → «Нормативные документы»: тогда код, версия
+            и хеш PDF берутся из библиотеки, а приложение подскажет, когда каталог знаков устарел.
+          </p>
+          <template v-if="signDocumentId === ''">
+            <label
+              >Документ
+              <input
+                v-model="signDocumentCode"
+                maxlength="120"
+                :disabled="signBusy || locked"
+                @input="signPlan = null"
+            /></label>
+            <label
+              >Версия
+              <input
+                v-model="signEdition"
+                maxlength="120"
+                :disabled="signBusy || locked"
+                @input="signPlan = null"
+            /></label>
+          </template>
+          <label>
+            ZIP знаков (до {{ MAX_WEB_SIGN_ARCHIVE_BYTES / 1024 / 1024 }} МБ)
+            <input
+              ref="signZipInput"
+              type="file"
+              accept=".zip"
+              :disabled="signBusy || locked"
+              @change="changeSignFiles($event, 'zip')"
+            />
+          </label>
+          <label v-if="signDocumentId === ''">
+            PDF ГОСТ для хеша (необязательно, до {{ MAX_WEB_SIGN_PDF_BYTES / 1024 / 1024 }} МБ)
+            <input
+              ref="signPdfInput"
+              type="file"
+              accept=".pdf"
+              :disabled="signBusy || locked"
+              @change="changeSignFiles($event, 'pdf')"
+            />
+          </label>
           <button
             type="button"
-            :disabled="
-              signBusy || locked || signPlan.added + signPlan.updated + signPlan.retired === 0
-            "
-            @click="applySigns"
+            :disabled="signBusy || locked || !signArchive"
+            @click="previewSigns"
           >
-            Подтвердить каталог и создать резервную копию
+            Просмотреть изменения знаков
           </button>
+          <p v-if="signBusy" role="status">Проверка или запись локального каталога…</p>
+          <p v-if="signError" role="alert" class="error">{{ signError }}</p>
+          <p v-if="signNotice" role="status">{{ signNotice }}</p>
+          <div v-if="signPlan" class="import-plan">
+            <p>
+              В архиве {{ signPlan.signCount }} знаков: новых {{ signPlan.added }}, с изменённым
+              изображением {{ signPlan.changedCodes.length }}, сменится только версия источника
+              {{ signPlan.relabelled }}, без изменений {{ signPlan.unchanged }}, исключается из
+              текущего набора {{ signPlan.retired }}. Источник: {{ signPlan.source.documentCode }},
+              версия {{ signPlan.source.edition
+              }}{{
+                signPlan.source.pdfSha256
+                  ? `, PDF SHA-256 ${signPlan.source.pdfSha256}`
+                  : ', PDF не выбран'
+              }}.
+            </p>
+            <details v-if="signPlan.addedCodes.length">
+              <summary>Новые знаки · {{ signPlan.addedCodes.length }}</summary>
+              <p class="codes">{{ signPlan.addedCodes.join(', ') }}</p>
+            </details>
+            <details v-if="signPlan.retiredCodes.length" open>
+              <summary>Исключаются из текущего набора · {{ signPlan.retiredCodes.length }}</summary>
+              <p class="codes">{{ signPlan.retiredCodes.join(', ') }}</p>
+              <p class="hint">
+                Проекты с закреплёнными версиями продолжат показывать прежние PNG из истории; новые
+                стойки эти коды не получат.
+              </p>
+            </details>
+            <details v-if="signPlan.changedCodes.length" open>
+              <summary>Изменённые изображения · {{ signPlan.changedCodes.length }}</summary>
+              <ul class="sign-compare">
+                <li v-for="item in signPlan.changedPreviews" :key="item.code">
+                  <strong>{{ item.code }}</strong>
+                  <img :src="`/api/signs/${encodeURIComponent(item.code)}/image`" alt="Сейчас" />
+                  <span aria-hidden="true">→</span>
+                  <img :src="item.image" alt="В новом архиве" />
+                </li>
+              </ul>
+              <p v-if="signPlan.changedCodes.length > signPlan.changedPreviews.length" class="hint">
+                Показаны первые {{ signPlan.changedPreviews.length }}; остальные:
+                {{ signPlan.changedCodes.slice(signPlan.changedPreviews.length).join(', ') }}.
+              </p>
+            </details>
+            <button
+              type="button"
+              :disabled="
+                signBusy || locked || signPlan.added + signPlan.updated + signPlan.retired === 0
+              "
+              @click="applySigns"
+            >
+              Подтвердить каталог и создать резервную копию
+            </button>
+          </div>
         </div>
-      </div>
-    </details>
-    <p v-if="signCatalog">
-      Текущий набор: {{ signCatalog.documentCode }}, версия {{ signCatalog.edition }},
-      {{ signCatalog.signCount }} знаков; импорт {{ signCatalog.importedAt }}.
-    </p>
-    <p v-if="catalogStatus.kind === 'outdated'" class="error" role="status">
-      В библиотеке действует {{ documentLabel(catalogStatus.document) }}, а каталог знаков загружен
-      по версии {{ catalogStatus.catalogEdition }}. Извлеките знаки из PDF новой версии и
-      перезакрепите знаки в проектах после проверки.
-    </p>
-    <p v-else-if="signs.length">Для прежнего импорта версия источника не указана.</p>
-    <p>Найдено {{ signs.length }} знаков. Поиск показывает первые 48 совпадений.</p>
-    <label for="sign-search">Номер знака</label>
-    <input id="sign-search" v-model="search" type="search" placeholder="Например, 3.24_40_ж" />
+      </details>
+      <p v-if="signCatalog">
+        Текущий набор: {{ signCatalog.documentCode }}, версия {{ signCatalog.edition }},
+        {{ signCatalog.signCount }} знаков; импорт {{ signCatalog.importedAt }}.
+      </p>
+      <p v-if="catalogStatus.kind === 'outdated'" class="error" role="status">
+        В библиотеке действует {{ documentLabel(catalogStatus.document) }}, а каталог знаков
+        загружен по версии {{ catalogStatus.catalogEdition }}. Извлеките знаки из ГОСТ новой версии
+        и перезакрепите знаки в проектах после проверки.
+      </p>
+      <p v-else-if="signs.length">Для прежнего импорта версия источника не указана.</p>
+      <p>Найдено {{ signs.length }} знаков. Поиск показывает первые 48 совпадений.</p>
+      <label for="sign-search">Номер знака</label>
+      <input id="sign-search" v-model="search" type="search" placeholder="Например, 3.24_40_ж" />
 
-    <div v-if="referenced.length" class="referenced">
-      <h4>Знаки открытого проекта</h4>
-      <ul>
-        <li v-for="item in referenced" :key="item.code">
-          {{ item.code }} — {{ item.found ? 'есть в каталоге' : 'не найден в каталоге' }}
-        </li>
-      </ul>
-    </div>
-    <div class="gallery">
-      <figure v-for="sign in visible" :key="sign.code">
-        <img :src="imageUrl(sign)" :alt="`Знак ${sign.code}`" loading="lazy" />
-        <figcaption>{{ sign.code }}</figcaption>
-      </figure>
-    </div>
+      <div v-if="referenced.length" class="referenced">
+        <h4>Знаки открытого проекта</h4>
+        <ul>
+          <li v-for="item in referenced" :key="item.code">
+            {{ item.code }} — {{ item.found ? 'есть в каталоге' : 'не найден в каталоге' }}
+          </li>
+        </ul>
+      </div>
+      <div class="gallery">
+        <figure v-for="sign in visible" :key="sign.code">
+          <img :src="imageUrl(sign)" :alt="`Знак ${sign.code}`" loading="lazy" />
+          <figcaption>{{ sign.code }}</figcaption>
+        </figure>
+      </div>
+    </template>
   </section>
 </template>
 
 <style scoped>
+.imported.guided {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
 .imported {
   margin: 1rem 0;
   padding: 2rem;

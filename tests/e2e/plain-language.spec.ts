@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './workspace-test'
 
 test('registries and help explain storage and versions without technical terms', async ({
   page,

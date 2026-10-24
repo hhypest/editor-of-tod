@@ -28,8 +28,13 @@ import {
 } from '../services/local-documents'
 import { getSignCatalog, type SignCatalog } from '../services/local-signs'
 
-const props = defineProps<{ locked?: boolean }>()
-const emit = defineEmits<{ changed: [] }>()
+const props = defineProps<{
+  locked?: boolean
+  guided?: boolean
+  headingId?: string
+  fileLabel?: string
+}>()
+const emit = defineEmits<{ changed: []; busy: [value: boolean] }>()
 
 const today = localCalendarDate(new Date())
 const documents = ref<DocumentRecord[]>([])
@@ -56,6 +61,11 @@ const form = reactive<DocumentMeta>(emptyMeta())
 const preview = ref<DocumentPreview | null>(null)
 const identification = ref<DocumentIdentification | null>(null)
 const identifying = ref(false)
+watch(
+  () => busy.value || identifying.value,
+  (value) => emit('busy', value),
+  { immediate: true },
+)
 const identificationError = ref('')
 const filenameSuggestion = computed(() => suggestFromFilename(file.value?.name ?? ''))
 const identificationChoice = ref<'candidate' | 'manual' | null>(null)
@@ -357,131 +367,151 @@ function megabytes(bytes: number): string {
 </script>
 
 <template>
-  <section class="library" aria-labelledby="documents-title">
-    <h2 id="documents-title">Нормативные документы и версии</h2>
-    <p class="hint">
-      Прикрепите PDF стандартов и методических документов, по которым составляются схемы (ГОСТ Р
-      52290 — знаки, ГОСТ Р 52289 — правила применения, ОДМ 218.6.019 — схемы Б.33/Б.34), и
-      изменения к ним. При выходе новой версии добавьте её с датой введения: прежняя версия
-      останется в библиотеке с отметкой «заменён», а приложение подскажет, если каталог знаков или
-      проекты используют устаревшую версию. Файлы хранятся только в локальной базе на этом
-      компьютере. Актуальность версий приложение само не проверяет — подтверждайте её раз в год.
-    </p>
+  <section class="library" :aria-labelledby="headingId ?? 'documents-title'" :class="{ guided }">
+    <h2 :id="headingId ?? 'documents-title'">
+      {{ guided ? 'Выберите и проверьте документ' : 'Нормативные документы и версии' }}
+    </h2>
+    <template v-if="!guided">
+      <p class="hint">
+        Прикрепите PDF стандартов и методических документов, по которым составляются схемы (ГОСТ Р
+        52290 — знаки, ГОСТ Р 52289 — правила применения, ОДМ 218.6.019 — схемы Б.33/Б.34), и
+        изменения к ним. При выходе новой версии добавьте её с датой введения: прежняя версия
+        останется в библиотеке с отметкой «заменён», а приложение подскажет, если каталог знаков или
+        проекты используют устаревшую версию. Файлы хранятся только в локальной базе на этом
+        компьютере. Актуальность версий приложение само не проверяет — подтверждайте её раз в год.
+      </p>
 
-    <div v-if="signsStatus.kind === 'outdated'" class="warning" role="status">
-      Каталог знаков загружен по версии {{ signsStatus.catalogEdition }}, а действует
-      {{ documentLabel(signsStatus.document) }}. Извлеките знаки из PDF этой версии в «Импорт Excel
-      и знаков» (блок «Знаки из PDF стандарта»).
-    </div>
-    <div v-else-if="signsStatus.kind === 'current'" class="ok" role="status">
-      Каталог знаков соответствует действующей версии {{ documentLabel(signsStatus.document) }}.
-    </div>
-    <div v-if="checksDue.length" class="warning" role="status">
-      Подтвердите актуальность действующих версий (проверка раз в год):
-      {{ checksDue.map(documentLabel).join(', ') }}.
-    </div>
-
+      <div v-if="signsStatus.kind === 'outdated'" class="warning" role="status">
+        Каталог знаков загружен по версии {{ signsStatus.catalogEdition }}, а действует
+        {{ documentLabel(signsStatus.document) }}. Извлеките знаки из ГОСТ этой версии в «Импорт
+        Excel и знаков» (блок «Знаки из ГОСТ»).
+      </div>
+      <div v-else-if="signsStatus.kind === 'current'" class="ok" role="status">
+        Каталог знаков соответствует действующей версии {{ documentLabel(signsStatus.document) }}.
+      </div>
+      <div v-if="checksDue.length" class="warning" role="status">
+        Подтвердите актуальность действующих версий (проверка раз в год):
+        {{ checksDue.map(documentLabel).join(', ') }}.
+      </div>
+    </template>
     <p v-if="busy" role="status">Работа с локальной библиотекой…</p>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <p v-if="notice" class="notice" role="status">{{ notice }}</p>
 
-    <p v-if="!groups.length && !busy">Документов пока нет.</p>
-    <article v-for="group in groups" :key="group.code" class="group">
-      <h3>{{ group.code }}</h3>
-      <ul>
-        <li
-          v-for="document in [...group.items, ...group.amendments]"
-          :key="document.id"
-          :class="`status-${statuses.get(document.id)?.kind}`"
-        >
-          <div class="row">
-            <strong>
-              {{ document.amendsId === null ? `Версия ${document.edition}` : document.edition }}
-            </strong>
-            <span class="badge">{{ statusText(document) }}</span>
-            <span v-if="document.title">{{ document.title }}</span>
-          </div>
-          <div class="meta">
-            {{ documentKinds[document.kind] }}
-            · введён: {{ document.effectiveFrom || 'дата не указана' }}
-            <template v-if="document.amendsId !== null">
-              · изменение к версии {{ byId.get(document.amendsId)?.edition }}
-            </template>
-            · {{ document.filename }}, {{ megabytes(document.sizeBytes) }} МБ · актуальность
-            проверена: {{ document.actualCheckedAt || 'нет' }}
-            <span
-              v-if="
-                statuses.get(document.id)?.kind === 'current' && actualityCheckDue(document, today)
-              "
-              class="due"
-              >— пора проверить</span
-            >
-          </div>
-          <p v-if="document.note" class="meta">{{ document.note }}</p>
-          <div class="actions">
-            <a :href="documentPdfUrl(document.id)" target="_blank" rel="noopener">Открыть PDF</a>
-            <button type="button" :disabled="busy || locked" @click="markChecked(document)">
-              Актуальность подтверждена сегодня
-            </button>
-            <button type="button" :disabled="busy || locked" @click="startEdit(document)">
-              Изменить сведения
-            </button>
-            <button type="button" :disabled="busy || locked" @click="remove(document)">
-              Удалить
-            </button>
-          </div>
-          <form v-if="editingId === document.id" class="fields" @submit.prevent="saveEdit">
-            <label>Обозначение <input v-model="editForm.code" required maxlength="120" /></label>
-            <label>Версия <input v-model="editForm.edition" required maxlength="60" /></label>
-            <label class="wide">Название <input v-model="editForm.title" maxlength="500" /></label>
-            <label
-              >Назначение
-              <select v-model="editForm.kind">
-                <option v-for="(label, kind) in documentKinds" :key="kind" :value="kind">
-                  {{ label }}
-                </option>
-              </select>
-            </label>
-            <label>Дата введения <input v-model="editForm.effectiveFrom" type="date" /></label>
-            <label
-              >Изменение к
-              <select v-model="editForm.amendsId">
-                <option :value="null">— основной документ —</option>
-                <option
-                  v-for="base in baseDocuments.filter((item) => item.id !== document.id)"
-                  :key="base.id"
-                  :value="base.id"
-                >
-                  {{ documentLabel(base) }}
-                </option>
-              </select>
-            </label>
-            <label
-              >Актуальность проверена
-              <input v-model="editForm.actualCheckedAt" type="date" />
-            </label>
-            <label class="wide">Примечание <textarea v-model="editForm.note" rows="2" /></label>
-            <div class="wide">
-              <button type="submit" class="primary" :disabled="busy">Сохранить</button>
-              <button type="button" :disabled="busy" @click="editingId = null">Отмена</button>
+    <template v-if="!guided">
+      <p v-if="!groups.length && !busy">Документов пока нет.</p>
+      <article v-for="group in groups" :key="group.code" class="group">
+        <h3>{{ group.code }}</h3>
+        <ul>
+          <li
+            v-for="document in [...group.items, ...group.amendments]"
+            :key="document.id"
+            :class="`status-${statuses.get(document.id)?.kind}`"
+          >
+            <div class="row">
+              <strong>
+                {{ document.amendsId === null ? `Версия ${document.edition}` : document.edition }}
+              </strong>
+              <span class="badge">{{ statusText(document) }}</span>
+              <span v-if="document.title">{{ document.title }}</span>
             </div>
-          </form>
-        </li>
-      </ul>
-    </article>
-
-    <h3>Добавить документ или новую версию</h3>
+            <div class="meta">
+              {{ documentKinds[document.kind] }}
+              · введён: {{ document.effectiveFrom || 'дата не указана' }}
+              <template v-if="document.amendsId !== null">
+                · изменение к версии {{ byId.get(document.amendsId)?.edition }}
+              </template>
+              · {{ document.filename }}, {{ megabytes(document.sizeBytes) }} МБ · актуальность
+              проверена: {{ document.actualCheckedAt || 'нет' }}
+              <span
+                v-if="
+                  statuses.get(document.id)?.kind === 'current' &&
+                  actualityCheckDue(document, today)
+                "
+                class="due"
+                >— пора проверить</span
+              >
+            </div>
+            <p v-if="document.note" class="meta">{{ document.note }}</p>
+            <div class="actions">
+              <a :href="documentPdfUrl(document.id)" target="_blank" rel="noopener">Открыть PDF</a>
+              <button type="button" :disabled="busy || locked" @click="markChecked(document)">
+                Актуальность подтверждена сегодня
+              </button>
+              <button type="button" :disabled="busy || locked" @click="startEdit(document)">
+                Изменить сведения
+              </button>
+              <button type="button" :disabled="busy || locked" @click="remove(document)">
+                Удалить
+              </button>
+            </div>
+            <form v-if="editingId === document.id" class="fields" @submit.prevent="saveEdit">
+              <label>Обозначение <input v-model="editForm.code" required maxlength="120" /></label>
+              <label>Версия <input v-model="editForm.edition" required maxlength="60" /></label>
+              <label class="wide"
+                >Название <input v-model="editForm.title" maxlength="500"
+              /></label>
+              <label
+                >Назначение
+                <select v-model="editForm.kind">
+                  <option v-for="(label, kind) in documentKinds" :key="kind" :value="kind">
+                    {{ label }}
+                  </option>
+                </select>
+              </label>
+              <label>Дата введения <input v-model="editForm.effectiveFrom" type="date" /></label>
+              <label
+                >Изменение к
+                <select v-model="editForm.amendsId">
+                  <option :value="null">— основной документ —</option>
+                  <option
+                    v-for="base in baseDocuments.filter((item) => item.id !== document.id)"
+                    :key="base.id"
+                    :value="base.id"
+                  >
+                    {{ documentLabel(base) }}
+                  </option>
+                </select>
+              </label>
+              <label
+                >Актуальность проверена
+                <input v-model="editForm.actualCheckedAt" type="date" />
+              </label>
+              <label class="wide">Примечание <textarea v-model="editForm.note" rows="2" /></label>
+              <div class="wide">
+                <button type="submit" class="primary" :disabled="busy">Сохранить</button>
+                <button type="button" :disabled="busy" @click="editingId = null">Отмена</button>
+              </div>
+            </form>
+          </li>
+        </ul>
+      </article>
+    </template>
+    <h3 v-if="!guided">Добавить документ или новую версию</h3>
     <p v-if="locked" role="status">Сначала примените или отмените правки открытого проекта.</p>
     <form class="fields" @submit.prevent="check">
       <label class="wide">
-        PDF (до {{ MAX_DOCUMENT_BYTES / 1024 / 1024 }} МБ)
+        {{ guided ? (fileLabel ?? 'Файл документа (PDF)') : 'PDF' }} (до
+        {{ MAX_DOCUMENT_BYTES / 1024 / 1024 }} МБ)
         <input
           ref="fileInput"
+          :class="{ 'guided-file': guided }"
+          :tabindex="guided ? -1 : undefined"
           type="file"
           accept=".pdf,application/pdf"
           :disabled="busy || locked"
           @change="chooseFile"
         />
+        <template v-if="guided">
+          <button
+            type="button"
+            :disabled="busy || locked || identifying"
+            @click.prevent="fileInput?.click()"
+          >
+            Выбрать файл
+          </button>
+          <span class="selected-file">{{ file?.name ?? 'Файл не выбран' }}</span>
+        </template>
       </label>
       <div class="wide identification" aria-live="polite">
         <p v-if="identifying" role="status">Определение документа по тексту первых страниц PDF…</p>
@@ -559,74 +589,80 @@ function megabytes(bytes: number): string {
           </p>
         </template>
       </div>
-      <label
-        >Обозначение
-        <input
-          v-model="form.code"
-          :disabled="busy || locked"
-          required
-          maxlength="120"
-          placeholder="ГОСТ Р 52290"
-          @input="metaEdited('code')"
-      /></label>
-      <label
-        >Версия
-        <input
-          v-model="form.edition"
-          :disabled="busy || locked"
-          required
-          maxlength="60"
-          placeholder="2024 или «Изменение № 1»"
-          @input="metaEdited('edition')"
-      /></label>
-      <label class="wide"
-        >Название
-        <input
-          v-model="form.title"
-          :disabled="busy || locked"
-          maxlength="500"
-          placeholder="Технические средства организации дорожного движения. Знаки дорожные…"
-          @input="metaEdited('title')"
-      /></label>
-      <label
-        >Назначение
-        <select v-model="form.kind" :disabled="busy || locked" @change="metaEdited('kind')">
-          <option v-for="(label, kind) in documentKinds" :key="kind" :value="kind">
-            {{ label }}
-          </option>
-        </select>
-      </label>
-      <label
-        >Дата введения в действие
-        <input
-          v-model="form.effectiveFrom"
-          type="date"
-          :disabled="busy || locked"
-          @input="preview = null"
-        />
-      </label>
-      <label
-        >Изменение к документу
-        <select v-model="form.amendsId" :disabled="busy || locked" @change="metaEdited('amendsId')">
-          <option :value="null">— основной документ (новая версия) —</option>
-          <option v-for="base in baseDocuments" :key="base.id" :value="base.id">
-            {{ documentLabel(base) }}
-          </option>
-        </select>
-      </label>
-      <label
-        >Актуальность проверена
-        <input v-model="form.actualCheckedAt" type="date" :disabled="busy || locked" />
-      </label>
-      <label class="wide"
-        >Примечание
-        <textarea
-          v-model="form.note"
-          :disabled="busy || locked"
-          rows="2"
-          placeholder="Откуда получен документ, приказ о введении и т. п."
-        />
-      </label>
+      <template v-if="!guided || (file && identificationChoice)">
+        <label
+          >Обозначение
+          <input
+            v-model="form.code"
+            :disabled="busy || locked"
+            required
+            maxlength="120"
+            placeholder="ГОСТ Р 52290"
+            @input="metaEdited('code')"
+        /></label>
+        <label
+          >Версия
+          <input
+            v-model="form.edition"
+            :disabled="busy || locked"
+            required
+            maxlength="60"
+            placeholder="2024 или «Изменение № 1»"
+            @input="metaEdited('edition')"
+        /></label>
+        <label class="wide"
+          >Название
+          <input
+            v-model="form.title"
+            :disabled="busy || locked"
+            maxlength="500"
+            placeholder="Технические средства организации дорожного движения. Знаки дорожные…"
+            @input="metaEdited('title')"
+        /></label>
+        <label
+          >Назначение
+          <select v-model="form.kind" :disabled="busy || locked" @change="metaEdited('kind')">
+            <option v-for="(label, kind) in documentKinds" :key="kind" :value="kind">
+              {{ label }}
+            </option>
+          </select>
+        </label>
+        <label
+          >Дата введения в действие
+          <input
+            v-model="form.effectiveFrom"
+            type="date"
+            :disabled="busy || locked"
+            @input="preview = null"
+          />
+        </label>
+        <label
+          >Изменение к документу
+          <select
+            v-model="form.amendsId"
+            :disabled="busy || locked"
+            @change="metaEdited('amendsId')"
+          >
+            <option :value="null">— основной документ (новая версия) —</option>
+            <option v-for="base in baseDocuments" :key="base.id" :value="base.id">
+              {{ documentLabel(base) }}
+            </option>
+          </select>
+        </label>
+        <label
+          >Актуальность проверена
+          <input v-model="form.actualCheckedAt" type="date" :disabled="busy || locked" />
+        </label>
+        <label class="wide"
+          >Примечание
+          <textarea
+            v-model="form.note"
+            :disabled="busy || locked"
+            rows="2"
+            placeholder="Откуда получен документ, приказ о введении и т. п."
+          />
+        </label>
+      </template>
       <div class="wide">
         <button
           type="submit"
@@ -638,8 +674,10 @@ function megabytes(bytes: number): string {
     </form>
     <div v-if="preview" class="preview" role="status">
       <p>
-        {{ preview.filename }}, {{ megabytes(preview.sizeBytes) }} МБ, SHA-256
-        <code>{{ preview.sha256 }}</code>
+        {{ preview.filename }}, {{ megabytes(preview.sizeBytes) }} МБ,
+        <template v-if="!guided"
+          >SHA-256 <code>{{ preview.sha256 }}</code></template
+        >
       </p>
       <p v-if="preview.duplicate" class="error">
         Этот PDF уже есть в библиотеке: {{ documentLabel(preview.duplicate) }}.
@@ -658,6 +696,23 @@ function megabytes(bytes: number): string {
 </template>
 
 <style scoped>
+.guided-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.selected-file {
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.library.guided {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
 .library {
   margin: 1rem 0;
   padding: 2rem;

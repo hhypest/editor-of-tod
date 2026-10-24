@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './workspace-test'
 import {
   parameterDefinition,
   PDD_OUTSIDE_SPEED_KEYS,

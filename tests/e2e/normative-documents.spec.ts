@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './workspace-test'
 import { textPdf } from '../../server/__tests__/pdf-fixture'
 import type { ParameterState } from '../../src/domain/normative-parameters'
 

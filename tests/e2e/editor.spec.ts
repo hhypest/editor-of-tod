@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { expect, test, type APIRequestContext, type Page } from './workspace-test'
 import { zipSync } from 'fflate'
 import { PNG } from 'pngjs'
 import { createSampleWorkbook, sampleCards } from '../../scripts/generate-pu66-samples'
@@ -1112,7 +1112,7 @@ test('extracts the sign catalog from the PDF of a standard in the library', asyn
     .locator('option', { hasText: 'ГОСТ Р 99291-2025' })
     .getAttribute('value')
   await source.selectOption(option!)
-  await box.getByRole('button', { name: 'Извлечь знаки из PDF' }).click()
+  await box.getByRole('button', { name: 'Извлечь знаки из ГОСТ' }).click()
   await expect(box).toContainText('Страницы 2–3: изображений 7')
   await expect(box).toContainText('У 1 изображений номер не найден')
   await expect(box).toContainText('п. 3.2: «Знаки 1.8, 1.15 - 1.16 допускается')
