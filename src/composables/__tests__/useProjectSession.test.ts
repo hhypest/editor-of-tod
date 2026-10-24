@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Scheme } from '../../domain/model'
 import type { ProjectRecord } from '../../domain/local-projects'
 import raw from '../../../tests/fixtures/manual-v1.json?raw'
+import { LocalApiError } from '../../services/api-error'
 import { useProjectSession } from '../useProjectSession'
 
 const local = vi.hoisted(() => ({
@@ -334,7 +335,9 @@ describe('project revision contracts', () => {
     session.localRevision.value = 3
     const scheme = session.imported.value!.scheme
     const history = session.history.value
-    local.saveLocalProject.mockRejectedValueOnce(new Error('Запись изменилась в другом окне.'))
+    local.saveLocalProject.mockRejectedValueOnce(
+      new LocalApiError('revision-conflict', 'Conflict without localized text'),
+    )
     await session.saveLocally()
     expect(session.imported.value!.scheme).toBe(scheme)
     expect(session.history.value).toBe(history)

@@ -16,6 +16,7 @@ import { recoveryReceiptSchema } from '../application/recovery-contract'
 import type { RecoveryRepository } from '../application/recovery-session'
 import { ProjectRevisionError } from '../application/project-revisions'
 import { localJson } from './json-response'
+import { invalidLocalApiResponse, localApiErrorForStatus, unavailableLocalApi } from './api-error'
 
 async function request(
   url: string,
@@ -31,14 +32,15 @@ async function request(
         'unavailable',
         'Локальная база недоступна. Повторите сохранение после восстановления связи.',
       )
-    throw new Error('Программа не отвечает. Перезапустите её и повторите действие.')
+    throw unavailableLocalApi('Программа не отвечает. Перезапустите её и повторите действие.')
   }
   let body: unknown
   try {
     body = await localJson(response)
   } catch (cause) {
-    if (revisionWrite) throw new ProjectRevisionError('invalid-response', (cause as Error).message)
-    throw cause
+    const message = cause instanceof Error ? cause.message : 'Не удалось прочитать ответ программы.'
+    if (revisionWrite) throw new ProjectRevisionError('invalid-response', message)
+    throw invalidLocalApiResponse(message)
   }
   if (!response.ok) {
     const message =
@@ -47,7 +49,7 @@ async function request(
         : `Ошибка локальной базы (${response.status}).`
     if (revisionWrite)
       throw new ProjectRevisionError(response.status === 409 ? 'conflict' : 'failed', message)
-    throw new Error(message)
+    throw localApiErrorForStatus(response.status, message)
   }
   return body
 }
