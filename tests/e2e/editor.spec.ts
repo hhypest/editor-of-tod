@@ -1594,3 +1594,50 @@ test('post distance in metres drives the place on the sheet, the caption and the
   await expect(interval).toContainText('180 м): 70 м')
   await expect(interval).toContainText('ГОСТ Р 58350')
 })
+
+test('switching the B.34 mode offers the taper length, applied and undone only by buttons', async ({
+  page,
+  request,
+}) => {
+  await importSampleCards(request)
+  await page.goto('/')
+  await fillNewProject(page, '12 км 3 пк', '90001:12:3')
+  await page.getByRole('button', { name: 'Создать проект' }).click()
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  const taper = page.getByLabel('Отвод, м').last()
+  const offer = page.locator('.taper-offer')
+  await expect(taper).toHaveValue('10')
+  await expect(offer).toHaveCount(0)
+  // «Отменить ввод» выбрасывает подстановки вместе с «Вернуть», даже если после сброса в поле то
+  // же число, что подставлено последним (10 → 15 → 10): прежний ввод 15 м не воскресает.
+  await page.getByLabel('Регулирование Б.34').selectOption('signs')
+  await offer.getByRole('button', { name: 'Подставить отвод 15 м' }).click()
+  await page.getByLabel('Регулирование Б.34').selectOption('two')
+  await offer.getByRole('button', { name: 'Подставить отвод 10 м' }).click()
+  await expect(offer.getByRole('button', { name: 'Вернуть прежний отвод' })).toBeVisible()
+  await page.getByRole('button', { name: 'Отменить ввод' }).click()
+  await expect(taper).toHaveValue('10')
+  await expect(offer).toHaveCount(0)
+  // Знаки 2.6/2.7: предлагается 15 м по табл. И.1, введённое значение не меняется само.
+  await page.getByLabel('Регулирование Б.34').selectOption('signs')
+  await expect(offer).toContainText('Для знаков приоритета 2.6/2.7 отвод — 15 м')
+  await expect(offer).toContainText('сейчас 10 м')
+  await expect(taper).toHaveValue('10')
+  await offer.getByRole('button', { name: 'Подставить отвод 15 м' }).click()
+  await expect(taper).toHaveValue('15')
+  await expect(offer).toContainText('Отвод заменён: было 10 м.')
+  await offer.getByRole('button', { name: 'Вернуть прежний отвод' }).click()
+  await expect(taper).toHaveValue('10')
+  await offer.getByRole('button', { name: 'Подставить отвод 15 м' }).click()
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await expect(offer).toHaveCount(0)
+  // Обратно к регулировщикам: 15 м осталось от знаков — предлагается отвод рисунка Б.34.
+  await page.getByLabel('Регулирование Б.34').selectOption('two')
+  await expect(offer).toContainText('В поле остался отвод для знаков 2.6/2.7 — 15 м')
+  await expect(taper).toHaveValue('15')
+  await offer.getByRole('button', { name: 'Подставить отвод 10 м' }).click()
+  await expect(taper).toHaveValue('10')
+  // Ручная правка после подстановки: «Вернуть» исчезает, своё число при регулировщиках не трогается.
+  await taper.fill('12')
+  await expect(offer).toHaveCount(0)
+})

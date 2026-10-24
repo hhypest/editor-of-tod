@@ -387,6 +387,45 @@ describe('normative parameters from library documents', () => {
       'confirmed',
     )
   })
+  it('treats an amendment mentioning a figure as changing the values taken from it', async () => {
+    const store = library()
+    const document = await add(store, methodology(520), {})
+    const who = {
+      confirmedBy: 'Учебный составитель',
+      note: 'Рисунок на учебной странице 2',
+      expectedDocumentId: document.id,
+    }
+    await confirmParameter(store, 'odm-b34-taper', { ...who, value: 10 }, now)
+    await confirmParameter(store, 'odm-zone-speed', { ...who, value: 40 }, now)
+    let states = await listParameterStates(store, now)
+    expect(state(states, 'odm-b34-taper').status.kind).toBe('confirmed')
+    // Изменение рисунка Б.33 касается значений «рисунки Б.33 и Б.34», но не отвода рисунка Б.34.
+    await add(store, textPdf([['Учебное изменение: рисунок Б.33 изложить в новой редакции.']]), {
+      code: 'Изменение № 1 к ОДМ 218.6.019',
+      edition: '2031',
+      effectiveFrom: '2031-01-01',
+      amendsId: document.id,
+    })
+    states = await listParameterStates(store, now)
+    expect(state(states, 'odm-zone-speed').amendments).toEqual([
+      'Изменение № 1 к ОДМ 218.6.019 (2031)',
+    ])
+    expect(state(states, 'odm-zone-speed').status.kind).toBe('changed')
+    expect(state(states, 'odm-b34-taper').amendments).toEqual([])
+    expect(state(states, 'odm-b34-taper').status.kind).toBe('confirmed')
+    // Перечень и падеж: «на рисунках Б.32 и Б.34».
+    await add(store, textPdf([['Учебная поправка: на рисунках Б.32 и Б.34 уточнить отвод.']]), {
+      code: 'Поправка к ОДМ 218.6.019',
+      edition: '2031',
+      effectiveFrom: '2031-02-01',
+      amendsId: document.id,
+    })
+    states = await listParameterStates(store, now)
+    expect(state(states, 'odm-b34-taper').amendments).toEqual(['Поправка к ОДМ 218.6.019 (2031)'])
+    expect(state(states, 'odm-b34-taper').status.kind).toBe('changed')
+    expect(rulesFrom(states).confirmed['odm-b34-taper']).toBe(false)
+  })
+
   it('quotes clauses of the current edition and suggests values from their text', async () => {
     const store = library()
     const document = await add(store, methodology(520), {})

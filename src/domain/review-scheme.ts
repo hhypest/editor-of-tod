@@ -270,6 +270,8 @@ export function reviewScheme(
         // снималась бы при каждом добавлении параметра в программу.
         speedStepInterval: undefined,
         plateLimit: undefined,
+        // Только предложение отвода и сравнение с рисунком; раскладка берёт введённый отвод.
+        b34TaperMetres: undefined,
         // Расхождение варианта и порога показывает пункт «Вариант и длина фронта».
         b34MaxFrontMetres: undefined,
         frontLimitMetres: undefined,
