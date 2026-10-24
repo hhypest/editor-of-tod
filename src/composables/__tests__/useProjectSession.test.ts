@@ -461,6 +461,54 @@ describe('project revision contracts', () => {
     expect(session.imported.value!.warnings.join(' ')).not.toContain('не хранилась')
   })
 
+  it('rebuilds a built template on stage 2 edits and drops the notice on undo and on opening another project', async () => {
+    const session = await openEditedSession()
+    const opened = session.imported.value!.scheme
+    session.onProjectApplied({
+      ...opened,
+      parameters: {
+        ...opened.parameters,
+        location: 'out',
+        approachSpeedKmh: 90,
+        regulation: { ...opened.parameters.regulation, mode: 'two', hourly: '300' },
+        workConditions: {
+          kind: 'short',
+          durationHours: 5,
+          daylight: 'day',
+          regulatorsPresent: true,
+          sectionMetres: null,
+        },
+      },
+    })
+    session.buildDraftTemplate()
+    expect(session.templateError.value).toBe('')
+    const built = session.imported.value!.scheme
+    expect(built.placements.some((placement) => placement.generatedByTemplate)).toBe(true)
+    session.onDetailsApplied({
+      ...built,
+      parameters: { ...built.parameters, location: 'in', approachSpeedKmh: 60 },
+    })
+    expect(session.templateMessage.value).toContain('Типовые объекты перестроены')
+    expect(session.imported.value!.scheme.placements).not.toEqual(built.placements)
+    session.stepBack()
+    expect(session.imported.value!.scheme).toBe(built)
+    expect(session.templateMessage.value).toBe('')
+    session.stepForward()
+    session.onDetailsApplied({
+      ...session.imported.value!.scheme,
+      parameters: {
+        ...session.imported.value!.scheme.parameters,
+        location: 'out',
+        approachSpeedKmh: 90,
+      },
+    })
+    expect(session.templateMessage.value).not.toBe('')
+    local.getLocalProject.mockResolvedValue(record(built, 2))
+    await session.openLocal(built.id)
+    expect(session.templateMessage.value).toBe('')
+    expect(session.templateError.value).toBe('')
+  })
+
   it('does not show a late save error in a different session', async () => {
     const session = await openEditedSession()
     const response = deferred<ProjectRecord>()
