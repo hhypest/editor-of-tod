@@ -1,4 +1,4 @@
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import {
   exportSchemeJson,
   importSchemeJson,
@@ -21,10 +21,10 @@ import {
   saveLocalProject,
   createRecoveryRepository,
 } from '../services/local-projects'
-import { RecoverySession, RECOVERY_HEARTBEAT_MS } from '../application/recovery-session'
-import { useProjectRevisionActions } from './useProjectRevisionActions'
-import type { RevisionCursor } from '../application/project-revisions'
-import type { RecoverySummary } from '../domain/recovery'
+import { useProjectRecovery } from './useProjectRecovery'
+import { useBrowserLifecycle } from './useBrowserLifecycle'
+import { useSessionCursor } from './useSessionCursor'
+import { useProjectPersistence } from './useProjectPersistence'
 import { useProjectHistory } from './useProjectHistory'
 import { useEditorDraftState } from './useEditorDraftState'
 import { useProjectDocument } from './useProjectDocument'
@@ -64,105 +64,20 @@ export function useProjectSession(onProjectOpened: () => void) {
   const templateError = ref('')
   const signPinMessage = ref('')
   const hasUnsavedWork = computed(() => editorDirty.value || modifiedSinceLocalSave.value)
-  const recoveryCopies = ref<RecoverySummary[]>([])
-  const recoveryStatus = ref<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle')
-  let recoverySessionId: string = crypto.randomUUID()
-  const activeRecoveryId = ref(recoverySessionId)
-  const recoveryRepository = createRecoveryRepository(crypto.randomUUID())
-  const recovery = new RecoverySession(recoveryRepository)
-  let heartbeatTimer: ReturnType<typeof setInterval> | null = null
-  let recoveryTimer: ReturnType<typeof setTimeout> | null = null
-  let recoveryChanges = 0
-  let revisionSession = 0
-  let revisionEdit = 0
-  const revisionCursor = (): RevisionCursor => ({ session: revisionSession, edit: revisionEdit })
-  // Synchronous tracking also sees input changed before Vue's next render/watch batch.
-  watch(
-    [() => imported.value?.scheme, detailsDirty, placementDirty, pendingDetails, pendingPlacement],
-    () => revisionEdit++,
-    { flush: 'sync' },
-  )
-
-  async function refreshRecoveries(): Promise<void> {
-    try {
-      recoveryCopies.value = await listRecoveryDrafts()
-    } catch (cause) {
-      showLocalError(cause)
-    }
-  }
-
-  function cancelRecoveryTimer(): void {
-    if (recoveryTimer) clearTimeout(recoveryTimer)
-    recoveryTimer = null
-  }
-
-  function beginSession(sessionId: string = crypto.randomUUID()): void {
-    revisionSession++
-    cancelRecoveryTimer()
-    if (sessionId !== recoverySessionId)
-      void recovery.release(recoverySessionId).catch(showLocalError)
-    recoverySessionId = sessionId
-    activeRecoveryId.value = sessionId
-    drafts.clearPending()
-    recoveryStatus.value = 'idle'
-    // Итог сборки шаблона относится к открытому проекту и его текущему состоянию.
-    templateMessage.value = ''
-    templateError.value = ''
-  }
-
-  async function clearRecovery(sessionId: string): Promise<void> {
-    await recovery.remove(sessionId)
-    if (sessionId === recoverySessionId && !hasUnsavedWork.value) recoveryStatus.value = 'idle'
-    await refreshRecoveries()
-  }
-
-  async function flushRecovery(): Promise<boolean> {
-    cancelRecoveryTimer()
-    if (!imported.value || !hasUnsavedWork.value) return true
-    const sessionId = recoverySessionId
-    const change = recoveryChanges
-    const snapshot = {
-      sessionId,
-      scheme: imported.value.scheme,
-      baseRevision: localRevision.value,
-      detailsDraft: pendingDetails.value,
-      placementDraft: pendingPlacement.value,
-      fileName: selectedFileName.value,
-    }
-    recoveryStatus.value = 'saving'
-    const write = recovery.save(snapshot)
-    try {
-      await write
-      if (sessionId === recoverySessionId) {
-        if (change === recoveryChanges) recoveryStatus.value = 'saved'
-        else scheduleRecovery()
-      }
-      await refreshRecoveries()
-      return true
-    } catch (cause) {
-      if (sessionId === recoverySessionId) {
-        recoveryStatus.value = 'error'
-        showLocalError(cause)
-      }
-      return false
-    }
-  }
-
-  function scheduleRecovery(): void {
-    recoveryChanges++
-    cancelRecoveryTimer()
-    if (!imported.value || !hasUnsavedWork.value) {
-      if (recovery.version(recoverySessionId) > 0) {
-        void clearRecovery(recoverySessionId).catch(showLocalError)
-      } else recoveryStatus.value = 'idle'
-      return
-    }
-    recoveryStatus.value = 'pending'
-    recoveryTimer = setTimeout(() => void flushRecovery(), 800)
-  }
-
-  watch(
-    [
+  const cursor = useSessionCursor([
+    () => imported.value?.scheme,
+    detailsDirty,
+    placementDirty,
+    pendingDetails,
+    pendingPlacement,
+  ])
+  const revisionCursor = cursor.snapshot
+  const recovery = useProjectRecovery({
+    initialId: crypto.randomUUID(),
+    repository: createRecoveryRepository(crypto.randomUUID()),
+    list: listRecoveryDrafts,
+    hasUnsavedWork,
+    changes: [
       imported,
       detailsDirty,
       placementDirty,
@@ -171,51 +86,45 @@ export function useProjectSession(onProjectOpened: () => void) {
       modifiedSinceLocalSave,
       localRevision,
     ],
-    scheduleRecovery,
-  )
-
-  function beforeUnload(event: BeforeUnloadEvent): void {
-    if (hasUnsavedWork.value && recoveryStatus.value !== 'saved') event.preventDefault()
-  }
-
-  function releaseOnExit(): void {
-    if (recovery.version(recoverySessionId)) recoveryRepository.releaseOnExit(recoverySessionId)
-  }
-
-  async function heartbeat(): Promise<void> {
-    const id = recoverySessionId
-    try {
-      await recovery.heartbeat(id)
-    } catch (cause) {
-      if (id === recoverySessionId) {
-        recoveryStatus.value = 'error'
-        showLocalError(cause)
+    showError: showLocalError,
+    snapshot(sessionId) {
+      if (!imported.value || !hasUnsavedWork.value) return null
+      return {
+        sessionId,
+        scheme: imported.value.scheme,
+        baseRevision: localRevision.value,
+        detailsDraft: pendingDetails.value,
+        placementDraft: pendingPlacement.value,
+        fileName: selectedFileName.value,
       }
-    }
-    await refreshRecoveries()
-  }
-
-  function onVisible(): void {
-    if (document.visibilityState === 'visible') void heartbeat()
-  }
-
-  onMounted(() => {
-    window.addEventListener('beforeunload', beforeUnload)
-    window.addEventListener('pagehide', releaseOnExit)
-    window.addEventListener('pageshow', onVisible)
-    document.addEventListener('visibilitychange', onVisible)
-    heartbeatTimer = setInterval(() => void heartbeat(), RECOVERY_HEARTBEAT_MS)
-    void refreshRecoveries()
+    },
   })
-  onUnmounted(() => {
-    revisionSession++
-    window.removeEventListener('beforeunload', beforeUnload)
-    window.removeEventListener('pagehide', releaseOnExit)
-    window.removeEventListener('pageshow', onVisible)
-    document.removeEventListener('visibilitychange', onVisible)
-    if (heartbeatTimer) clearInterval(heartbeatTimer)
-    void recovery.release(recoverySessionId).catch(showLocalError)
-    cancelRecoveryTimer()
+  const {
+    recoveryCopies,
+    recoveryStatus,
+    activeRecoveryId,
+    flush: flushRecovery,
+    clear: clearRecovery,
+    refresh: refreshRecoveries,
+  } = recovery
+
+  function beginSession(sessionId: string = crypto.randomUUID()): void {
+    cursor.begin()
+    recovery.begin(sessionId)
+    drafts.clearPending()
+    templateMessage.value = ''
+    templateError.value = ''
+  }
+
+  useBrowserLifecycle({
+    start: recovery.start,
+    stop() {
+      cursor.begin()
+      recovery.stop()
+    },
+    beforeUnload: recovery.beforeUnload,
+    pageHide: recovery.releaseOnExit,
+    visible: () => void recovery.heartbeat(),
   })
 
   async function onFileSelected(event: Event): Promise<void> {
@@ -333,7 +242,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     }
   }
 
-  const { saveLocally, saveAsNew, restoreLocal } = useProjectRevisionActions(
+  const { saveLocally, saveAsNew, restoreLocal, openLocal } = useProjectPersistence(
     {
       imported,
       history,
@@ -348,14 +257,14 @@ export function useProjectSession(onProjectOpened: () => void) {
       localNotice,
       projectsRefreshKey,
       cursor: revisionCursor,
-      recoveryId: () => recoverySessionId,
+      recoveryId: () => activeRecoveryId.value,
       beginSession,
       openProjectRecord,
       flushRecovery,
       clearRecovery,
       showLocalError,
     },
-    { save: saveLocalProject, restore: restoreLocalRevision },
+    { save: saveLocalProject, restore: restoreLocalRevision, get: getLocalProject },
   )
 
   function openProjectRecord(scheme: Scheme, revision: number, storedSchemaVersion?: number): void {
@@ -377,27 +286,6 @@ export function useProjectSession(onProjectOpened: () => void) {
       selectedPlacementId: scheme.placements[0]?.id ?? null,
     })
     onProjectOpened()
-  }
-
-  async function openLocal(id: string): Promise<void> {
-    if (localBusy.value || loading.value) return
-    if (
-      hasUnsavedWork.value &&
-      !window.confirm('Есть несохранённые правки. Открыть другой проект?')
-    )
-      return
-    if (hasUnsavedWork.value && !(await flushRecovery())) return
-    localBusy.value = true
-    localError.value = ''
-    localNotice.value = ''
-    try {
-      const record = await getLocalProject(id)
-      openProjectRecord(record.scheme, record.revision, record.storedSchemaVersion)
-    } catch (cause) {
-      showLocalError(cause)
-    } finally {
-      localBusy.value = false
-    }
   }
 
   const onProjectApplied = projectDocument.commitScheme
@@ -545,7 +433,7 @@ export function useProjectSession(onProjectOpened: () => void) {
   }
 
   async function discardRecovery(sessionId: string, version: number): Promise<void> {
-    if (localBusy.value || sessionId === recoverySessionId) return
+    if (localBusy.value || sessionId === activeRecoveryId.value) return
     localBusy.value = true
     localError.value = ''
     try {
