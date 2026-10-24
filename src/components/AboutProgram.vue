@@ -77,8 +77,7 @@ const russian = licenseRussian.replace(/^# .*\n+/, '')
     </p>
     <p v-if="state === 'loading'" class="hint" role="status">Читаю список компонентов…</p>
     <p v-else-if="state === 'missing'" class="hint">
-      Список формируется при сборке программы. В режиме разработки он недоступен — выполните npm run
-      build или откройте собранную программу.
+      Список формируется при сборке программы. Откройте собранную программу, чтобы посмотреть его.
     </p>
     <template v-else-if="components">
       <p>

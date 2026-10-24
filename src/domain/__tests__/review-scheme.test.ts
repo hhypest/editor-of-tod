@@ -126,7 +126,7 @@ describe('live draft review', () => {
     })
     const findings = reviewScheme(linked)
     expect(findings.find((finding) => finding.id === 'crossing')?.detail).toContain(
-      'редакция ПУ-66 № 2',
+      'версия ПУ-66 № 2',
     )
     expect(findings.find((finding) => finding.id === 'template')?.kind).toBe('verify')
     expect(findings.some((finding) => finding.id === 'variant-front')).toBe(false)

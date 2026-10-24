@@ -76,7 +76,7 @@ const catalogState = ref<'loading' | 'ready' | 'partial' | 'unavailable'>('loadi
 const catalogSource = ref<{ documentCode: string; edition: string } | null>(null)
 const printError = ref('')
 const documents = ref<DocumentRecord[]>([])
-/** Редакция знаков проекта (закреплённая или текущего каталога) против действующей в библиотеке. */
+/** Версия знаков проекта (закреплённая или текущего каталога) против действующей в библиотеке. */
 const editionStatus = computed(() =>
   catalogEditionStatus(catalogSource.value, documents.value, localCalendarDate(new Date())),
 )
@@ -92,16 +92,16 @@ watch(
 
 const revisionLabel = computed(() =>
   props.localRevision === null
-    ? 'Проект не сохранён в SQLite.'
+    ? 'Проект ещё не сохранён на этом компьютере.'
     : props.modifiedSinceLocalSave
-      ? `Проект изменён после редакции № ${props.localRevision}.`
-      : `Редакция проекта № ${props.localRevision}.`,
+      ? `Проект изменён после версии № ${props.localRevision}.`
+      : `Версия проекта № ${props.localRevision}.`,
 )
 const drawingOptions = computed(() => ({
   signSizes: signSizes.value,
   catalogLabel: catalogSource.value
-    ? `Знаки: PNG локального каталога · ${catalogSource.value.documentCode}, редакция ${catalogSource.value.edition}.`
-    : 'Знаки: редакция каталога не указана.',
+    ? `Знаки: PNG локального каталога · ${catalogSource.value.documentCode}, версия ${catalogSource.value.edition}.`
+    : 'Знаки: версия каталога не указана.',
   revisionLabel: revisionLabel.value,
 }))
 /** Черновая раскладка: по ней выполняются все проверки (выпуск отличается только подписями). */
@@ -141,7 +141,7 @@ const blockers = computed(() => {
     list.push('Для печати нужен полный доступ к локальному каталогу PNG знаков.')
   else if (!catalogSource.value || catalogSource.value.edition === 'не указана')
     list.push(
-      'Для печати загрузите каталог знаков с указанием редакции ГОСТ (из PDF в библиотеке или ZIP).',
+      'Для печати загрузите каталог знаков с указанием версии ГОСТ (из PDF в библиотеке или ZIP).',
     )
   if (missingSigns.value.length)
     list.push(
@@ -215,7 +215,7 @@ async function loadSigns(): Promise<void> {
       list.map((sign) => [sign.code, { width: sign.width, height: sign.height }]),
     )
     const broken = new Set<string>()
-    // Каждый закреплённый код получает размеры своей редакции, включая активные коды.
+    // Каждый закреплённый код получает размеры своей версии, включая активные коды.
     await Promise.all(
       Object.entries(selectedScheme.signImages.revisions).map(async ([code, revision]) => {
         sizes.delete(code)
@@ -458,12 +458,12 @@ async function exportPng(): Promise<void> {
       </p>
       <p v-if="editionStatus.kind === 'outdated'" class="error" role="status">
         Знаки {{ scheme.signImages.catalog ? 'проекта закреплены' : 'каталога загружены' }} по
-        редакции {{ editionStatus.catalogEdition }}, а в библиотеке действует
+        версии {{ editionStatus.catalogEdition }}, а в библиотеке действует
         {{ documentLabel(editionStatus.document) }}.
         {{
           scheme.signImages.catalog
-            ? 'После загрузки каталога новой редакции проверьте знаки и закрепите редакции PNG заново на этапе «Знаки и объекты».'
-            : 'Извлеките знаки из PDF новой редакции в «Реестры» → «Импорт Excel и знаков».'
+            ? 'После загрузки каталога новой версии проверьте знаки и закрепите версии PNG заново на этапе «Знаки и объекты».'
+            : 'Извлеките знаки из PDF новой версии в «Реестры» → «Импорт Excel и знаков».'
         }}
       </p>
       <p v-if="outsideIds.length" class="hint">

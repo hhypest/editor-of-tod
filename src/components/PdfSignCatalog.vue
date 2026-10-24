@@ -20,7 +20,7 @@ const props = defineProps<{
 const emit = defineEmits<{ applied: [] }>()
 
 const today = localCalendarDate(new Date())
-/** Документы с изображениями знаков: действующая редакция первой. */
+/** Документы с изображениями знаков: действующая версия первой. */
 const candidates = computed(() => {
   const statuses = documentStatuses(props.documents, today)
   return props.documents
@@ -108,7 +108,7 @@ async function apply(): Promise<void> {
     )
     reset()
     emit('applied')
-    notice.value = `Каталог знаков записан по ${result.source.documentCode}-${result.source.edition}: новых ${result.added}, изменено изображений ${result.changedCodes.length}, сменилась только редакция источника у ${result.relabelled}, исключено из текущего набора ${result.retired}. ${result.backup ? `Копия SQLite: private-data/backups/${result.backup}.` : 'Изменений нет.'}`
+    notice.value = `Каталог знаков записан по ${result.source.documentCode}-${result.source.edition}: новых ${result.added}, изменено изображений ${result.changedCodes.length}, сменилась только версия источника у ${result.relabelled}, исключено из текущего набора ${result.retired}. ${result.backup ? `Резервная копия: private-data/backups/${result.backup}.` : 'Изменений нет.'}`
   } catch (cause) {
     plan.value = null
     error.value = `${cause instanceof Error ? cause.message : 'Не удалось записать каталог.'} Повторите просмотр перед записью.`
@@ -195,7 +195,7 @@ function statusLabel(status: string): string {
       Программа вынимает изображения знаков из таблиц А.1–А.8 приложения А ГОСТ Р 52290 и определяет
       номер каждого по подписи под изображением. Знаки, которые по перечню стандарта допускается
       выполнять с жёлтым фоном, получают вариант «_ж». Перед записью проверьте номера; каталог
-      заменяется целиком, прежние изображения остаются в истории SQLite.
+      заменяется целиком, прежние изображения остаются в истории базы на этом компьютере.
     </p>
     <p v-if="!candidates.length" class="hint">
       Прикрепите PDF ГОСТ Р 52290 в «Реестры» → «Нормативные документы» с назначением «Изображения
@@ -224,8 +224,8 @@ function statusLabel(status: string): string {
         Страницы {{ plan.pages?.first }}–{{ plan.pages?.last }}: изображений
         {{ plan.images.length }}, в каталог попадёт {{ plan.signCount }} знаков (с жёлтыми
         вариантами). Новых {{ plan.added }}, с изменённым изображением
-        {{ plan.changedCodes.length }}, сменится только редакция источника {{ plan.relabelled }},
-        без изменений {{ plan.unchanged }}, исключается из текущего набора {{ plan.retired }}.
+        {{ plan.changedCodes.length }}, сменится только версия источника {{ plan.relabelled }}, без
+        изменений {{ plan.unchanged }}, исключается из текущего набора {{ plan.retired }}.
       </p>
       <p v-if="unresolved.length" class="error" role="status">
         У {{ unresolved.length }} изображений номер не найден: укажите его или снимите отметку «в
@@ -306,8 +306,8 @@ function statusLabel(status: string): string {
           >.
         </p>
         <p class="hint">
-          Проекты с закреплёнными редакциями продолжат показывать прежние PNG из истории; новые
-          стойки эти коды не получат.
+          Проекты с закреплёнными версиями продолжат показывать прежние PNG из истории; новые стойки
+          эти коды не получат.
         </p>
       </details>
       <details v-if="plan.changedCodes.length" :open="plan.changedCodes.length <= 40">
@@ -343,7 +343,7 @@ function statusLabel(status: string): string {
         "
         @click="apply"
       >
-        Записать каталог знаков и создать копию SQLite
+        Записать каталог знаков и создать резервную копию
       </button>
     </div>
   </div>

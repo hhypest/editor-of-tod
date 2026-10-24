@@ -125,7 +125,7 @@ describe('frozen files of previous formats', () => {
       const speedNotice = imported.warnings.filter((warning) => warning.includes('не хранилась'))
       if (original.schemaVersion <= 4) {
         expect(speedNotice).toEqual([
-          `Разрешённая скорость на подходе в формате v${original.schemaVersion} не хранилась: подставлено 60 км/ч — значение прежних версий по умолчанию. Укажите местоположение на этапе 2 и проверьте разрешённую скорость и ступени скорости.`,
+          'Разрешённая скорость на подходе в файле проекта прежней версии не хранилась: подставлено 60 км/ч — прежнее значение по умолчанию. Укажите местоположение на этапе 2 и проверьте разрешённую скорость и ступени скорости.',
         ])
         expect(scheme.parameters.location).toBe('auto')
         expect(reviewScheme(scheme).find((finding) => finding.id === 'location')?.detail).toContain(

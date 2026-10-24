@@ -69,7 +69,7 @@ const inProject = computed(() =>
           {{ templateLabel(imported.scheme.template.code) }}</strong
         ><span class="project-meta"
           >Фронт {{ frontMetres ?? 'не указан' }} м · объектов
-          {{ imported.scheme.placements.length }} · редакция
+          {{ imported.scheme.placements.length }} · версия
           {{ localRevision ?? 'не сохранена' }}</span
         >
       </div>
@@ -80,14 +80,14 @@ const inProject = computed(() =>
             Сохранить как новый проект
           </button>
           <button type="button" :disabled="editorDirty || localBusy" @click="saveV5">
-            Скачать файл проекта (JSON)
+            Скачать файл проекта
           </button>
           <button
             v-if="imported.scheme.source.kind === 'legacy-html-v1'"
             type="button"
             @click="saveOriginal"
           >
-            Скачать исходный JSON
+            Скачать исходный файл
           </button>
           <button
             type="button"
@@ -189,7 +189,7 @@ const inProject = computed(() =>
           Собрать черновой шаблон
         </button>
         <button type="button" :disabled="editorDirty || localBusy" @click="pinCurrentSigns">
-          Закрепить редакции PNG
+          Закрепить версии PNG
         </button>
         <p v-if="signPinMessage" role="status">{{ signPinMessage }}</p>
         <p v-if="templateMessage" role="status">{{ templateMessage }}</p>

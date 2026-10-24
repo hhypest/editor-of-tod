@@ -46,7 +46,7 @@ function complete(
   if (record.scheme.id !== id || !validRevision)
     throw new ProjectRevisionError(
       'invalid-response',
-      'Локальная база вернула другую редакцию проекта. Обновите список проектов.',
+      'Локальная база вернула другую версию проекта. Обновите список проектов.',
     )
   return { record, delivery: revisionDelivery(started, current()) }
 }

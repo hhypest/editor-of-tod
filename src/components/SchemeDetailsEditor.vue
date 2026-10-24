@@ -424,7 +424,8 @@ function applyDraft(): void {
     const updated = applySchemeDetails(props.scheme, draft.value, normativeRules.value)
     dirty.value = false
     error.value = ''
-    status.value = 'Правки применены к проекту. Сохраните проект; файл JSON можно скачать отдельно.'
+    status.value =
+      'Правки применены к проекту. Сохраните проект; отдельный файл можно скачать в действиях с проектом.'
     emit('apply', updated)
     emit('dirty', false)
   } catch (cause) {

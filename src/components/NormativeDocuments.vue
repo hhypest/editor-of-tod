@@ -74,7 +74,7 @@ const editForm = reactive<DocumentMeta>(emptyMeta())
 const statuses = computed(() => documentStatuses(documents.value, today))
 const byId = computed(() => new Map(documents.value.map((document) => [document.id, document])))
 const baseDocuments = computed(() => documents.value.filter((item) => item.amendsId === null))
-/** Документы по кодам: сверху группа знаков, внутри — от новой редакции к старой. */
+/** Документы по кодам: сверху группа знаков, внутри — от новой версии к старой. */
 const groups = computed(() => {
   const map = new Map<string, DocumentRecord[]>()
   for (const document of baseDocuments.value) {
@@ -107,7 +107,7 @@ function statusText(document: DocumentRecord): string {
   if (status.kind === 'current') return 'действует'
   if (status.kind === 'superseded') {
     const by = byId.value.get(status.by)
-    return `заменён${by ? ` редакцией ${by.edition}` : ''}`
+    return `заменён${by ? ` версией ${by.edition}` : ''}`
   }
   if (status.kind === 'future') return `вводится с ${status.from}`
   if (status.kind === 'amendment')
@@ -246,17 +246,17 @@ const effectText = computed(() => {
   const { status, replaces } = preview.value.effect
   if (status.kind === 'current')
     return replaces.length
-      ? `Станет действующей редакцией вместо ${replaces.map((item) => `${normalizeDocumentCode(item.code)}-${item.edition}`).join(', ')}; прежняя останется в библиотеке с отметкой «заменён».`
-      : 'Станет действующей редакцией этого документа.'
+      ? `Станет действующей версией вместо ${replaces.map((item) => `${normalizeDocumentCode(item.code)}-${item.edition}`).join(', ')}; прежняя останется в библиотеке с отметкой «заменён».`
+      : 'Станет действующей версией этого документа.'
   if (status.kind === 'future')
-    return `Будет действовать с ${status.from}; до этой даты действует прежняя редакция.`
+    return `Будет действовать с ${status.from}; до этой даты действует прежняя версия.`
   if (status.kind === 'superseded')
-    return 'Более новая редакция уже есть: документ будет отмечен как заменённый.'
+    return 'Более новая версия уже есть: документ будет отмечен как заменённый.'
   if (status.kind === 'amendment')
     return status.inForce
       ? 'Изменение к стандарту, уже действует.'
       : 'Изменение к стандарту, ещё не введено.'
-  return 'Дата введения и год редакции не указаны: статус определить нельзя.'
+  return 'Дата введения и год версии не указаны: статус определить нельзя.'
 })
 
 async function add(): Promise<void> {
@@ -267,7 +267,7 @@ async function add(): Promise<void> {
     const result = await timed('Добавление документа', () =>
       applyDocument(file.value!, { ...form }, preview.value!.fingerprint),
     )
-    notice.value = `${documentLabel(result.document)} добавлен в библиотеку. Копия SQLite: ${result.backup}.`
+    notice.value = `${documentLabel(result.document)} добавлен в библиотеку. Резервная копия: ${result.backup}.`
     resetForm()
     await load()
     emit('changed')
@@ -358,26 +358,26 @@ function megabytes(bytes: number): string {
 
 <template>
   <section class="library" aria-labelledby="documents-title">
-    <h2 id="documents-title">Нормативные документы и редакции</h2>
+    <h2 id="documents-title">Нормативные документы и версии</h2>
     <p class="hint">
       Прикрепите PDF стандартов и методических документов, по которым составляются схемы (ГОСТ Р
       52290 — знаки, ГОСТ Р 52289 — правила применения, ОДМ 218.6.019 — схемы Б.33/Б.34), и
-      изменения к ним. При выходе новой редакции добавьте её с датой введения: прежняя редакция
+      изменения к ним. При выходе новой версии добавьте её с датой введения: прежняя версия
       останется в библиотеке с отметкой «заменён», а приложение подскажет, если каталог знаков или
-      проекты используют устаревшую редакцию. Файлы хранятся только в локальной базе на этом
-      компьютере. Актуальность редакций приложение само не проверяет — подтверждайте её раз в год.
+      проекты используют устаревшую версию. Файлы хранятся только в локальной базе на этом
+      компьютере. Актуальность версий приложение само не проверяет — подтверждайте её раз в год.
     </p>
 
     <div v-if="signsStatus.kind === 'outdated'" class="warning" role="status">
-      Каталог знаков загружен по редакции {{ signsStatus.catalogEdition }}, а действует
-      {{ documentLabel(signsStatus.document) }}. Извлеките знаки из PDF этой редакции в «Импорт
-      Excel и знаков» (блок «Знаки из PDF стандарта»).
+      Каталог знаков загружен по версии {{ signsStatus.catalogEdition }}, а действует
+      {{ documentLabel(signsStatus.document) }}. Извлеките знаки из PDF этой версии в «Импорт Excel
+      и знаков» (блок «Знаки из PDF стандарта»).
     </div>
     <div v-else-if="signsStatus.kind === 'current'" class="ok" role="status">
-      Каталог знаков соответствует действующей редакции {{ documentLabel(signsStatus.document) }}.
+      Каталог знаков соответствует действующей версии {{ documentLabel(signsStatus.document) }}.
     </div>
     <div v-if="checksDue.length" class="warning" role="status">
-      Подтвердите актуальность действующих редакций (проверка раз в год):
+      Подтвердите актуальность действующих версий (проверка раз в год):
       {{ checksDue.map(documentLabel).join(', ') }}.
     </div>
 
@@ -396,7 +396,7 @@ function megabytes(bytes: number): string {
         >
           <div class="row">
             <strong>
-              {{ document.amendsId === null ? `Редакция ${document.edition}` : document.edition }}
+              {{ document.amendsId === null ? `Версия ${document.edition}` : document.edition }}
             </strong>
             <span class="badge">{{ statusText(document) }}</span>
             <span v-if="document.title">{{ document.title }}</span>
@@ -405,7 +405,7 @@ function megabytes(bytes: number): string {
             {{ documentKinds[document.kind] }}
             · введён: {{ document.effectiveFrom || 'дата не указана' }}
             <template v-if="document.amendsId !== null">
-              · изменение к редакции {{ byId.get(document.amendsId)?.edition }}
+              · изменение к версии {{ byId.get(document.amendsId)?.edition }}
             </template>
             · {{ document.filename }}, {{ megabytes(document.sizeBytes) }} МБ · актуальность
             проверена: {{ document.actualCheckedAt || 'нет' }}
@@ -432,7 +432,7 @@ function megabytes(bytes: number): string {
           </div>
           <form v-if="editingId === document.id" class="fields" @submit.prevent="saveEdit">
             <label>Обозначение <input v-model="editForm.code" required maxlength="120" /></label>
-            <label>Редакция <input v-model="editForm.edition" required maxlength="60" /></label>
+            <label>Версия <input v-model="editForm.edition" required maxlength="60" /></label>
             <label class="wide">Название <input v-model="editForm.title" maxlength="500" /></label>
             <label
               >Назначение
@@ -470,7 +470,7 @@ function megabytes(bytes: number): string {
       </ul>
     </article>
 
-    <h3>Добавить документ или новую редакцию</h3>
+    <h3>Добавить документ или новую версию</h3>
     <p v-if="locked" role="status">Сначала примените или отмените правки открытого проекта.</p>
     <form class="fields" @submit.prevent="check">
       <label class="wide">
@@ -508,11 +508,11 @@ function megabytes(bytes: number): string {
             class="candidate"
           >
             <strong
-              >{{ candidate.code }} — {{ candidate.edition || 'редакция не определена' }}</strong
+              >{{ candidate.code }} — {{ candidate.edition || 'версия не определена' }}</strong
             >
             <p v-if="candidate.code === 'ПДД'" class="hint">
-              Постановление от 23.10.1993 № 1090. Укажите дату редакции и отдельно дату её введения:
-              дата постановления и дата редакции не подтверждают вступление изменений в силу.
+              Постановление от 23.10.1993 № 1090. Укажите дату версии и отдельно дату её введения:
+              дата постановления и дата версии не подтверждают вступление изменений в силу.
             </p>
             <p v-if="candidate.title">{{ candidate.title }}</p>
             <p class="meta">
@@ -520,8 +520,8 @@ function megabytes(bytes: number): string {
                 candidate.documentType === 'base'
                   ? 'Основной документ'
                   : candidate.documentType === 'amendment'
-                    ? `Изменение к редакции ${candidate.baseEdition}`
-                    : `Поправка к редакции ${candidate.baseEdition}`
+                    ? `Изменение к версии ${candidate.baseEdition}`
+                    : `Поправка к версии ${candidate.baseEdition}`
               }}
               · стр. PDF {{ candidate.page }} · {{ documentKinds[candidate.kind] }}
             </p>
@@ -533,7 +533,7 @@ function megabytes(bytes: number): string {
         <template v-if="file && !identifying">
           <p v-if="filenameSuggestion.code" class="meta">
             По имени файла: {{ filenameSuggestion.code }} {{ filenameSuggestion.edition }}. Имя
-            файла не подтверждает содержание или актуальность редакции.
+            файла не подтверждает содержание или актуальность версии.
           </p>
           <button
             v-if="filenameSuggestion.code"
@@ -570,7 +570,7 @@ function megabytes(bytes: number): string {
           @input="metaEdited('code')"
       /></label>
       <label
-        >Редакция
+        >Версия
         <input
           v-model="form.edition"
           :disabled="busy || locked"
@@ -608,7 +608,7 @@ function megabytes(bytes: number): string {
       <label
         >Изменение к документу
         <select v-model="form.amendsId" :disabled="busy || locked" @change="metaEdited('amendsId')">
-          <option :value="null">— основной документ (новая редакция) —</option>
+          <option :value="null">— основной документ (новая версия) —</option>
           <option v-for="base in baseDocuments" :key="base.id" :value="base.id">
             {{ documentLabel(base) }}
           </option>
@@ -651,7 +651,7 @@ function megabytes(bytes: number): string {
         :disabled="busy || locked || Boolean(preview.duplicate)"
         @click="add"
       >
-        Добавить в библиотеку и создать копию SQLite
+        Добавить в библиотеку и создать резервную копию
       </button>
     </div>
   </section>

@@ -120,7 +120,7 @@ async function downloadRevision(id: string, revision: number): Promise<void> {
     link.click()
     link.remove()
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000)
-    notice.value = `Версия ${revision} скачана файлом проекта (JSON).`
+    notice.value = `Версия ${revision} скачана в отдельный файл проекта.`
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Не удалось скачать версию.'
   } finally {

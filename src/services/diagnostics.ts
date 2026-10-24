@@ -119,7 +119,10 @@ export type DiagnosticsReport = Record<string, unknown>
 export async function loadDiagnostics(): Promise<DiagnosticsReport> {
   await flush()
   const response = await fetch('/api/diagnostics')
-  if (!response.ok) throw new Error('Локальный API не отдал диагностику.')
+  if (!response.ok)
+    throw new Error(
+      'Не удалось получить диагностику. Перезапустите программу и повторите действие.',
+    )
   return (await response.json()) as DiagnosticsReport
 }
 

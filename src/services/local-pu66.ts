@@ -101,7 +101,7 @@ async function request(url: string, options?: RequestInit): Promise<unknown> {
   try {
     response = await fetch(url, options)
   } catch {
-    throw new Error('Локальный реестр недоступен. Запустите npm run dev или npm run local.')
+    throw new Error('Программа не отвечает. Перезапустите её и повторите действие.')
   }
   if (!response.ok) {
     const body = await localJson(response)

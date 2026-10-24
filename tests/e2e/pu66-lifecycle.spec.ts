@@ -183,7 +183,7 @@ test('requires a new import preview for explicit restoration of an unchanged exc
     })
     await box.getByRole('button', { name: 'Просмотреть изменения' }).click()
     await expect(box).toContainText('Учебное закрытие')
-    const apply = box.getByRole('button', { name: 'Подтвердить импорт и создать копию SQLite' })
+    const apply = box.getByRole('button', { name: 'Подтвердить импорт и создать резервную копию' })
     await expect(apply).toBeDisabled()
     await box.getByLabel('Вернуть эту карточку в действующие при импорте').check()
     await box.getByLabel('Кто возвращает').fill('Учебный составитель')

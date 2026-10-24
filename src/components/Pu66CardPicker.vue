@@ -61,7 +61,7 @@ function onChange(event: Event): void {
       >
         <option value="">Выберите запись</option>
         <option v-for="card in options" :key="card.referenceId" :value="card.referenceId">
-          {{ place(card) }} · {{ card.roadName || 'дорога не указана' }} · редакция №
+          {{ place(card) }} · {{ card.roadName || 'дорога не указана' }} · версия №
           {{ card.revision }}
         </option>
       </select>

@@ -26,8 +26,24 @@ function fnv1a64(text: string): string {
   return hash.toString(16).padStart(16, '0')
 }
 
+/**
+ * Терминологическая правка не меняет смысл пункта и не должна снимать отметку «Проверено».
+ * Поэтому новые словоформы приводим к каноническим, использовавшимся в сохранённых отпечатках.
+ * Проверяемые данные (`basis`) не нормализуются: их изменение по-прежнему аннулирует отметку.
+ */
+function stableFindingText(text: string): string {
+  return text.replace(/верси(ями|ям|ях|ей|я|и|ю|й)/g, 'редакци$1')
+}
+
 export function findingFingerprint(finding: ReviewFinding): string {
-  return fnv1a64([finding.id, finding.title, finding.detail, finding.basis ?? ''].join('\n'))
+  return fnv1a64(
+    [
+      finding.id,
+      stableFindingText(finding.title),
+      stableFindingText(finding.detail),
+      finding.basis ?? '',
+    ].join('\n'),
+  )
 }
 
 export function markState(scheme: Scheme, finding: ReviewFinding): MarkState {

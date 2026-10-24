@@ -6,11 +6,15 @@ describe('local API response contract', () => {
     const response = new Response('<!doctype html>', {
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     })
-    await expect(localJson(response)).rejects.toThrow('вернул не JSON')
+    await expect(localJson(response)).rejects.toThrow(
+      'Программа получила неожиданный ответ. Перезапустите её и повторите действие.',
+    )
   })
 
   it('reports corrupt JSON without a raw SyntaxError', async () => {
     const response = new Response('{', { headers: { 'Content-Type': 'application/json' } })
-    await expect(localJson(response)).rejects.toThrow('повреждённый JSON')
+    await expect(localJson(response)).rejects.toThrow(
+      'Не удалось прочитать ответ программы. Перезапустите её и повторите действие.',
+    )
   })
 })

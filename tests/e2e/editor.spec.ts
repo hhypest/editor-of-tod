@@ -19,7 +19,7 @@ import {
 const api = 'http://127.0.0.1:4100'
 const origin = 'http://127.0.0.1:5173'
 
-/** Книги генерируются один раз: новая генерация отличается байтами и дала бы новую редакцию. */
+/** Книги генерируются один раз: новая генерация отличается байтами и дала бы новую версию. */
 let sampleFiles: Promise<Array<{ name: string; data: string }>> | undefined
 
 /** Импортирует четыре вымышленные карточки ПУ-66; повторный вызов ничего не меняет. */
@@ -47,8 +47,8 @@ async function importSampleCards(request: APIRequestContext): Promise<void> {
 }
 
 /**
- * Загружает вымышленный каталог знаков с редакцией (один нарисованный PNG 1.25): без каталога
- * с редакцией печать и выпуск листа заблокированы. Повторная загрузка того же архива допустима,
+ * Загружает вымышленный каталог знаков с версией (один нарисованный PNG 1.25): без каталога
+ * с версией печать и выпуск листа заблокированы. Повторная загрузка того же архива допустима,
  * поэтому сценарий не зависит от того, запускался ли до него другой.
  */
 async function importSampleSignCatalog(request: APIRequestContext): Promise<void> {
@@ -504,9 +504,9 @@ test('cancelled JSON download retains the recovery copy and unsaved state', asyn
   const before = await (await request.get(`${api}/api/recovery`)).json()
   await page.getByText('Действия с проектом', { exact: true }).click()
   const download = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Скачать файл проекта (JSON)' }).click()
+  await page.getByRole('button', { name: 'Скачать файл проекта' }).click()
   await (await download).cancel()
-  await expect(page.locator('.save-state')).toContainText('сохраните редакцию')
+  await expect(page.locator('.save-state')).toContainText('сохраните версию')
   expect(await (await request.get(`${api}/api/recovery`)).json()).toEqual(before)
   // Пока копия не записана, даже после экспорта сохраняется предупреждение при закрытии.
   await page.route('**/api/recovery/**', (route) => route.abort())
@@ -515,7 +515,7 @@ test('cancelled JSON download retains the recovery copy and unsaved state', asyn
   await page.getByRole('button', { name: 'Применить правки' }).click()
   await expect(page.locator('.save-state')).toContainText('Копия восстановления не записана')
   const secondDownload = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Скачать файл проекта (JSON)' }).click()
+  await page.getByRole('button', { name: 'Скачать файл проекта' }).click()
   await (await secondDownload).cancel()
   expect(
     await page.evaluate(() => {
@@ -621,7 +621,7 @@ test('creates a project from a PU-66 card found by kilometre and picket', async 
   const cards = await (await request.get(`${api}/api/pu66`)).json()
   const card = cards.find((item: { referenceId: string }) => item.referenceId === '90002:24:7')
   await expect(
-    page.getByText(`локальная редакция № ${card.revision}`, { exact: false }),
+    page.getByText(`локальная версия № ${card.revision}`, { exact: false }),
   ).toBeVisible()
   await expect(page.locator('.opening-notes')).toContainText('Локальная карточка ПУ-66 закреплена')
   await expect(page.locator('.opening-notes')).not.toContainText('введён вручную')
@@ -664,7 +664,7 @@ test('leaving the form while the card is re-read cancels project creation', asyn
   release()
   await page.getByRole('button', { name: 'Новый проект' }).click()
   await expect(page.getByRole('alert')).toContainText('Создание проекта отменено')
-  await expect(page.getByText(/локальная редакция № 1/)).toHaveCount(0)
+  await expect(page.getByText(/локальная версия № 1/)).toHaveCount(0)
 })
 
 test('release sheet drops the draft mark and downloads a PNG', async ({ page, request }) => {
@@ -679,7 +679,7 @@ test('release sheet drops the draft mark and downloads a PNG', async ({ page, re
   }
   await page.route('**/api/normative-parameters', (route) => route.fulfill({ json: [pddState] }))
   await importSampleCards(request)
-  // Каталог с редакцией нужен для выпуска; раньше его оставлял предыдущий сценарий.
+  // Каталог с версией нужен для выпуска; раньше его оставлял предыдущий сценарий.
   await importSampleSignCatalog(request)
   await page.goto('/')
   await fillNewProject(page, '12 км 3 пк', '90001:12:3')
@@ -928,7 +928,7 @@ test('pinned PNG proportions follow each project and ignore an older delayed res
     route.fulfill({ json: { code: '1.25', revision: 2, width: 8, height: 16 } }),
   )
   await page.route('**/api/signs/1.25/metadata?rev=99', (route) =>
-    route.fulfill({ status: 404, json: { error: 'Нет редакции' } }),
+    route.fulfill({ status: 404, json: { error: 'Нет версии' } }),
   )
   const releaseOld: Array<() => void> = []
   await page.route('**/api/signs/1.25/metadata?rev=3', async (route) => {
@@ -989,8 +989,8 @@ test('pinned PNG proportions follow each project and ignore an older delayed res
   const repin = async (revision: number) => {
     activeRevision = revision
     await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
-    await page.getByRole('button', { name: 'Закрепить редакции PNG' }).click()
-    await expect(page.getByText('Закреплены редакции 1 кодов PNG. Сохраните проект.')).toBeVisible()
+    await page.getByRole('button', { name: 'Закрепить версии PNG' }).click()
+    await expect(page.getByText('Закреплены версии 1 кодов PNG. Сохраните проект.')).toBeVisible()
     await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   }
   await repin(2)
@@ -1037,15 +1037,15 @@ test('attaches standards, switches the sign catalog to a new edition and flags t
   await expect(library).toContainText('ГОСТ Р 99289-2024 добавлен в библиотеку')
   await addEdition('GOST-R-99290-2024.pdf', 'edition 2024', '2024-06-01')
   await expect(library.getByLabel('Обозначение', { exact: true })).toHaveValue('ГОСТ Р 99290')
-  await expect(library.getByLabel('Редакция', { exact: true })).toHaveValue('2024')
-  await expect(library).toContainText('Станет действующей редакцией этого документа.')
+  await expect(library.getByLabel('Версия', { exact: true })).toHaveValue('2024')
+  await expect(library).toContainText('Станет действующей версией этого документа.')
   await library.getByRole('button', { name: /Добавить в библиотеку/ }).click()
   await expect(library).toContainText('ГОСТ Р 99290-2024 добавлен в библиотеку')
   await expect(
     library.locator('.status-current').filter({ hasText: 'Изображения знаков' }),
-  ).toContainText('Редакция 2024')
+  ).toContainText('Версия 2024')
 
-  // Каталог знаков по редакции 2024 из библиотеки.
+  // Каталог знаков по версии 2024 из библиотеки.
   await page.getByRole('button', { name: 'Импорт Excel и знаков' }).click()
   await page.getByText('Загрузка знаков из ZIP (прежний способ)').click()
   const source = page.getByLabel('Документ из библиотеки')
@@ -1065,17 +1065,17 @@ test('attaches standards, switches the sign catalog to a new edition and flags t
   await page.getByRole('button', { name: 'Просмотреть изменения знаков' }).click()
   // На пустой базе 1.25 — новый знак, после других сценариев — изменённое изображение.
   await expect(page.getByText(/Новые знаки|Изменённые изображения/).first()).toBeVisible()
-  await page.getByRole('button', { name: 'Подтвердить каталог и создать копию SQLite' }).click()
-  await expect(page.getByText(/Текущий набор: ГОСТ Р 99290, редакция 2024/)).toBeVisible()
+  await page.getByRole('button', { name: 'Подтвердить каталог и создать резервную копию' }).click()
+  await expect(page.getByText(/Текущий набор: ГОСТ Р 99290, версия 2024/)).toBeVisible()
 
-  // Новая редакция уже введена: прежняя заменена, каталог знаков устарел.
+  // Новая версия уже введена: прежняя заменена, каталог знаков устарел.
   await page.getByRole('button', { name: 'Нормативные документы' }).click()
   await addEdition('GOST-R-99290-2026.pdf', 'edition 2026', '2026-01-01')
-  await expect(library).toContainText('Станет действующей редакцией вместо ГОСТ Р 99290-2024')
+  await expect(library).toContainText('Станет действующей версией вместо ГОСТ Р 99290-2024')
   await library.getByRole('button', { name: /Добавить в библиотеку/ }).click()
-  await expect(library.locator('.status-superseded')).toContainText('заменён редакцией 2026')
+  await expect(library.locator('.status-superseded')).toContainText('заменён версией 2026')
   await expect(library.locator('.warning').first()).toContainText(
-    'Каталог знаков загружен по редакции 2024, а действует ГОСТ Р 99290-2026',
+    'Каталог знаков загружен по версии 2024, а действует ГОСТ Р 99290-2026',
   )
   const [popup] = await Promise.all([
     page.waitForEvent('popup'),
@@ -1126,9 +1126,7 @@ test('extracts the sign catalog from the PDF of a standard in the library', asyn
   await expect(missing).toContainText('1.33')
   await box.getByRole('button', { name: /Записать каталог/ }).click()
   await expect(box).toContainText('Каталог знаков записан по ГОСТ Р 99291-2025')
-  await expect(
-    page.getByText(/Текущий набор: ГОСТ Р 99291, редакция 2025, 10 знаков/),
-  ).toBeVisible()
+  await expect(page.getByText(/Текущий набор: ГОСТ Р 99291, версия 2025, 10 знаков/)).toBeVisible()
   await page.locator('#sign-search').fill('1.16_ж')
   await expect(page.locator('.gallery figcaption')).toHaveText(['1.16_ж'])
 })

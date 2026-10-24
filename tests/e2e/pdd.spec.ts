@@ -117,7 +117,7 @@ test('a missing PDD edition blocks acknowledgments and directs the reviewer to t
   })
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   const check = page.locator('[data-check="pdd-speed"]')
-  await expect(check).toContainText('действующая редакция не определена')
+  await expect(check).toContainText('действующая версия не определена')
   await expect(check.getByRole('checkbox')).toBeDisabled()
   await check.getByRole('link', { name: 'Перейти' }).click()
   await expect(page.locator('#documents-title')).toBeVisible()
@@ -215,7 +215,7 @@ test('decision evidence and speed conditions survive SQLite and JSON; changed so
   ).toBe(true)
   await page.getByText('Действия с проектом', { exact: true }).click()
   const downloading = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Скачать файл проекта (JSON)', exact: true }).click()
+  await page.getByRole('button', { name: 'Скачать файл проекта', exact: true }).click()
   const download = await downloading
   expect(download.suggestedFilename()).toContain('_v10.json')
   const exported = readFileSync((await download.path())!)

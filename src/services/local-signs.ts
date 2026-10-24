@@ -57,7 +57,7 @@ async function base64(file: File): Promise<string> {
   return btoa(text)
 }
 
-/** Источник архива: документ библиотеки или код и редакция, введённые вручную. */
+/** Источник архива: документ библиотеки или код и версия, введённые вручную. */
 export type SignSourceInput =
   { documentId: number } | { documentCode: string; edition: string; pdf: File | null }
 
@@ -71,7 +71,7 @@ async function payload(zip: File, source: SignSourceInput) {
   if (pdf && (!/\.pdf$/i.test(pdf.name) || pdf.size > MAX_WEB_SIGN_PDF_BYTES)) {
     throw new Error('PDF источника должен быть размером не больше 10 МБ.')
   }
-  if (!documentCode.trim() || !edition.trim()) throw new Error('Укажите документ и редакцию.')
+  if (!documentCode.trim() || !edition.trim()) throw new Error('Укажите документ и версию.')
   return {
     archive: { name: zip.name, data: await base64(zip) },
     pdf: pdf ? { name: pdf.name, data: await base64(pdf) } : null,
@@ -90,7 +90,7 @@ async function request(path: string, body: unknown) {
       body: JSON.stringify(body),
     })
   } catch {
-    throw new Error('Локальный реестр недоступен. Запустите npm run dev или npm run local.')
+    throw new Error('Программа не отвечает. Перезапустите её и повторите действие.')
   }
   const result = await localJson(response)
   if (!response.ok) {
@@ -191,12 +191,12 @@ const signMetadataSchema = z.strictObject({
   height: z.number().int().positive(),
 })
 
-/** Размеры закреплённой редакции из истории локального каталога. */
+/** Размеры закреплённой версии из истории локального каталога. */
 export async function getSignMetadata(code: string, revision: number) {
   const response = await fetch(`/api/signs/${encodeURIComponent(code)}/metadata?rev=${revision}`)
-  if (!response.ok) throw new Error('Не удалось прочитать закреплённую редакцию знака.')
+  if (!response.ok) throw new Error('Не удалось прочитать закреплённую версию знака.')
   const metadata = signMetadataSchema.parse(await localJson(response))
   if (metadata.code !== code || metadata.revision !== revision)
-    throw new Error('Получена другая редакция знака.')
+    throw new Error('Получена другая версия знака.')
   return metadata
 }

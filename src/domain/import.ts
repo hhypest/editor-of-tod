@@ -80,12 +80,12 @@ export function freePostWarning(scheme: Scheme): string[] {
 export function legacySpeedWarning(storedSchemaVersion: number, scheme: Scheme): string[] {
   return storedSchemaVersion >= 2 && storedSchemaVersion <= 4
     ? [
-        `Разрешённая скорость на подходе в формате v${storedSchemaVersion} не хранилась: подставлено ${scheme.parameters.approachSpeedKmh ?? '—'} км/ч — значение прежних версий по умолчанию. Укажите местоположение на этапе 2 и проверьте разрешённую скорость и ступени скорости.`,
+        `Разрешённая скорость на подходе в файле проекта прежней версии не хранилась: подставлено ${scheme.parameters.approachSpeedKmh ?? '—'} км/ч — прежнее значение по умолчанию. Укажите местоположение на этапе 2 и проверьте разрешённую скорость и ступени скорости.`,
       ]
     : []
 }
 
-/** Сообщения при открытии редакции, записанной в прежнем формате (файл или локальная база). */
+/** Сообщения при открытии версии, записанной в прежнем формате (файл или локальная база). */
 export function storedFormatWarnings(storedSchemaVersion: number, scheme: Scheme): string[] {
   return storedSchemaVersion < scheme.schemaVersion
     ? [...legacySpeedWarning(storedSchemaVersion, scheme), ...freePostWarning(scheme)]
@@ -150,7 +150,7 @@ function warnUnknownLegacyFields(legacy: LegacyV1, warnings: string[]): void {
     const expected = new Set(fields)
     for (const key of Object.keys(value)) {
       if (!expected.has(key)) {
-        warnings.push(`Неизвестное поле ${path}${key} сохранено только в исходном JSON v1.`)
+        warnings.push(`Неизвестное поле ${path}${key} сохранено только в исходном файле проекта.`)
       }
     }
   }
@@ -394,11 +394,17 @@ function readSchemeJson(json: string, options: { id?: string; now?: string }): I
   try {
     value = JSON.parse(json)
   } catch {
-    throw new SchemeImportError('invalid-json', 'Файл не содержит корректный JSON.')
+    throw new SchemeImportError(
+      'invalid-json',
+      'Не удалось прочитать файл проекта. Выберите файл, скачанный из программы, или проверьте его содержимое.',
+    )
   }
 
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    throw new SchemeImportError('invalid-data', 'Корень проекта должен быть объектом JSON.')
+    throw new SchemeImportError(
+      'invalid-data',
+      'В файле нет проекта схемы. Выберите файл проекта, скачанный из программы.',
+    )
   }
 
   if ('schemaVersion' in value && value.schemaVersion === 2) {
@@ -516,7 +522,7 @@ function readSchemeJson(json: string, options: { id?: string; now?: string }): I
 
   if ('v' in value && value.v === 1) {
     if (new TextEncoder().encode(json).length > MAX_LEGACY_FILE_BYTES) {
-      throw new SchemeImportError('too-large', 'Исходный файл v1 больше 10 МБ.')
+      throw new SchemeImportError('too-large', 'Исходный файл старого редактора больше 10 МБ.')
     }
     const parsed = legacyV1Schema.safeParse(value)
     if (!parsed.success) invalidIssue(parsed.error.issues)
@@ -530,7 +536,7 @@ function readSchemeJson(json: string, options: { id?: string; now?: string }): I
 
   throw new SchemeImportError(
     'unsupported-version',
-    'Версия проекта не поддерживается. Поддерживаются v: 1 и schemaVersion: 2–10.',
+    'Версия файла проекта не поддерживается. Выберите файл, скачанный из этой программы или её прежней версии.',
   )
 }
 
