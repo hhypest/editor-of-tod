@@ -6,7 +6,8 @@ import { rebuildTemplatePlacements, TemplateBuildError } from './template-placem
  * Автоматическая перестройка типовых объектов при применении правок этапа 2 (П5, issue #106).
  *
  * Перестраиваются только объекты шаблона (`generatedByTemplate`) и только если шаблон уже был
- * собран: проект без типовых объектов остаётся как есть, их собирает кнопка этапа 3. Ручные
+ * собран: это видно и по `templateSlot` у изменённых вручную объектов. Проект без следов
+ * шаблона остаётся как есть, его собирает кнопка этапа 3. Ручные
  * объекты и изменённые вручную слоты не трогаются (`rebuildTemplatePlacements`). Перестройка
  * входит в то же действие истории, что и правка, поэтому одна отмена возвращает и параметры,
  * и объекты.
@@ -167,7 +168,8 @@ export function autoRebuildTemplate(
   next: Scheme,
   rules: NormativeRules,
 ): AutoRebuild {
-  if (!next.placements.some((placement) => placement.generatedByTemplate)) return { kind: 'none' }
+  if (!next.placements.some((placement) => placement.generatedByTemplate || placement.templateSlot))
+    return { kind: 'none' }
   if (!templateInputsChanged(previous, next)) return { kind: 'none' }
   try {
     const rebuilt = rebuildTemplatePlacements(next, rules)
@@ -177,10 +179,13 @@ export function autoRebuildTemplate(
       keptSlots: rebuilt.keptSlots,
       staleSlots: rebuilt.staleSlots,
     }
-    if (!changes.changed.length && !changes.added.length && !changes.removed.length)
-      return { kind: 'none' }
+    const objectsChanged = Boolean(
+      changes.changed.length || changes.added.length || changes.removed.length,
+    )
+    if (!objectsChanged && !changes.keptSlots && !changes.staleSlots) return { kind: 'none' }
     // Повторная проверка схемы: номера объектов остаются уникальными.
-    const scheme = schemeSchema.parse({ ...rebuilt.scheme, placements })
+    // Если нужны только предупреждения о ручных правках, объекты и счётчик номеров прежние.
+    const scheme = objectsChanged ? schemeSchema.parse({ ...rebuilt.scheme, placements }) : next
     return { kind: 'rebuilt', scheme, changes, message: describeTemplateChanges(changes) }
   } catch (cause) {
     if (!(cause instanceof TemplateBuildError)) throw cause

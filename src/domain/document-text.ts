@@ -63,22 +63,30 @@ function extract(lines: readonly Line[], start: number, stop: (line: string) => 
 
 /**
  * Пункт по номеру («5.4.4», «4.1.8.3»): от строки, которая начинается с номера, до следующего
- * пункта или таблицы. Строки оглавления (с многоточием) пропускаются; если совпадений несколько,
- * берётся самое длинное.
+ * пункта или таблицы. Строки оглавления (с многоточием) пропускаются. Если совпадений несколько,
+ * предпочтительны фрагменты, удовлетворяющие `prefer`; внутри каждой группы берётся самый длинный.
+ * Без предпочтения сохраняется прежнее поведение — самый длинный фрагмент.
  */
-export function findClause(pages: readonly string[], clause: string): ClauseQuote | null {
+export function findClause(
+  pages: readonly string[],
+  clause: string,
+  prefer?: (text: string) => boolean,
+): ClauseQuote | null {
   const lines = bodyLines(pages)
   const escaped = clause.replace(/\./g, '\\.')
   const head = new RegExp(`^${escaped}\\.?\\s+(?![\\d,])\\S`, 'u')
   let best: ClauseQuote | null = null
+  let preferred: ClauseQuote | null = null
   lines.forEach((line, index) => {
     if (!head.test(line.text) || /\.{4,}|…{2,}/.test(line.text)) return
     const text = joinLines(
       extract(lines, index, (next) => CLAUSE_START.test(next) || TABLE_START.test(next)),
     )
     if (!best || text.length > best.text.length) best = { page: line.page, text }
+    if (prefer?.(text) && (!preferred || text.length > preferred.text.length))
+      preferred = { page: line.page, text }
   })
-  return best
+  return preferred ?? best
 }
 
 /**

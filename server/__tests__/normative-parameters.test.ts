@@ -447,6 +447,30 @@ describe('normative parameters from library documents', () => {
     expect(rulesFrom(states).signsHourly).toBe(250)
   })
 
+  it('prefers the PDD towing clause over a longer appendix clause with the same number', async () => {
+    const store = library()
+    await add(
+      store,
+      textPdf([
+        [
+          'ПДД: вымышленный учебный документ',
+          '10.4. Транспортным средствам, буксирующим механические транспортные средства, разрешается движение со скоростью не более 50 км/ч.',
+          '10.5. Учебный следующий пункт.',
+        ],
+        [
+          'Приложение: вымышленный учебный текст',
+          '10.4. Учебный пункт приложения с более длинным текстом, который не описывает буксировку механических транспортных средств и не содержит значения скорости.',
+          '10.5. Учебный следующий пункт приложения.',
+        ],
+      ]),
+      { code: 'ПДД', edition: '2030-04-01', effectiveFrom: '2030-04-01' },
+    )
+    const towing = state(await listParameterStates(store, now), 'pdd-speed-towing')
+    expect(towing.quote?.page).toBe(1)
+    expect(towing.quote?.text).toContain('буксирующим механические транспортные средства')
+    expect(towing.suggestion).toBe(50)
+  })
+
   it('records a confirmation with the quote and uses it in the rules', async () => {
     const store = library()
     const document = await add(store, methodology(520), {})
