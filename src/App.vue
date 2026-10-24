@@ -11,6 +11,8 @@ import { useNormativeRules } from './composables/useNormativeRules'
 import { parameterDefinitions } from './domain/normative-parameters'
 import type { FirstRunStatus } from './presentation/first-run'
 
+import SetupWorkspace from './components/SetupWorkspace.vue'
+import { ready } from './presentation/first-run'
 import ProjectHub from './components/editor/ProjectHub.vue'
 import RegistryHub from './components/editor/RegistryHub.vue'
 import EditorWorkspace from './components/editor/EditorWorkspace.vue'
@@ -20,8 +22,30 @@ const {
   rules: normativeRules,
   states: normativeStates,
   error: normativeLoadError,
+  loading: normativeLoading,
 } = useNormativeRules()
-const setupRegistryStatus = ref<{ cards: number; signs: number } | null>(null)
+const setupRegistryStatus = ref<{ cards: number; signs: number; projects: number } | null>(null)
+const setupOpen = ref(false)
+let startupChecked = false
+function deferredSetup(): boolean {
+  try {
+    return sessionStorage.getItem('tod.setup.deferred') === '1'
+  } catch {
+    return false
+  }
+}
+function closeSetup(): void {
+  setupOpen.value = false
+  try {
+    sessionStorage.setItem('tod.setup.deferred', '1')
+  } catch {
+    /* Настройка доступна через кнопку. */
+  }
+}
+function openSetup(): void {
+  if (editorDirty.value || localBusy.value) return
+  setupOpen.value = true
+}
 const setupStatus = computed<FirstRunStatus | null>(() => {
   if (!setupRegistryStatus.value) return null
   const confirmed = new Set(
@@ -44,6 +68,18 @@ const setupStatus = computed<FirstRunStatus | null>(() => {
       ),
     ),
   }
+})
+watch([setupStatus, normativeLoading], ([status, loading]) => {
+  if (!status || loading || startupChecked) return
+  startupChecked = true
+  const complete =
+    status.signs > 0 &&
+    status.cards > 0 &&
+    !status.parametersError &&
+    ready(status.parameters) &&
+    ready(status.pdd)
+  if (!complete && !imported.value && !setupRegistryStatus.value?.projects && !deferredSetup())
+    setupOpen.value = true
 })
 const setupError = ref('')
 const session = useProjectSession(() => showView('source'))
@@ -113,21 +149,28 @@ let setupRequest = 0
 async function refreshSetupStatus(): Promise<void> {
   const request = ++setupRequest
   try {
-    const [cardsResponse, signsResponse] = await Promise.all([
+    const [cardsResponse, signsResponse, projectsResponse] = await Promise.all([
       fetch('/api/pu66'),
       fetch('/api/signs'),
+      fetch('/api/projects'),
     ])
-    if (!cardsResponse.ok || !signsResponse.ok)
+    if (!cardsResponse.ok || !signsResponse.ok || !projectsResponse.ok)
       throw new Error(
         'Не удалось прочитать данные на этом компьютере. Перезапустите программу и повторите действие.',
       )
-    const [cards, signs]: [unknown, unknown] = await Promise.all([
+    const [cards, signs, projects]: [unknown, unknown, unknown] = await Promise.all([
       cardsResponse.json(),
       signsResponse.json(),
+      projectsResponse.json(),
     ])
-    if (!Array.isArray(cards) || !Array.isArray(signs)) throw new Error('Реестры недоступны.')
+    if (!Array.isArray(cards) || !Array.isArray(signs) || !Array.isArray(projects))
+      throw new Error('Реестры недоступны.')
     if (request !== setupRequest) return
-    setupRegistryStatus.value = { cards: cards.length, signs: signs.length }
+    setupRegistryStatus.value = {
+      cards: cards.length,
+      signs: signs.length,
+      projects: projects.length,
+    }
     setupError.value = ''
   } catch {
     if (request !== setupRequest) return
@@ -135,6 +178,11 @@ async function refreshSetupStatus(): Promise<void> {
     setupError.value =
       'Не удалось открыть реестры на этом компьютере. Перезапустите программу и повторите действие.'
   }
+}
+
+function onSetupRefresh(): void {
+  onSignsUpdated()
+  onPu66Updated()
 }
 
 function onSignsUpdated(): void {
@@ -157,14 +205,16 @@ const referencedSignIds = computed(() =>
 </script>
 
 <template>
-  <main class="app-shell">
+  <main class="app-shell" :class="{ 'setup-active': setupOpen }">
     <header class="topbar">
       <div class="brand-line">
         <strong class="brand">СОДД <span>/ редактор</span></strong>
         <span v-if="imported" class="project-name">{{ imported.scheme.crossing.referenceId }}</span>
-        <span v-else class="project-name">Локальное рабочее место</span>
+        <span v-else class="project-name">{{
+          setupOpen ? 'Настройка рабочего места' : 'Локальное рабочее место'
+        }}</span>
       </div>
-      <div class="top-actions">
+      <div v-if="!setupOpen" class="top-actions">
         <span v-if="imported" class="save-state" role="status">
           {{ saveState }}
         </span>
@@ -205,7 +255,15 @@ const referencedSignIds = computed(() =>
       </div>
     </header>
 
-    <div class="app-layout">
+    <SetupWorkspace
+      v-if="setupOpen && setupStatus"
+      :status="setupStatus"
+      :refresh-key="signCatalogVersion + pu66CatalogVersion"
+      @refresh="onSetupRefresh"
+      @exit="closeSetup"
+      @finish="closeSetup"
+    />
+    <div v-show="!setupOpen" class="app-layout">
       <aside class="sidebar" aria-label="Этапы работы">
         <p class="sidebar-caption">{{ imported ? 'Схема · 4 этапа' : 'Начало работы' }}</p>
         <nav class="steps" aria-label="Подготовка схемы">
@@ -291,6 +349,7 @@ const referencedSignIds = computed(() =>
           :active="activeView === 'projects'"
           :setup-status="setupStatus"
           :setup-error="setupError"
+          @open-setup="openSetup"
           @choose-tab="chooseProjectTab"
           @setup-import="openSetupImport"
           @help="openHelp"
@@ -369,3 +428,12 @@ const referencedSignIds = computed(() =>
 
 <style scoped src="./styles/editor-common.css" />
 <style scoped src="./styles/App.css" />
+<style scoped>
+.app-shell.setup-active {
+  background: #f1f5ee;
+}
+.setup-active .topbar {
+  min-height: 3rem;
+  padding: 0.5rem 1.5rem;
+}
+</style>

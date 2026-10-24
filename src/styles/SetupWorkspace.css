@@ -1,0 +1,216 @@
+.setup-workspace {
+  --setup-primary: #2f6f4e;
+  --setup-text: #1d2b22;
+  --setup-muted: #5c6b5e;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 1.2rem 1.5rem 0;
+  color: var(--setup-text);
+}
+.setup-intro {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.setup-eyebrow {
+  color: var(--setup-primary);
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin: 0 0 0.4rem;
+}
+h1 {
+  margin: 0;
+  font-size: 1.8rem;
+}
+h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1.45rem;
+}
+.setup-intro p:last-child,
+.setup-description {
+  color: var(--setup-muted);
+  line-height: 1.6;
+}
+.setup-layout {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+}
+.setup-route {
+  position: sticky;
+  top: 1rem;
+}
+.setup-route ol {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+  display: grid;
+  gap: 0.6rem;
+}
+.setup-route li {
+  display: flex;
+  gap: 0.7rem;
+  padding: 0.7rem 0.6rem;
+  border-radius: 0.6rem;
+  color: var(--setup-muted);
+  border: 1px solid transparent;
+}
+.setup-route li[aria-current='step'] {
+  background: #e5eee0;
+  border-color: #2f6f4e;
+  color: #1d2b22;
+}
+.setup-route small {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+}
+.setup-number {
+  display: grid;
+  place-items: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  flex-shrink: 0;
+  border: 1px solid #758a79;
+  border-radius: 50%;
+  font-weight: 700;
+}
+.setup-body {
+  background: #fbfdf8;
+  border: 1px solid #d5e2d1;
+  border-radius: 0.9rem;
+  padding: 1.6rem;
+  min-width: 0;
+}
+.setup-description {
+  margin-bottom: 1rem;
+}
+button {
+  border: 1px solid #748c79;
+  border-radius: 0.5rem;
+  background: #fbfdf8;
+  color: #255b3f;
+  font: inherit;
+  font-weight: 650;
+  padding: 0.75rem 1rem;
+  min-height: 44px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  background: #e5eee0;
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+button:focus-visible {
+  outline: 3px solid #2f6f4e;
+  outline-offset: 3px;
+}
+.setup-primary {
+  background: #2f6f4e;
+  color: #fff;
+  border-color: #2f6f4e;
+}
+.setup-primary:hover:not(:disabled) {
+  background: #255b3f;
+}
+.setup-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 0;
+  margin-top: 1.5rem;
+  background: #f1f5ee;
+  border-top: 1px solid #b5c9af;
+}
+.setup-footer p {
+  max-width: 45rem;
+  line-height: 1.5;
+  margin: 0;
+  font-size: 0.9rem;
+}
+.setup-footer > div {
+  display: flex;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+.setup-success {
+  color: #255b3f;
+  line-height: 1.5;
+}
+.setup-error {
+  color: #b83e3e;
+}
+.setup-help-text {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--setup-muted);
+}
+.setup-sources {
+  padding-left: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.6rem;
+}
+.setup-body :deep(.fields),
+.setup-body :deep(.rows) {
+  max-width: 100%;
+}
+.setup-body :deep(input),
+.setup-body :deep(select),
+.setup-body :deep(textarea) {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.setup-body :deep(.fields) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.setup-body :deep(.rows) {
+  display: block;
+  overflow-x: auto;
+}
+@media (max-width: 820px) {
+  .setup-layout {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .setup-route {
+    position: static;
+  }
+  .setup-route ol {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .setup-footer {
+    flex-wrap: wrap;
+  }
+  .setup-body {
+    padding: 1rem;
+  }
+}
+
+.setup-body :deep(.guided) {
+  background: transparent;
+}
+.setup-body :deep(button) {
+  min-height: 44px;
+  border-color: #748c79;
+  color: #255b3f;
+  font-weight: 650;
+}
+.setup-body :deep(button.primary) {
+  color: #fff;
+  background: #2f6f4e;
+  border-color: #2f6f4e;
+}
+.setup-body :deep(button:focus-visible) {
+  outline: 3px solid #2f6f4e;
+  outline-offset: 3px;
+}

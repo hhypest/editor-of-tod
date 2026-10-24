@@ -17,7 +17,7 @@ const props = defineProps<{
   documents: readonly DocumentRecord[]
   locked: boolean
 }>()
-const emit = defineEmits<{ applied: [] }>()
+const emit = defineEmits<{ applied: []; busy: [value: boolean] }>()
 
 const today = localCalendarDate(new Date())
 /** Документы с изображениями знаков: действующая версия первой. */
@@ -45,6 +45,7 @@ const planned = ref<PdfSignOverrides>({})
 /** Исправления в полях: номер знака или null — не включать изображение. */
 const edits = ref<PdfSignOverrides>({})
 const busy = ref(false)
+watch(busy, (value) => emit('busy', value), { immediate: true })
 const error = ref('')
 const notice = ref('')
 const filter = ref<'attention' | 'all'>('attention')
@@ -78,12 +79,12 @@ async function preview(): Promise<void> {
   const overrides = { ...edits.value }
   const id = documentId.value
   try {
-    plan.value = await timed('Извлечение знаков из PDF', () => previewPdfSigns(id, overrides))
+    plan.value = await timed('Извлечение знаков из ГОСТ', () => previewPdfSigns(id, overrides))
     planned.value = overrides
     if (!plan.value.images.some(needsAttention)) filter.value = 'all'
   } catch (cause) {
     plan.value = null
-    error.value = cause instanceof Error ? cause.message : 'Не удалось извлечь знаки из PDF.'
+    error.value = cause instanceof Error ? cause.message : 'Не удалось извлечь знаки из ГОСТ.'
   } finally {
     busy.value = false
   }
@@ -190,7 +191,7 @@ function statusLabel(status: string): string {
 
 <template>
   <div class="pdf-signs">
-    <h4 id="pdf-sign-import">Знаки из PDF стандарта</h4>
+    <h4 id="pdf-sign-import">Знаки из ГОСТ</h4>
     <p>
       Программа вынимает изображения знаков из таблиц А.1–А.8 приложения А ГОСТ Р 52290 и определяет
       номер каждого по подписи под изображением. Знаки, которые по перечню стандарта допускается
@@ -211,7 +212,7 @@ function statusLabel(status: string): string {
         </select>
       </label>
       <button type="button" :disabled="busy || locked || documentId === ''" @click="preview">
-        {{ plan ? 'Проверить снова' : 'Извлечь знаки из PDF' }}
+        {{ plan ? 'Проверить снова' : 'Извлечь знаки из ГОСТ' }}
       </button>
     </template>
     <p v-if="locked" role="status">Сначала примените или отмените правки открытого проекта.</p>

@@ -13,6 +13,7 @@ const props = defineProps<{
   setupError: string
 }>()
 const emit = defineEmits<{
+  'open-setup': []
   'choose-tab': [tab: ProjectTab]
   'setup-import': [target: SetupImportTarget]
   help: [section: string]
@@ -23,6 +24,7 @@ const {
   recoveryCopies,
   activeRecoveryId,
   localBusy,
+  editorDirty,
   loading,
   openRecovery,
   discardRecovery,
@@ -78,8 +80,8 @@ const {
     <FirstRunWizard
       v-if="setupStatus"
       :status="setupStatus"
-      @navigate="emit('setup-import', $event)"
-      @help="emit('help', 'first-run')"
+      :locked="editorDirty || localBusy || loading"
+      @open="emit('open-setup')"
     />
     <p v-if="setupError" class="feedback error" role="alert">{{ setupError }}</p>
     <div class="tabs" role="group" aria-label="Способ открытия проекта">

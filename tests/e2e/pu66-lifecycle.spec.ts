@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext } from '@playwright/test'
+import { expect, test, type APIRequestContext } from './workspace-test'
 import { createSampleWorkbook, sampleCards } from '../../scripts/generate-pu66-samples'
 import { localCalendarDate } from '../../src/domain/pu66-review'
 

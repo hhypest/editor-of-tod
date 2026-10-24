@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './workspace-test'
 import { createSampleWorkbook, sampleCards } from '../../scripts/generate-pu66-samples'
 
 test('regulation uses the strict 250 boundary and limited visibility without rewriting the selected mode', async ({
