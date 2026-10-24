@@ -17,6 +17,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   use: {
     ...devices['Desktop Chrome'],
+    trace: 'retain-on-failure',
     baseURL: executable ? 'http://127.0.0.1:4100' : 'http://127.0.0.1:5173',
   },
   webServer: executable
