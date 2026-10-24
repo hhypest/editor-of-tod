@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { templateLabel } from './domain/registry'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import HelpPage from './components/HelpPage.vue'
 import { invalidatePu66Status } from './composables/usePu66Status'
 import SchemeDraftSheet from './components/SchemeDraftSheet.vue'
@@ -19,6 +19,7 @@ const {
   reload: reloadNormativeRules,
   rules: normativeRules,
   states: normativeStates,
+  error: normativeLoadError,
 } = useNormativeRules()
 const setupRegistryStatus = ref<{ cards: number; signs: number } | null>(null)
 const setupStatus = computed<FirstRunStatus | null>(() => {
@@ -35,6 +36,7 @@ const setupStatus = computed<FirstRunStatus | null>(() => {
   return {
     ...setupRegistryStatus.value,
     parameters: readiness(parameterDefinitions),
+    parametersError: normativeLoadError.value,
     pdd: readiness(
       parameterDefinitions.filter(
         (definition) =>
@@ -73,6 +75,14 @@ const {
   navigateToFinding,
 } = useEditorNavigation({ imported, placementDirty })
 
+// При возвращении обновляем состояние, в том числе после изменений в другом окне.
+watch(activeView, (view) => {
+  if (view === 'projects') {
+    void refreshSetupStatus()
+    void reloadNormativeRules()
+  }
+})
+
 const signCatalogVersion = ref(0)
 const pu66CatalogVersion = ref(0)
 function onPu66Updated(): void {
@@ -99,7 +109,9 @@ const saveState = computed(() => {
   return localRevision.value === null ? 'Не сохранён' : 'Сохранён'
 })
 
+let setupRequest = 0
 async function refreshSetupStatus(): Promise<void> {
+  const request = ++setupRequest
   try {
     const [cardsResponse, signsResponse] = await Promise.all([
       fetch('/api/pu66'),
@@ -114,9 +126,11 @@ async function refreshSetupStatus(): Promise<void> {
       signsResponse.json(),
     ])
     if (!Array.isArray(cards) || !Array.isArray(signs)) throw new Error('Реестры недоступны.')
+    if (request !== setupRequest) return
     setupRegistryStatus.value = { cards: cards.length, signs: signs.length }
     setupError.value = ''
   } catch {
+    if (request !== setupRequest) return
     setupRegistryStatus.value = null
     setupError.value =
       'Не удалось открыть реестры на этом компьютере. Перезапустите программу и повторите действие.'

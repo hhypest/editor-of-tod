@@ -11,7 +11,6 @@ const emit = defineEmits<{
 
 const step = ref(0)
 const collapsed = ref(false)
-let initialized = false
 const steps = [
   { id: 'signs', title: 'Знаки из PDF', action: 'Извлечь знаки из PDF' },
   { id: 'cards', title: 'Книги ПУ-66', action: 'Импортировать книги ПУ-66' },
@@ -20,27 +19,32 @@ const steps = [
 
 const signsReady = computed(() => props.status.signs > 0)
 const cardsReady = computed(() => props.status.cards > 0)
-const parametersReady = computed(() => ready(props.status.parameters))
+const parametersReady = computed(
+  () => !props.status.parametersError && ready(props.status.parameters) && ready(props.status.pdd),
+)
 const complete = computed(() => signsReady.value && cardsReady.value && parametersReady.value)
 const stepReady = computed(() => [signsReady.value, cardsReady.value, parametersReady.value])
 const showWizard = computed(() => !complete.value || !collapsed.value)
 
 watch(
-  () => props.status,
-  (status) => {
-    if (!initialized) {
-      step.value = !signsReady.value ? 0 : !cardsReady.value ? 1 : 2
-      initialized = true
-    } else if (step.value < 2 && stepReady.value[step.value]) {
-      step.value++
+  stepReady,
+  (available, previous) => {
+    const firstMissing = available.findIndex((value) => !value)
+    if (firstMissing === -1) {
+      step.value = 2
+      collapsed.value = true
+      return
     }
-    if (ready(status.parameters) && signsReady.value && cardsReady.value) collapsed.value = true
+    collapsed.value = false
+    // Сохраняем ручной переход назад, но при потере данных возвращаем к недостающему шагу.
+    if (!previous || firstMissing < step.value || (!previous[step.value] && available[step.value]))
+      step.value = firstMissing
   },
   { immediate: true },
 )
 
 function next(): void {
-  if (!stepReady.value[step.value]) return
+  if (!stepReady.value[step.value] || (step.value === 2 && !complete.value)) return
   if (step.value < 2) step.value++
   else collapsed.value = true
 }
@@ -122,7 +126,10 @@ function targetForStep(): SetupImportTarget {
           Добавьте действующие версии ОДМ, ГОСТ и ПДД. Затем откройте каждый параметр, сверьте
           значение с цитатой и подтвердите его. У ПДД отдельно укажите дату введения версии.
         </p>
-        <p class="setup-readiness" role="status">
+        <p v-if="status.parametersError" class="feedback error" role="alert">
+          Не удалось проверить нормативные параметры. Откройте их реестр и повторите загрузку.
+        </p>
+        <p v-else class="setup-readiness" role="status">
           Подтверждено {{ status.parameters.confirmed }} из {{ status.parameters.total }} · ПДД:
           {{ status.pdd.confirmed }} из {{ status.pdd.total }}.
         </p>
@@ -138,7 +145,11 @@ function targetForStep(): SetupImportTarget {
 
       <div class="setup-navigation">
         <button type="button" :disabled="step === 0" @click="step--">Назад</button>
-        <button type="button" :disabled="!stepReady[step]" @click="next">
+        <button
+          type="button"
+          :disabled="!stepReady[step] || (step === 2 && !complete)"
+          @click="next"
+        >
           {{ step === 2 ? 'Завершить настройку' : 'Далее' }}
         </button>
         <button type="button" class="link-button" @click="emit('help')">Нужна подсказка</button>
@@ -158,4 +169,5 @@ function targetForStep(): SetupImportTarget {
   </section>
 </template>
 
+<style scoped src="../styles/editor-common.css" />
 <style scoped src="../styles/FirstRunWizard.css" />

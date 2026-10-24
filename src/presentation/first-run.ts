@@ -7,6 +7,7 @@ export interface FirstRunStatus {
   cards: number
   signs: number
   parameters: SetupReadiness
+  parametersError: string
   pdd: SetupReadiness
 }
 

@@ -46,8 +46,6 @@ function parameterState(
 
 async function backToProjects(page: Page): Promise<void> {
   await page.locator('.top-actions').getByRole('button', { name: 'Проекты', exact: true }).click()
-  // В реальном импорте статус обновляет событие; здесь имитируем новое чтение после записи.
-  await page.reload()
 }
 
 test('first run guides signs, PU-66 and parameters, then collapses to a status line', async ({
@@ -127,4 +125,74 @@ test('first run guides signs, PU-66 and parameters, then collapses to a status l
   ).toBeVisible()
   await wizard.getByRole('button', { name: 'Завершить настройку' }).click()
   await expect(wizard.getByText('Настройка завершена', { exact: true })).toBeVisible()
+})
+
+test('setup returns to a missing prerequisite instead of offering completion', async ({ page }) => {
+  let signs = [{ code: '1.25' }]
+  let cards = [{ referenceId: 'TEST-001' }]
+  await page.route('**/api/signs', (route) => route.fulfill({ json: signs }))
+  await page.route('**/api/pu66', (route) => route.fulfill({ json: cards }))
+  await page.route('**/api/normative-parameters', (route) =>
+    route.fulfill({ json: parameterDefinitions.map((d, i) => parameterState(d, i, true)) }),
+  )
+  await page.goto('/')
+  const wizard = page.getByTestId('first-run-wizard')
+  await expect(wizard.getByText('Настройка завершена', { exact: true })).toBeVisible()
+  await page.locator('.top-actions').getByRole('button', { name: 'Реестры', exact: true }).click()
+  signs = []
+  await backToProjects(page)
+  await expect(wizard.getByRole('heading', { name: '1. Добавьте дорожные знаки' })).toBeVisible()
+  await expect(wizard.getByRole('button', { name: 'Далее', exact: true })).toBeDisabled()
+  await page.locator('.top-actions').getByRole('button', { name: 'Реестры', exact: true }).click()
+  signs = [{ code: '1.25' }]
+  cards = []
+  await backToProjects(page)
+  await expect(
+    wizard.getByRole('heading', { name: '2. Импортируйте карточки переездов' }),
+  ).toBeVisible()
+  await expect(wizard.getByRole('button', { name: 'Далее', exact: true })).toBeDisabled()
+})
+
+test('an unreadable parameter refresh cannot retain a completed setup', async ({ page }) => {
+  let fail = false
+  let stale = false
+  await page.route('**/api/signs', (route) => route.fulfill({ json: [{ code: '1.25' }] }))
+  await page.route('**/api/pu66', (route) => route.fulfill({ json: [{ referenceId: 'TEST-001' }] }))
+  await page.route('**/api/normative-parameters', (route) =>
+    fail
+      ? route.fulfill({ contentType: 'text/html', body: '<!doctype html>' })
+      : route.fulfill({
+          json: parameterDefinitions.map((d, i) => {
+            const state = parameterState(d, i, true)
+            if (stale && 'documentCode' in d.source && d.source.documentCode === 'ПДД')
+              state.status = { kind: 'changed', previous: 'Учебная прежняя версия' }
+            return state
+          }),
+        }),
+  )
+  await page.goto('/')
+  const wizard = page.getByTestId('first-run-wizard')
+  await expect(wizard.getByText('Настройка завершена', { exact: true })).toBeVisible()
+  await page.locator('.top-actions').getByRole('button', { name: 'Реестры', exact: true }).click()
+  fail = true
+  await backToProjects(page)
+  await expect(
+    wizard.getByRole('heading', { name: '3. Подтвердите нормативные параметры' }),
+  ).toBeVisible()
+  await expect(wizard.getByRole('alert')).toContainText(
+    'Не удалось проверить нормативные параметры',
+  )
+  await expect(wizard.getByRole('button', { name: 'Завершить настройку' })).toBeDisabled()
+  await page.locator('.top-actions').getByRole('button', { name: 'Реестры', exact: true }).click()
+  fail = false
+  await backToProjects(page)
+  await expect(wizard.getByText('Настройка завершена', { exact: true })).toBeVisible()
+  await page.locator('.top-actions').getByRole('button', { name: 'Реестры', exact: true }).click()
+  stale = true
+  await backToProjects(page)
+  await expect(
+    wizard.getByRole('heading', { name: '3. Подтвердите нормативные параметры' }),
+  ).toBeVisible()
+  await expect(wizard.getByRole('status')).toContainText('ПДД: 0 из')
+  await expect(wizard.getByRole('button', { name: 'Завершить настройку' })).toBeDisabled()
 })
