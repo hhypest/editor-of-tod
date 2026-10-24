@@ -321,6 +321,7 @@ describe('single warning sign at short-term works (ГОСТ Р 52289, п. 5.2.27
       ),
     })
     expect(singleWarningProblems(scheme, PROTOTYPE_RULES)).toBeNull()
+    expect(reviewScheme(scheme).some((item) => item.title === 'Стойки без расстояния')).toBe(true)
   })
 
   it('requires exactly one warning sign, not one post with several warning signs', () => {
