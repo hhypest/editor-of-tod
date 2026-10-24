@@ -191,6 +191,51 @@ test('new project: form edits apply, review opens, and console stays clean', asy
   expect(errors).toEqual([])
 })
 
+test('settlement road-name hint changes location only after explicit confirmation', async ({
+  page,
+  request,
+}) => {
+  const card = { ...sampleCards[0]!, road: 'ул. Учебная' }
+  const file = {
+    name: card.filename,
+    data: (await createSampleWorkbook({ ...card, length: 40 })).toString('base64'),
+  }
+  const preview = await request.post(`${api}/api/pu66/import/preview`, {
+    headers: { Origin: origin },
+    data: { files: [file] },
+  })
+  expect(preview.ok()).toBe(true)
+  const plan = await preview.json()
+  const applied = await request.post(`${api}/api/pu66/import/apply`, {
+    headers: { Origin: origin },
+    data: { files: [file], expectedFingerprint: plan.fingerprint },
+  })
+  expect(applied.ok()).toBe(true)
+
+  await page.goto('/')
+  await fillNewProject(page, '12 км 3 пк', '90001:12:3')
+  const hint = page.locator('[data-test="settlement-suggestion"]')
+  await expect(hint).toContainText('предположение')
+  await expect(page.getByLabel('Вне населённого пункта')).toBeChecked()
+  await expect(page.getByLabel('В населённом пункте')).not.toBeChecked()
+  await hint.getByRole('button', { name: 'Подтвердить: в населённом пункте' }).click()
+  await expect(page.getByLabel('В населённом пункте')).toBeChecked()
+  await expect(page.getByLabel('Разрешённая скорость на подходе, км/ч')).toHaveValue('60')
+  await expect(hint).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Создать проект' }).click()
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  await expect(page.locator('[data-field="parameters.location"]')).toHaveValue('in')
+  await page.locator('[data-field="parameters.location"]').selectOption('out')
+  const editHint = page.locator('[data-test="settlement-suggestion"]')
+  await expect(editHint).toBeVisible()
+  await expect(page.locator('[data-field="parameters.location"]')).toHaveValue('out')
+  await editHint.getByRole('button', { name: 'Подтвердить: в населённом пункте' }).click()
+  await expect(page.locator('[data-field="parameters.location"]')).toHaveValue('in')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await expect(page.locator('[data-field="parameters.location"]')).toHaveValue('in')
+})
+
 test('review findings move focus to the first empty field', async ({ page, request }) => {
   await importSampleCards(request)
   await page.goto('/')

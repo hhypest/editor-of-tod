@@ -11,7 +11,12 @@ import { railRegulationMode } from './rail-regulation'
 import { workConditionProblems, frontLimit } from './work-conditions'
 import { pddFindings } from './pdd-review'
 import { decisionFindings } from './decision-evidence'
-import { plateCountProblems, stepIntervalProblems, type SpeedStep } from './post-checks'
+import {
+  plateCountProblems,
+  singleWarningProblems,
+  stepIntervalProblems,
+  type SpeedStep,
+} from './post-checks'
 import { decimalComma } from './number-format'
 import {
   distanceTitles,
@@ -270,6 +275,8 @@ export function reviewScheme(
         // снималась бы при каждом добавлении параметра в программу.
         speedStepInterval: undefined,
         plateLimit: undefined,
+        singleWarningDistance: undefined,
+        singleWarningMaxSpeedKmh: undefined,
         // Только предложение отвода и сравнение с рисунком; раскладка берёт введённый отвод.
         b34TaperMetres: undefined,
         // Расхождение варианта и порога показывает пункт «Вариант и длина фронта».
@@ -413,6 +420,33 @@ export function reviewScheme(
         plates,
         rules.confirmed['gost-plate-limit'],
         rules.evidence['gost-plate-limit'],
+      ]),
+    })
+  }
+
+  const singleWarning = singleWarningProblems(scheme, rules)
+  if (singleWarning) {
+    findings.push({
+      id: 'single-warning-distance',
+      kind: 'verify',
+      title: 'Одиночный знак 1.25 при краткосрочных работах',
+      detail: `На схеме оставлен один знак 1.25 на подходе: ${singleWarning.problems
+        .map(
+          (problem) =>
+            `${problem.approach === 'left' ? 'слева' : 'справа'}, стойка № ${problem.postId} — ${decimalComma(problem.metres)} м${problem.hasDistancePlate ? ', есть табличка 8.1.1' : ''}`,
+        )
+        .join(
+          '; ',
+        )}. Для особого случая п. 5.2.27 при скорости в зоне ${singleWarning.maxSpeedKmh} км/ч и менее один знак допускается на переносной опоре на расстоянии от ${singleWarning.range[0]} до ${singleWarning.range[1]} м от места работ, без таблички 8.1.1 (расстояние: ${rules.sources['gost-single-warning-distance']}; предел скорости: ${rules.sources['gost-single-warning-max-speed']}). Проверьте расстояние, состав стойки и переносную опору на этапе 3. Это не универсальное расстояние для обычной расстановки с повторным знаком у начала работ.`,
+      path: 'placements',
+      basis: JSON.stringify([
+        singleWarning,
+        parameters.workConditions.kind,
+        parameters.speedStagesKmh[2],
+        rules.confirmed['gost-single-warning-distance'],
+        rules.evidence['gost-single-warning-distance'],
+        rules.confirmed['gost-single-warning-max-speed'],
+        rules.evidence['gost-single-warning-max-speed'],
       ]),
     })
   }

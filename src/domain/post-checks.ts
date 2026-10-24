@@ -97,3 +97,70 @@ export function plateCountProblems(scheme: Scheme, rules: NormativeRules): Plate
   }
   return problems
 }
+
+export type SingleWarningProblem = {
+  approach: Approach
+  postId: number
+  metres: number
+  hasDistancePlate: boolean
+}
+
+/**
+ * Особый случай п. 5.2.27: при краткосрочных работах и скорости не более 40 км/ч допускается
+ * один знак 1.25 без таблички 8.1.1 на переносной опоре в 10–15 м от места работ. Проверяются
+ * только подходы, где на схеме действительно оставлен один знак 1.25; обычный повторный знак у
+ * начала работ и дальнее предупреждение не перестраиваются и не признаются ошибкой автоматически.
+ */
+export function singleWarningProblems(
+  scheme: Scheme,
+  rules: NormativeRules,
+): {
+  range: readonly [number, number]
+  maxSpeedKmh: number
+  problems: SingleWarningProblem[]
+} | null {
+  if (
+    scheme.parameters.workConditions.kind !== 'short' ||
+    scheme.parameters.speedStagesKmh[2] > rules.singleWarningMaxSpeedKmh ||
+    !rules.singleWarningDistance
+  )
+    return null
+  const range = rules.singleWarningDistance
+  // Без подхода хотя бы одного знака нельзя утверждать, что на другом подходе знак одиночный.
+  // Стойки без расстояния по-прежнему перечисляются отдельным пунктом ручной сверки.
+  if (
+    scheme.placements.some(
+      (placement) =>
+        placement.kind === 'sign-post' &&
+        !placement.distance &&
+        placement.signIds.some((code) => /^1\.25(?:_|$)/.test(code)),
+    )
+  )
+    return null
+  const problems: SingleWarningProblem[] = []
+  for (const approach of ['left', 'right'] as const) {
+    const posts = scheme.placements.filter(
+      (placement): placement is Extract<Scheme['placements'][number], { kind: 'sign-post' }> =>
+        placement.kind === 'sign-post' &&
+        placement.distance?.approach === approach &&
+        placement.signIds.some((code) => /^1\.25(?:_|$)/.test(code)),
+    )
+    if (
+      posts.length !== 1 ||
+      posts[0]!.signIds.filter((code) => /^1\.25(?:_|$)/.test(code)).length !== 1
+    )
+      continue
+    const post = posts[0]!
+    const metres = postMetres(post.distance!, scheme.parameters.signDistancesMetres)
+    if (metres === null) continue
+    const warningColumn = postColumns(post.signIds).find((column) =>
+      /^1\.25(?:_|$)/.test(post.signIds[column[0]!]!),
+    )
+    const hasDistancePlate = Boolean(
+      warningColumn?.slice(1).some((index) => /^8\.1\.1(?:_|$)/.test(post.signIds[index]!)),
+    )
+    if (metres < range[0] || metres > range[1] || hasDistancePlate)
+      problems.push({ approach, postId: post.id, metres, hasDistancePlate })
+  }
+  return problems.length ? { range, maxSpeedKmh: rules.singleWarningMaxSpeedKmh, problems } : null
+}

@@ -20,6 +20,7 @@ import { cellNumber } from '../domain/pu66-norms'
 import type { SpeedConditions } from '../domain/decision-evidence-schema'
 import { recordSpeedDecision } from '../domain/decision-evidence'
 import type { SchemeDetailsDraft } from '../domain/edit-details'
+import { settlementSuggestion } from '../domain/settlement-suggestion'
 
 const props = defineProps<{ locked?: boolean; active?: boolean }>()
 const emit = defineEmits<{ create: [scheme: Scheme]; importPu66: [] }>()
@@ -106,6 +107,10 @@ function chooseLocation(to: SchemeLocation): void {
     input.approachSpeedKmh = newSchemeDefaults(to, rules.value).approachSpeedKmh
   if (!keepStages) fillStages()
 }
+
+const settlementHint = computed(() =>
+  input.location === 'in' ? null : settlementSuggestion(card.value?.roadName ?? ''),
+)
 
 function fillStages(): void {
   const speed = parsed(input.approachSpeedKmh)
@@ -367,6 +372,16 @@ watch(
         </p>
         <fieldset class="location" :disabled="locked || busy">
           <legend>Где проходят работы</legend>
+          <div v-if="settlementHint" class="hint" data-test="settlement-suggestion">
+            <p>
+              В названии дороги из ПУ-66 есть «{{ settlementHint.marker }}». Возможно, место работ
+              находится в населённом пункте. Это только предположение: проверьте границы, название
+              дороги само по себе их не определяет.
+            </p>
+            <button type="button" @click="chooseLocation('in')">
+              Подтвердить: в населённом пункте
+            </button>
+          </div>
           <label class="radio">
             <input
               type="radio"

@@ -418,6 +418,33 @@ export const parameterDefinitions: readonly ParameterDefinition[] = [
     valuePattern: /^\d{1,4}\s*[–-]\s*\d{1,4}$/,
   },
   {
+    id: 'gost-single-warning-max-speed',
+    title: 'Наибольшая скорость для особого случая одиночного знака 1.25',
+    unit: 'км/ч',
+    usedIn: 'Условие применения особого случая п. 5.2.27 при краткосрочных работах',
+    source: { kind: 'clause', documentCode: GOST_RULES, clause: '5.2.27' },
+    type: 'number',
+    fallback: 40,
+    min: 1,
+    max: 130,
+  },
+  {
+    id: 'gost-single-warning-distance',
+    title: 'Расстояние до одиночного знака 1.25 при краткосрочных работах',
+    unit: 'м',
+    usedIn:
+      'Особый случай п. 5.2.27: один знак 1.25 без таблички 8.1.1 на переносной опоре; предел скорости задаётся отдельным параметром, обычная расстановка не перестраивается',
+    source: { kind: 'clause', documentCode: GOST_RULES, clause: '5.2.27' },
+    type: 'table',
+    keyLabel: 'Условие',
+    valueLabel: 'Диапазон, м',
+    fallback: {
+      'Краткосрочные работы, одиночный знак 1.25': '10–15',
+    },
+    requiredRows: ['Краткосрочные работы, одиночный знак 1.25'],
+    valuePattern: /^\d{1,4}\s*[–-]\s*\d{1,4}$/,
+  },
+  {
     id: 'project-b34-max-front',
     title: 'Наибольший фронт работ для схемы Б.34 (включительно)',
     unit: 'м',
@@ -527,6 +554,12 @@ export function valueProblem(
       if (!parsed || parsed[0] <= 0)
         return `Заполните строку «${key}» диапазоном от меньшего положительного числа к большему, например «50–100»; подписи строк должны сохраняться.`
     }
+  }
+  if (definition.id === 'gost-single-warning-distance') {
+    const key = definition.requiredRows![0]!
+    const parsed = range(value[key])
+    if (!parsed || parsed[0] <= 0)
+      return `Заполните строку «${key}» диапазоном от меньшего положительного числа к большему, например «10–15»; подпись строки должна сохраняться.`
   }
   if (
     definition.id === 'gost-plate-limit' &&
@@ -696,6 +729,10 @@ export type NormativeRules = {
     in: readonly [number, number] | null
     out: readonly [number, number] | null
   }>
+  /** Особый случай одиночного знака 1.25 по п. 5.2.27; null — диапазон не разобран. */
+  singleWarningDistance: readonly [number, number] | null
+  /** Подтверждаемый порог применимости особого случая п. 5.2.27, км/ч. */
+  singleWarningMaxSpeedKmh: number
   peakHourShare: number | null
   /** Наибольший фронт для Б.34 включительно; больше — Б.33 (ОДМ, рис. Б.33/Б.34; граница — решение проекта). */
   b34MaxFrontMetres: number
@@ -886,6 +923,10 @@ export function rulesFrom(states: readonly ParameterState[] = []): NormativeRule
       in: range(table('gost-warning-distance')[WARNING_RANGE_KEYS.in]),
       out: range(table('gost-warning-distance')[WARNING_RANGE_KEYS.out]),
     },
+    singleWarningDistance: range(
+      table('gost-single-warning-distance')['Краткосрочные работы, одиночный знак 1.25'],
+    ),
+    singleWarningMaxSpeedKmh: number('gost-single-warning-max-speed'),
     peakHourShare: (values['peak-hour-share'] as number | null) ?? null,
     b34MaxFrontMetres: number('project-b34-max-front'),
     frontLimitMetres: number('project-front-limit'),
