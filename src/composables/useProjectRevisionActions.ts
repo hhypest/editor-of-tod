@@ -10,7 +10,7 @@ import {
   type RevisionCursor,
 } from '../application/project-revisions'
 
-type RevisionEditor = {
+export type RevisionEditor = {
   imported: Ref<ImportResult | null>
   history: Ref<EditHistory<Scheme> | null>
   localRevision: Ref<number | null>
@@ -26,7 +26,7 @@ type RevisionEditor = {
   cursor(): RevisionCursor
   recoveryId(): string
   beginSession(): void
-  openProjectRecord(scheme: Scheme, revision: number): void
+  openProjectRecord(scheme: Scheme, revision: number, storedSchemaVersion?: number): void
   flushRecovery(): Promise<boolean>
   clearRecovery(id: string): Promise<void>
   showLocalError(cause: unknown): void
