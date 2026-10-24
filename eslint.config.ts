@@ -109,5 +109,26 @@ export default defineConfigWithVueTs(
     },
   },
 
+  {
+    name: 'app/session-facade',
+    files: ['src/composables/useProjectSession.ts'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        'window',
+        'document',
+        'navigator',
+        'fetch',
+        'setTimeout',
+        'setInterval',
+        'clearTimeout',
+        'clearInterval',
+        'FileReader',
+        'Blob',
+        'URL',
+      ],
+    },
+  },
+
   skipFormatting,
 )

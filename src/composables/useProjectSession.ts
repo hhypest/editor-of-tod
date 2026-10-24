@@ -1,11 +1,5 @@
-import { computed, nextTick, ref } from 'vue'
-import {
-  exportSchemeJson,
-  importSchemeJson,
-  MAX_PROJECT_FILE_BYTES,
-  SchemeImportError,
-  storedFormatWarnings,
-} from '../domain/import'
+import { computed, ref } from 'vue'
+import { storedFormatWarnings } from '../domain/import'
 import type { Scheme } from '../domain/model'
 import { loadSignCatalogSnapshot } from '../services/local-signs'
 import { reportError } from '../services/diagnostics'
@@ -24,12 +18,13 @@ import { useSessionCursor } from './useSessionCursor'
 import { useProjectPersistence } from './useProjectPersistence'
 import { useProjectHistory } from './useProjectHistory'
 import { useEditorDraftState } from './useEditorDraftState'
+import { useProjectFiles, PU66_LINKED_WARNING } from './useProjectFiles'
+import { useRecoveryActions } from './useRecoveryActions'
+import { downloadProjectJson } from '../services/project-download'
 import { useTemplateActions } from './useTemplateActions'
 import { useProjectDocument } from './useProjectDocument'
 
-/** Owns the open project, edit history and local draft lifecycle for one editor window. */
-const PU66_LINKED_WARNING =
-  'Локальная карточка ПУ-66 закреплена как снимок; её актуальность нужно проверить.'
+/** Composes one stable editor session from document, workflow and infrastructure adapters. */
 
 export function useProjectSession(onProjectOpened: () => void) {
   const { rules: normativeRules } = useNormativeRules()
@@ -118,7 +113,6 @@ export function useProjectSession(onProjectOpened: () => void) {
     activeRecoveryId,
     flush: flushRecovery,
     clear: clearRecovery,
-    refresh: refreshRecoveries,
   } = recovery
 
   function beginSession(sessionId: string = crypto.randomUUID()): void {
@@ -139,108 +133,6 @@ export function useProjectSession(onProjectOpened: () => void) {
     pageHide: recovery.releaseOnExit,
     visible: () => void recovery.heartbeat(),
   })
-
-  async function onFileSelected(event: Event): Promise<void> {
-    const input = event.target as HTMLInputElement
-    const file = input.files?.[0]
-    input.value = ''
-    if (!file) return
-    if (
-      hasUnsavedWork.value &&
-      !window.confirm('Есть правки без сохранённой копии. Открыть другой проект?')
-    )
-      return
-    if (hasUnsavedWork.value && !(await flushRecovery())) return
-
-    beginSession()
-    projectDocument.clearDocument(file.name)
-    localError.value = ''
-    localNotice.value = ''
-
-    if (file.size > MAX_PROJECT_FILE_BYTES) {
-      errorMessage.value = 'Файл проекта больше 32 МБ.'
-      return
-    }
-
-    loading.value = true
-    try {
-      const result = importSchemeJson(await file.text())
-      projectDocument.openDocument({
-        result,
-        fileName: file.name,
-        revision: null,
-        modified: false,
-        selectedPlacementId: result.scheme.placements[0]?.id ?? null,
-      })
-      onProjectOpened()
-    } catch (error) {
-      // Журнал получает только тип ошибки и место кода; имя файла и введённые значения не записываются.
-      reportError('Открытие JSON-проекта', error)
-      errorMessage.value =
-        error instanceof SchemeImportError ? error.message : 'Не удалось прочитать выбранный файл.'
-    } finally {
-      loading.value = false
-    }
-  }
-
-  function downloadProjectJson(content: string, suffix: string): void {
-    const scheme = imported.value?.scheme
-    if (!scheme) return
-
-    const crossing = scheme.crossing.referenceId.replace(/[^\p{L}\p{N}_-]/gu, '_').slice(0, 60)
-    const url = URL.createObjectURL(new Blob([content], { type: 'application/json;charset=utf-8' }))
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `scheme_${crossing || 'crossing'}_${suffix}.json`
-    document.body.append(link)
-    link.click()
-    link.remove()
-    window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
-  }
-
-  function exportCurrentProject(): void {
-    if (imported.value && !editorDirty.value) {
-      downloadProjectJson(exportSchemeJson(imported.value.scheme), 'v10')
-    }
-  }
-
-  function exportOriginalProject(): void {
-    if (imported.value?.scheme.source.kind === 'legacy-html-v1') {
-      downloadProjectJson(imported.value.scheme.source.originalJson, 'original_v1')
-    }
-  }
-
-  async function createProject(scheme: Scheme): Promise<void> {
-    if (scheme.crossing.source !== 'local-pu66') {
-      localError.value = 'Новую схему можно начать только с карточки ПУ-66 из локального реестра.'
-      return
-    }
-    if (
-      hasUnsavedWork.value &&
-      !window.confirm('Есть правки без сохранённой копии. Создать другой проект?')
-    )
-      return
-    if (hasUnsavedWork.value && !(await flushRecovery())) return
-    beginSession()
-    projectDocument.openDocument({
-      result: {
-        scheme,
-        format: 'scheme-v10',
-        warnings: [
-          PU66_LINKED_WARNING,
-          'Вариант выбран по длине фронта работ, нормативная проверка и расстановка знаков не выполнены.',
-        ],
-      },
-      fileName: 'Новый проект · не сохранён',
-      revision: null,
-      modified: true,
-      selectedPlacementId: null,
-    })
-    localError.value = ''
-    localNotice.value = ''
-    errorMessage.value = ''
-    onProjectOpened()
-  }
 
   function showLocalError(cause: unknown): void {
     // Текст ответа базы может содержать ключ переезда или имя файла — пишется только тип ошибки.
@@ -329,58 +221,35 @@ export function useProjectSession(onProjectOpened: () => void) {
     templateError.value = ''
   }
 
-  async function openRecovery(sessionId: string): Promise<void> {
-    if (localBusy.value || loading.value) return
-    if (
-      hasUnsavedWork.value &&
-      !window.confirm('Есть правки без сохранённой копии. Открыть копию восстановления?')
+  const { onFileSelected, exportCurrentProject, exportOriginalProject, createProject } =
+    useProjectFiles(
+      {
+        projectDocument,
+        editorDirty,
+        hasUnsavedWork,
+        localError,
+        localNotice,
+        beginSession,
+        flushRecovery,
+        onProjectOpened,
+      },
+      downloadProjectJson,
     )
-      return
-    if (hasUnsavedWork.value && !(await flushRecovery())) return
-    localBusy.value = true
-    localError.value = ''
-    try {
-      const version = recoveryCopies.value.find((copy) => copy.sessionId === sessionId)?.version
-      if (!version) throw new Error('Обновите список копий восстановления.')
-      const record = await recovery.claim(sessionId, version)
-      beginSession(record.sessionId)
-      projectDocument.openDocument({
-        result: {
-          scheme: record.scheme,
-          format: 'scheme-v10',
-          warnings: ['Восстановлена рабочая копия; проверьте ввод и сохраните проект.'],
-        },
-        fileName: record.fileName,
-        revision: record.baseRevision,
-        modified: true,
-        selectedPlacementId: record.placementDraft?.id ?? record.scheme.placements[0]?.id ?? null,
-      })
-      onProjectOpened()
-      await nextTick()
-      pendingDetails.value = record.detailsDraft
-      pendingPlacement.value = record.placementDraft
-      recoverySeed.value = { details: record.detailsDraft, placement: record.placementDraft }
-      localNotice.value = 'Рабочая копия восстановлена. Примените ввод в форме и сохраните проект.'
-    } catch (cause) {
-      showLocalError(cause)
-    } finally {
-      localBusy.value = false
-    }
-  }
-
-  async function discardRecovery(sessionId: string, version: number): Promise<void> {
-    if (localBusy.value || sessionId === activeRecoveryId.value) return
-    localBusy.value = true
-    localError.value = ''
-    try {
-      await recovery.remove(sessionId, version)
-      await refreshRecoveries()
-    } catch (cause) {
-      showLocalError(cause)
-    } finally {
-      localBusy.value = false
-    }
-  }
+  const { openRecovery, discardRecovery } = useRecoveryActions(
+    {
+      projectDocument,
+      drafts,
+      loading,
+      localBusy,
+      localError,
+      localNotice,
+      hasUnsavedWork,
+      beginSession,
+      onProjectOpened,
+      showLocalError,
+    },
+    recovery,
+  )
 
   return {
     imported,
