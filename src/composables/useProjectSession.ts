@@ -1,10 +1,9 @@
-import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   exportSchemeJson,
   importSchemeJson,
   MAX_PROJECT_FILE_BYTES,
   SchemeImportError,
-  type ImportResult,
   storedFormatWarnings,
 } from '../domain/import'
 import type { Scheme } from '../domain/model'
@@ -14,7 +13,7 @@ import { localApiErrorCode } from '../services/api-error'
 import { rebuildTemplatePlacements, TemplateBuildError } from '../domain/template-placements'
 import { autoRebuildTemplate } from '../domain/template-rebuild'
 import { useNormativeRules } from './useNormativeRules'
-import { clearPinsAfterSignChange, pinSignImages, usedSignCodes } from '../domain/sign-images'
+import { pinSignImages, usedSignCodes } from '../domain/sign-images'
 import {
   getLocalProject,
   listRecoveryDrafts,
@@ -22,19 +21,13 @@ import {
   saveLocalProject,
   createRecoveryRepository,
 } from '../services/local-projects'
-import type { SchemeDetailsDraft } from '../domain/edit-details'
-import type { PlacementDraft } from '../domain/edit-placements'
 import { RecoverySession, RECOVERY_HEARTBEAT_MS } from '../application/recovery-session'
 import { useProjectRevisionActions } from './useProjectRevisionActions'
 import type { RevisionCursor } from '../application/project-revisions'
 import type { RecoverySummary } from '../domain/recovery'
-import {
-  recordEdit,
-  redoEdit,
-  startHistory,
-  undoEdit,
-  type EditHistory,
-} from '../domain/edit-history'
+import { useProjectHistory } from './useProjectHistory'
+import { useEditorDraftState } from './useEditorDraftState'
+import { useProjectDocument } from './useProjectDocument'
 
 /** Owns the open project, edit history and local draft lifecycle for one editor window. */
 const PU66_LINKED_WARNING =
@@ -42,33 +35,37 @@ const PU66_LINKED_WARNING =
 
 export function useProjectSession(onProjectOpened: () => void) {
   const { rules: normativeRules } = useNormativeRules()
-  const imported = shallowRef<ImportResult | null>(null)
-  const selectedFileName = ref('')
-  const errorMessage = ref('')
-  const loading = ref(false)
-  const detailsDirty = ref(false)
-  const placementDirty = ref(false)
-  const modifiedSinceLocalSave = ref(false)
-  const localRevision = ref<number | null>(null)
+  const drafts = useEditorDraftState()
+  const edits = useProjectHistory()
+  const projectDocument = useProjectDocument(drafts, edits)
+  const {
+    imported,
+    selectedFileName,
+    errorMessage,
+    loading,
+    modifiedSinceLocalSave,
+    localRevision,
+    selectedPlacementId,
+  } = projectDocument
+  const {
+    detailsDirty,
+    placementDirty,
+    pendingDetails,
+    pendingPlacement,
+    recoverySeed,
+    editorDirty,
+  } = drafts
+  const { history } = edits
   const localBusy = ref(false)
   const localError = ref('')
   const localNotice = ref('')
   const projectsRefreshKey = ref(0)
-  const history = shallowRef<EditHistory<Scheme> | null>(null)
-  const selectedPlacementId = ref<number | null>(null)
   const templateMessage = ref('')
   const templateError = ref('')
   const signPinMessage = ref('')
-  const editorDirty = computed(() => detailsDirty.value || placementDirty.value)
   const hasUnsavedWork = computed(() => editorDirty.value || modifiedSinceLocalSave.value)
   const recoveryCopies = ref<RecoverySummary[]>([])
   const recoveryStatus = ref<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle')
-  const recoverySeed = shallowRef<{
-    details: SchemeDetailsDraft | null
-    placement: PlacementDraft | null
-  } | null>(null)
-  const pendingDetails = shallowRef<SchemeDetailsDraft | null>(null)
-  const pendingPlacement = shallowRef<PlacementDraft | null>(null)
   let recoverySessionId: string = crypto.randomUUID()
   const activeRecoveryId = ref(recoverySessionId)
   const recoveryRepository = createRecoveryRepository(crypto.randomUUID())
@@ -106,9 +103,7 @@ export function useProjectSession(onProjectOpened: () => void) {
       void recovery.release(recoverySessionId).catch(showLocalError)
     recoverySessionId = sessionId
     activeRecoveryId.value = sessionId
-    recoverySeed.value = null
-    pendingDetails.value = null
-    pendingPlacement.value = null
+    drafts.clearPending()
     recoveryStatus.value = 'idle'
     // Итог сборки шаблона относится к открытому проекту и его текущему состоянию.
     templateMessage.value = ''
@@ -236,17 +231,9 @@ export function useProjectSession(onProjectOpened: () => void) {
     if (hasUnsavedWork.value && !(await flushRecovery())) return
 
     beginSession()
-    imported.value = null
-    history.value = null
-    selectedPlacementId.value = null
-    detailsDirty.value = false
-    placementDirty.value = false
-    modifiedSinceLocalSave.value = false
-    localRevision.value = null
+    projectDocument.clearDocument(file.name)
     localError.value = ''
     localNotice.value = ''
-    errorMessage.value = ''
-    selectedFileName.value = file.name
 
     if (file.size > MAX_PROJECT_FILE_BYTES) {
       errorMessage.value = 'Файл проекта больше 32 МБ.'
@@ -255,9 +242,14 @@ export function useProjectSession(onProjectOpened: () => void) {
 
     loading.value = true
     try {
-      imported.value = importSchemeJson(await file.text())
-      history.value = startHistory(imported.value.scheme)
-      selectedPlacementId.value = imported.value.scheme.placements[0]?.id ?? null
+      const result = importSchemeJson(await file.text())
+      projectDocument.openDocument({
+        result,
+        fileName: file.name,
+        revision: null,
+        modified: false,
+        selectedPlacementId: result.scheme.placements[0]?.id ?? null,
+      })
       onProjectOpened()
     } catch (error) {
       // Журнал получает только тип ошибки и место кода; имя файла и введённые значения не записываются.
@@ -308,21 +300,20 @@ export function useProjectSession(onProjectOpened: () => void) {
       return
     if (hasUnsavedWork.value && !(await flushRecovery())) return
     beginSession()
-    imported.value = {
-      scheme,
-      format: 'scheme-v10',
-      warnings: [
-        PU66_LINKED_WARNING,
-        'Вариант выбран по длине фронта работ, нормативная проверка и расстановка знаков не выполнены.',
-      ],
-    }
-    history.value = startHistory(scheme)
-    selectedPlacementId.value = null
-    selectedFileName.value = 'Новый проект · не сохранён'
-    localRevision.value = null
-    detailsDirty.value = false
-    placementDirty.value = false
-    modifiedSinceLocalSave.value = true
+    projectDocument.openDocument({
+      result: {
+        scheme,
+        format: 'scheme-v10',
+        warnings: [
+          PU66_LINKED_WARNING,
+          'Вариант выбран по длине фронта работ, нормативная проверка и расстановка знаков не выполнены.',
+        ],
+      },
+      fileName: 'Новый проект · не сохранён',
+      revision: null,
+      modified: true,
+      selectedPlacementId: null,
+    })
     localError.value = ''
     localNotice.value = ''
     errorMessage.value = ''
@@ -369,24 +360,22 @@ export function useProjectSession(onProjectOpened: () => void) {
 
   function openProjectRecord(scheme: Scheme, revision: number, storedSchemaVersion?: number): void {
     beginSession()
-    imported.value = {
-      scheme,
-      format: 'scheme-v10',
-      warnings: [
-        'Схема не прошла нормативную проверку.',
-        // Версия записана в прежнем формате: те же сообщения, что при открытии файла.
-        ...(storedSchemaVersion !== undefined
-          ? storedFormatWarnings(storedSchemaVersion, scheme)
-          : []),
-      ],
-    }
-    history.value = startHistory(scheme)
-    selectedPlacementId.value = scheme.placements[0]?.id ?? null
-    selectedFileName.value = `Сохранённый проект · версия ${revision}`
-    localRevision.value = revision
-    detailsDirty.value = false
-    placementDirty.value = false
-    modifiedSinceLocalSave.value = false
+    projectDocument.openDocument({
+      result: {
+        scheme,
+        format: 'scheme-v10',
+        warnings: [
+          'Схема не прошла нормативную проверку.',
+          ...(storedSchemaVersion !== undefined
+            ? storedFormatWarnings(storedSchemaVersion, scheme)
+            : []),
+        ],
+      },
+      fileName: `Сохранённый проект · версия ${revision}`,
+      revision,
+      modified: false,
+      selectedPlacementId: scheme.placements[0]?.id ?? null,
+    })
     onProjectOpened()
   }
 
@@ -411,15 +400,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     }
   }
 
-  function onProjectApplied(scheme: Scheme): void {
-    if (!imported.value) return
-    scheme = clearPinsAfterSignChange(imported.value.scheme, scheme)
-    history.value = recordEdit(history.value ?? startHistory(imported.value.scheme), scheme)
-    imported.value = { ...imported.value, scheme }
-    detailsDirty.value = false
-    placementDirty.value = false
-    modifiedSinceLocalSave.value = true
-  }
+  const onProjectApplied = projectDocument.commitScheme
 
   /**
    * Правки этапа 2: если шаблон уже собран и изменились параметры раскладки, типовые объекты
@@ -513,21 +494,13 @@ export function useProjectSession(onProjectOpened: () => void) {
   }
 
   function stepBack(): void {
-    if (!imported.value || !history.value || editorDirty.value || !history.value.past.length) return
-    history.value = undoEdit(history.value)
-    imported.value = { ...imported.value, scheme: history.value.present }
-    modifiedSinceLocalSave.value = true
-    // Сообщение о перестройке шаблона описывало отменённое действие.
+    if (!projectDocument.stepHistory('back')) return
     templateMessage.value = ''
     templateError.value = ''
   }
 
   function stepForward(): void {
-    if (!imported.value || !history.value || editorDirty.value || !history.value.future.length)
-      return
-    history.value = redoEdit(history.value)
-    imported.value = { ...imported.value, scheme: history.value.present }
-    modifiedSinceLocalSave.value = true
+    if (!projectDocument.stepHistory('forward')) return
     templateMessage.value = ''
     templateError.value = ''
   }
@@ -547,19 +520,17 @@ export function useProjectSession(onProjectOpened: () => void) {
       if (!version) throw new Error('Обновите список копий восстановления.')
       const record = await recovery.claim(sessionId, version)
       beginSession(record.sessionId)
-      imported.value = {
-        scheme: record.scheme,
-        format: 'scheme-v10',
-        warnings: ['Восстановлена рабочая копия; проверьте ввод и сохраните проект.'],
-      }
-      history.value = startHistory(record.scheme)
-      selectedPlacementId.value =
-        record.placementDraft?.id ?? record.scheme.placements[0]?.id ?? null
-      selectedFileName.value = record.fileName
-      localRevision.value = record.baseRevision
-      modifiedSinceLocalSave.value = true
-      detailsDirty.value = false
-      placementDirty.value = false
+      projectDocument.openDocument({
+        result: {
+          scheme: record.scheme,
+          format: 'scheme-v10',
+          warnings: ['Восстановлена рабочая копия; проверьте ввод и сохраните проект.'],
+        },
+        fileName: record.fileName,
+        revision: record.baseRevision,
+        modified: true,
+        selectedPlacementId: record.placementDraft?.id ?? record.scheme.placements[0]?.id ?? null,
+      })
       onProjectOpened()
       await nextTick()
       pendingDetails.value = record.detailsDraft
