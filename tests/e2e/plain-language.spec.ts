@@ -73,3 +73,34 @@ test('an unreadable local response offers recovery instead of technical details'
   await expect(setupError).not.toContainText(/JSON|SQLite|API|npm run|локальный сервер/i)
   await expect(blocked).not.toContainText(/JSON|SQLite|API|npm run|локальный сервер/i)
 })
+
+test('registry write failures explain recovery and keep the entered card', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Реестры', exact: true }).click()
+  await page.getByRole('button', { name: 'Карточки и нормативы', exact: true }).click()
+  const registry = page.locator('section[aria-labelledby="registry-title"]')
+  const backup = registry.getByRole('button', { name: 'Создать резервную копию базы' })
+  await page.route('**/api/backup', (route) => route.abort('failed'))
+  await backup.click()
+  await expect(registry.getByRole('alert')).toHaveText(
+    'Программа не отвечает. Перезапустите её и повторите действие.',
+  )
+  await page.route('**/api/backup', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html>' }),
+  )
+  await backup.click()
+  await expect(registry.getByRole('alert')).toHaveText(
+    'Программа получила неожиданный ответ. Перезапустите её и повторите действие.',
+  )
+  await registry.getByLabel('Ключ из проекта / ПУ-66').fill('TEST-WRITE-ERROR')
+  await registry.getByLabel('Место на железной дороге').fill('Учебный участок')
+  await page.route('**/api/crossings', (route) =>
+    route.request().method() === 'PUT' ? route.abort('failed') : route.continue(),
+  )
+  await registry.getByRole('button', { name: 'Сохранить карточку', exact: true }).click()
+  await expect(registry.getByRole('alert')).toHaveText(
+    'Программа не отвечает. Перезапустите её и повторите действие.',
+  )
+  await expect(registry.getByLabel('Ключ из проекта / ПУ-66')).toHaveValue('TEST-WRITE-ERROR')
+  await expect(registry.getByLabel('Место на железной дороге')).toHaveValue('Учебный участок')
+})
