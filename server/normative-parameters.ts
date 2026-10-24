@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { createHash } from 'node:crypto'
-import { findClause, findTable } from '../src/domain/document-text.ts'
+import { findClause, findTable, normalizeQuote } from '../src/domain/document-text.ts'
 import {
   currentDocument,
   documentLabel,
@@ -82,7 +82,12 @@ async function quoteFor(store: RegistryStore, definition: ParameterDefinition, i
   if (source.kind === 'decision') return null
   const pages = await documentText(store, id)
   if (source.kind === 'table') return findTable(pages, source.table)
-  const clause = findClause(pages, source.clause)
+  // Номер пункта может повториться в приложении. Если правило извлечения значения подходит
+  // только к основному пункту, его более короткий текст важнее длинной одноимённой вставки.
+  const pattern = definition.type === 'number' ? definition.pattern : undefined
+  const clause = findClause(pages, source.clause, (text) =>
+    pattern ? pattern.test(normalizeQuote(text)) : false,
+  )
   return clause ? { ...clause, rows: undefined } : null
 }
 

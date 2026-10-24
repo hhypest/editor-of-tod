@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { localJson } from '../services/json-response'
 import type {
   CrossingDraft,
   CrossingRecord,
@@ -47,8 +48,13 @@ const crossingForm = reactive<CrossingDraft>(emptyCrossing())
 const normativeForm = reactive<NormativeDraft>(emptyNormative())
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, options)
-  const body: unknown = await response.json()
+  let response: Response
+  try {
+    response = await fetch(url, options)
+  } catch {
+    throw new Error('Программа не отвечает. Перезапустите её и повторите действие.')
+  }
+  const body = await localJson(response)
   if (!response.ok) {
     const message =
       typeof body === 'object' && body !== null && 'error' in body && typeof body.error === 'string'
@@ -71,9 +77,6 @@ async function load(): Promise<void> {
     normative.value = normativeRows
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Локальный реестр недоступен.'
-    if (error.value === 'Failed to fetch' || error.value.includes('JSON')) {
-      error.value = 'Программа не отвечает. Перезапустите её и повторите действие.'
-    }
   } finally {
     busy.value = false
   }
