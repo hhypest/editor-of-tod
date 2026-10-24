@@ -13,6 +13,10 @@
 
 Автоматические проверки: `src/domain/__tests__/taper-suggestion.test.ts`, e2e «switching the B.34 mode offers the taper length…».
 
+## Итоговые проверки 0.2.0 (24.10.2026)
+
+Тег `0.2.0` на `858a77f4d1898c4af44a2a09ca4e279c15368e68`. `npm run check` — 73 файла / 647 тестов, все проверки и production build успешны. Playwright локально и на Linux — 45 из 45. [CI коммита тега](https://github.com/hhypest/editor-of-tod/actions/runs/40082705903) прошёл на Linux / Node 24 и Windows / Node 26.7; задание Windows прошло после повторного запуска из-за двух таймаутов тестов, исходники не менялись. [Windows exe № 21](https://github.com/hhypest/editor-of-tod/actions/runs/40082714821) собран с тега; все 45 браузерных сценариев на готовом exe прошли. Скачаны и сверены SHA-256 всех четырёх файлов комплекта. [Выпуск 0.2.0](https://github.com/hhypest/editor-of-tod/releases/tag/0.2.0) опубликован с комплектом и SHA256SUMS.txt; #102 закрыта.
+
 ## Приёмка RC2 и разрешение выпуска 0.2.0 (24.10.2026)
 
 Получен отчёт приёмки `0.2.0-rc.2`: 35 из 35 пунктов верны, ошибок и замечаний нет. Владелец подтвердил успешную приёмку и разрешил выпуск `0.2.0` (#102).
