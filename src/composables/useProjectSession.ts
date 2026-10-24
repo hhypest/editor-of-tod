@@ -9,6 +9,7 @@ import {
 } from '../domain/import'
 import type { Scheme } from '../domain/model'
 import { reportError } from '../services/diagnostics'
+import { localApiErrorCode } from '../services/api-error'
 import { rebuildTemplatePlacements, TemplateBuildError } from '../domain/template-placements'
 import { autoRebuildTemplate } from '../domain/template-rebuild'
 import { useNormativeRules } from './useNormativeRules'
@@ -332,7 +333,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     reportError('Операция с локальной базой', cause)
     localError.value =
       cause instanceof Error ? cause.message : 'Операция с локальной базой не удалась.'
-    if (localError.value.includes('Запись изменилась')) {
+    if (localApiErrorCode(cause) === 'revision-conflict') {
       localError.value += ' Ваши правки остались открытыми. Обновите список проектов.'
       if (localRevision.value === null) {
         localError.value += ' Для отдельной копии используйте «Сохранить как новый проект».'
