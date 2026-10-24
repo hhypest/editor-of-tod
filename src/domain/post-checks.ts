@@ -153,7 +153,12 @@ export function singleWarningProblems(
     const post = posts[0]!
     const metres = postMetres(post.distance!, scheme.parameters.signDistancesMetres)
     if (metres === null) continue
-    const hasDistancePlate = post.signIds.some((code) => /^8\.1\.1(?:_|$)/.test(code))
+    const warningColumn = postColumns(post.signIds).find((column) =>
+      /^1\.25(?:_|$)/.test(post.signIds[column[0]!]!),
+    )
+    const hasDistancePlate = Boolean(
+      warningColumn?.slice(1).some((index) => /^8\.1\.1(?:_|$)/.test(post.signIds[index]!)),
+    )
     if (metres < range[0] || metres > range[1] || hasDistancePlate)
       problems.push({ approach, postId: post.id, metres, hasDistancePlate })
   }
