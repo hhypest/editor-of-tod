@@ -10,10 +10,7 @@ import type { Scheme } from '../domain/model'
 import { loadSignCatalogSnapshot } from '../services/local-signs'
 import { reportError } from '../services/diagnostics'
 import { localApiErrorCode } from '../services/api-error'
-import { rebuildTemplatePlacements, TemplateBuildError } from '../domain/template-placements'
-import { autoRebuildTemplate } from '../domain/template-rebuild'
 import { useNormativeRules } from './useNormativeRules'
-import { pinSignImages, usedSignCodes } from '../domain/sign-images'
 import {
   getLocalProject,
   listRecoveryDrafts,
@@ -27,6 +24,7 @@ import { useSessionCursor } from './useSessionCursor'
 import { useProjectPersistence } from './useProjectPersistence'
 import { useProjectHistory } from './useProjectHistory'
 import { useEditorDraftState } from './useEditorDraftState'
+import { useTemplateActions } from './useTemplateActions'
 import { useProjectDocument } from './useProjectDocument'
 
 /** Owns the open project, edit history and local draft lifecycle for one editor window. */
@@ -60,9 +58,24 @@ export function useProjectSession(onProjectOpened: () => void) {
   const localError = ref('')
   const localNotice = ref('')
   const projectsRefreshKey = ref(0)
-  const templateMessage = ref('')
-  const templateError = ref('')
-  const signPinMessage = ref('')
+  const {
+    templateMessage,
+    templateError,
+    signPinMessage,
+    onDetailsApplied,
+    buildDraftTemplate,
+    pinCurrentSigns,
+  } = useTemplateActions(
+    {
+      imported,
+      editorDirty,
+      localBusy,
+      selectedPlacementId,
+      normativeRules,
+      onProjectApplied: projectDocument.commitScheme,
+    },
+    { loadCatalog: loadSignCatalogSnapshot },
+  )
   const hasUnsavedWork = computed(() => editorDirty.value || modifiedSinceLocalSave.value)
   const cursor = useSessionCursor([
     () => imported.value?.scheme,
@@ -289,83 +302,6 @@ export function useProjectSession(onProjectOpened: () => void) {
   }
 
   const onProjectApplied = projectDocument.commitScheme
-
-  /**
-   * Правки этапа 2: если шаблон уже собран и изменились параметры раскладки, типовые объекты
-   * перестраиваются в том же действии истории (П5, issue #106). Ручные объекты не трогаются.
-   */
-  function onDetailsApplied(scheme: Scheme): void {
-    if (!imported.value) return
-    let result: ReturnType<typeof autoRebuildTemplate>
-    try {
-      result = autoRebuildTemplate(imported.value.scheme, scheme, normativeRules.value)
-    } catch (cause) {
-      // Непредвиденная ошибка перестройки не должна терять применённые правки этапа 2.
-      reportError('Перестройка шаблона после правок этапа 2', cause)
-      result = {
-        kind: 'failed',
-        message:
-          'Правки применены, но типовые объекты не перестроены и остались прежними. Соберите шаблон на этапе 3.',
-      }
-    }
-    templateMessage.value = ''
-    templateError.value = ''
-    const applied = result.kind === 'rebuilt' ? result.scheme : scheme
-    onProjectApplied(applied)
-    if (result.kind === 'rebuilt') {
-      templateMessage.value = result.message
-      if (!applied.placements.some((placement) => placement.id === selectedPlacementId.value))
-        selectedPlacementId.value = null
-    }
-    if (result.kind === 'failed') templateError.value = result.message
-  }
-
-  function buildDraftTemplate(): void {
-    if (!imported.value || editorDirty.value || localBusy.value) return
-    templateMessage.value = ''
-    templateError.value = ''
-    try {
-      const {
-        scheme: rebuilt,
-        keptSlots,
-        staleSlots,
-      } = rebuildTemplatePlacements(imported.value.scheme, normativeRules.value)
-      onProjectApplied(rebuilt)
-      selectedPlacementId.value = null
-      templateMessage.value =
-        'Черновая расстановка обновлена; ручные объекты сохранены. Сверьте каждый знак, место и расстояние.' +
-        (keptSlots
-          ? ` Объектов шаблона, изменённых вручную и оставленных без замены: ${keptSlots}; проверьте, соответствуют ли они новым параметрам.`
-          : '') +
-        (staleSlots
-          ? ` Вручную изменённых объектов прежней версии шаблона: ${staleSlots}. Новая раскладка их не заменяет — удалите лишние, если они повторяют новые стойки.`
-          : '')
-    } catch (cause) {
-      templateError.value =
-        cause instanceof TemplateBuildError
-          ? cause.message
-          : 'Не удалось собрать черновой шаблон. Проверьте параметры проекта.'
-    }
-  }
-
-  async function pinCurrentSigns(): Promise<void> {
-    if (!imported.value || editorDirty.value || localBusy.value) return
-    const schemeAtStart = imported.value.scheme
-    signPinMessage.value = ''
-    try {
-      const { signs, catalog } = await loadSignCatalogSnapshot()
-      if (!Array.isArray(signs) || !catalog || catalog.edition === 'не указана') {
-        throw new Error('Укажите версию ГОСТ при импорте каталога знаков.')
-      }
-      if (imported.value?.scheme !== schemeAtStart)
-        throw new Error('Проект изменился; повторите закрепление.')
-      const pinned = pinSignImages(schemeAtStart, catalog, signs)
-      onProjectApplied(pinned)
-      signPinMessage.value = `Закреплены версии ${usedSignCodes(pinned).length} кодов PNG. Сохраните проект.`
-    } catch (cause) {
-      signPinMessage.value = cause instanceof Error ? cause.message : 'Не удалось закрепить PNG.'
-    }
-  }
 
   function onPu66Linked(scheme: Scheme): void {
     onProjectApplied(scheme)
