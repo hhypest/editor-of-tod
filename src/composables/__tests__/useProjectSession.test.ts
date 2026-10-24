@@ -585,7 +585,83 @@ describe('project revision contracts', () => {
   })
 })
 
+describe('project session characterization baseline', () => {
+  it('records one applied change as one undo step and restores it with redo', async () => {
+    const session = await openEditedSession()
+    const before = session.imported.value!.scheme
+    const pastLength = session.history.value!.past.length
+    const edited = {
+      ...before,
+      parameters: { ...before.parameters, locationText: 'Отдельное действие истории' },
+    }
+    session.onProjectApplied(edited)
+    expect(session.history.value!.past).toHaveLength(pastLength + 1)
+    expect(session.history.value!.present).toBe(edited)
+    expect(session.history.value!.future).toEqual([])
+    session.stepBack()
+    expect(session.imported.value!.scheme).toBe(before)
+    session.stepForward()
+    expect(session.imported.value!.scheme).toBe(edited)
+  })
+
+  it('clears project-scoped messages when another JSON project is opened', async () => {
+    const session = await openEditedSession()
+    session.localError.value = 'Ошибка прежнего проекта'
+    session.localNotice.value = 'Сообщение прежнего проекта'
+    await session.onFileSelected({
+      target: {
+        files: [{ name: 'next.json', size: raw.length, text: async () => raw }],
+        value: '',
+      },
+    } as unknown as Event)
+    expect(session.localError.value).toBe('')
+    expect(session.localNotice.value).toBe('')
+    expect(session.history.value!.past).toEqual([])
+    expect(session.history.value!.future).toEqual([])
+  })
+
+  it('does not pin a sign catalog response after the project changed during the request', async () => {
+    const session = await openEditedSession()
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => ({
+      ok: true,
+      json: async () =>
+        String(input).includes('/catalog')
+          ? { id: 7, documentCode: 'ГОСТ Р 52290', edition: 'учебная' }
+          : [{ code: '1.25', revision: 2 }],
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const before = session.imported.value!.scheme
+    const pinning = session.pinCurrentSigns()
+    edit(session, 'Правка во время чтения каталога')
+    const history = session.history.value
+    await pinning
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(session.imported.value!.scheme.parameters.locationText).toBe(
+      'Правка во время чтения каталога',
+    )
+    expect(session.imported.value!.scheme).not.toBe(before)
+    expect(session.history.value).toBe(history)
+    expect(session.signPinMessage.value).toContain('Проект изменился; повторите закрепление')
+  })
+})
+
 describe('JSON export does not acknowledge a database save', () => {
+  it('does not download the current project while form input is unapplied', async () => {
+    const session = await openEditedSession()
+    const createObjectURL = vi.fn(() => 'blob:unexpected')
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL })
+    session.detailsDirty.value = true
+    const history = session.history.value
+    session.saveV5()
+    await nextTick()
+    expect(createObjectURL).not.toHaveBeenCalled()
+    expect(revokeObjectURL).not.toHaveBeenCalled()
+    expect(session.history.value).toBe(history)
+    expect(session.detailsDirty.value).toBe(true)
+    expect(session.hasUnsavedWork.value).toBe(true)
+  })
+
   it('keeps unsaved state and the recovery copy when the download has no save acknowledgement', async () => {
     const session = await openEditedSession()
     expect(session.recoveryStatus.value).toBe('saved')
