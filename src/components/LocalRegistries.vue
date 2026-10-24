@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { localJson } from '../services/json-response'
+import {
+  listRegistryCrossings,
+  listRegistryNormatives,
+  saveRegistryCrossing,
+  saveRegistryNormative,
+  createRegistryBackup,
+} from '../services/local-registries'
 import type {
   CrossingDraft,
   CrossingRecord,
@@ -47,31 +53,13 @@ function emptyNormative(): NormativeDraft {
 const crossingForm = reactive<CrossingDraft>(emptyCrossing())
 const normativeForm = reactive<NormativeDraft>(emptyNormative())
 
-async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  let response: Response
-  try {
-    response = await fetch(url, options)
-  } catch {
-    throw new Error('Программа не отвечает. Перезапустите её и повторите действие.')
-  }
-  const body = await localJson(response)
-  if (!response.ok) {
-    const message =
-      typeof body === 'object' && body !== null && 'error' in body && typeof body.error === 'string'
-        ? body.error
-        : `Ошибка локального реестра (${response.status}).`
-    throw new Error(message)
-  }
-  return body as T
-}
-
 async function load(): Promise<void> {
   busy.value = true
   error.value = ''
   try {
     const [crossingRows, normativeRows] = await Promise.all([
-      request<CrossingRecord[]>('/api/crossings'),
-      request<NormativeRecord[]>('/api/normative'),
+      listRegistryCrossings(),
+      listRegistryNormatives(),
     ])
     crossings.value = crossingRows
     normative.value = normativeRows
@@ -113,11 +101,7 @@ async function saveCrossing(): Promise<void> {
   error.value = ''
   notice.value = ''
   try {
-    const saved = await request<CrossingRecord>('/api/crossings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...crossingForm, expectedRevision: crossingRevision.value }),
-    })
+    const saved = await saveRegistryCrossing(crossingForm, crossingRevision.value)
     clearCrossing()
     await load()
     notice.value = `Карточка ${saved.referenceId} сохранена (версия ${saved.revision}).`
@@ -133,11 +117,7 @@ async function saveNormative(): Promise<void> {
   error.value = ''
   notice.value = ''
   try {
-    const saved = await request<NormativeRecord>('/api/normative', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...normativeForm, expectedRevision: normativeRevision.value }),
-    })
+    const saved = await saveRegistryNormative(normativeForm, normativeRevision.value)
     clearNormative()
     await load()
     notice.value = `Нормативная запись ${saved.id} сохранена (версия ${saved.revision}).`
@@ -153,7 +133,7 @@ async function createBackup(): Promise<void> {
   error.value = ''
   notice.value = ''
   try {
-    const result = await request<{ filename: string }>('/api/backup', { method: 'POST' })
+    const result = await createRegistryBackup()
     notice.value = `Резервная копия создана: private-data/backups/${result.filename}`
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Не удалось создать копию.'

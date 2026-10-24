@@ -1,5 +1,40 @@
 import { z } from 'zod'
 import { localJson } from './json-response'
+import { parseLocalData, requestLocalData } from './local-data'
+
+const signRevisionSchema = z.object({ code: z.string(), revision: z.number().int().positive() })
+const signSummarySchema = signRevisionSchema.extend({
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+})
+export type SignSummary = z.infer<typeof signSummarySchema>
+
+export async function listSigns(): Promise<SignSummary[]> {
+  return parseLocalData(signSummarySchema.array(), await requestLocalData('/api/signs'))
+}
+
+const pinCatalogSchema = z.object({
+  id: z.number().int().positive(),
+  documentCode: z.string(),
+  edition: z.string(),
+})
+
+/** The sheet only needs the edition reference; full import metadata is a different contract. */
+export async function getSignCatalogSource() {
+  return parseLocalData(pinCatalogSchema.nullable(), await requestLocalData('/api/signs/catalog'))
+}
+
+/** Read the same two endpoints as before; pinning still checks whether the project changed. */
+export async function loadSignCatalogSnapshot() {
+  const [signs, catalog] = await Promise.all([
+    requestLocalData('/api/signs'),
+    requestLocalData('/api/signs/catalog'),
+  ])
+  return {
+    signs: parseLocalData(signRevisionSchema.array(), signs),
+    catalog: parseLocalData(pinCatalogSchema.nullable(), catalog),
+  }
+}
 
 export const MAX_WEB_SIGN_ARCHIVE_BYTES = 32 * 1024 * 1024
 export const MAX_WEB_SIGN_PDF_BYTES = 10 * 1024 * 1024

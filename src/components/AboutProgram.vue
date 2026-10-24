@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import licenseText from '../../LICENSE?raw'
 import licenseRussian from '../../LICENSE.ru.md?raw'
+import { loadThirdPartyLicenses, type ThirdParty } from '../services/licenses'
 import { appBuild } from '../services/diagnostics'
 
 /**
@@ -9,22 +10,12 @@ import { appBuild } from '../services/diagnostics'
  * компонентов из сборки (`legal/third-party.json`). Полные тексты их лицензий — в
  * `legal/THIRD_PARTY_LICENSES.txt`, тот же файл лежит рядом с exe.
  */
-type ThirdParty = {
-  groups: Array<{
-    title: string
-    packages: Array<{ name: string; version: string; license: string; homepage: string | null }>
-  }>
-  node: { version: string; license: string } | null
-}
-
 const components = ref<ThirdParty | null>(null)
 const state = ref<'loading' | 'ready' | 'missing'>('loading')
 
 onMounted(async () => {
   try {
-    const response = await fetch('/legal/third-party.json')
-    if (!response.ok) throw new Error('Нет сведений')
-    components.value = (await response.json()) as ThirdParty
+    components.value = await loadThirdPartyLicenses()
     state.value = 'ready'
   } catch {
     state.value = 'missing'

@@ -7,6 +7,7 @@ import {
   type Pu66Verification,
 } from '../domain/pu66-review'
 import {
+  listPu66ImportSummaries,
   applyPu66Files,
   listPu66Verifications,
   MAX_WEB_PU66_FILES,
@@ -15,6 +16,7 @@ import {
   type Pu66ImportPlan,
 } from '../services/local-pu66'
 import {
+  listSigns,
   applySignFiles,
   getSignCatalog,
   MAX_WEB_SIGN_ARCHIVE_BYTES,
@@ -23,6 +25,7 @@ import {
   type SignCatalog,
   type SignImportPlan,
   type SignSourceInput,
+  type SignSummary as Sign,
 } from '../services/local-signs'
 import { listDocuments } from '../services/local-documents'
 import PdfSignCatalog from './PdfSignCatalog.vue'
@@ -42,22 +45,9 @@ const props = defineProps<{
   guided?: boolean
 }>()
 const emit = defineEmits<{ signsUpdated: []; pu66Updated: []; busy: [value: boolean] }>()
-type Sign = { code: string; width: number; height: number }
-type Crossing = {
-  referenceId: string
-  location: string
-  section: string
-  roadName: string
-  crossingWidthMetres: number | string | null
-  crossingRoadLengthMetres: number | string | null
-  carCountPerDay: number | string | null
-  busRoutes: number | string | null
-  revision: number
-  updatedAt: string
-  verification: Pu66Verification | null
-}
-const signs = ref<Sign[]>([])
-const crossings = ref<Crossing[]>([])
+const signs = ref<Awaited<ReturnType<typeof listSigns>>>([])
+const crossings = ref<Awaited<ReturnType<typeof listPu66ImportSummaries>>>([])
+type Crossing = (typeof crossings.value)[number]
 const search = ref('')
 const error = ref('')
 const busy = ref(false)
@@ -161,9 +151,9 @@ async function load(): Promise<void> {
   busy.value = true
   error.value = ''
   try {
-    const [cardsResponse, signsResponse, catalog, library] = await Promise.all([
-      fetch('/api/pu66'),
-      fetch('/api/signs'),
+    const [cards, signRows, catalog, library] = await Promise.all([
+      listPu66ImportSummaries(),
+      listSigns(),
       getSignCatalog(),
       listDocuments(),
     ])
@@ -174,10 +164,8 @@ async function load(): Promise<void> {
       )
       if (current) signDocumentId.value = current.document.id
     }
-    if (!cardsResponse.ok || !signsResponse.ok)
-      throw new Error('Не удалось прочитать локальный каталог.')
-    crossings.value = (await cardsResponse.json()) as Crossing[]
-    signs.value = (await signsResponse.json()) as Sign[]
+    crossings.value = cards
+    signs.value = signRows
     signCatalog.value = catalog
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Локальный каталог недоступен.'

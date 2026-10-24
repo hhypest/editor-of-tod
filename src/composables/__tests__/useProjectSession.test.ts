@@ -625,13 +625,13 @@ describe('project session characterization baseline', () => {
 
   it('does not pin a sign catalog response after the project changed during the request', async () => {
     const session = await openEditedSession()
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => ({
-      ok: true,
-      json: async () =>
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
+      Response.json(
         String(input).includes('/catalog')
           ? { id: 7, documentCode: 'ГОСТ Р 52290', edition: 'учебная' }
           : [{ code: '1.25', revision: 2 }],
-    }))
+      ),
+    )
     vi.stubGlobal('fetch', fetchMock)
     const before = session.imported.value!.scheme
     const pinning = session.pinCurrentSigns()

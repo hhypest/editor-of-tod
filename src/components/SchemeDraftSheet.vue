@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { getSignMetadata, signImageUrl } from '../services/local-signs'
+import {
+  getSignMetadata,
+  signImageUrl,
+  listSigns,
+  getSignCatalogSource,
+} from '../services/local-signs'
 import { timed } from '../services/diagnostics'
 import { useNormativeRules } from '../composables/useNormativeRules'
 import { unmarkedChecks } from '../domain/review-marks'
@@ -199,18 +204,11 @@ async function loadSigns(): Promise<void> {
   brokenImages.value = new Set()
   catalogSource.value = null
   try {
-    const [response, sourceResponse, library] = await Promise.all([
-      fetch('/api/signs'),
-      fetch('/api/signs/catalog'),
+    const [list, currentCatalog, library] = await Promise.all([
+      listSigns(),
+      getSignCatalogSource(),
       listDocuments().catch(() => []),
     ])
-    if (!response.ok || !sourceResponse.ok) throw new Error('Каталог недоступен')
-    const list = (await response.json()) as Array<{ code: string; width: number; height: number }>
-    const currentCatalog = (await sourceResponse.json()) as {
-      documentCode: string
-      edition: string
-    } | null
-    if (!Array.isArray(list)) throw new Error('Неверный ответ каталога')
     const sizes = new Map(
       list.map((sign) => [sign.code, { width: sign.width, height: sign.height }]),
     )

@@ -90,5 +90,24 @@ export default defineConfigWithVueTs(
     },
   },
 
+  {
+    name: 'app/http-adapters',
+    files: ['src/**/*.vue', 'src/composables/**/*.{ts,tsx,mts}'],
+    ignores: ['**/__tests__/**'],
+    rules: {
+      'no-restricted-globals': [
+        'error',
+        { name: 'fetch', message: 'HTTP-запросы выполняются в src/services.' },
+      ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "MemberExpression[object.name=/^(window|globalThis)$/][property.name='fetch']",
+          message: 'HTTP-запросы выполняются в src/services.',
+        },
+      ],
+    },
+  },
+
   skipFormatting,
 )
