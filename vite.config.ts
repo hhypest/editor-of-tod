@@ -2,7 +2,8 @@ import { execSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 
-import { defineConfig, type Plugin } from 'vite'
+import type { Plugin } from 'vite'
+import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 import {
@@ -66,6 +67,11 @@ function thirdPartyLicenses(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig({
+  test: {
+    // Concurrent cold SQLite fixtures exceed the per-test I/O budget on Windows CI.
+    // Concurrency checks inside a test still run; other environments retain four workers.
+    maxWorkers: process.platform === 'win32' && process.env.CI ? 1 : 4,
+  },
   plugins: [vue(), vueDevTools(), thirdPartyLicenses()],
   define: { __APP_BUILD__: JSON.stringify(buildInfo()) },
   server: {

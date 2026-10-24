@@ -6,6 +6,54 @@ import raw from '../../../tests/fixtures/manual-v1.json?raw'
 import { LocalApiError } from '../../services/api-error'
 import { useProjectSession } from '../useProjectSession'
 
+// The public surface was captured before the final extraction, including compatibility aliases.
+const publicSessionKeys = [
+  'activeRecoveryId',
+  'buildDraftTemplate',
+  'createProject',
+  'detailsDirty',
+  'discardRecovery',
+  'editorDirty',
+  'errorMessage',
+  'exportCurrentProject',
+  'exportOriginalProject',
+  'hasUnsavedWork',
+  'history',
+  'imported',
+  'loading',
+  'localBusy',
+  'localError',
+  'localNotice',
+  'localRevision',
+  'modifiedSinceLocalSave',
+  'onDetailsApplied',
+  'onFileSelected',
+  'onProjectApplied',
+  'onPu66Linked',
+  'openLocal',
+  'openRecovery',
+  'pendingDetails',
+  'pendingPlacement',
+  'pinCurrentSigns',
+  'placementDirty',
+  'projectsRefreshKey',
+  'recoveryCopies',
+  'recoverySeed',
+  'recoveryStatus',
+  'restoreLocal',
+  'saveAsNew',
+  'saveLocally',
+  'saveOriginal',
+  'saveV5',
+  'selectedFileName',
+  'selectedPlacementId',
+  'signPinMessage',
+  'stepBack',
+  'stepForward',
+  'templateError',
+  'templateMessage',
+]
+
 const local = vi.hoisted(() => ({
   saveLocalProject: vi.fn<(scheme: Scheme, revision: number) => Promise<ProjectRecord>>(),
   restoreLocalRevision:
@@ -75,6 +123,13 @@ afterEach(() => {
   unmount?.()
   vi.useRealTimers()
   vi.unstubAllGlobals()
+})
+
+it('preserves the public ProjectSession surface and semantic export aliases', async () => {
+  const session = await openEditedSession()
+  expect(Object.keys(session).sort()).toEqual(publicSessionKeys)
+  expect(session.saveV5).toBe(session.exportCurrentProject)
+  expect(session.saveOriginal).toBe(session.exportOriginalProject)
 })
 
 async function openEditedSession() {
