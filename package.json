@@ -1,6 +1,6 @@
 {
   "name": "editor-of-tod",
-  "version": "0.2.0-rc.1",
+  "version": "0.3.0-dev",
   "description": "Локальный редактор схем организации дорожного движения на время ремонта железнодорожных переездов",
   "license": "MIT",
   "author": "Манченко Иван Григорьевич",
@@ -45,36 +45,36 @@
     "fflate": "^0.8.3",
     "pdfjs-dist": "^6.4.299",
     "pngjs": "^7.0.0",
-    "vue": "^3.5.42",
+    "vue": "^3.5.44",
     "zod": "^4.6.5"
   },
   "overrides": {
     "uuid": "^11.1.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
+    "@playwright/test": "^1.64.1",
     "@tsconfig/node24": "^24.0.5",
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.5",
     "@types/pngjs": "^6.0.5",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/eslint-config-typescript": "^14.9.0",
     "@vue/tsconfig": "^0.9.1",
     "esbuild": "^0.28.2",
-    "eslint": "^10.12.0",
+    "eslint": "^10.13.0",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-oxlint": "~1.87.0",
+    "eslint-plugin-oxlint": "~1.89.0",
     "eslint-plugin-vue": "~10.11.0",
     "jiti": "^2.7.0",
     "npm-run-all2": "^9.0.3",
-    "oxlint": "~1.87.0",
+    "oxlint": "~1.89.0",
     "postject": "^1.0.0-alpha.6",
-    "prettier": "3.9.9",
+    "prettier": "3.9.10",
     "typescript": "~6.0.3",
     "vite": "^8.2.2",
     "vite-plugin-vue-devtools": "^8.2.1",
     "vitest": "^5.0.2",
     "vue-eslint-parser": "^10.4.1",
-    "vue-tsc": "^3.3.11"
+    "vue-tsc": "^3.3.13"
   },
   "engines": {
     "node": "^24.12.0 || ^26.7.0"
