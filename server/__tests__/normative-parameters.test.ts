@@ -447,6 +447,30 @@ describe('normative parameters from library documents', () => {
     expect(rulesFrom(states).signsHourly).toBe(250)
   })
 
+  it('prefers the PDD towing clause over a longer appendix clause with the same number', async () => {
+    const store = library()
+    await add(
+      store,
+      textPdf([
+        [
+          'ПДД: вымышленный учебный документ',
+          '10.4. Транспортным средствам, буксирующим механические транспортные средства, разрешается движение со скоростью не более 50 км/ч.',
+          '10.5. Учебный следующий пункт.',
+        ],
+        [
+          'Приложение: вымышленный учебный текст',
+          '10.4. Учебный пункт приложения с более длинным текстом, который не описывает буксировку механических транспортных средств и не содержит значения скорости.',
+          '10.5. Учебный следующий пункт приложения.',
+        ],
+      ]),
+      { code: 'ПДД', edition: '2030-04-01', effectiveFrom: '2030-04-01' },
+    )
+    const towing = state(await listParameterStates(store, now), 'pdd-speed-towing')
+    expect(towing.quote?.page).toBe(1)
+    expect(towing.quote?.text).toContain('буксирующим механические транспортные средства')
+    expect(towing.suggestion).toBe(50)
+  })
+
   it('records a confirmation with the quote and uses it in the rules', async () => {
     const store = library()
     const document = await add(store, methodology(520), {})
@@ -561,6 +585,21 @@ describe('normative parameters from library documents', () => {
       now,
     )
     expect(rulesFrom(await listParameterStates(store, now)).singleWarningDistance).toEqual([10, 15])
+    const speedDefinition = parameterDefinitions.find(
+      (item) => item.id === 'gost-single-warning-max-speed',
+    )!
+    await confirmParameter(
+      store,
+      speedDefinition.id,
+      {
+        value: 30,
+        confirmedBy: 'Учебный составитель',
+        note: 'Вымышленное значение для проверки механизма подтверждения, не норма',
+        expectedDocumentId: document.id,
+      },
+      now,
+    )
+    expect(rulesFrom(await listParameterStates(store, now)).singleWarningMaxSpeedKmh).toBe(30)
 
     await add(store, textPdf([['Изменение 1: пункт 5.2.27 изложить в новой редакции.']]), {
       code: 'Изменение № 1 к ГОСТ Р 52289',
@@ -570,6 +609,7 @@ describe('normative parameters from library documents', () => {
     })
     const first = await listParameterStates(store, now)
     expect(state(first, definition.id).status.kind).toBe('changed')
+    expect(state(first, speedDefinition.id).status.kind).toBe('changed')
     expect(state(first, definition.id).amendments).toEqual(['Изменение № 1 к ГОСТ Р 52289 (2025)'])
 
     await add(store, textPdf([['Изменение 2: уточнить пункт 5.2.27.']]), {
@@ -586,5 +626,7 @@ describe('normative parameters from library documents', () => {
     const rules = rulesFrom(second)
     expect(rules.confirmed[definition.id]).toBe(false)
     expect(rules.parameterBasis[definition.id]?.amendments).toHaveLength(2)
+    expect(rules.confirmed[speedDefinition.id]).toBe(false)
+    expect(rules.parameterBasis[speedDefinition.id]?.amendments).toHaveLength(2)
   })
 })

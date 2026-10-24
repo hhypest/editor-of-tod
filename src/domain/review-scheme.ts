@@ -276,6 +276,7 @@ export function reviewScheme(
         speedStepInterval: undefined,
         plateLimit: undefined,
         singleWarningDistance: undefined,
+        singleWarningMaxSpeedKmh: undefined,
         // Только предложение отвода и сравнение с рисунком; раскладка берёт введённый отвод.
         b34TaperMetres: undefined,
         // Расхождение варианта и порога показывает пункт «Вариант и длина фронта».
@@ -436,7 +437,7 @@ export function reviewScheme(
         )
         .join(
           '; ',
-        )}. Для особого случая п. 5.2.27 при скорости в зоне 40 км/ч и менее один знак допускается на переносной опоре на расстоянии от ${singleWarning.range[0]} до ${singleWarning.range[1]} м от места работ, без таблички 8.1.1 (${rules.sources['gost-single-warning-distance']}). Проверьте расстояние, состав стойки и переносную опору на этапе 3. Это не универсальное расстояние для обычной расстановки с повторным знаком у начала работ.`,
+        )}. Для особого случая п. 5.2.27 при скорости в зоне ${singleWarning.maxSpeedKmh} км/ч и менее один знак допускается на переносной опоре на расстоянии от ${singleWarning.range[0]} до ${singleWarning.range[1]} м от места работ, без таблички 8.1.1 (расстояние: ${rules.sources['gost-single-warning-distance']}; предел скорости: ${rules.sources['gost-single-warning-max-speed']}). Проверьте расстояние, состав стойки и переносную опору на этапе 3. Это не универсальное расстояние для обычной расстановки с повторным знаком у начала работ.`,
       path: 'placements',
       basis: JSON.stringify([
         singleWarning,
@@ -444,6 +445,8 @@ export function reviewScheme(
         parameters.speedStagesKmh[2],
         rules.confirmed['gost-single-warning-distance'],
         rules.evidence['gost-single-warning-distance'],
+        rules.confirmed['gost-single-warning-max-speed'],
+        rules.evidence['gost-single-warning-max-speed'],
       ]),
     })
   }
