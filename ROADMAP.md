@@ -8,7 +8,7 @@
 
 Клиентская сессия разделена (#136), восстановление после настоящего сна Windows принято (#134). На сервере выделены подключение, резервные копии и последовательные миграции SQLite (#196–#198).
 
-Выделены [ProjectSourceStore](docs/refactoring/project-source-store.md), [ProjectRepository](docs/refactoring/project-repository.md), [RecoveryRepository](docs/refactoring/recovery-repository.md) и [ручные реестры с историей](docs/refactoring/legacy-registry-repository.md). **Ближайший шаг — чтение ПУ-66 и разрешение ключей**, затем сверки/lifecycle/import, остальные области хранения и маршруты. Подробности и критерии завершения — в [серверном плане](docs/refactoring/server-god-object-plan.md) и [#135](https://github.com/hhypest/editor-of-tod/issues/135).
+Выделены [ProjectSourceStore](docs/refactoring/project-source-store.md), [ProjectRepository](docs/refactoring/project-repository.md), [RecoveryRepository](docs/refactoring/recovery-repository.md), [ручные реестры](docs/refactoring/legacy-registry-repository.md) и [чтение/ключи ПУ-66](docs/refactoring/pu66-read-repository.md). **Ближайший шаг — сверки ПУ-66**, затем lifecycle/import, остальные области хранения и маршруты. Подробности и критерии завершения — в [серверном плане](docs/refactoring/server-god-object-plan.md) и [#135](https://github.com/hhypest/editor-of-tod/issues/135).
 
 Архитектурный **А4** ещё не завершён; интерфейсный **И4** — другая задача.
 
