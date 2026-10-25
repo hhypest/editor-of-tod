@@ -521,9 +521,8 @@ export function createRegistryServer(
         )
         if (transfer.sessionId !== id)
           throw new RequestError(400, 'ID копии восстановления в адресе и запросе не совпадают.')
-        store.assertRecoveryAvailable(id, ownerId)
-        const scheme = store.resolveRecoveryScheme(id, transfer.scheme, sourceSha256)
-        const record = store.saveRecovery({ ...transfer, scheme }, ownerId)
+        const record = store.saveRecovery(transfer, ownerId, sourceSha256)
+        const { scheme } = record
         json(res, 200, {
           version: record.version,
           updatedAt: record.updatedAt,

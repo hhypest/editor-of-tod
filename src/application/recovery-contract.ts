@@ -5,7 +5,7 @@ export const recoveryOwnerSchema = z.strictObject({ ownerId: z.uuid() })
 export const recoveryClaimSchema = recoveryOwnerSchema.extend({
   expectedVersion: z.number().int().positive(),
 })
-// The HTTP adapter restores a source reference, then validates the complete Scheme.
+// The atomic server command restores the source and validates Scheme under its write lock.
 export const recoveryTransferSchema = recoveryWriteSchema.omit({ scheme: true }).extend({
   ownerId: z.uuid(),
   scheme: z.unknown(),
