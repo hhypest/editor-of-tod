@@ -5,8 +5,9 @@ import { openDatabase } from './database/connection.ts'
 import { migrateDatabase } from './database/migration-runner.ts'
 import { SCHEMA_VERSION, readSchemaVersion } from './database/schema-version.ts'
 import { databaseBackupDirectory, createManualBackup } from './database/backups.ts'
+import { ProjectSourceStore } from './projects/project-source-store.ts'
 import { RECOVERY_LEASE_MS, recoveryIsActive } from '../src/application/recovery-session.ts'
-import { parseStoredScheme, schemeSchema, type Scheme } from '../src/domain/model.ts'
+import { schemeSchema, type Scheme } from '../src/domain/model.ts'
 import {
   MAX_LOCAL_PROJECT_BYTES,
   type ProjectRecord,
@@ -216,6 +217,7 @@ function storedVersion(payload: string): { storedSchemaVersion?: number } {
 
 export class RegistryStore {
   private readonly db: DatabaseSync
+  private readonly projectSources: ProjectSourceStore
   readonly path: string
   private readonly now: () => string
   /** Версия схемы, с которой база обновлена при этом открытии; `null` — обновления не было. */
@@ -231,6 +233,7 @@ export class RegistryStore {
       const migration = migrateDatabase(this.db, { path, now: () => this.now() })
       this.migratedFrom = migration.migratedFrom
       this.migrationBackup = migration.migrationBackup
+      this.projectSources = new ProjectSourceStore(this.db)
       if (this.listNormative().length === 0) {
         for (const entry of initialNormativeEntries) this.saveNormative(entry, 0)
       }
@@ -333,55 +336,13 @@ export class RegistryStore {
       .all() as ProjectSummary[]
   }
 
-  /** The JSON export stays self-contained; only SQLite snapshots use a content reference. */
-  private parseProject(payload: string): Scheme {
-    const stored = JSON.parse(payload) as {
-      source?: { kind?: string; originalJsonSha256?: unknown }
-    }
-    if (stored.source?.kind !== 'legacy-html-v1' || !('originalJsonSha256' in stored.source)) {
-      return parseStoredScheme(stored)
-    }
-    const sha256 = stored.source.originalJsonSha256
-    if (typeof sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(sha256)) {
-      throw new Error(
-        'Ссылка на исходный файл проекта повреждена. Восстановите проект из резервной копии.',
-      )
-    }
-    const row = this.db
-      .prepare('SELECT original_json FROM project_sources WHERE sha256 = ?')
-      .get(sha256) as { original_json: string } | undefined
-    if (!row || createHash('sha256').update(row.original_json, 'utf8').digest('hex') !== sha256) {
-      throw new Error(
-        'Исходный файл проекта отсутствует или повреждён. Восстановите проект из резервной копии.',
-      )
-    }
-    const { originalJsonSha256: _hash, ...source } = stored.source
-    void _hash
-    return parseStoredScheme({
-      ...stored,
-      source: { ...source, originalJson: row.original_json },
-    })
-  }
-
-  private storeProjectSource(scheme: Scheme): string {
-    if (scheme.source.kind !== 'legacy-html-v1') return JSON.stringify(scheme)
-    const { originalJson, ...source } = scheme.source
-    const sha256 = createHash('sha256').update(originalJson, 'utf8').digest('hex')
-    this.db
-      .prepare(
-        'INSERT INTO project_sources (sha256, original_json) VALUES (?, ?) ON CONFLICT(sha256) DO NOTHING',
-      )
-      .run(sha256, originalJson)
-    return JSON.stringify({ ...scheme, source: { ...source, originalJsonSha256: sha256 } })
-  }
-
   getProject(id: string): ProjectRecord | null {
     const row = this.db
       .prepare('SELECT revision, scheme_json, updated_at FROM project_drafts WHERE id = ?')
       .get(id) as (Pick<StoredRow, 'revision' | 'updated_at'> & { scheme_json: string }) | undefined
     return row
       ? {
-          scheme: this.parseProject(row.scheme_json),
+          scheme: this.projectSources.decode(row.scheme_json),
           revision: row.revision,
           updatedAt: row.updated_at,
           ...storedVersion(row.scheme_json),
@@ -407,7 +368,7 @@ export class RegistryStore {
       (Pick<StoredRow, 'revision' | 'updated_at'> & { scheme_json: string }) | undefined
     return row
       ? {
-          scheme: this.parseProject(row.scheme_json),
+          scheme: this.projectSources.decode(row.scheme_json),
           revision: row.revision,
           updatedAt: row.updated_at,
           ...storedVersion(row.scheme_json),
@@ -432,14 +393,14 @@ export class RegistryStore {
         !forceRevision &&
         previous &&
         storedVersion(previous.scheme_json).storedSchemaVersion === checked.schemaVersion &&
-        JSON.stringify(this.parseProject(previous.scheme_json)) === payload
+        JSON.stringify(this.projectSources.decode(previous.scheme_json)) === payload
       ) {
         this.db.exec('COMMIT')
         return { scheme: checked, revision: previous.revision, updatedAt: previous.updated_at }
       }
       const revision = expectedRevision + 1
       const updatedAt = this.now()
-      const storedPayload = this.storeProjectSource(checked)
+      const storedPayload = this.projectSources.encode(checked)
       this.db
         .prepare(
           `INSERT INTO project_drafts
@@ -526,7 +487,7 @@ export class RegistryStore {
       ? recoveryRecordSchema.parse({
           sessionId,
           version: row.version,
-          scheme: this.parseProject(row.scheme_json),
+          scheme: this.projectSources.decode(row.scheme_json),
           baseRevision: row.base_revision,
           detailsDraft: row.details_json === null ? null : JSON.parse(row.details_json),
           placementDraft: row.placement_json === null ? null : JSON.parse(row.placement_json),
@@ -630,7 +591,7 @@ export class RegistryStore {
         .run(
           input.sessionId,
           version,
-          this.storeProjectSource(input.scheme),
+          this.projectSources.encode(input.scheme),
           input.baseRevision,
           input.detailsDraft === null ? null : JSON.stringify(input.detailsDraft),
           input.placementDraft === null ? null : JSON.stringify(input.placementDraft),
@@ -659,22 +620,7 @@ export class RegistryStore {
         .get(sessionId) as { version: number; scheme_json: string } | undefined
       if (!existing || existing.version !== expectedVersion) throw new RevisionConflict()
       this.db.prepare('DELETE FROM project_recovery WHERE session_id = ?').run(sessionId)
-      const stored = JSON.parse(existing.scheme_json) as {
-        source?: { originalJsonSha256?: unknown }
-      }
-      const sha256 = stored.source?.originalJsonSha256
-      if (typeof sha256 === 'string') {
-        const referenced = this.db
-          .prepare(
-            `SELECT 1 FROM (
-              SELECT scheme_json FROM project_drafts
-              UNION ALL SELECT scheme_json FROM project_revisions
-              UNION ALL SELECT scheme_json FROM project_recovery
-            ) WHERE json_extract(scheme_json, '$.source.originalJsonSha256') = ? LIMIT 1`,
-          )
-          .get(sha256)
-        if (!referenced) this.db.prepare('DELETE FROM project_sources WHERE sha256 = ?').run(sha256)
-      }
+      this.projectSources.removeUnreferenced(existing.scheme_json)
       this.db.exec('COMMIT')
     } catch (error) {
       this.db.exec('ROLLBACK')
