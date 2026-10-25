@@ -1,7 +1,8 @@
-import { closeSync, constants, existsSync, mkdirSync, openSync, chmodSync, rmSync } from 'node:fs'
+import { mkdirSync, chmodSync, rmSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
+import type { DatabaseSync } from 'node:sqlite'
+import { openDatabase } from './database/connection.ts'
 import { RECOVERY_LEASE_MS, recoveryIsActive } from '../src/application/recovery-session.ts'
 import { parseStoredScheme, schemeSchema, type Scheme } from '../src/domain/model.ts'
 import {
@@ -226,15 +227,8 @@ export class RegistryStore {
   constructor(path: string, now: () => string = () => new Date().toISOString()) {
     this.path = path
     this.now = now
-    if (path !== ':memory:') {
-      mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-      if (!existsSync(path))
-        closeSync(openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_RDWR, 0o600))
-      if (process.platform !== 'win32') chmodSync(path, 0o600)
-    }
-    this.db = new DatabaseSync(path, { allowExtension: false, defensive: true, timeout: 3_000 })
+    this.db = openDatabase(path)
     try {
-      this.db.exec('PRAGMA foreign_keys = ON')
       const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
         .user_version
       if (!Number.isInteger(version) || version < 0 || version > SCHEMA_VERSION) {
