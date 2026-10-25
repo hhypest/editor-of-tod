@@ -5,6 +5,11 @@ import { openDatabase } from './database/connection.ts'
 import { migrateDatabase } from './database/migration-runner.ts'
 import { SCHEMA_VERSION, readSchemaVersion } from './database/schema-version.ts'
 import { databaseBackupDirectory, createManualBackup } from './database/backups.ts'
+import {
+  LegacyRegistryRepository,
+  type LegacyRegistryKind,
+} from './legacy/legacy-registry-repository.ts'
+import { initialNormativeEntries } from './legacy/initial-normative-entries.ts'
 import { ProjectRepository } from './projects/project-repository.ts'
 import { RecoveryRepository, type RecoverySaveInput } from './recovery/recovery-repository.ts'
 import { RevisionConflict, ProjectTooLarge, RecoveryOwned } from './storage-errors.ts'
@@ -17,8 +22,6 @@ import {
 } from '../src/domain/local-projects.ts'
 import { type RecoveryRecord, type RecoverySummary } from '../src/domain/recovery.ts'
 import {
-  crossingDraftSchema,
-  normativeDraftSchema,
   type CrossingDraft,
   type CrossingRecord,
   type NormativeDraft,
@@ -87,9 +90,6 @@ const unspecifiedSignSource: SignCatalogSource = {
 
 export { RevisionConflict, ProjectTooLarge, RecoveryOwned }
 
-type RegistryKind = 'crossings' | 'normative'
-type StoredRow = { key: string; revision: number; payload_json: string; updated_at: string }
-
 export class InvalidPu66Lifecycle extends Error {}
 
 export class AmbiguousPu66Key extends Error {
@@ -105,65 +105,6 @@ export class InvalidPu66Verification extends Error {
     super('Дата сверки ПУ-66 не может быть в будущем.')
   }
 }
-
-const initialNormativeEntries: NormativeDraft[] = [
-  {
-    id: 'odm-218-6-019-2016-b33',
-    documentCode: 'ОДМ 218.6.019-2016',
-    edition: '2016',
-    clause: 'Приложение Б, рисунок Б.33, с. 100',
-    description:
-      'Пример схемы для двухполосной дороги при краткосрочных работах; подпись говорит о зоне более 30 м, рисунок содержит обозначение min 30.',
-    application:
-      'Решение проекта по практике технических специалистов: фронт работ более 30 м (параметр «Наибольший фронт работ для схемы Б.34»). Подписи и размерные обозначения рисунков ОДМ расходятся, поэтому порог настраивается в реестре нормативных параметров.',
-    sourceUrl:
-      'https://rosavtodor.gov.ru/about/upravlenie-fda/upravlenie-nauchno-tekhnicheskikh-issledovaniy--i-informatsionnykh-tekhnologiy/tekhnicheskoe-regulirovanie/otraslevye-dorozhnye-metodicheskie-dokumenty/14520',
-    reviewStatus: 'needs-review',
-    checkedAt: '',
-    reviewer: '',
-  },
-  {
-    id: 'odm-218-6-019-2016-b34',
-    documentCode: 'ОДМ 218.6.019-2016',
-    edition: '2016',
-    clause: 'Приложение Б, рисунок Б.34, с. 101',
-    description:
-      'Пример схемы для двухполосной дороги при краткосрочных работах; подпись говорит о зоне менее 30 м, рисунок содержит обозначение max 30.',
-    application:
-      'Решение проекта по практике технических специалистов: фронт работ до 30 м включительно (параметр «Наибольший фронт работ для схемы Б.34»). Условия регулирования движения по интенсивности и видимости следует сверять отдельно.',
-    sourceUrl:
-      'https://rosavtodor.gov.ru/about/upravlenie-fda/upravlenie-nauchno-tekhnicheskikh-issledovaniy--i-informatsionnykh-tekhnologiy/tekhnicheskoe-regulirovanie/otraslevye-dorozhnye-metodicheskie-dokumenty/14520',
-    reviewStatus: 'needs-review',
-    checkedAt: '',
-    reviewer: '',
-  },
-  {
-    id: 'gost-r-52289-2019',
-    documentCode: 'ГОСТ Р 52289-2019',
-    edition: '2019; изменения № 1 и № 2 подлежат сверке',
-    clause: 'Раздел 5, в том числе 5.1.19 и 5.2.27',
-    description:
-      'Правила применения технических средств организации дорожного движения; конкретные параметры здесь пока не внесены.',
-    application: 'Проверить действующую редакцию и точные пункты перед автоматизацией.',
-    sourceUrl: 'https://protect.gost.ru/gost/details/94160176-3252-4e7d-8534-2d172e6aa0de',
-    reviewStatus: 'needs-review',
-    checkedAt: '',
-    reviewer: '',
-  },
-  {
-    id: 'gost-r-52290-2024',
-    documentCode: 'ГОСТ Р 52290-2024',
-    edition: '2024',
-    clause: 'Группы и технические требования к знакам',
-    description:
-      'Источник для будущего каталога знаков; изображения и полный текст в приложение не включены.',
-    application: 'Проверить применимые пункты и права на графику перед публикацией каталога.',
-    sourceUrl: 'https://protect.gost.ru/gost/details/39b75217-29bd-492b-94f4-c0dccb72b299',
-    reviewStatus: 'needs-review',
-    checkedAt: '',
-    reviewer: '',
-  },
-]
 
 /** Текущая версия схемы локальной базы (`PRAGMA user_version`). */
 export { SCHEMA_VERSION }
@@ -182,6 +123,7 @@ export class RegistryStore {
   private readonly projectSources: ProjectSourceStore
   private readonly projects: ProjectRepository
   private readonly recovery: RecoveryRepository
+  private readonly legacy: LegacyRegistryRepository
   readonly path: string
   private readonly now: () => string
   /** Версия схемы, с которой база обновлена при этом открытии; `null` — обновления не было. */
@@ -200,6 +142,7 @@ export class RegistryStore {
       this.projectSources = new ProjectSourceStore(this.db)
       this.projects = new ProjectRepository(this.db, this.projectSources, () => this.now())
       this.recovery = new RecoveryRepository(this.db, this.projectSources, () => this.now())
+      this.legacy = new LegacyRegistryRepository(this.db, () => this.now())
       if (this.listNormative().length === 0) {
         for (const entry of initialNormativeEntries) this.saveNormative(entry, 0)
       }
@@ -215,76 +158,25 @@ export class RegistryStore {
     }
   }
 
-  private rows(kind: RegistryKind): StoredRow[] {
-    return this.db
-      .prepare(`SELECT key, revision, payload_json, updated_at FROM ${kind} ORDER BY key`)
-      .all() as StoredRow[]
-  }
-
-  private save(
-    kind: RegistryKind,
-    key: string,
-    payload: CrossingDraft | NormativeDraft,
-    expectedRevision: number,
-  ): StoredRow {
-    this.db.exec('BEGIN IMMEDIATE')
-    try {
-      const previous = this.db.prepare(`SELECT revision FROM ${kind} WHERE key = ?`).get(key) as
-        { revision: number } | undefined
-      if ((previous?.revision ?? 0) !== expectedRevision) throw new RevisionConflict()
-      const revision = expectedRevision + 1
-      const updatedAt = this.now()
-      const json = JSON.stringify(payload)
-      this.db
-        .prepare(
-          `INSERT INTO ${kind} (key, revision, payload_json, updated_at) VALUES (?, ?, ?, ?)
-        ON CONFLICT(key) DO UPDATE SET revision = excluded.revision, payload_json = excluded.payload_json, updated_at = excluded.updated_at`,
-        )
-        .run(key, revision, json, updatedAt)
-      this.db
-        .prepare(
-          'INSERT INTO revisions (kind, key, revision, payload_json, updated_at) VALUES (?, ?, ?, ?, ?)',
-        )
-        .run(kind, key, revision, json, updatedAt)
-      this.db.exec('COMMIT')
-      return { key, revision, payload_json: json, updated_at: updatedAt }
-    } catch (error) {
-      this.db.exec('ROLLBACK')
-      throw error
-    }
-  }
-
   /** Версия схемы локальной базы (`PRAGMA user_version`) — для диагностики. */
   schemaVersion(): number {
     return readSchemaVersion(this.db)
   }
 
   listCrossings(): CrossingRecord[] {
-    return this.rows('crossings').map((row) => ({
-      ...crossingDraftSchema.parse(JSON.parse(row.payload_json)),
-      revision: row.revision,
-      updatedAt: row.updated_at,
-    }))
+    return this.legacy.listCrossings()
   }
 
   saveCrossing(draft: CrossingDraft, expectedRevision: number): CrossingRecord {
-    const parsed = crossingDraftSchema.parse(draft)
-    const row = this.save('crossings', parsed.referenceId, parsed, expectedRevision)
-    return { ...parsed, revision: row.revision, updatedAt: row.updated_at }
+    return this.legacy.saveCrossing(draft, expectedRevision)
   }
 
   listNormative(): NormativeRecord[] {
-    return this.rows('normative').map((row) => ({
-      ...normativeDraftSchema.parse(JSON.parse(row.payload_json)),
-      revision: row.revision,
-      updatedAt: row.updated_at,
-    }))
+    return this.legacy.listNormative()
   }
 
   saveNormative(draft: NormativeDraft, expectedRevision: number): NormativeRecord {
-    const parsed = normativeDraftSchema.parse(draft)
-    const row = this.save('normative', parsed.id, parsed, expectedRevision)
-    return { ...parsed, revision: row.revision, updatedAt: row.updated_at }
+    return this.legacy.saveNormative(draft, expectedRevision)
   }
 
   listProjects(): ProjectSummary[] {
@@ -610,13 +502,14 @@ export class RegistryStore {
          }
          ORDER BY c.key`,
       )
-      .all() as Array<
-      Pick<StoredRow, 'revision' | 'payload_json' | 'updated_at'> & {
-        verified_at: string | null
-        verified_by: string | null
-        recorded_at: string | null
-      }
-    >
+      .all() as Array<{
+      revision: number
+      payload_json: string
+      updated_at: string
+      verified_at: string | null
+      verified_by: string | null
+      recorded_at: string | null
+    }>
     return rows.map((row) => ({
       ...localCardSummary(JSON.parse(row.payload_json) as Pu66Card),
       revision: row.revision,
@@ -1003,20 +896,10 @@ export class RegistryStore {
   }
 
   history(
-    kind: RegistryKind,
+    kind: LegacyRegistryKind,
     key: string,
   ): { revision: number; payload: unknown; updatedAt: string }[] {
-    return (
-      this.db
-        .prepare(
-          'SELECT revision, payload_json, updated_at FROM revisions WHERE kind = ? AND key = ? ORDER BY revision',
-        )
-        .all(kind, key) as Omit<StoredRow, 'key'>[]
-    ).map((row) => ({
-      revision: row.revision,
-      payload: JSON.parse(row.payload_json),
-      updatedAt: row.updated_at,
-    }))
+    return this.legacy.history(kind, key)
   }
 
   /** Каталог резервных копий: `backups/` рядом с файлом базы, в том числе заданным `TOD_DATABASE_PATH`. */

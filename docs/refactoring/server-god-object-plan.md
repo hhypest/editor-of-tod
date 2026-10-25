@@ -26,7 +26,7 @@ ORM, микросервисы, несколько баз, DI-фреймворк 
 
 ## Последовательность PR
 
-Выделены [карта существующих контрактов](server-contracts.md), подключение (#196), migration/manual backup (#197), [исполнитель и отдельные модули миграций](sqlite-migrations.md), [ProjectSourceStore](project-source-store.md), [ProjectRepository](project-repository.md) и [RecoveryRepository](recovery-repository.md). RegistryStore делегирует инфраструктуре, исходникам, проектам и recovery; остальные предметные операции и HTTP пока остаются за совместимым фасадом. Следующий шаг — legacy crossings/normative/revisions. Остальные пункты ниже открыты.
+Выделены [карта существующих контрактов](server-contracts.md), подключение (#196), migration/manual backup (#197), [миграции](sqlite-migrations.md), [ProjectSourceStore](project-source-store.md), [ProjectRepository](project-repository.md), [RecoveryRepository](recovery-repository.md) и [LegacyRegistryRepository](legacy-registry-repository.md). RegistryStore делегирует этим владельцам; остальные предметные операции и HTTP пока остаются за совместимым фасадом. Следующий шаг — чтение ПУ-66 и разрешение ключей. Остальные пункты ниже открыты.
 
 ### 1. Карта серверных контрактов
 
@@ -55,7 +55,7 @@ ORM, микросервисы, несколько баз, DI-фреймворк 
 
 ### 4. Legacy и ПУ-66
 
-Изолировать legacy crossings/normative/revisions. Затем ПУ-66 переносится частями: чтение и key resolver → сверки → lifecycle → import. Карточки, редакции, aliases, lifecycle и сверки остаются одной предметной областью.
+Legacy crossings/normative/revisions выделены; начальное наполнение остаётся отдельной операцией инициализации. Далее ПУ-66 переносится частями: чтение и key resolver → сверки → lifecycle → import. Карточки, редакции, aliases, lifecycle и сверки остаются одной предметной областью.
 
 Preview/apply используют общий расчёт плана. Импорт, sources, текущие карточки, редакции и restore events остаются одной транзакцией; проекты и исторические ключи автоматически не заменяются.
 
