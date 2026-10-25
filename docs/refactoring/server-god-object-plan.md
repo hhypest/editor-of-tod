@@ -26,7 +26,7 @@ ORM, микросервисы, несколько баз, DI-фреймворк 
 
 ## Последовательность PR
 
-Выделены [карта существующих контрактов](server-contracts.md), подключение (#196), migration/manual backup (#197), [исполнитель и отдельные модули миграций](sqlite-migrations.md), [ProjectSourceStore](project-source-store.md) и [ProjectRepository](project-repository.md). RegistryStore делегирует инфраструктуре, исходникам и проектам; остальные предметные операции и HTTP пока остаются за совместимым фасадом. Следующий шаг — `RecoveryRepository`. Остальные пункты ниже открыты.
+Выделены [карта существующих контрактов](server-contracts.md), подключение (#196), migration/manual backup (#197), [исполнитель и отдельные модули миграций](sqlite-migrations.md), [ProjectSourceStore](project-source-store.md), [ProjectRepository](project-repository.md) и [RecoveryRepository](recovery-repository.md). RegistryStore делегирует инфраструктуре, исходникам, проектам и recovery; остальные предметные операции и HTTP пока остаются за совместимым фасадом. Следующий шаг — legacy crossings/normative/revisions. Остальные пункты ниже открыты.
 
 ### 1. Карта серверных контрактов
 
@@ -80,7 +80,7 @@ Forwarding method удаляется только после прямых тес
 Завершение #135 и серверной части А4:
 
 - [ ] SQL областей и row mappers имеют отдельных владельцев.
-- [ ] Миграции и backup отделены, все поддерживаемые исходные версии проверены.
+- [x] Миграции и backup отделены, все поддерживаемые исходные версии проверены (#196–#198).
 - [ ] Межмодульные изменения и recovery имеют явные атомарные команды.
 - [ ] Route groups зависят от узких контрактов, без RegistryStore/DatabaseSync.
 - [ ] `index.ts` выполняет bootstrap/shutdown, composition root собирает зависимости.

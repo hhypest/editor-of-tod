@@ -10,3 +10,9 @@ export class ProjectTooLarge extends Error {
     super('Черновик больше 32 МБ. Скачайте файл проекта, чтобы сохранить его отдельно.')
   }
 }
+
+export class RecoveryOwned extends Error {
+  constructor() {
+    super('Копия открыта в другом окне. Закройте его или дождитесь освобождения копии.')
+  }
+}

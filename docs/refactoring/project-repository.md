@@ -21,4 +21,4 @@ RegistryStore временно делегирует шесть прежних п
 
 [Прямые проверки](../../server/__tests__/project-repository.test.ts) используют SQLite без RegistryStore: no-op/force/restore, два соединения и конфликт, frozen inline v6 и сохранность байтов истории, ограниченный список, отказ source, повреждённый checksum и реальный большой UTF-8 проект. Сохраняются прежние store/API, frozen JSON/SQLite, source/recovery и браузерные проверки. JSON v10, SQLite v13, SQL, ошибки, нормативные алгоритмы и лист не меняются.
 
-Далее — RecoveryRepository с атомарной командой owner/version/source/write; затем остальные области хранения и маршруты. #135/А4 остаются открытыми; Pinia #191 идёт первой после А4, весь технический этап — до новых функций 0.3.0.
+Восстановление затем выделено в [RecoveryRepository](recovery-repository.md) с атомарной командой owner/version/source/write. Далее — legacy-реестры и остальные области хранения/маршруты. #135/А4 остаются открытыми; Pinia #191 идёт первой после А4, весь технический этап — до новых функций 0.3.0.

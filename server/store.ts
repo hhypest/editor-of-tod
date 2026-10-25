@@ -6,23 +6,16 @@ import { migrateDatabase } from './database/migration-runner.ts'
 import { SCHEMA_VERSION, readSchemaVersion } from './database/schema-version.ts'
 import { databaseBackupDirectory, createManualBackup } from './database/backups.ts'
 import { ProjectRepository } from './projects/project-repository.ts'
-import { RevisionConflict, ProjectTooLarge } from './storage-errors.ts'
+import { RecoveryRepository, type RecoverySaveInput } from './recovery/recovery-repository.ts'
+import { RevisionConflict, ProjectTooLarge, RecoveryOwned } from './storage-errors.ts'
 import { ProjectSourceStore } from './projects/project-source-store.ts'
-import { RECOVERY_LEASE_MS, recoveryIsActive } from '../src/application/recovery-session.ts'
-import { schemeSchema, type Scheme } from '../src/domain/model.ts'
+import type { Scheme } from '../src/domain/model.ts'
 import {
-  MAX_LOCAL_PROJECT_BYTES,
   type ProjectRecord,
   type ProjectRevision,
   type ProjectSummary,
 } from '../src/domain/local-projects.ts'
-import {
-  recoveryRecordSchema,
-  recoverySummarySchema,
-  type RecoveryRecord,
-  type RecoverySummary,
-  type RecoveryWrite,
-} from '../src/domain/recovery.ts'
+import { type RecoveryRecord, type RecoverySummary } from '../src/domain/recovery.ts'
 import {
   crossingDraftSchema,
   normativeDraftSchema,
@@ -92,16 +85,10 @@ const unspecifiedSignSource: SignCatalogSource = {
   pdfSha256: null,
 }
 
-export { RevisionConflict, ProjectTooLarge }
+export { RevisionConflict, ProjectTooLarge, RecoveryOwned }
 
 type RegistryKind = 'crossings' | 'normative'
 type StoredRow = { key: string; revision: number; payload_json: string; updated_at: string }
-
-export class RecoveryOwned extends Error {
-  constructor() {
-    super('Копия открыта в другом окне. Закройте его или дождитесь освобождения копии.')
-  }
-}
 
 export class InvalidPu66Lifecycle extends Error {}
 
@@ -194,6 +181,7 @@ export class RegistryStore {
   private readonly db: DatabaseSync
   private readonly projectSources: ProjectSourceStore
   private readonly projects: ProjectRepository
+  private readonly recovery: RecoveryRepository
   readonly path: string
   private readonly now: () => string
   /** Версия схемы, с которой база обновлена при этом открытии; `null` — обновления не было. */
@@ -211,6 +199,7 @@ export class RegistryStore {
       this.migrationBackup = migration.migrationBackup
       this.projectSources = new ProjectSourceStore(this.db)
       this.projects = new ProjectRepository(this.db, this.projectSources, () => this.now())
+      this.recovery = new RecoveryRepository(this.db, this.projectSources, () => this.now())
       if (this.listNormative().length === 0) {
         for (const entry of initialNormativeEntries) this.saveNormative(entry, 0)
       }
@@ -327,189 +316,41 @@ export class RegistryStore {
   }
 
   listRecoveries(): RecoverySummary[] {
-    return this.db
-      .prepare(
-        `SELECT session_id AS sessionId, version, base_revision AS baseRevision,
-          file_name AS fileName, reference_id AS referenceId, updated_at AS updatedAt,
-          owner_until AS ownerUntil
-          FROM project_recovery ORDER BY updated_at DESC`,
-      )
-      .all()
-      .map((row) => {
-        const { ownerUntil, ...summary } = row
-        return recoverySummarySchema.parse({
-          ...summary,
-          active: recoveryIsActive(Number(ownerUntil), Date.parse(this.now())),
-        })
-      })
+    return this.recovery.list()
   }
 
   getRecovery(sessionId: string, access?: { ownerId?: string }): RecoveryRecord | null {
-    const row = this.db
-      .prepare('SELECT * FROM project_recovery WHERE session_id = ?')
-      .get(sessionId) as
-      | {
-          version: number
-          owner_id: string | null
-          owner_until: number
-          scheme_json: string
-          base_revision: number | null
-          details_json: string | null
-          placement_json: string | null
-          file_name: string
-          updated_at: string
-        }
-      | undefined
-    if (
-      access &&
-      row &&
-      row.owner_id !== access.ownerId &&
-      recoveryIsActive(row.owner_until, Date.parse(this.now()))
-    )
-      throw new RecoveryOwned()
-    return row
-      ? recoveryRecordSchema.parse({
-          sessionId,
-          version: row.version,
-          scheme: this.projectSources.decode(row.scheme_json),
-          baseRevision: row.base_revision,
-          detailsDraft: row.details_json === null ? null : JSON.parse(row.details_json),
-          placementDraft: row.placement_json === null ? null : JSON.parse(row.placement_json),
-          fileName: row.file_name,
-          updatedAt: row.updated_at,
-        })
-      : null
+    return this.recovery.get(sessionId, access)
   }
 
+  /** Compatibility guard; HTTP writes use saveRecovery as one atomic command. */
   assertRecoveryAvailable(sessionId: string, ownerId?: string): void {
-    const row = this.db
-      .prepare('SELECT owner_id, owner_until FROM project_recovery WHERE session_id = ?')
-      .get(sessionId) as { owner_id: string | null; owner_until: number } | undefined
-    if (
-      row &&
-      row.owner_id !== ownerId &&
-      recoveryIsActive(row.owner_until, Date.parse(this.now()))
-    )
-      throw new RecoveryOwned()
+    this.recovery.assertAvailable(sessionId, ownerId)
   }
 
   claimRecovery(sessionId: string, ownerId: string, expectedVersion: number): RecoveryRecord {
-    this.db.exec('BEGIN IMMEDIATE')
-    try {
-      this.assertRecoveryAvailable(sessionId, ownerId)
-      const record = this.getRecovery(sessionId)
-      if (!record || record.version !== expectedVersion) throw new RevisionConflict()
-      this.db
-        .prepare(
-          'UPDATE project_recovery SET owner_id = ?, owner_until = ?, version = version + 1 WHERE session_id = ?',
-        )
-        .run(ownerId, Date.parse(this.now()) + RECOVERY_LEASE_MS, sessionId)
-      this.db.exec('COMMIT')
-      return { ...record, version: record.version + 1 }
-    } catch (error) {
-      this.db.exec('ROLLBACK')
-      throw error
-    }
+    return this.recovery.claim({ sessionId, ownerId, expectedVersion })
   }
 
   heartbeatRecovery(sessionId: string, ownerId: string): void {
-    const result = this.db
-      .prepare('UPDATE project_recovery SET owner_until = ? WHERE session_id = ? AND owner_id = ?')
-      .run(Date.parse(this.now()) + RECOVERY_LEASE_MS, sessionId, ownerId)
-    if (!result.changes) throw new RecoveryOwned()
+    this.recovery.renew({ sessionId, ownerId })
   }
 
   releaseRecovery(sessionId: string, ownerId: string): void {
-    this.db
-      .prepare('UPDATE project_recovery SET owner_until = 0 WHERE session_id = ? AND owner_id = ?')
-      .run(sessionId, ownerId)
+    this.recovery.release({ sessionId, ownerId })
   }
 
+  /** Compatibility resolver; HTTP writes resolve sources inside saveRecovery. */
   resolveRecoveryScheme(sessionId: string, value: unknown, sourceSha256?: string): Scheme {
-    if (!sourceSha256) return schemeSchema.parse(value)
-    // References only reuse the source already attached to this copy, never another project's data.
-    const previous = this.getRecovery(sessionId)
-    if (previous?.scheme.source.kind !== 'legacy-html-v1') throw new RevisionConflict()
-    const originalJson = previous.scheme.source.originalJson
-    if (createHash('sha256').update(originalJson, 'utf8').digest('hex') !== sourceSha256)
-      throw new RevisionConflict()
-    if (!value || typeof value !== 'object' || !('source' in value)) throw new RevisionConflict()
-    const source = value.source
-    if (
-      !source ||
-      typeof source !== 'object' ||
-      !('kind' in source) ||
-      source.kind !== 'legacy-html-v1' ||
-      'originalJson' in source
-    )
-      throw new RevisionConflict()
-    return schemeSchema.parse({ ...value, source: { ...source, originalJson } })
+    return this.recovery.resolveScheme(sessionId, value, sourceSha256)
   }
 
-  saveRecovery(input: RecoveryWrite, ownerId: string): RecoveryRecord {
-    const payload = JSON.stringify(input)
-    if (Buffer.byteLength(payload) > MAX_LOCAL_PROJECT_BYTES) throw new ProjectTooLarge()
-    this.db.exec('BEGIN IMMEDIATE')
-    try {
-      const existing = this.db
-        .prepare('SELECT version, owner_id FROM project_recovery WHERE session_id = ?')
-        .get(input.sessionId) as { version: number; owner_id: string | null } | undefined
-      this.assertRecoveryAvailable(input.sessionId, ownerId)
-      if (existing?.owner_id && existing.owner_id !== ownerId) throw new RecoveryOwned()
-      if ((existing?.version ?? 0) !== input.expectedVersion) throw new RevisionConflict()
-      const version = input.expectedVersion + 1
-      const updatedAt = this.now()
-      this.db
-        .prepare(
-          `INSERT INTO project_recovery
-            (session_id, version, scheme_json, base_revision, details_json, placement_json,
-              file_name, reference_id, updated_at, owner_id, owner_until)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(session_id) DO UPDATE SET
-              version = excluded.version, scheme_json = excluded.scheme_json,
-              base_revision = excluded.base_revision, details_json = excluded.details_json,
-              placement_json = excluded.placement_json, file_name = excluded.file_name,
-              reference_id = excluded.reference_id, updated_at = excluded.updated_at,
-              owner_id = excluded.owner_id, owner_until = excluded.owner_until`,
-        )
-        .run(
-          input.sessionId,
-          version,
-          this.projectSources.encode(input.scheme),
-          input.baseRevision,
-          input.detailsDraft === null ? null : JSON.stringify(input.detailsDraft),
-          input.placementDraft === null ? null : JSON.stringify(input.placementDraft),
-          input.fileName,
-          input.scheme.crossing.referenceId,
-          updatedAt,
-          ownerId,
-          Date.parse(updatedAt) + RECOVERY_LEASE_MS,
-        )
-      this.db.exec('COMMIT')
-      const { expectedVersion: _expectedVersion, ...record } = input
-      void _expectedVersion
-      return { ...record, version, updatedAt }
-    } catch (error) {
-      this.db.exec('ROLLBACK')
-      throw error
-    }
+  saveRecovery(input: RecoverySaveInput, ownerId: string, sourceSha256?: string): RecoveryRecord {
+    return this.recovery.save({ input, ownerId, sourceSha256 })
   }
 
   deleteRecovery(sessionId: string, expectedVersion: number, ownerId?: string): void {
-    this.db.exec('BEGIN IMMEDIATE')
-    try {
-      this.assertRecoveryAvailable(sessionId, ownerId)
-      const existing = this.db
-        .prepare('SELECT version, scheme_json FROM project_recovery WHERE session_id = ?')
-        .get(sessionId) as { version: number; scheme_json: string } | undefined
-      if (!existing || existing.version !== expectedVersion) throw new RevisionConflict()
-      this.db.prepare('DELETE FROM project_recovery WHERE session_id = ?').run(sessionId)
-      this.projectSources.removeUnreferenced(existing.scheme_json)
-      this.db.exec('COMMIT')
-    } catch (error) {
-      this.db.exec('ROLLBACK')
-      throw error
-    }
+    this.recovery.delete({ sessionId, expectedVersion, ownerId })
   }
 
   /** Текущий ключ карточки; для старых станционных ключей — по таблице псевдонимов. */
