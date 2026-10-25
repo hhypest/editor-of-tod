@@ -40,6 +40,7 @@
 - [Хранение проектов и истории](refactoring/project-repository.md) — атомарная запись, конфликты, no-op/force/restore, старые снимки, часы и совместимые ошибки.
 - [Команды восстановления](refactoring/recovery-repository.md) — owner/version/source и запись под одной блокировкой, lease/claim, rollback и совместимый HTTP-контракт.
 - [Ручные реестры и история](refactoring/legacy-registry-repository.md) — crossings/normative/revisions, конфликты, ASC history и отдельное начальное наполнение.
+- [Чтение ПУ-66 и ключи](refactoring/pu66-read-repository.md) — прежние проекции, aliases/неоднозначность, metadata сверок и фильтрация исключённых карточек.
 - [Контракты рефакторинга](refactoring-contracts.md) фиксируют baseline, совместимость review и рисунка, ограничения контроля зависимостей.
 - [Сверка независимого аудита и технического долга](refactoring/audit-2026-10-24.md) — актуальные замечания, состояние задач и порядок работ перед продолжением 0.3.0.
 - [Контракт Vue-сессии](refactoring/vue-session-plan.md) фиксирует публичный API, инварианты и порядок разделения по #136.

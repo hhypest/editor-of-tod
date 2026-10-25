@@ -33,13 +33,15 @@ import {
   type Pu66Verification,
   type Pu66VerificationWrite,
 } from '../src/domain/pu66-review.ts'
+import type { Pu66Import } from './pu66.ts'
 import {
-  type Pu66Card,
-  type Pu66Import,
-  localCardSummary,
-  normativeFields,
-  schemeFields,
-} from './pu66.ts'
+  Pu66Repository,
+  type Pu66Summary,
+  type Pu66Scheme,
+  type Pu66Norms,
+} from './pu66/repository.ts'
+import { Pu66KeyResolver } from './pu66/key-resolver.ts'
+import { AmbiguousPu66Key } from './pu66/errors.ts'
 import { type SignImport } from './signs.ts'
 import {
   pu66LifecycleWriteSchema,
@@ -88,17 +90,9 @@ const unspecifiedSignSource: SignCatalogSource = {
   pdfSha256: null,
 }
 
-export { RevisionConflict, ProjectTooLarge, RecoveryOwned }
+export { RevisionConflict, ProjectTooLarge, RecoveryOwned, AmbiguousPu66Key }
 
 export class InvalidPu66Lifecycle extends Error {}
-
-export class AmbiguousPu66Key extends Error {
-  constructor() {
-    super(
-      'Ключ станционной карточки ПУ-66 устарел: на станции несколько карточек с этой привязкой. Привяжите проект к карточке заново.',
-    )
-  }
-}
 
 export class InvalidPu66Verification extends Error {
   constructor() {
@@ -124,6 +118,8 @@ export class RegistryStore {
   private readonly projects: ProjectRepository
   private readonly recovery: RecoveryRepository
   private readonly legacy: LegacyRegistryRepository
+  private readonly pu66Keys: Pu66KeyResolver
+  private readonly pu66: Pu66Repository
   readonly path: string
   private readonly now: () => string
   /** Версия схемы, с которой база обновлена при этом открытии; `null` — обновления не было. */
@@ -143,6 +139,8 @@ export class RegistryStore {
       this.projects = new ProjectRepository(this.db, this.projectSources, () => this.now())
       this.recovery = new RecoveryRepository(this.db, this.projectSources, () => this.now())
       this.legacy = new LegacyRegistryRepository(this.db, () => this.now())
+      this.pu66Keys = new Pu66KeyResolver(this.db)
+      this.pu66 = new Pu66Repository(this.db, this.pu66Keys)
       if (this.listNormative().length === 0) {
         for (const entry of initialNormativeEntries) this.saveNormative(entry, 0)
       }
@@ -245,19 +243,8 @@ export class RegistryStore {
     this.recovery.delete({ sessionId, expectedVersion, ownerId })
   }
 
-  /** Текущий ключ карточки; для старых станционных ключей — по таблице псевдонимов. */
-  private resolvePu66Key(key: string): string | null {
-    if (this.db.prepare('SELECT 1 FROM pu66_cards WHERE key = ?').get(key)) return key
-    const alias = this.db
-      .prepare('SELECT new_key FROM pu66_key_aliases WHERE old_key = ?')
-      .get(key) as { new_key: string | null } | undefined
-    if (!alias) return null
-    if (alias.new_key === null) throw new AmbiguousPu66Key()
-    return alias.new_key
-  }
-
   getPu66Status(requestedKey: string): Pu66Status | null {
-    const key = this.resolvePu66Key(requestedKey)
+    const key = this.pu66Keys.resolve(requestedKey)
     if (!key) return null
     const event = this.listPu66Lifecycle(key)?.[0] ?? null
     return {
@@ -269,7 +256,7 @@ export class RegistryStore {
   }
 
   listPu66Lifecycle(requestedKey: string): Array<NonNullable<Pu66Status['event']>> | null {
-    const key = this.resolvePu66Key(requestedKey)
+    const key = this.pu66Keys.resolve(requestedKey)
     if (!key) return null
     const rows = this.db
       .prepare(
@@ -477,53 +464,8 @@ export class RegistryStore {
     }
   }
 
-  listPu66(includeExcluded = false): Array<
-    ReturnType<typeof localCardSummary> & {
-      revision: number
-      updatedAt: string
-      verification: Pu66Verification | null
-    }
-  > {
-    const rows = this.db
-      .prepare(
-        `SELECT c.revision, c.payload_json, c.updated_at,
-           v.verified_at, v.verified_by, v.recorded_at
-         FROM pu66_cards AS c
-         LEFT JOIN pu66_verifications AS v ON v.id = (
-           SELECT id FROM pu66_verifications
-           WHERE key = c.key AND card_revision = c.revision
-           ORDER BY verified_at DESC, id DESC LIMIT 1
-         )
-         ${
-           includeExcluded
-             ? ''
-             : `WHERE COALESCE((SELECT action FROM pu66_lifecycle
-           WHERE key = c.key ORDER BY id DESC LIMIT 1), 'restore') <> 'exclude'`
-         }
-         ORDER BY c.key`,
-      )
-      .all() as Array<{
-      revision: number
-      payload_json: string
-      updated_at: string
-      verified_at: string | null
-      verified_by: string | null
-      recorded_at: string | null
-    }>
-    return rows.map((row) => ({
-      ...localCardSummary(JSON.parse(row.payload_json) as Pu66Card),
-      revision: row.revision,
-      updatedAt: row.updated_at,
-      verification:
-        row.verified_at && row.verified_by && row.recorded_at
-          ? {
-              cardRevision: row.revision,
-              verifiedAt: row.verified_at,
-              verifiedBy: row.verified_by,
-              recordedAt: row.recorded_at,
-            }
-          : null,
-    }))
+  listPu66(includeExcluded = false): Pu66Summary[] {
+    return this.pu66.list(includeExcluded)
   }
 
   recordPu66Verification(
@@ -531,7 +473,7 @@ export class RegistryStore {
     input: Pu66VerificationWrite,
   ): Pu66Verification | null {
     const { expectedRevision, verifiedAt, verifiedBy } = pu66VerificationWriteSchema.parse(input)
-    const key = this.resolvePu66Key(requestedKey)
+    const key = this.pu66Keys.resolve(requestedKey)
     if (!key) return null
     const now = this.now()
     if (verifiedAt > localCalendarDate(new Date(now))) throw new InvalidPu66Verification()
@@ -563,7 +505,7 @@ export class RegistryStore {
   }
 
   listPu66Verifications(requestedKey: string): Pu66Verification[] | null {
-    const key = this.resolvePu66Key(requestedKey)
+    const key = this.pu66Keys.resolve(requestedKey)
     if (!key) return null
     const rows = this.db
       .prepare(
@@ -584,38 +526,12 @@ export class RegistryStore {
     }))
   }
 
-  getPu66Scheme(
-    requestedKey: string,
-  ): (ReturnType<typeof schemeFields> & { revision: number; updatedAt: string }) | null {
-    const key = this.resolvePu66Key(requestedKey)
-    if (!key) return null
-    const row = this.db
-      .prepare('SELECT payload_json, revision, updated_at FROM pu66_cards WHERE key = ?')
-      .get(key) as { payload_json: string; revision: number; updated_at: string } | undefined
-    return row
-      ? {
-          ...schemeFields(JSON.parse(row.payload_json) as Pu66Card),
-          revision: row.revision,
-          updatedAt: row.updated_at,
-        }
-      : null
+  getPu66Scheme(requestedKey: string): Pu66Scheme | null {
+    return this.pu66.getScheme(requestedKey)
   }
 
-  getPu66Norms(
-    requestedKey: string,
-  ): (ReturnType<typeof normativeFields> & { revision: number; updatedAt: string }) | null {
-    const key = this.resolvePu66Key(requestedKey)
-    if (!key) return null
-    const row = this.db
-      .prepare('SELECT payload_json, revision, updated_at FROM pu66_cards WHERE key = ?')
-      .get(key) as { payload_json: string; revision: number; updated_at: string } | undefined
-    return row
-      ? {
-          ...normativeFields(JSON.parse(row.payload_json) as Pu66Card),
-          revision: row.revision,
-          updatedAt: row.updated_at,
-        }
-      : null
+  getPu66Norms(requestedKey: string): Pu66Norms | null {
+    return this.pu66.getNorms(requestedKey)
   }
 
   latestSignCatalog(): {
