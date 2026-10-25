@@ -2,6 +2,7 @@ import { createRenderer, defineComponent, nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Scheme } from '../../domain/model'
 import type { ProjectRecord } from '../../domain/local-projects'
+import type { RecoveryWrite } from '../../domain/recovery'
 import raw from '../../../tests/fixtures/manual-v1.json?raw'
 import { LocalApiError } from '../../services/api-error'
 import { useProjectSession } from '../useProjectSession'
@@ -60,7 +61,9 @@ const local = vi.hoisted(() => ({
     vi.fn<(id: string, source: number, revision: number) => Promise<ProjectRecord>>(),
   getLocalProject: vi.fn<(id: string) => Promise<ProjectRecord>>(),
   listRecoveryDrafts: vi.fn(async () => []),
-  saveRecoveryDraft: vi.fn(async () => ({ version: 1 })),
+  saveRecoveryDraft: vi.fn<
+    (_input: RecoveryWrite, _source?: string) => Promise<{ version: number }>
+  >(async () => ({ version: 1 })),
   deleteRecoveryDraft: vi.fn<() => Promise<void>>(async () => undefined),
   heartbeat: vi.fn(async () => undefined),
   releaseOnExit: vi.fn(),
@@ -704,6 +707,55 @@ describe('project session characterization baseline', () => {
 })
 
 describe('JSON export does not acknowledge a database save', () => {
+  it('retries unapplied form input on returning online without creating a project revision', async () => {
+    const session = await openEditedSession()
+    Object.assign(document, { visibilityState: 'visible' })
+    const input = {
+      id: null,
+      kind: 'element' as const,
+      anchor: 'AX' as const,
+      x: '0',
+      y: '0',
+      elementKind: 'text' as const,
+      width: '',
+      height: '',
+      text: 'Неприменённая надпись',
+      fontSize: '14',
+      bold: false,
+    }
+    session.placementDirty.value = true
+    session.pendingPlacement.value = input
+    local.saveRecoveryDraft.mockRejectedValueOnce(new Error('Временный отказ'))
+    await vi.advanceTimersByTimeAsync(800)
+    expect(session.recoveryStatus.value).toBe('error')
+    const history = session.history.value
+    window.dispatchEvent(new Event('online'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(local.saveRecoveryDraft.mock.calls.at(-1)?.[0]).toMatchObject({ placementDraft: input })
+    expect(session.recoveryStatus.value).toBe('saved')
+    expect(session.pendingPlacement.value).toEqual(input)
+    expect(session.placementDirty.value).toBe(true)
+    expect(session.history.value).toBe(history)
+    expect(local.saveLocalProject).not.toHaveBeenCalled()
+  })
+
+  it('offers a separate project after a recovery conflict without claiming or dropping pending input', async () => {
+    const session = await openEditedSession()
+    session.localRevision.value = 3
+    session.detailsDirty.value = true
+    const history = session.history.value
+    local.heartbeat.mockRejectedValueOnce(
+      new LocalApiError('revision-conflict', 'Копия открыта в другом окне.'),
+    )
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(session.recoveryStatus.value).toBe('error')
+    expect(session.localError.value).toContain('сначала примените ввод в формах')
+    expect(session.localError.value).toContain('Сохранить как новый проект')
+    expect(session.detailsDirty.value).toBe(true)
+    expect(session.history.value).toBe(history)
+    expect(local.deleteRecoveryDraft).not.toHaveBeenCalled()
+  })
+
   it('does not download the current project while form input is unapplied', async () => {
     const session = await openEditedSession()
     const createObjectURL = vi.fn(() => 'blob:unexpected')
