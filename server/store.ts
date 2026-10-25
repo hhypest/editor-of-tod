@@ -2,11 +2,9 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { openDatabase } from './database/connection.ts'
-import {
-  databaseBackupDirectory,
-  createMigrationBackup,
-  createManualBackup,
-} from './database/backups.ts'
+import { migrateDatabase } from './database/migration-runner.ts'
+import { SCHEMA_VERSION, readSchemaVersion } from './database/schema-version.ts'
+import { databaseBackupDirectory, createManualBackup } from './database/backups.ts'
 import { RECOVERY_LEASE_MS, recoveryIsActive } from '../src/application/recovery-session.ts'
 import { parseStoredScheme, schemeSchema, type Scheme } from '../src/domain/model.ts'
 import {
@@ -122,9 +120,6 @@ export class AmbiguousPu66Key extends Error {
   }
 }
 
-/** Станционный ключ до версии 9 («ст.<станция>:<км>:<пк>») не содержал номера карточки. */
-const legacyStationKey = /^ст\.[^:]*:[^:]+:[^:]+$/
-
 export class InvalidPu66Verification extends Error {
   constructor() {
     super('Дата сверки ПУ-66 не может быть в будущем.')
@@ -200,7 +195,7 @@ function summaryText(path: string): string {
 }
 
 /** Текущая версия схемы локальной базы (`PRAGMA user_version`). */
-export const SCHEMA_VERSION = 13
+export { SCHEMA_VERSION }
 
 /** Сообщение для окна программы после обновления схемы базы; `null`, если обновления не было. */
 export function migrationNotice(store: RegistryStore): string | null {
@@ -233,298 +228,9 @@ export class RegistryStore {
     this.now = now
     this.db = openDatabase(path)
     try {
-      const version = (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
-        .user_version
-      if (!Number.isInteger(version) || version < 0 || version > SCHEMA_VERSION) {
-        throw new Error(`Неизвестная версия локальной базы: ${version}. Файл не изменён.`)
-      }
-      this.migratedFrom = version > 0 && version < SCHEMA_VERSION ? version : null
-      if (this.migratedFrom !== null && path !== ':memory:')
-        this.migrationBackup = this.backupBeforeMigration(version)
-      if (version === 0) {
-        this.db.exec(`
-        BEGIN;
-        CREATE TABLE crossings (
-          key TEXT PRIMARY KEY,
-          revision INTEGER NOT NULL CHECK (revision > 0),
-          payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
-          updated_at TEXT NOT NULL
-        );
-        CREATE TABLE normative (
-          key TEXT PRIMARY KEY,
-          revision INTEGER NOT NULL CHECK (revision > 0),
-          payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
-          updated_at TEXT NOT NULL
-        );
-        CREATE TABLE revisions (
-          kind TEXT NOT NULL CHECK (kind IN ('crossings', 'normative')),
-          key TEXT NOT NULL,
-          revision INTEGER NOT NULL,
-          payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
-          updated_at TEXT NOT NULL,
-          PRIMARY KEY (kind, key, revision)
-        );
-        PRAGMA user_version = 1;
-        COMMIT;
-      `)
-      }
-      if (version < 2) {
-        this.db.exec(`
-        BEGIN;
-        CREATE TABLE pu66_sources (
-          sha256 TEXT PRIMARY KEY,
-          original_name TEXT NOT NULL,
-          workbook BLOB NOT NULL
-        );
-        CREATE TABLE pu66_cards (
-          key TEXT PRIMARY KEY,
-          revision INTEGER NOT NULL,
-          payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
-          source_sha256 TEXT NOT NULL REFERENCES pu66_sources(sha256),
-          updated_at TEXT NOT NULL
-        );
-        CREATE TABLE pu66_revisions (
-          key TEXT NOT NULL,
-          revision INTEGER NOT NULL,
-          payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
-          source_sha256 TEXT NOT NULL REFERENCES pu66_sources(sha256),
-          updated_at TEXT NOT NULL,
-          PRIMARY KEY (key, revision)
-        );
-        CREATE TABLE signs (
-          code TEXT PRIMARY KEY,
-          numbered_png BLOB NOT NULL,
-          plain_png BLOB NOT NULL,
-          numbered_sha256 TEXT NOT NULL,
-          plain_sha256 TEXT NOT NULL,
-          zip_sha256 TEXT NOT NULL,
-          width INTEGER NOT NULL,
-          height INTEGER NOT NULL,
-          revision INTEGER NOT NULL,
-          updated_at TEXT NOT NULL
-        );
-        PRAGMA user_version = 3;
-        COMMIT;
-      `)
-      }
-      if (version === 2) {
-        // A failed VACUUM can be retried on the next launch without losing the PNGs.
-        const columns = this.db.prepare('PRAGMA table_info(signs)').all() as { name: string }[]
-        if (columns.some((column) => column.name === 'plain_svg')) {
-          this.db.exec('PRAGMA secure_delete = ON')
-          this.db.exec('BEGIN IMMEDIATE')
-          try {
-            this.db.exec('ALTER TABLE signs DROP COLUMN plain_svg')
-            this.db.exec('COMMIT')
-          } catch (error) {
-            this.db.exec('ROLLBACK')
-            throw error
-          }
-        }
-        // Rebuild the file so removed vector data is not left in unused SQLite pages.
-        this.db.exec('VACUUM')
-        this.db.exec('PRAGMA user_version = 3')
-      }
-      if (version < 4) {
-        this.db.exec(`
-        BEGIN;
-        CREATE TABLE project_drafts (
-          id TEXT PRIMARY KEY,
-          revision INTEGER NOT NULL CHECK (revision > 0),
-          scheme_json TEXT NOT NULL CHECK (json_valid(scheme_json)),
-          reference_id TEXT NOT NULL,
-          location_text TEXT NOT NULL,
-          template_code TEXT NOT NULL,
-          updated_at TEXT NOT NULL
-        );
-        CREATE TABLE project_revisions (
-          id TEXT NOT NULL,
-          revision INTEGER NOT NULL CHECK (revision > 0),
-          scheme_json TEXT NOT NULL CHECK (json_valid(scheme_json)),
-          updated_at TEXT NOT NULL,
-          PRIMARY KEY (id, revision),
-          FOREIGN KEY (id) REFERENCES project_drafts(id)
-        );
-        PRAGMA user_version = 4;
-        COMMIT;
-      `)
-      }
-      if (version < 5) {
-        this.db.exec(`
-        BEGIN;
-        CREATE TABLE pu66_verifications (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          key TEXT NOT NULL,
-          card_revision INTEGER NOT NULL CHECK (card_revision > 0),
-          verified_at TEXT NOT NULL,
-          verified_by TEXT NOT NULL,
-          recorded_at TEXT NOT NULL,
-          FOREIGN KEY (key, card_revision) REFERENCES pu66_revisions(key, revision)
-        );
-        CREATE INDEX pu66_verifications_by_card ON pu66_verifications(key, card_revision, id);
-        PRAGMA user_version = 5;
-        COMMIT;
-      `)
-      }
-      if (version < 6) {
-        this.db.exec(`
-        BEGIN;
-        CREATE TABLE IF NOT EXISTS sign_catalog_batches (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          document_code TEXT NOT NULL,
-          edition TEXT NOT NULL,
-          pdf_sha256 TEXT,
-          zip_sha256 TEXT NOT NULL,
-          sign_count INTEGER NOT NULL,
-          imported_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS sign_active (
-          code TEXT PRIMARY KEY REFERENCES signs(code),
-          batch_id INTEGER REFERENCES sign_catalog_batches(id)
-        );
-        CREATE TABLE IF NOT EXISTS sign_revisions (
-          code TEXT NOT NULL,
-          revision INTEGER NOT NULL,
-          numbered_png BLOB NOT NULL,
-          plain_png BLOB NOT NULL,
-          numbered_sha256 TEXT NOT NULL,
-          plain_sha256 TEXT NOT NULL,
-          zip_sha256 TEXT NOT NULL,
-          batch_id INTEGER REFERENCES sign_catalog_batches(id),
-          active INTEGER NOT NULL CHECK (active IN (0, 1)),
-          updated_at TEXT NOT NULL,
-          PRIMARY KEY (code, revision)
-        );
-        INSERT OR IGNORE INTO sign_active (code, batch_id) SELECT code, NULL FROM signs;
-        INSERT OR IGNORE INTO sign_revisions
-          (code, revision, numbered_png, plain_png, numbered_sha256, plain_sha256,
-           zip_sha256, batch_id, active, updated_at)
-          SELECT code, revision, numbered_png, plain_png, numbered_sha256, plain_sha256,
-                 zip_sha256, NULL, 1, updated_at FROM signs;
-        PRAGMA user_version = 6;
-        COMMIT;
-      `)
-      }
-      if (version < 7) {
-        this.db.exec(`
-        BEGIN;
-        CREATE TABLE project_sources (
-          sha256 TEXT PRIMARY KEY,
-          original_json TEXT NOT NULL
-        );
-        PRAGMA user_version = 7;
-        COMMIT;
-      `)
-      }
-      if (version < 8) {
-        this.db.exec(`
-        BEGIN;
-        CREATE TABLE IF NOT EXISTS project_recovery (
-          session_id TEXT PRIMARY KEY,
-          version INTEGER NOT NULL CHECK (version > 0),
-          scheme_json TEXT NOT NULL CHECK (json_valid(scheme_json)),
-          base_revision INTEGER CHECK (base_revision >= 0),
-          details_json TEXT CHECK (details_json IS NULL OR json_valid(details_json)),
-          placement_json TEXT CHECK (placement_json IS NULL OR json_valid(placement_json)),
-          file_name TEXT NOT NULL,
-          reference_id TEXT NOT NULL,
-          updated_at TEXT NOT NULL
-        );
-        PRAGMA user_version = 8;
-        COMMIT;
-      `)
-      }
-      if (version < 9) this.migrateStationPu66Keys()
-      if (version < 10) {
-        this.db.exec(`
-        BEGIN;
-        CREATE TABLE IF NOT EXISTS normative_documents (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          code TEXT NOT NULL,
-          edition TEXT NOT NULL,
-          title TEXT NOT NULL,
-          kind TEXT NOT NULL CHECK (kind IN ('signs', 'rules', 'methodology', 'other')),
-          effective_from TEXT NOT NULL,
-          amends_id INTEGER REFERENCES normative_documents(id),
-          note TEXT NOT NULL,
-          actual_checked_at TEXT NOT NULL,
-          filename TEXT NOT NULL,
-          pdf BLOB NOT NULL,
-          sha256 TEXT NOT NULL UNIQUE,
-          size_bytes INTEGER NOT NULL,
-          added_at TEXT NOT NULL
-        );
-        COMMIT;
-      `)
-        const columns = this.db.prepare('PRAGMA table_info(sign_catalog_batches)').all() as Array<{
-          name: string
-        }>
-        if (!columns.some((column) => column.name === 'document_id'))
-          this.db.exec(
-            'ALTER TABLE sign_catalog_batches ADD COLUMN document_id INTEGER REFERENCES normative_documents(id)',
-          )
-        this.db.exec('PRAGMA user_version = 10')
-      }
-      if (version < 11) {
-        this.db.exec(`
-        BEGIN;
-        CREATE TABLE IF NOT EXISTS document_pages (
-          document_id INTEGER NOT NULL REFERENCES normative_documents(id),
-          page INTEGER NOT NULL,
-          text TEXT NOT NULL,
-          PRIMARY KEY (document_id, page)
-        );
-        CREATE TABLE IF NOT EXISTS parameter_confirmations (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          parameter_id TEXT NOT NULL,
-          document_id INTEGER REFERENCES normative_documents(id),
-          document_label TEXT NOT NULL,
-          clause TEXT NOT NULL,
-          page INTEGER,
-          quote TEXT NOT NULL,
-          fragment TEXT NOT NULL,
-          value_json TEXT NOT NULL,
-          confirmed_by TEXT NOT NULL,
-          confirmed_at TEXT NOT NULL,
-          note TEXT NOT NULL,
-          recorded_at TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS parameter_confirmations_by_parameter
-          ON parameter_confirmations(parameter_id, id);
-        PRAGMA user_version = 11;
-        COMMIT;
-      `)
-      }
-      if (version < 12) {
-        this.db.exec(`
-          BEGIN;
-          CREATE TABLE IF NOT EXISTS pu66_lifecycle (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            key TEXT NOT NULL,
-            card_revision INTEGER NOT NULL,
-            action TEXT NOT NULL CHECK (action IN ('exclude', 'restore')),
-            date TEXT NOT NULL,
-            actor TEXT NOT NULL,
-            reason TEXT,
-            comment TEXT NOT NULL,
-            successor_key TEXT REFERENCES pu66_cards(key),
-            recorded_at TEXT NOT NULL,
-            FOREIGN KEY (key, card_revision) REFERENCES pu66_revisions(key, revision)
-          );
-          CREATE INDEX IF NOT EXISTS pu66_lifecycle_by_card ON pu66_lifecycle(key, id);
-          PRAGMA user_version = 12;
-          COMMIT;
-        `)
-      }
-      if (version < 13) {
-        this.db.exec(`
-          BEGIN;
-          ALTER TABLE project_recovery ADD COLUMN owner_id TEXT;
-          ALTER TABLE project_recovery ADD COLUMN owner_until INTEGER NOT NULL DEFAULT 0;
-          PRAGMA user_version = 13;
-          COMMIT;
-        `)
-      }
+      const migration = migrateDatabase(this.db, { path, now: () => this.now() })
+      this.migratedFrom = migration.migratedFrom
+      this.migrationBackup = migration.migrationBackup
       if (this.listNormative().length === 0) {
         for (const entry of initialNormativeEntries) this.saveNormative(entry, 0)
       }
@@ -581,7 +287,7 @@ export class RegistryStore {
 
   /** Версия схемы локальной базы (`PRAGMA user_version`) — для диагностики. */
   schemaVersion(): number {
-    return (this.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version
+    return readSchemaVersion(this.db)
   }
 
   listCrossings(): CrossingRecord[] {
@@ -974,75 +680,6 @@ export class RegistryStore {
       this.db.exec('ROLLBACK')
       throw error
     }
-  }
-
-  /**
-   * v9: станционные карточки получают номер карточки в ключе. Ранее разные карточки одной станции
-   * с одинаковой привязкой «км:пк» сливались в одну запись; их редакции разделяются обратно,
-   * а старый ключ сохраняется как псевдоним (NULL — если за ним стояло несколько карточек).
-   */
-  private migrateStationPu66Keys(): void {
-    this.db.exec('BEGIN')
-    this.db.exec(
-      'CREATE TABLE IF NOT EXISTS pu66_key_aliases (old_key TEXT PRIMARY KEY, new_key TEXT)',
-    )
-    const rows = this.db
-      .prepare(
-        `SELECT key, revision, payload_json, source_sha256, updated_at
-         FROM pu66_revisions ORDER BY key, revision`,
-      )
-      .all() as Array<{
-      key: string
-      revision: number
-      payload_json: string
-      source_sha256: string
-      updated_at: string
-    }>
-    const byOldKey = new Map<string, typeof rows>()
-    for (const row of rows) {
-      if (!legacyStationKey.test(row.key)) continue
-      byOldKey.set(row.key, [...(byOldKey.get(row.key) ?? []), row])
-    }
-    const insertRevision = this.db.prepare(
-      `INSERT INTO pu66_revisions (key, revision, payload_json, source_sha256, updated_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    )
-    const moveVerifications = this.db.prepare(
-      'UPDATE pu66_verifications SET key = ?, card_revision = ? WHERE key = ? AND card_revision = ?',
-    )
-    const deleteRevision = this.db.prepare(
-      'DELETE FROM pu66_revisions WHERE key = ? AND revision = ?',
-    )
-    const insertCard = this.db.prepare(
-      `INSERT INTO pu66_cards (key, revision, payload_json, source_sha256, updated_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    )
-    const alias = this.db.prepare(
-      'INSERT OR REPLACE INTO pu66_key_aliases (old_key, new_key) VALUES (?, ?)',
-    )
-    this.db.exec('PRAGMA defer_foreign_keys = ON')
-    for (const [oldKey, history] of byOldKey) {
-      const next = new Map<string, number>()
-      const latest = new Map<string, (typeof rows)[number] & { newRevision: number }>()
-      for (const row of history) {
-        const card = JSON.parse(row.payload_json) as Pu66Card
-        const newKey = `${oldKey}:к${card.cardNumber}`
-        const newRevision = (next.get(newKey) ?? 0) + 1
-        next.set(newKey, newRevision)
-        const payload = JSON.stringify({ ...card, key: newKey })
-        insertRevision.run(newKey, newRevision, payload, row.source_sha256, row.updated_at)
-        moveVerifications.run(newKey, newRevision, oldKey, row.revision)
-        deleteRevision.run(oldKey, row.revision)
-        latest.set(newKey, { ...row, payload_json: payload, newRevision })
-      }
-      this.db.prepare('DELETE FROM pu66_cards WHERE key = ?').run(oldKey)
-      for (const [newKey, row] of latest) {
-        insertCard.run(newKey, row.newRevision, row.payload_json, row.source_sha256, row.updated_at)
-      }
-      alias.run(oldKey, latest.size === 1 ? [...latest.keys()][0]! : null)
-    }
-    this.db.exec('PRAGMA user_version = 9')
-    this.db.exec('COMMIT')
   }
 
   /** Текущий ключ карточки; для старых станционных ключей — по таблице псевдонимов. */
@@ -1946,16 +1583,6 @@ export class RegistryStore {
         this.now(),
       ) as { id: number }
     return { ...input, id: row.id }
-  }
-
-  /**
-   * Копия файла до изменения схемы. Имя отличается от копий по кнопке, поэтому
-   * `backups:prune` такие файлы не удаляет: к прежней версии базы можно вернуться только по ним.
-   * Версия 2 не копируется: её обновление удаляет векторные изображения знаков без остатка,
-   * а копия сохранила бы их.
-   */
-  private backupBeforeMigration(version: number): string | null {
-    return createMigrationBackup(this.db, this.path, version, () => this.now())
   }
 
   async createBackup(): Promise<string> {
