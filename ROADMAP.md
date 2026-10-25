@@ -8,7 +8,7 @@
 
 Клиентская сессия разделена (#136), восстановление после настоящего сна Windows принято (#134). На сервере выделены подключение, резервные копии и последовательные миграции SQLite (#196–#198).
 
-Хранение исходного JSON по SHA-256 и очистка последней ссылки выделены в [ProjectSourceStore](docs/refactoring/project-source-store.md). **Ближайший шаг — `ProjectRepository`:** текущий проект и неизменяемые редакции в одной транзакции; затем recovery, остальные области хранения и маршруты. Подробности и критерии завершения — в [серверном плане](docs/refactoring/server-god-object-plan.md) и [#135](https://github.com/hhypest/editor-of-tod/issues/135).
+Выделены [ProjectSourceStore](docs/refactoring/project-source-store.md) и [ProjectRepository](docs/refactoring/project-repository.md): исходник, текущий проект и история сохраняются в прежней транзакции. **Ближайший шаг — `RecoveryRepository`:** атомарные команды владельца/версии/исходника и записи; затем остальные области хранения и маршруты. Подробности и критерии завершения — в [серверном плане](docs/refactoring/server-god-object-plan.md) и [#135](https://github.com/hhypest/editor-of-tod/issues/135).
 
 Архитектурный **А4** ещё не завершён; интерфейсный **И4** — другая задача.
 

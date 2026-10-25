@@ -5,6 +5,8 @@ import { openDatabase } from './database/connection.ts'
 import { migrateDatabase } from './database/migration-runner.ts'
 import { SCHEMA_VERSION, readSchemaVersion } from './database/schema-version.ts'
 import { databaseBackupDirectory, createManualBackup } from './database/backups.ts'
+import { ProjectRepository } from './projects/project-repository.ts'
+import { RevisionConflict, ProjectTooLarge } from './storage-errors.ts'
 import { ProjectSourceStore } from './projects/project-source-store.ts'
 import { RECOVERY_LEASE_MS, recoveryIsActive } from '../src/application/recovery-session.ts'
 import { schemeSchema, type Scheme } from '../src/domain/model.ts'
@@ -90,14 +92,10 @@ const unspecifiedSignSource: SignCatalogSource = {
   pdfSha256: null,
 }
 
+export { RevisionConflict, ProjectTooLarge }
+
 type RegistryKind = 'crossings' | 'normative'
 type StoredRow = { key: string; revision: number; payload_json: string; updated_at: string }
-
-export class RevisionConflict extends Error {
-  constructor() {
-    super('Запись изменилась после открытия. Обновите реестр и повторите правку.')
-  }
-}
 
 export class RecoveryOwned extends Error {
   constructor() {
@@ -106,12 +104,6 @@ export class RecoveryOwned extends Error {
 }
 
 export class InvalidPu66Lifecycle extends Error {}
-
-export class ProjectTooLarge extends Error {
-  constructor() {
-    super('Черновик больше 32 МБ. Скачайте файл проекта, чтобы сохранить его отдельно.')
-  }
-}
 
 export class AmbiguousPu66Key extends Error {
   constructor() {
@@ -186,15 +178,6 @@ const initialNormativeEntries: NormativeDraft[] = [
   },
 ]
 
-/**
- * Поле последней редакции проекта для списка «Мои проекты»: по нему составитель узнаёт
- * проект (место по ПУ-66, дорога, направления, описание работ). Не строка — пустая строка.
- */
-function summaryText(path: string): string {
-  return `CASE WHEN json_type(scheme_json, '${path}') = 'text'
-    THEN substr(json_extract(scheme_json, '${path}'), 1, 500) ELSE '' END`
-}
-
 /** Текущая версия схемы локальной базы (`PRAGMA user_version`). */
 export { SCHEMA_VERSION }
 
@@ -207,17 +190,10 @@ export function migrationNotice(store: RegistryStore): string | null {
     : versions
 }
 
-/** Формат записанного снимка проекта: редакции в базе не переписываются при обновлении. */
-function storedVersion(payload: string): { storedSchemaVersion?: number } {
-  const version = (JSON.parse(payload) as { schemaVersion?: unknown }).schemaVersion
-  return Number.isInteger(version) && (version as number) > 0
-    ? { storedSchemaVersion: version as number }
-    : {}
-}
-
 export class RegistryStore {
   private readonly db: DatabaseSync
   private readonly projectSources: ProjectSourceStore
+  private readonly projects: ProjectRepository
   readonly path: string
   private readonly now: () => string
   /** Версия схемы, с которой база обновлена при этом открытии; `null` — обновления не было. */
@@ -234,6 +210,7 @@ export class RegistryStore {
       this.migratedFrom = migration.migratedFrom
       this.migrationBackup = migration.migrationBackup
       this.projectSources = new ProjectSourceStore(this.db)
+      this.projects = new ProjectRepository(this.db, this.projectSources, () => this.now())
       if (this.listNormative().length === 0) {
         for (const entry of initialNormativeEntries) this.saveNormative(entry, 0)
       }
@@ -322,115 +299,23 @@ export class RegistryStore {
   }
 
   listProjects(): ProjectSummary[] {
-    return this.db
-      .prepare(
-        `SELECT id, reference_id AS referenceId, location_text AS locationText,
-          template_code AS templateCode, revision, updated_at AS updatedAt,
-          ${summaryText('$.crossing.snapshot.location')} AS crossingLocation,
-          ${summaryText('$.crossing.snapshot.roadName')} AS roadName,
-          ${summaryText('$.parameters.directions.left')} AS directionLeft,
-          ${summaryText('$.parameters.directions.right')} AS directionRight,
-          ${summaryText('$.titleBlock.work.description')} AS workDescription
-          FROM project_drafts ORDER BY updated_at DESC, id`,
-      )
-      .all() as ProjectSummary[]
+    return this.projects.list()
   }
 
   getProject(id: string): ProjectRecord | null {
-    const row = this.db
-      .prepare('SELECT revision, scheme_json, updated_at FROM project_drafts WHERE id = ?')
-      .get(id) as (Pick<StoredRow, 'revision' | 'updated_at'> & { scheme_json: string }) | undefined
-    return row
-      ? {
-          scheme: this.projectSources.decode(row.scheme_json),
-          revision: row.revision,
-          updatedAt: row.updated_at,
-          ...storedVersion(row.scheme_json),
-        }
-      : null
+    return this.projects.get(id)
   }
 
   listProjectRevisions(id: string): ProjectRevision[] {
-    return this.db
-      .prepare(
-        `SELECT revision, updated_at AS updatedAt FROM project_revisions
-          WHERE id = ? ORDER BY revision DESC`,
-      )
-      .all(id) as ProjectRevision[]
+    return this.projects.listRevisions(id)
   }
 
   getProjectRevision(id: string, revision: number): ProjectRecord | null {
-    const row = this.db
-      .prepare(
-        'SELECT revision, scheme_json, updated_at FROM project_revisions WHERE id = ? AND revision = ?',
-      )
-      .get(id, revision) as
-      (Pick<StoredRow, 'revision' | 'updated_at'> & { scheme_json: string }) | undefined
-    return row
-      ? {
-          scheme: this.projectSources.decode(row.scheme_json),
-          revision: row.revision,
-          updatedAt: row.updated_at,
-          ...storedVersion(row.scheme_json),
-        }
-      : null
+    return this.projects.getRevision(id, revision)
   }
 
   saveProject(scheme: Scheme, expectedRevision: number, forceRevision = false): ProjectRecord {
-    const checked = schemeSchema.parse(scheme)
-    const payload = JSON.stringify(checked)
-    if (Buffer.byteLength(payload) > MAX_LOCAL_PROJECT_BYTES) throw new ProjectTooLarge()
-    this.db.exec('BEGIN IMMEDIATE')
-    try {
-      const previous = this.db
-        .prepare('SELECT revision, scheme_json, updated_at FROM project_drafts WHERE id = ?')
-        .get(checked.id) as
-        (Pick<StoredRow, 'revision' | 'updated_at'> & { scheme_json: string }) | undefined
-      if ((previous?.revision ?? 0) !== expectedRevision) throw new RevisionConflict()
-      // Снимок прежнего формата переписывается даже без правок: иначе после «Сохранить проект»
-      // база сохранила бы прежний формат и сообщения о нём повторялись бы при каждом открытии.
-      if (
-        !forceRevision &&
-        previous &&
-        storedVersion(previous.scheme_json).storedSchemaVersion === checked.schemaVersion &&
-        JSON.stringify(this.projectSources.decode(previous.scheme_json)) === payload
-      ) {
-        this.db.exec('COMMIT')
-        return { scheme: checked, revision: previous.revision, updatedAt: previous.updated_at }
-      }
-      const revision = expectedRevision + 1
-      const updatedAt = this.now()
-      const storedPayload = this.projectSources.encode(checked)
-      this.db
-        .prepare(
-          `INSERT INTO project_drafts
-            (id, revision, scheme_json, reference_id, location_text, template_code, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET revision = excluded.revision,
-              scheme_json = excluded.scheme_json, reference_id = excluded.reference_id,
-              location_text = excluded.location_text, template_code = excluded.template_code,
-              updated_at = excluded.updated_at`,
-        )
-        .run(
-          checked.id,
-          revision,
-          storedPayload,
-          checked.crossing.referenceId,
-          checked.parameters.locationText,
-          checked.template.code,
-          updatedAt,
-        )
-      this.db
-        .prepare(
-          'INSERT INTO project_revisions (id, revision, scheme_json, updated_at) VALUES (?, ?, ?, ?)',
-        )
-        .run(checked.id, revision, storedPayload, updatedAt)
-      this.db.exec('COMMIT')
-      return { scheme: checked, revision, updatedAt }
-    } catch (error) {
-      this.db.exec('ROLLBACK')
-      throw error
-    }
+    return this.projects.save(scheme, expectedRevision, forceRevision)
   }
 
   restoreProject(
@@ -438,8 +323,7 @@ export class RegistryStore {
     sourceRevision: number,
     expectedRevision: number,
   ): ProjectRecord | null {
-    const previous = this.getProjectRevision(id, sourceRevision)
-    return previous ? this.saveProject(previous.scheme, expectedRevision, true) : null
+    return this.projects.restore(id, sourceRevision, expectedRevision)
   }
 
   listRecoveries(): RecoverySummary[] {
