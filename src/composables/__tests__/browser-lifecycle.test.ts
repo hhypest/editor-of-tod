@@ -44,6 +44,8 @@ describe('window lifecycle and synchronous session identity', () => {
     app.mount({ children: [] })
     try {
       windowTarget.dispatchEvent(new Event('pageshow'))
+      windowTarget.dispatchEvent(new Event('focus'))
+      windowTarget.dispatchEvent(new Event('online'))
       documentTarget.dispatchEvent(new Event('visibilitychange'))
       expect(handlers.visible).not.toHaveBeenCalled()
       documentTarget.visibilityState = 'visible'
@@ -53,17 +55,22 @@ describe('window lifecycle and synchronous session identity', () => {
       windowTarget.dispatchEvent(new Event('pagehide'))
       expect(handlers.start).toHaveBeenCalledTimes(1)
       expect(handlers.visible).toHaveBeenCalledTimes(2)
+      windowTarget.dispatchEvent(new Event('focus'))
+      windowTarget.dispatchEvent(new Event('online'))
+      expect(handlers.visible).toHaveBeenCalledTimes(4)
       expect(handlers.beforeUnload).toHaveBeenCalledTimes(1)
       expect(handlers.pageHide).toHaveBeenCalledTimes(1)
     } finally {
       app.unmount()
     }
     windowTarget.dispatchEvent(new Event('pageshow'))
+    windowTarget.dispatchEvent(new Event('focus'))
+    windowTarget.dispatchEvent(new Event('online'))
     documentTarget.dispatchEvent(new Event('visibilitychange'))
     windowTarget.dispatchEvent(new Event('beforeunload'))
     windowTarget.dispatchEvent(new Event('pagehide'))
     expect(handlers.stop).toHaveBeenCalledTimes(1)
-    expect(handlers.visible).toHaveBeenCalledTimes(2)
+    expect(handlers.visible).toHaveBeenCalledTimes(4)
     expect(handlers.beforeUnload).toHaveBeenCalledTimes(1)
     expect(handlers.pageHide).toHaveBeenCalledTimes(1)
   })

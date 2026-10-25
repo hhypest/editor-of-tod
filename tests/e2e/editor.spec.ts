@@ -526,6 +526,46 @@ test('cancelled JSON download retains the recovery copy and unsaved state', asyn
   ).toBe(true)
 })
 
+test('returning online retries failed recovery with unapplied input and no project save', async ({
+  page,
+  request,
+}) => {
+  await importSampleCards(request)
+  await page.goto('/')
+  await fillNewProject(page, '24 км 7 пк', '90002:24:7')
+  await page.getByRole('button', { name: 'Создать проект' }).click()
+  await expect(page.locator('.save-state')).toContainText('Копия восстановления записана')
+  await page.route('**/api/recovery/*', (route) =>
+    route.request().method() === 'PUT' ? route.abort() : route.continue(),
+  )
+  await page.getByRole('button', { name: /Схема движения.*Размеры и вариант/ }).click()
+  const distance = page.locator('[data-field="parameters.signDistancesMetres.d50"]')
+  await distance.fill('43')
+  await expect(page.locator('.save-state')).toContainText('Копия восстановления не записана')
+  await page.unroute('**/api/recovery/*')
+  const requests: { sessionId: string; ownerId: string }[] = []
+  page.on('request', (req) => {
+    if (req.method() === 'PUT' && /\/api\/recovery\//.test(req.url()))
+      requests.push(req.postDataJSON())
+  })
+  await page.evaluate(() => window.dispatchEvent(new Event('online')))
+  await expect(page.locator('.save-state')).toContainText(
+    'Неприменённый ввод · копия восстановления записана',
+  )
+  await expect(distance).toHaveValue('43')
+  await expect(page.getByRole('button', { name: 'Сохранить проект', exact: true })).toBeDisabled()
+  // The actual PUT, including pending input, has reached SQLite; a status-only change is insufficient.
+  const copies = await (await request.get(`${api}/api/recovery`)).json()
+  expect(requests).toHaveLength(1)
+  const { sessionId, ownerId } = requests[0]!
+  expect(copies.some((copy: { sessionId: string }) => copy.sessionId === sessionId)).toBe(true)
+  const snapshot = await (
+    await request.get(`${api}/api/recovery/${sessionId}?ownerId=${ownerId}`)
+  ).json()
+  expect(snapshot.detailsDraft.parameters.signDistancesMetres.d50).toBe('43')
+  expect(snapshot.scheme.parameters.signDistancesMetres.d50).not.toBe(43)
+})
+
 test('newer v1 JSON retains the zone fraction and resolves settlement markers', async ({
   page,
 }) => {

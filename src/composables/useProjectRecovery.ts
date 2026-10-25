@@ -26,6 +26,8 @@ export function useProjectRecovery(options: ProjectRecoveryOptions) {
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
   let recoveryTimer: ReturnType<typeof setTimeout> | null = null
   let changes = 0
+  let generation = 0
+  let heartbeatFlight: Promise<void> | null = null
 
   async function refresh(): Promise<void> {
     try {
@@ -41,6 +43,7 @@ export function useProjectRecovery(options: ProjectRecoveryOptions) {
   }
 
   function begin(id: string): void {
+    generation++
     cancelTimer()
     if (id !== activeRecoveryId.value)
       void recovery.release(activeRecoveryId.value).catch(options.showError)
@@ -60,19 +63,20 @@ export function useProjectRecovery(options: ProjectRecoveryOptions) {
     const snapshot = options.snapshot(activeRecoveryId.value)
     if (!snapshot) return true
     const id = activeRecoveryId.value
+    const started = generation
     const change = changes
     recoveryStatus.value = 'saving'
     const write = recovery.save(snapshot)
     try {
       await write
-      if (id === activeRecoveryId.value) {
+      if (started === generation && id === activeRecoveryId.value) {
         if (change === changes) recoveryStatus.value = 'saved'
         else schedule()
       }
       await refresh()
       return true
     } catch (cause) {
-      if (id === activeRecoveryId.value) {
+      if (started === generation && id === activeRecoveryId.value) {
         recoveryStatus.value = 'error'
         options.showError(cause)
       }
@@ -95,6 +99,15 @@ export function useProjectRecovery(options: ProjectRecoveryOptions) {
 
   // Applied document, pending forms and base revision jointly define the recoverable snapshot.
   watch(options.changes, schedule)
+  // Invalidate an acknowledgement immediately, while batching snapshot scheduling/cleanup.
+  watch(
+    options.changes,
+    () => {
+      changes++
+      if (options.snapshot(activeRecoveryId.value)) recoveryStatus.value = 'pending'
+    },
+    { flush: 'sync' },
+  )
 
   function beforeUnload(event: BeforeUnloadEvent): void {
     if (options.hasUnsavedWork.value && recoveryStatus.value !== 'saved') event.preventDefault()
@@ -105,17 +118,33 @@ export function useProjectRecovery(options: ProjectRecoveryOptions) {
       options.repository.releaseOnExit(activeRecoveryId.value)
   }
 
-  async function heartbeat(): Promise<void> {
+  async function renewAndRetry(): Promise<void> {
     const id = activeRecoveryId.value
+    const started = generation
     try {
       await recovery.heartbeat(id)
     } catch (cause) {
-      if (id === activeRecoveryId.value) {
+      if (started === generation && id === activeRecoveryId.value) {
         recoveryStatus.value = 'error'
         options.showError(cause)
       }
+      await refresh()
+      return
     }
-    await refresh()
+    if (started !== generation || id !== activeRecoveryId.value) return
+    // Waking/returning confirms ownership before retrying the latest unsaved input.
+    // A successful renewal alone never acknowledges a failed or newer snapshot.
+    if (recoveryStatus.value !== 'saved' && options.snapshot(id)) await flush()
+    else await refresh()
+  }
+
+  function heartbeat(): Promise<void> {
+    // pageshow, visibilitychange and an overdue interval may arrive together after sleep.
+    if (heartbeatFlight) return heartbeatFlight
+    heartbeatFlight = renewAndRetry().finally(() => {
+      heartbeatFlight = null
+    })
+    return heartbeatFlight
   }
 
   function start(): void {
@@ -124,6 +153,7 @@ export function useProjectRecovery(options: ProjectRecoveryOptions) {
   }
 
   function stop(): void {
+    generation++
     if (heartbeatTimer) clearInterval(heartbeatTimer)
     void recovery.release(activeRecoveryId.value).catch(options.showError)
     cancelTimer()
