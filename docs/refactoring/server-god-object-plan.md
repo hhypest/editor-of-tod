@@ -26,7 +26,7 @@ ORM, микросервисы, несколько баз, DI-фреймворк 
 
 ## Последовательность PR
 
-Выделены [карта существующих контрактов](server-contracts.md), подключение (#196), migration/manual backup (#197), [исполнитель и отдельные модули миграций](sqlite-migrations.md) и [ProjectSourceStore](project-source-store.md). RegistryStore делегирует инфраструктуре и исходникам; предметные операции и HTTP пока остаются за совместимым фасадом. Следующий шаг — `ProjectRepository`, затем recovery. Остальные пункты ниже открыты.
+Выделены [карта существующих контрактов](server-contracts.md), подключение (#196), migration/manual backup (#197), [исполнитель и отдельные модули миграций](sqlite-migrations.md), [ProjectSourceStore](project-source-store.md) и [ProjectRepository](project-repository.md). RegistryStore делегирует инфраструктуре, исходникам и проектам; остальные предметные операции и HTTP пока остаются за совместимым фасадом. Следующий шаг — `RecoveryRepository`. Остальные пункты ниже открыты.
 
 ### 1. Карта серверных контрактов
 
