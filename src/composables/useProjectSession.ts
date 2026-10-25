@@ -141,9 +141,8 @@ export function useProjectSession(onProjectOpened: () => void) {
       cause instanceof Error ? cause.message : 'Операция с локальной базой не удалась.'
     if (localApiErrorCode(cause) === 'revision-conflict') {
       localError.value += ' Ваши правки остались открытыми. Обновите список проектов.'
-      if (localRevision.value === null) {
-        localError.value += ' Для отдельной копии используйте «Сохранить как новый проект».'
-      }
+      localError.value +=
+        ' Для отдельной копии сначала примените ввод в формах, затем используйте «Сохранить как новый проект» в «Действия с проектом».'
     }
   }
 

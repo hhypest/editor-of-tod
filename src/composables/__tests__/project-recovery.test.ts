@@ -30,7 +30,7 @@ function harness() {
     })),
     claim: vi.fn(),
     remove: vi.fn(async () => undefined),
-    heartbeat: vi.fn(async () => undefined),
+    heartbeat: vi.fn<RecoveryRepository['heartbeat']>(async () => undefined),
     release: vi.fn(async () => undefined),
     releaseOnExit: vi.fn(),
   }
@@ -72,6 +72,96 @@ function harness() {
 }
 
 describe('recovery adapter without a mounted component or browser', () => {
+  it('retries a failed snapshot after wake and captures the latest unapplied input', async () => {
+    const { repository, recovery, edit } = harness()
+    repository.save.mockRejectedValueOnce(new Error('Нет связи'))
+    edit('До сна')
+    await vi.advanceTimersByTimeAsync(800)
+    expect(recovery.recoveryStatus.value).toBe('error')
+    // Suspend advances wall time without running the window's timers.
+    vi.setSystemTime(Date.now() + 180_000)
+    edit('Ввод после пробуждения')
+    await recovery.heartbeat()
+    expect(repository.save).toHaveBeenCalledTimes(2)
+    expect(repository.save.mock.calls[1]?.[0]).toMatchObject({
+      expectedVersion: 0,
+      scheme: { parameters: { locationText: 'Ввод после пробуждения' } },
+    })
+    expect(recovery.recoveryStatus.value).toBe('saved')
+  })
+
+  it('coalesces wake events and does not acknowledge renewal before the retried save', async () => {
+    const { repository, recovery, edit } = harness()
+    await recovery.flush()
+    edit('Неприменённый ввод')
+    const renew = deferred<void>()
+    const save = deferred<RecoveryReceipt>()
+    repository.heartbeat.mockImplementationOnce(() => renew.promise)
+    repository.save.mockImplementationOnce(() => save.promise)
+    const wake = recovery.heartbeat()
+    const anotherWake = recovery.heartbeat()
+    expect(wake).toBe(anotherWake)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(repository.heartbeat).toHaveBeenCalledTimes(1)
+    renew.resolve()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(recovery.recoveryStatus.value).toBe('saving')
+    edit('Ещё более новый ввод')
+    save.resolve({ version: 2, updatedAt: '2030-01-01T00:00:01Z' })
+    await wake
+    expect(recovery.recoveryStatus.value).toBe('pending')
+    await vi.advanceTimersByTimeAsync(800)
+    expect(repository.save.mock.calls.at(-1)?.[0].scheme.parameters.locationText).toBe(
+      'Ещё более новый ввод',
+    )
+    expect(recovery.recoveryStatus.value).toBe('saved')
+  })
+
+  it('keeps failed renewal unsaved and retries after the connection returns', async () => {
+    const { repository, recovery, edit } = harness()
+    await recovery.flush()
+    repository.heartbeat.mockRejectedValueOnce(new Error('Нет сети'))
+    edit('После сна')
+    await recovery.heartbeat()
+    expect(repository.save).toHaveBeenCalledTimes(1)
+    expect(recovery.recoveryStatus.value).toBe('error')
+    await recovery.heartbeat()
+    expect(repository.save).toHaveBeenCalledTimes(2)
+    expect(recovery.recoveryStatus.value).toBe('saved')
+  })
+
+  it('keeps edits when claim wins between renewal and the queued retry', async () => {
+    const { repository, recovery, edit, scheme, showError } = harness()
+    await recovery.flush()
+    edit('Не отдать другому окну')
+    const before = scheme.value
+    repository.save.mockRejectedValueOnce(new Error('Другой владелец'))
+    await recovery.heartbeat()
+    expect(recovery.recoveryStatus.value).toBe('error')
+    expect(scheme.value).toBe(before)
+    expect(showError).toHaveBeenCalledTimes(1)
+    expect(repository.claim).not.toHaveBeenCalled()
+    expect(repository.remove).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])(
+    'ignores a late renewal after switching or reopening (same id: %s)',
+    async (sameId) => {
+      const { repository, recovery, edit } = harness()
+      await recovery.flush()
+      const renew = deferred<void>()
+      repository.heartbeat.mockImplementationOnce(() => renew.promise)
+      const wake = recovery.heartbeat()
+      await vi.advanceTimersByTimeAsync(0)
+      recovery.begin(sameId ? 'first' : 'second')
+      edit('Новая сессия')
+      renew.resolve()
+      await wake
+      expect(repository.save).toHaveBeenCalledTimes(1)
+      expect(recovery.recoveryStatus.value).toBe('pending')
+    },
+  )
+
   it('debounces edits and keeps a newer edit pending until its own queued write finishes', async () => {
     const { repository, recovery, edit } = harness()
     const first = deferred<RecoveryReceipt>()

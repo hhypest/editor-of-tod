@@ -20,6 +20,56 @@ const input = () => ({
 })
 
 describe('recovery ownership', () => {
+  it.each(['renew-first', 'claim-first', 'claim-before-save'])(
+    'fences wake/claim/save after a suspended lease: %s',
+    (order) => {
+      let now = Date.parse('2026-10-25T06:00:00Z')
+      const directory = mkdtempSync(join(tmpdir(), 'tod-wake-'))
+      const path = join(directory, 'registry.sqlite')
+      const clock = () => new Date(now).toISOString()
+      const one = new RegistryStore(path, clock)
+      const two = new RegistryStore(path, clock)
+      const first = randomUUID(),
+        second = randomUUID()
+      const draft = input()
+      const changed = {
+        ...draft,
+        expectedVersion: 1,
+        scheme: {
+          ...scheme,
+          parameters: { ...scheme.parameters, locationText: 'Правки после сна' },
+        },
+      }
+      try {
+        one.saveRecovery(draft, first)
+        now += RECOVERY_LEASE_MS + 60_000
+        if (order !== 'claim-first') one.heartbeatRecovery(draft.sessionId, first)
+        if (order === 'renew-first') {
+          expect(() => two.claimRecovery(draft.sessionId, second, 1)).toThrow(RecoveryOwned)
+          expect(one.saveRecovery(changed, first).version).toBe(2)
+          expect(two.getRecovery(draft.sessionId)?.scheme).toEqual(changed.scheme)
+        } else {
+          // Another suspension can expire the renewal before the following PUT reaches SQLite.
+          if (order === 'claim-before-save') now += RECOVERY_LEASE_MS + 1
+          expect(two.claimRecovery(draft.sessionId, second, 1).version).toBe(2)
+          const claimed = two.getRecovery(draft.sessionId)
+          expect(() => one.heartbeatRecovery(draft.sessionId, first)).toThrow(RecoveryOwned)
+          expect(() => one.saveRecovery(changed, first)).toThrow(RecoveryOwned)
+          one.releaseRecovery(draft.sessionId, first)
+          expect(one.getRecovery(draft.sessionId)).toEqual(claimed)
+          // Even after the new owner releases, the stale window must not reclaim by saving.
+          two.releaseRecovery(draft.sessionId, second)
+          expect(() => one.saveRecovery(changed, first)).toThrow(RecoveryOwned)
+          expect(one.getRecovery(draft.sessionId)).toEqual(claimed)
+        }
+      } finally {
+        one.close()
+        two.close()
+        rmSync(directory, { recursive: true, force: true })
+      }
+    },
+  )
+
   it('protects live copies, renews without changing their content and fences the old window after takeover', () => {
     let now = Date.parse('2026-10-02T12:00:00Z')
     const store = new RegistryStore(':memory:', () => new Date(now).toISOString())
