@@ -793,6 +793,10 @@ PNG остаются только в локальной базе и показы
 
 Три `normative-document-contracts.test.ts` предварительно проходят на исходном фасаде: нормализация/поля/receiver часов, порядок отказов и откат INSERT/UPDATE при ошибке trigger. Восемь прямых `normative-document-repository.test.ts` проверяют read-only/порядок/whitelist/PDF bytes, reopen/другое соединение, узкий запрос ссылок и его отказ, порядок часов, сохранность внешней транзакции и блокировку записи, detach/reattach, неизменность текста/подтверждений/истории знаков и узкий upload/backup port. Удаление, текст и подтверждения остаются следующими отдельными шагами; [границы](docs/refactoring/normative-documents.md). Полный check и E2E обязательны; Windows exe проверяется отдельной ручной сборкой.
 
+## Серверное выделение текста и подтверждений (#135)
+
+Три `document-evidence-contracts.test.ts` предварительно проходят на исходном фасаде: cache/null/пустой скан/rollback/nested BEGIN, append-only история/property order/value/receiver часов и отказ вставки. Семь прямых `document-evidence-repositories.test.ts` проверяют read-only/порядок страниц/rollback/FK, видимость старого текста и блокировку второго соединения до commit, JSON/null/id order, часы/SQL/внешнюю транзакцию, reopen и узкие cache/parameter ports. Существующие API/нормативные/frozen-format проверки сохраняются; [границы](docs/refactoring/document-evidence.md). Полный check и E2E обязательны; Windows exe — отдельная ручная контрольная сборка.
+
 ## Первый блок А4: редакции и запоздалые ответы
 
 Автоматически: `npm run check` проверяет SaveProjectRevision / RestoreProjectRevision независимо от Vue/HTTP, типизированные ошибки адаптера и Vue lifecycle с управляемыми задержками. Проверяются смена сессии при том же id, новые правки и неприменённый ввод во время записи/возврата, сохранение отдельной копии, конфликт и повтор, отмена подтверждения, задержка recovery перед возвратом и при удалении, undo/redo. `npm run test:e2e` проверяет задержку ответа SQLite, блокировку ввода, повтор неизменённой записи, возврат с сохранением всех версий и реальный 409.
