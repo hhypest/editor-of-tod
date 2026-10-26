@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import { openDatabase } from './database/connection.ts'
@@ -27,11 +26,7 @@ import {
   type NormativeDraft,
   type NormativeRecord,
 } from '../src/domain/registry.ts'
-import {
-  localCalendarDate,
-  type Pu66Verification,
-  type Pu66VerificationWrite,
-} from '../src/domain/pu66-review.ts'
+import { type Pu66Verification, type Pu66VerificationWrite } from '../src/domain/pu66-review.ts'
 import type { Pu66Import } from './pu66.ts'
 import {
   Pu66Repository,
@@ -42,9 +37,12 @@ import {
 import { Pu66KeyResolver } from './pu66/key-resolver.ts'
 import { AmbiguousPu66Key, InvalidPu66Lifecycle, InvalidPu66Verification } from './pu66/errors.ts'
 import { Pu66VerificationRepository } from './pu66/verification-repository.ts'
+import { Pu66LifecycleRepository } from './pu66/lifecycle-repository.ts'
+import { Pu66LifecycleService } from './pu66/lifecycle-service.ts'
+import { SqliteTransactionRunner } from './database/transaction-runner.ts'
 import { type SignImport } from './signs.ts'
 import {
-  pu66LifecycleWriteSchema,
+  type Pu66LifecyclePlan,
   type Pu66LifecycleWrite,
   type Pu66Status,
   type Pu66ImportRestore,
@@ -119,6 +117,8 @@ export class RegistryStore {
   private readonly legacy: LegacyRegistryRepository
   private readonly pu66Keys: Pu66KeyResolver
   private readonly pu66: Pu66Repository
+  private readonly pu66Lifecycle: Pu66LifecycleRepository
+  private readonly pu66LifecycleService: Pu66LifecycleService
   private readonly pu66Verifications: Pu66VerificationRepository
   readonly path: string
   private readonly now: () => string
@@ -141,10 +141,17 @@ export class RegistryStore {
       this.legacy = new LegacyRegistryRepository(this.db, () => this.now())
       this.pu66Keys = new Pu66KeyResolver(this.db)
       this.pu66 = new Pu66Repository(this.db, this.pu66Keys)
+      this.pu66Lifecycle = new Pu66LifecycleRepository(this.db, this.pu66Keys, () => this.now())
+      this.pu66LifecycleService = new Pu66LifecycleService(
+        this.pu66,
+        this.pu66Lifecycle,
+        new SqliteTransactionRunner(this.db),
+        () => this.now(),
+      )
       this.pu66Verifications = new Pu66VerificationRepository(
         this.db,
         this.pu66Keys,
-        (key) => this.getPu66Status(key),
+        (key) => this.pu66Lifecycle.getStatus(key),
         () => this.now(),
       )
       if (this.listNormative().length === 0) {
@@ -250,119 +257,19 @@ export class RegistryStore {
   }
 
   getPu66Status(requestedKey: string): Pu66Status | null {
-    const key = this.pu66Keys.resolve(requestedKey)
-    if (!key) return null
-    const event = this.listPu66Lifecycle(key)?.[0] ?? null
-    return {
-      referenceId: key,
-      excluded: event?.action === 'exclude',
-      event,
-      successorKey: event?.action === 'exclude' ? event.successorKey : null,
-    }
+    return this.pu66Lifecycle.getStatus(requestedKey)
   }
 
   listPu66Lifecycle(requestedKey: string): Array<NonNullable<Pu66Status['event']>> | null {
-    const key = this.pu66Keys.resolve(requestedKey)
-    if (!key) return null
-    const rows = this.db
-      .prepare(
-        `SELECT id, action, date, actor, reason, comment,
-      successor_key, card_revision, recorded_at FROM pu66_lifecycle WHERE key = ? ORDER BY id DESC`,
-      )
-      .all(key) as Array<{
-      id: number
-      action: 'exclude' | 'restore'
-      date: string
-      actor: string
-      reason: NonNullable<Pu66Status['event']>['reason']
-      comment: string
-      successor_key: string | null
-      card_revision: number
-      recorded_at: string
-    }>
-    return rows.map((row) => ({
-      id: row.id,
-      action: row.action,
-      date: row.date,
-      actor: row.actor,
-      reason: row.reason,
-      comment: row.comment,
-      successorKey: row.successor_key,
-      cardRevision: row.card_revision,
-      recordedAt: row.recorded_at,
-    }))
+    return this.pu66Lifecycle.list(requestedKey)
   }
 
-  planPu66Lifecycle(raw: Pu66LifecycleWrite) {
-    const input = pu66LifecycleWriteSchema.parse(raw)
-    if (input.date > localCalendarDate(new Date(this.now())))
-      throw new InvalidPu66Lifecycle('Дата действия не может быть в будущем.')
-    const cards = this.listPu66(true)
-    const items = input.keys.map((key) => {
-      const card = cards.find((card) => card.referenceId === key)
-      const status = this.getPu66Status(key)
-      if (!card || !status) throw new InvalidPu66Lifecycle('Карточка не найдена. Обновите список.')
-      if (status.excluded !== (input.action === 'restore')) throw new RevisionConflict()
-      return {
-        referenceId: key,
-        location: card.location,
-        roadName: card.roadName,
-        revision: card.revision,
-        status,
-      }
-    })
-    let successor: (typeof items)[number] | null = null
-    if (input.action === 'exclude' && input.successorKey) {
-      const status = this.getPu66Status(input.successorKey)
-      const card = cards.find((card) => card.referenceId === input.successorKey)
-      if (!status || !card || status.excluded || input.keys.includes(status.referenceId))
-        throw new InvalidPu66Lifecycle('Преемник должен быть другой действующей карточкой.')
-      // A new link is recorded explicitly; legacy key aliases keep their original meaning.
-      const key = status.referenceId
-      if (key !== input.successorKey)
-        throw new InvalidPu66Lifecycle('Выберите текущий ключ карточки-преемника.')
-      successor = {
-        referenceId: key,
-        location: card.location,
-        roadName: card.roadName,
-        revision: card.revision,
-        status,
-      }
-    }
-    const fingerprint = createHash('sha256')
-      .update(JSON.stringify({ input, items, successor }))
-      .digest('hex')
-    return { fingerprint, items, successor }
+  planPu66Lifecycle(raw: Pu66LifecycleWrite): Pu66LifecyclePlan {
+    return this.pu66LifecycleService.plan(raw)
   }
 
   recordPu66Lifecycle(input: Pu66LifecycleWrite, expectedFingerprint: string): number {
-    this.db.exec('BEGIN IMMEDIATE')
-    try {
-      const plan = this.planPu66Lifecycle(input)
-      if (plan.fingerprint !== expectedFingerprint) throw new RevisionConflict()
-      const insert = this.db.prepare(`INSERT INTO pu66_lifecycle
-        (key, card_revision, action, date, actor, reason, comment, successor_key, recorded_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      const now = this.now()
-      for (const item of plan.items) {
-        insert.run(
-          item.referenceId,
-          item.revision,
-          input.action,
-          input.date,
-          input.actor,
-          input.action === 'exclude' ? input.reason : null,
-          input.comment,
-          input.action === 'exclude' ? input.successorKey : null,
-          now,
-        )
-      }
-      this.db.exec('COMMIT')
-      return plan.items.length
-    } catch (error) {
-      this.db.exec('ROLLBACK')
-      throw error
-    }
+    return this.pu66LifecycleService.record(input, expectedFingerprint)
   }
 
   planPu66(entries: Pu66Import[]): { added: number; updated: number; unchanged: number } {

@@ -42,6 +42,7 @@
 - [Ручные реестры и история](refactoring/legacy-registry-repository.md) — crossings/normative/revisions, конфликты, ASC history и отдельное начальное наполнение.
 - [Чтение ПУ-66 и ключи](refactoring/pu66-read-repository.md) — прежние проекции, aliases/неоднозначность, metadata сверок и фильтрация исключённых карточек.
 - [Журнал сверок ПУ-66](refactoring/pu66-verification-repository.md) — даты/редакции, проверка исключения под блокировкой, история, rollback и переходный запрос lifecycle.
+- [Исключение и возврат ПУ-66](refactoring/pu66-lifecycle.md) — repository/service, fingerprint/преемник, повторный план под блокировкой после backup и атомарный пакет.
 - [Контракты рефакторинга](refactoring-contracts.md) фиксируют baseline, совместимость review и рисунка, ограничения контроля зависимостей.
 - [Сверка независимого аудита и технического долга](refactoring/audit-2026-10-24.md) — актуальные замечания, состояние задач и порядок работ перед продолжением 0.3.0.
 - [Контракт Vue-сессии](refactoring/vue-session-plan.md) фиксирует публичный API, инварианты и порядок разделения по #136.
