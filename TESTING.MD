@@ -797,6 +797,10 @@ PNG остаются только в локальной базе и показы
 
 Три `document-evidence-contracts.test.ts` предварительно проходят на исходном фасаде: cache/null/пустой скан/rollback/nested BEGIN, append-only история/property order/value/receiver часов и отказ вставки. Семь прямых `document-evidence-repositories.test.ts` проверяют read-only/порядок страниц/rollback/FK, видимость старого текста и блокировку второго соединения до commit, JSON/null/id order, часы/SQL/внешнюю транзакцию, reopen и узкие cache/parameter ports. Существующие API/нормативные/frozen-format проверки сохраняются; [границы](docs/refactoring/document-evidence.md). Полный check и E2E обязательны; Windows exe — отдельная ручная контрольная сборка.
 
+## Атомарное удаление документа (#215)
+
+`document-deletion.test.ts`: семь проверок ошибки второй/первой DELETE, исторических ссылок в прежнем порядке, блокировки второго connection до первого чтения и видимости старого PDF/текста между DELETE, nested BEGIN без отката вызывающего, reopen и HTTP 403/500/409/200/404. Regression test сначала упал на main 142e969 с null вместо прежних страниц и прошёл после исправления. PDF/текст вымышлены. [Граница и следующий структурный шаг](docs/refactoring/document-deletion-atomicity.md). Полный check и E2E обязательны; Windows exe — отдельная ручная контрольная сборка.
+
 ## Первый блок А4: редакции и запоздалые ответы
 
 Автоматически: `npm run check` проверяет SaveProjectRevision / RestoreProjectRevision независимо от Vue/HTTP, типизированные ошибки адаптера и Vue lifecycle с управляемыми задержками. Проверяются смена сессии при том же id, новые правки и неприменённый ввод во время записи/возврата, сохранение отдельной копии, конфликт и повтор, отмена подтверждения, задержка recovery перед возвратом и при удалении, undo/redo. `npm run test:e2e` проверяет задержку ответа SQLite, блокировку ввода, повтор неизменённой записи, возврат с сохранением всех версий и реальный 409.
