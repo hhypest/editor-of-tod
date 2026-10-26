@@ -39,6 +39,8 @@ import { AmbiguousPu66Key, InvalidPu66Lifecycle, InvalidPu66Verification } from 
 import { Pu66VerificationRepository } from './pu66/verification-repository.ts'
 import { Pu66LifecycleRepository } from './pu66/lifecycle-repository.ts'
 import { Pu66LifecycleService } from './pu66/lifecycle-service.ts'
+import { Pu66ImportRepository } from './pu66/import-repository.ts'
+import { Pu66ImportService } from './pu66/import-service.ts'
 import { SqliteTransactionRunner } from './database/transaction-runner.ts'
 import { type SignImport } from './signs.ts'
 import {
@@ -119,6 +121,7 @@ export class RegistryStore {
   private readonly pu66: Pu66Repository
   private readonly pu66Lifecycle: Pu66LifecycleRepository
   private readonly pu66LifecycleService: Pu66LifecycleService
+  private readonly pu66Imports: Pu66ImportService
   private readonly pu66Verifications: Pu66VerificationRepository
   readonly path: string
   private readonly now: () => string
@@ -147,6 +150,16 @@ export class RegistryStore {
         this.pu66Lifecycle,
         new SqliteTransactionRunner(this.db),
         () => this.now(),
+      )
+      this.pu66Imports = new Pu66ImportService(
+        new Pu66ImportRepository(
+          this.db,
+          (key) => this.pu66Lifecycle.getStatus(key),
+          () => this.now(),
+        ),
+        this.pu66LifecycleService,
+        this.pu66Lifecycle,
+        new SqliteTransactionRunner(this.db),
       )
       this.pu66Verifications = new Pu66VerificationRepository(
         this.db,
@@ -272,109 +285,20 @@ export class RegistryStore {
     return this.pu66LifecycleService.record(input, expectedFingerprint)
   }
 
-  planPu66(entries: Pu66Import[]): { added: number; updated: number; unchanged: number } {
-    const result = { added: 0, updated: 0, unchanged: 0 }
-    for (const entry of this.inspectPu66(entries)) {
-      if (entry.action === 'add') result.added++
-      else if (entry.action === 'update') result.updated++
-      else result.unchanged++
-    }
-    return result
+  planPu66(entries: Pu66Import[]) {
+    return this.pu66Imports.plan(entries)
   }
 
-  inspectPu66(entries: Pu66Import[]): Array<{
-    filename: string
-    referenceId: string
-    location: string
-    roadName: string
-    action: 'add' | 'update' | 'unchanged'
-    currentRevision: number
-    sourceSha256: string
-    status: Pu66Status | null
-  }> {
-    const seen = new Set<string>()
-    const existing = this.db.prepare('SELECT revision, source_sha256 FROM pu66_cards WHERE key = ?')
-    const result: ReturnType<RegistryStore['inspectPu66']> = []
-    for (const entry of entries) {
-      if (seen.has(entry.card.key)) throw new Error(`Повторный ключ ПУ-66: ${entry.card.key}.`)
-      seen.add(entry.card.key)
-      const previous = existing.get(entry.card.key) as
-        { revision: number; source_sha256: string } | undefined
-      result.push({
-        filename: entry.filename,
-        referenceId: entry.card.key,
-        location: `${entry.card.kilometre} км ${entry.card.picket} пк`,
-        roadName: entry.card.roadName,
-        action: !previous
-          ? 'add'
-          : previous.source_sha256 === entry.sha256
-            ? 'unchanged'
-            : 'update',
-        currentRevision: previous?.revision ?? 0,
-        sourceSha256: entry.sha256,
-        status: this.getPu66Status(entry.card.key),
-      })
-    }
-    return result
+  inspectPu66(entries: Pu66Import[]) {
+    return this.pu66Imports.inspect(entries)
   }
 
-  importPu66(
-    entries: Pu66Import[],
-    restoration: Pu66ImportRestore | null = null,
-  ): { added: number; updated: number; unchanged: number } {
-    const result = this.planPu66(entries)
-    this.db.exec('BEGIN IMMEDIATE')
-    try {
-      if (restoration) {
-        if (restoration.keys.some((key) => !entries.some((entry) => entry.card.key === key)))
-          throw new InvalidPu66Lifecycle('Карточка для возврата отсутствует в пакете импорта.')
-        this.planPu66Lifecycle({
-          ...restoration,
-          action: 'restore',
-          comment: 'Возврат при импорте XLSX.',
-        })
-      }
-      const source = this.db.prepare(
-        'INSERT OR IGNORE INTO pu66_sources (sha256, original_name, workbook) VALUES (?, ?, ?)',
-      )
-      const current = this.db.prepare(
-        `INSERT INTO pu66_cards (key, revision, payload_json, source_sha256, updated_at)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(key) DO UPDATE SET revision=excluded.revision, payload_json=excluded.payload_json,
-         source_sha256=excluded.source_sha256, updated_at=excluded.updated_at`,
-      )
-      const revisionInsert = this.db.prepare(
-        `INSERT INTO pu66_revisions (key, revision, payload_json, source_sha256, updated_at)
-         VALUES (?, ?, ?, ?, ?)`,
-      )
-      const previousQuery = this.db.prepare(
-        'SELECT revision, source_sha256 FROM pu66_cards WHERE key = ?',
-      )
-      for (const entry of entries) {
-        const previous = previousQuery.get(entry.card.key) as
-          { revision: number; source_sha256: string } | undefined
-        if (previous?.source_sha256 === entry.sha256) continue
-        source.run(entry.sha256, entry.filename.slice(0, 240), entry.source)
-        const revision = (previous?.revision ?? 0) + 1
-        const updatedAt = this.now()
-        const payload = JSON.stringify(entry.card)
-        current.run(entry.card.key, revision, payload, entry.sha256, updatedAt)
-        revisionInsert.run(entry.card.key, revision, payload, entry.sha256, updatedAt)
-      }
-      if (restoration) {
-        const insert = this.db.prepare(`INSERT INTO pu66_lifecycle
-          (key, card_revision, action, date, actor, reason, comment, successor_key, recorded_at)
-          SELECT key, revision, 'restore', ?, ?, NULL, 'Возврат при импорте XLSX.', NULL, ?
-          FROM pu66_cards WHERE key = ?`)
-        for (const key of restoration.keys)
-          insert.run(restoration.date, restoration.actor, this.now(), key)
-      }
-      this.db.exec('COMMIT')
-      return result
-    } catch (error) {
-      this.db.exec('ROLLBACK')
-      throw error
-    }
+  planPu66Import(entries: Pu66Import[], restoration: Pu66ImportRestore | null = null) {
+    return this.pu66Imports.preview(entries, restoration)
+  }
+
+  importPu66(entries: Pu66Import[], restoration: Pu66ImportRestore | null = null) {
+    return this.pu66Imports.record(entries, restoration)
   }
 
   listPu66(includeExcluded = false): Pu66Summary[] {

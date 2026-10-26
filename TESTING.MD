@@ -785,6 +785,10 @@ PNG остаются только в локальной базе и показы
 
 Предварительные `pu66-lifecycle-contracts.test.ts` проходят на исходном фасаде: receiver/время пакета/нормализация и откат второго события. Прямые `pu66-lifecycle-service.test.ts` проверяют статус и aliases, актуальность выбранной карточки/преемника/его истории, блокировку повторного плана, откат пакета/часов и сохранность данных. `transaction-runner.test.ts` проверяет commit/rollback и сохранность внешней транзакции при отказе вложенного BEGIN. Порядок backup и старые API/import/lifecycle/frozen-format/E2E сохраняются; [границы и следующий шаг](docs/refactoring/pu66-lifecycle.md). Полный check, E2E и Windows exe обязательны.
 
+## Серверное выделение импорта ПУ-66 (#135)
+
+Три `pu66-import-contracts.test.ts` предварительно проходят на исходном фасаде: порядок inspection/дубликаты/no-op/receiver часов, полный rollback при отказе второго возврата и валидация restoration. Прямые `pu66-import-service.test.ts` проверяют read-only/aliases, workbook bytes/SHA dedup/immutable history, whitelist/fingerprint, откат после ошибки редакции/события/часов, блокировку второго соединения и порядок timestamps, узкий upload/backup port. Существующие API/XLSX/lifecycle/frozen-format/E2E сохраняются; [профиль и границы](docs/refactoring/pu66-import.md). Полный check, E2E и Windows exe обязательны.
+
 ## Первый блок А4: редакции и запоздалые ответы
 
 Автоматически: `npm run check` проверяет SaveProjectRevision / RestoreProjectRevision независимо от Vue/HTTP, типизированные ошибки адаптера и Vue lifecycle с управляемыми задержками. Проверяются смена сессии при том же id, новые правки и неприменённый ввод во время записи/возврата, сохранение отдельной копии, конфликт и повтор, отмена подтверждения, задержка recovery перед возвратом и при удалении, undo/redo. `npm run test:e2e` проверяет задержку ответа SQLite, блокировку ввода, повтор неизменённой записи, возврат с сохранением всех версий и реальный 409.

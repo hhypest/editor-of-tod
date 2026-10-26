@@ -1,5 +1,9 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type { Pu66LifecycleWrite, Pu66Status } from '../../src/domain/pu66-lifecycle.ts'
+import type {
+  Pu66LifecycleWrite,
+  Pu66Status,
+  Pu66ImportRestore,
+} from '../../src/domain/pu66-lifecycle.ts'
 import type { Pu66KeyResolver } from './key-resolver.ts'
 
 export class Pu66LifecycleRepository {
@@ -79,5 +83,15 @@ export class Pu66LifecycleRepository {
         now,
       )
     }
+  }
+
+  /** Import owns the transaction; use each newly written card revision and a clock per key. */
+  appendImportRestores(restoration: Pu66ImportRestore): void {
+    const insert = this.db.prepare(`INSERT INTO pu66_lifecycle
+          (key, card_revision, action, date, actor, reason, comment, successor_key, recorded_at)
+          SELECT key, revision, 'restore', ?, ?, NULL, 'Возврат при импорте XLSX.', NULL, ?
+          FROM pu66_cards WHERE key = ?`)
+    for (const key of restoration.keys)
+      insert.run(restoration.date, restoration.actor, this.now(), key)
   }
 }
