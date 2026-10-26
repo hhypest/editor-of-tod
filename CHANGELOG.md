@@ -6,6 +6,11 @@
 
 ## [0.3.0-dev] — в разработке
 
+### 26.10.2026 — маршруты system/diagnostics/legacy (#135)
+
+- Из index выделены последние девять API-ветвей: status/backup, diagnostics report/events/clear и ручные crossings/normative. Группы получают узкие операции; диагностическая сводка больше не зависит от типа RegistryStore. Прежние receiver, probe/identity, privacy, safe-query и finish после clear сохранены.
+- Три контракта прошли до переноса; семь прямых проверок без фасада фиксируют лимиты/сводку/недоступные данные, legacy/conflicts/history и rollback обоих видов, untouched fallback. Локальный check: 127 файлов / 970 тестов и production build; полный Chromium E2E — 56/56 без повторов. JSON v10/SQLite v13, нормативы и лист сохраняются; #135/А4 открыты. Далее bootstrap/shutdown и удаление фасада, затем Pinia #191.
+
 ### 26.10.2026 — маршруты знаков, документов и параметров (#135)
 
 - Из index выделены три группы с узкими зависимостями: шесть ветвей signs, пять documents (в том числе семь внутренних обработчиков document path) и две normative parameters. Совместимый сервер собирает callback к прежним методам; контекст диагностики параметра принадлежит отдельному запросу.

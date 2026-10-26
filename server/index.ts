@@ -1,19 +1,19 @@
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { crossingWriteSchema, normativeWriteSchema } from '../src/domain/registry.ts'
 import type { SignImportCommands } from './signs/import-commands.ts'
-import { clientEventsSchema, DiagnosticsLog, routeOf } from './diagnostics.ts'
+import { DiagnosticsLog, routeOf } from './diagnostics.ts'
 import { databaseIdentity } from './database-identity.ts'
 import { RegistryStore, migrationNotice } from './store.ts'
 import { RequestError } from './http/request-error.ts'
-import { json, readJson } from './http/json.ts'
 import { checkRequest } from './http/security.ts'
 import { defaultStaticFiles, serveBuiltApp, type StaticFiles } from './http/static-files.ts'
 import { parameterRejection, writeHttpError, type ParameterRejection } from './http/error-mapper.ts'
 
+import { createSystemRoutes } from './http/routes/system.ts'
+import { createDiagnosticRoutes } from './http/routes/diagnostics.ts'
+import { createLegacyRoutes } from './http/routes/legacy.ts'
 import { createProjectRoutes } from './http/routes/projects.ts'
 import { createRecoveryRoutes } from './http/routes/recovery.ts'
 import { createPu66Routes } from './http/routes/pu66.ts'
@@ -27,7 +27,6 @@ import {
 export { directoryFiles, type StaticFiles } from './http/static-files.ts'
 
 export const DEFAULT_PORT = 4100
-const PROBE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const port = DEFAULT_PORT
 
 export function createRegistryServer(
@@ -125,6 +124,34 @@ export function createRegistryServer(
     listParameterConfirmations: () => store.listParameterConfirmations(),
     addParameterConfirmation: (input) => store.addParameterConfirmation(input),
   })
+  const systemRoutes = createSystemRoutes({
+    databasePath: store.path,
+    databaseId,
+    instanceId,
+    createBackup: () => store.createBackup(),
+  })
+  const diagnosticQueries = {
+    path: store.path,
+    backupDirectory: store.backupDirectory,
+    schemaVersion: () => store.schemaVersion(),
+    listPu66: () => store.listPu66(),
+    listProjects: () => store.listProjects(),
+    listRecoveries: () => store.listRecoveries(),
+    listDocuments: () => store.listDocuments(),
+    listParameterConfirmations: () => store.listParameterConfirmations(),
+    latestSignCatalog: () => store.latestSignCatalog(),
+  }
+  const diagnosticRoutes = createDiagnosticRoutes({
+    report: () => diagnostics.report(diagnosticQueries),
+    record: (event) => diagnostics.record(event),
+    clear: () => diagnostics.clear(),
+  })
+  const legacyRoutes = createLegacyRoutes({
+    listCrossings: () => store.listCrossings(),
+    listNormative: () => store.listNormative(),
+    saveCrossing: (draft, expectedRevision) => store.saveCrossing(draft, expectedRevision),
+    saveNormative: (draft, expectedRevision) => store.saveNormative(draft, expectedRevision),
+  })
   const server = createServer(async (req, res) => {
     const started = performance.now()
     let route = routeOf(req.method ?? 'GET', '/api/?')
@@ -147,43 +174,10 @@ export function createRegistryServer(
       if (await signRoutes(req, res, url)) return
       if (await normativeParameterRoutes(req, res, url, parameterContext)) return
       if (await documentRoutes(req, res, url)) return
-      if (req.method === 'GET' && pathname === '/api/status') {
-        // Другой запуск программы кладёт рядом со своей базой пустой файл и спрашивает, видим
-        // ли мы его рядом с нашей: так он узнаёт, что база та же, каким бы путём её ни открыли.
-        const probe = url.searchParams.get('probe')
-        const sameFile =
-          probe !== null && PROBE_ID.test(probe) && store.path !== ':memory:'
-            ? { probe: existsSync(`${store.path}.probe-${probe}`) }
-            : {}
-        json(res, 200, {
-          application: 'editor-of-tod',
-          ready: true,
-          databaseId,
-          instanceId,
-          ...sameFile,
-        })
-      } else if (req.method === 'GET' && pathname === '/api/diagnostics') {
-        json(res, 200, diagnostics.report(store))
-      } else if (req.method === 'POST' && pathname === '/api/diagnostics/events') {
-        const { events } = clientEventsSchema.parse(await readJson(req))
-        for (const event of events) diagnostics.record({ source: 'client', ...event })
-        json(res, 200, { recorded: events.length })
-      } else if (req.method === 'POST' && pathname === '/api/diagnostics/clear') {
-        diagnostics.clear()
-        json(res, 200, { cleared: true })
-      } else if (req.method === 'GET' && pathname === '/api/crossings') {
-        json(res, 200, store.listCrossings())
-      } else if (req.method === 'GET' && pathname === '/api/normative') {
-        json(res, 200, store.listNormative())
-      } else if (req.method === 'PUT' && pathname === '/api/crossings') {
-        const { expectedRevision, ...draft } = crossingWriteSchema.parse(await readJson(req))
-        json(res, 200, store.saveCrossing(draft, expectedRevision))
-      } else if (req.method === 'PUT' && pathname === '/api/normative') {
-        const { expectedRevision, ...draft } = normativeWriteSchema.parse(await readJson(req))
-        json(res, 200, store.saveNormative(draft, expectedRevision))
-      } else if (req.method === 'POST' && pathname === '/api/backup') {
-        json(res, 201, { filename: await store.createBackup() })
-      } else if (req.method === 'GET' && !pathname.startsWith('/api/')) {
+      if (await systemRoutes(req, res, url)) return
+      if (await diagnosticRoutes(req, res, url)) return
+      if (await legacyRoutes(req, res, url)) return
+      if (req.method === 'GET' && !pathname.startsWith('/api/')) {
         await serveBuiltApp(pathname, res, staticFiles)
       } else {
         throw new RequestError(404, 'Адрес не найден.')
