@@ -1,3 +1,4 @@
+import { openTestApplication, type TestApplication } from './test-application'
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { Server } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -8,20 +9,20 @@ import { zipSync } from 'fflate'
 import { createSampleWorkbook, sampleCards } from '../../scripts/generate-pu66-samples'
 import { launchDesktop } from '../desktop-instance'
 import { runImport } from '../import-cli'
-import { RegistryStore } from '../store'
+
 import { catalogEntry } from './sign-catalog-fixture'
 
 const directories: string[] = [],
-  stores: RegistryStore[] = []
+  stores: TestApplication[] = []
 afterEach(() => {
   vi.restoreAllMocks()
-  for (const store of stores.splice(0)) store.close()
+  for (const store of stores.splice(0)) store.runtime.close()
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 function setup() {
   const directory = mkdtempSync(join(tmpdir(), 'tod-bootstrap-contract-'))
   directories.push(directory)
-  const store = new RegistryStore(join(directory, 'registry.sqlite'))
+  const store = openTestApplication(join(directory, 'registry.sqlite'))
   stores.push(store)
   return { directory, store }
 }
@@ -32,18 +33,20 @@ describe('production bootstrap/import compatibility', () => {
     const { directory, store } = setup(),
       file = join(directory, 'fictional.xlsx')
     writeFileSync(file, await createSampleWorkbook(sampleCards[1]!))
-    const backup = vi.spyOn(store, 'createBackup')
-    expect(await runImport(['pu66', file], store)).toContain('новых 1')
-    expect(store.listPu66()).toEqual([])
+    const backup = vi.spyOn(store.runtime.imports, 'createBackup')
+    expect(await runImport(['pu66', file], store.runtime.imports)).toContain('новых 1')
+    expect(store.pu66.list()).toEqual([])
     expect(backup).not.toHaveBeenCalled()
-    expect(await runImport(['pu66', '--apply', file], store)).toContain('добавлено 1')
-    expect(store.listPu66()).toHaveLength(1)
+    expect(await runImport(['pu66', '--apply', file], store.runtime.imports)).toContain(
+      'добавлено 1',
+    )
+    expect(store.pu66.list()).toHaveLength(1)
     expect(backup).toHaveBeenCalledTimes(1)
-    expect(await runImport(['pu66', '--apply', file], store)).toBe(
+    expect(await runImport(['pu66', '--apply', file], store.runtime.imports)).toBe(
       'ПУ-66: данные уже загружены, изменений нет.',
     )
     expect(backup).toHaveBeenCalledTimes(1)
-    expect(readdirSync(store.backupDirectory)).toHaveLength(1)
+    expect(readdirSync(store.runtime.backupDirectory)).toHaveLength(1)
   })
 
   it('keeps sign CLI preview and prevents writes if backup fails', async () => {
@@ -57,12 +60,12 @@ describe('production bootstrap/import compatibility', () => {
         'PNG без номера/1.25.png': entry.plainPng,
       }),
     )
-    expect(await runImport(['signs', file], store)).toContain('новых 1')
+    expect(await runImport(['signs', file], store.runtime.imports)).toContain('новых 1')
     const failure = new Error('fictional backup failure')
-    vi.spyOn(store, 'createBackup').mockRejectedValue(failure)
-    await expect(runImport(['signs', '--apply', file], store)).rejects.toBe(failure)
-    expect(store.latestSignCatalog()).toBeNull()
-    expect(store.listSigns()).toEqual([])
+    vi.spyOn(store.runtime.imports, 'createBackup').mockRejectedValue(failure)
+    await expect(runImport(['signs', '--apply', file], store.runtime.imports)).rejects.toBe(failure)
+    expect(store.signCatalog.latest()).toBeNull()
+    expect(store.signCatalog.list()).toEqual([])
   })
 
   it('closes the opened connection and releases the launch lock after an unexpected listen failure', async () => {
@@ -79,8 +82,8 @@ describe('production bootstrap/import compatibility', () => {
     expect(close).toHaveBeenCalledTimes(1)
     expect(readdirSync(directory)).not.toContain('registry.sqlite.launch.lock')
     expect(readdirSync(directory)).not.toContain('registry.sqlite.instance.json')
-    const reopened = new RegistryStore(path)
+    const reopened = openTestApplication(path)
     stores.push(reopened)
-    expect(reopened.schemaVersion()).toBe(13)
+    expect(reopened.runtime.schemaVersion()).toBe(13)
   })
 })

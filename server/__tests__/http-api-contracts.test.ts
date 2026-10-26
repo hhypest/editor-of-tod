@@ -1,8 +1,10 @@
+import { openTestApplication, type TestApplication } from './test-application'
 import type { Server } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import { createRegistryServer, type StaticFiles } from '../index'
-import { RegistryStore } from '../store'
+import { createHttpServer } from '../http/server'
+import type { StaticFiles } from '../http/static-files'
+
 import { DiagnosticsLog } from '../diagnostics'
 import { RevisionConflict, RecoveryOwned, ProjectTooLarge } from '../storage-errors'
 import {
@@ -20,18 +22,18 @@ import { documentFile, documentMeta } from './normative-document-fixture'
 import { listenHttp } from './http-request-fixture'
 
 const servers: Server[] = [],
-  stores: RegistryStore[] = []
+  stores: TestApplication[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
   for (const server of servers.splice(0))
     await new Promise<void>((resolve) => server.close(() => resolve()))
-  for (const store of stores.splice(0)) store.close()
+  for (const store of stores.splice(0)) store.runtime.close()
 })
 async function setup(files?: StaticFiles) {
-  const store = new RegistryStore(':memory:')
+  const store = openTestApplication(':memory:')
   stores.push(store)
   const diagnostics = new DiagnosticsLog(null, { version: 'test', mode: 'test' })
-  const server = createRegistryServer(store, 0, files, diagnostics)
+  const server = createHttpServer(store.runtime.http, 0, files, diagnostics)
   servers.push(server)
   return { store, diagnostics, ...(await listenHttp(server)) }
 }
@@ -172,7 +174,7 @@ describe('HTTP contracts through createRegistryServer', () => {
     const { store, send } = await setup()
     const file = documentFile(),
       filename = 'Учебный документ.pdf'
-    const document = store.addDocument(documentMeta(), filename, file.pdf, file.sha256)
+    const document = store.documentService.add(documentMeta(), filename, file.pdf, file.sha256)
     const pdf = await send(`/api/documents/${document.id}/pdf`)
     expect(pdf.headers['content-type']).toBe('application/pdf')
     expect(pdf.headers['content-disposition']).toBe(
@@ -181,7 +183,7 @@ describe('HTTP contracts through createRegistryServer', () => {
     expect(pdf.headers['cache-control']).toBe('no-store')
     expect(pdf.body).toEqual(file.pdf)
     const entry = catalogEntry()
-    store.importSigns([entry])
+    store.signCatalog.import([entry])
     const image = await send(`/api/signs/${entry.code}/image`)
     expect(image.body).toEqual(entry.plainPng)
     expect(image.headers['content-type']).toBe('image/png')
@@ -226,7 +228,7 @@ describe('HTTP contracts through createRegistryServer', () => {
     'maps expected error %# without reporting a server failure',
     async (error, status, details = {}, message: string = error.message) => {
       const { store, diagnostics, send } = await setup()
-      vi.spyOn(store, 'listCrossings').mockImplementation(() => {
+      vi.spyOn(store.legacy, 'listCrossings').mockImplementation(() => {
         throw error
       })
       const failure = vi.spyOn(diagnostics, 'serverError')
@@ -243,7 +245,7 @@ describe('HTTP contracts through createRegistryServer', () => {
   it('hides an unexpected error and reports it once with a sanitized route', async () => {
     const { store, diagnostics, send } = await setup()
     const error = new Error('synthetic private detail')
-    vi.spyOn(store, 'listCrossings').mockImplementation(() => {
+    vi.spyOn(store.legacy, 'listCrossings').mockImplementation(() => {
       throw error
     })
     const failure = vi.spyOn(diagnostics, 'serverError')

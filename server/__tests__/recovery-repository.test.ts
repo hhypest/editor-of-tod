@@ -15,7 +15,6 @@ import { ProjectSourceStore } from '../projects/project-source-store'
 import { ProjectRepository } from '../projects/project-repository'
 import { RecoveryRepository } from '../recovery/recovery-repository'
 import { ProjectTooLarge, RecoveryOwned, RevisionConflict } from '../storage-errors'
-import { RecoveryOwned as FacadeRecoveryOwned } from '../store'
 
 const scheme = importSchemeJson(readFileSync('tests/fixtures/manual-v1.json', 'utf8')).scheme
 const connections: DatabaseSync[] = [],
@@ -53,9 +52,9 @@ function setup(path = ':memory:', now = () => '2030-01-01T00:00:00.000Z') {
 }
 
 describe('RecoveryRepository on its caller-owned connection', () => {
-  it('reads empty state without seeding, and keeps the facade error constructor', () => {
+  it('reads empty state without seeding', () => {
     const { db, recovery } = setup()
-    expect(FacadeRecoveryOwned).toBe(RecoveryOwned)
+
     expect(recovery.list()).toEqual([])
     expect(recovery.get(randomUUID())).toBeNull()
     expect(db.prepare('SELECT COUNT(*) AS count FROM normative').get()).toEqual({ count: 0 })

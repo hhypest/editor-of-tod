@@ -1,9 +1,10 @@
+import { openTestApplication } from './test-application'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
-import { RegistryStore } from '../store'
+
 import type { CrossingDraft, NormativeDraft } from '../../src/domain/registry'
 
 const crossing: CrossingDraft = {
@@ -30,28 +31,29 @@ const normative: NormativeDraft = {
 }
 
 /** These contracts first run against the unchanged RegistryStore. */
-describe('legacy registry contracts through the stable facade', () => {
+describe('legacy registry contracts through initialized owners', () => {
   it('keeps seed/clock policy and does not fill missing defaults in an existing nonempty registry', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-legacy-seed-'))
     const path = join(directory, 'registry.sqlite')
     let calls = 0
-    function clock(this: RegistryStore) {
-      expect(this).toBeInstanceOf(RegistryStore)
+    const clockContext = { path: path }
+    function clock(this: typeof clockContext) {
+      expect(this).toBe(clockContext)
       expect(this.path).toBe(path)
       calls++
       return '2030-01-01T00:00:00.000Z'
     }
-    const store = new RegistryStore(path, clock)
+    const store = openTestApplication(path, clock.bind(clockContext))
     try {
       expect(calls).toBe(4)
-      expect(store.listNormative().map((row) => row.id)).toEqual([
+      expect(store.legacy.listNormative().map((row) => row.id)).toEqual([
         'gost-r-52289-2019',
         'gost-r-52290-2024',
         'odm-218-6-019-2016-b33',
         'odm-218-6-019-2016-b34',
       ])
       expect(
-        store
+        store.legacy
           .listNormative()
           .every(
             (row) =>
@@ -61,11 +63,11 @@ describe('legacy registry contracts through the stable facade', () => {
               row.checkedAt === '',
           ),
       ).toBe(true)
-      store.saveCrossing(crossing, 0)
-      store.saveNormative(normative, 0)
+      store.legacy.saveCrossing(crossing, 0)
+      store.legacy.saveNormative(normative, 0)
       expect(calls).toBe(6)
     } finally {
-      store.close()
+      store.runtime.close()
     }
     const raw = new DatabaseSync(path)
     try {
@@ -73,17 +75,17 @@ describe('legacy registry contracts through the stable facade', () => {
     } finally {
       raw.close()
     }
-    const reopened = new RegistryStore(path, clock)
+    const reopened = openTestApplication(path, clock.bind(clockContext))
     try {
       expect(calls).toBe(6)
-      expect(reopened.listNormative()).toEqual([
+      expect(reopened.legacy.listNormative()).toEqual([
         { ...normative, revision: 1, updatedAt: '2030-01-01T00:00:00.000Z' },
       ])
-      expect(reopened.history('normative', 'odm-218-6-019-2016-b33')).toHaveLength(1)
-      expect(reopened.saveNormative(normative, 1).revision).toBe(2)
+      expect(reopened.legacy.history('normative', 'odm-218-6-019-2016-b33')).toHaveLength(1)
+      expect(reopened.legacy.saveNormative(normative, 1).revision).toBe(2)
       expect(calls).toBe(7)
     } finally {
-      reopened.close()
+      reopened.runtime.close()
       rmSync(directory, { recursive: true, force: true })
     }
   })
@@ -93,21 +95,24 @@ describe('legacy registry contracts through the stable facade', () => {
     (kind) => {
       const directory = mkdtempSync(join(tmpdir(), 'tod-legacy-history-failure-'))
       const path = join(directory, 'registry.sqlite')
-      const store = new RegistryStore(path)
+      const store = openTestApplication(path)
       const raw = new DatabaseSync(path)
       const save =
         kind === 'crossings'
           ? (version: number) =>
-              store.saveCrossing({ ...crossing, notes: `Учебная правка ${version}` }, version)
+              store.legacy.saveCrossing(
+                { ...crossing, notes: `Учебная правка ${version}` },
+                version,
+              )
           : (version: number) =>
-              store.saveNormative(
+              store.legacy.saveNormative(
                 { ...normative, description: `Учебная правка ${version}` },
                 version,
               )
       try {
         save(0)
         const before = raw.prepare(`SELECT * FROM ${kind} WHERE key = ?`).get('test-legacy')
-        const history = store.history(kind, 'test-legacy')
+        const history = store.legacy.history(kind, 'test-legacy')
         raw.exec(`CREATE TRIGGER reject_legacy_history AFTER INSERT ON revisions
         WHEN NEW.key = 'test-legacy' AND NEW.revision = 2
         BEGIN SELECT RAISE(ABORT, 'synthetic history failure'); END`)
@@ -115,13 +120,13 @@ describe('legacy registry contracts through the stable facade', () => {
         expect(raw.prepare(`SELECT * FROM ${kind} WHERE key = ?`).get('test-legacy')).toEqual(
           before,
         )
-        expect(store.history(kind, 'test-legacy')).toEqual(history)
+        expect(store.legacy.history(kind, 'test-legacy')).toEqual(history)
         raw.exec('DROP TRIGGER reject_legacy_history')
         expect(save(1).revision).toBe(2)
-        expect(store.history(kind, 'test-legacy').map((row) => row.revision)).toEqual([1, 2])
+        expect(store.legacy.history(kind, 'test-legacy').map((row) => row.revision)).toEqual([1, 2])
       } finally {
         raw.close()
-        store.close()
+        store.runtime.close()
         rmSync(directory, { recursive: true, force: true })
       }
     },

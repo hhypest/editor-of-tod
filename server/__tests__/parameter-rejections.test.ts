@@ -1,15 +1,16 @@
+import { openTestApplication } from './test-application'
 import { describe, expect, it } from 'vitest'
-import { createRegistryServer } from '../index'
-import { RegistryStore } from '../store'
+import { createHttpServer } from '../http/server'
+
 import { DiagnosticsLog } from '../diagnostics'
 import { textPdf } from './pdf-fixture'
 import { parameterStateSchema } from '../../src/domain/normative-parameters'
 
 describe('parameter confirmation rejection contract', () => {
   it('returns field-specific reasons, records only fixed codes, and rejects a changed document', async () => {
-    const store = new RegistryStore(':memory:')
+    const store = openTestApplication(':memory:')
     const log = new DiagnosticsLog(null, { version: 'test', mode: 'test' })
-    const server = createRegistryServer(store, 0, undefined, log)
+    const server = createHttpServer(store.runtime.http, 0, undefined, log)
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     const address = server.address()
     if (!address || typeof address === 'string') throw new Error('Missing address')
@@ -33,7 +34,7 @@ describe('parameter confirmation rejection contract', () => {
     ) => {
       expect(response.status).toBe(status)
       expect(await response.json()).toMatchObject({ reason, field, error: expect.any(String) })
-      expect(store.listParameterConfirmations()).toHaveLength(0)
+      expect(store.parameterConfirmations.list()).toHaveLength(0)
     }
     try {
       await expectRejection(await post('odm-signs-hourly'), 'no-document', 'document')
@@ -77,7 +78,7 @@ describe('parameter confirmation rejection contract', () => {
         note: '',
         actualCheckedAt: '',
       }
-      const old = store.addDocument(
+      const old = store.documentService.add(
         meta,
         'private.pdf',
         textPdf([['Учебная методика без нужного пункта']]),
@@ -88,7 +89,7 @@ describe('parameter confirmation rejection contract', () => {
         'source-not-found',
         'note',
       )
-      store.addDocument(
+      store.documentService.add(
         { ...meta, edition: '2021' },
         'private-new.pdf',
         textPdf([['Учебная новая методика']]),
@@ -104,13 +105,13 @@ describe('parameter confirmation rejection contract', () => {
         'document',
         409,
       )
-      const report = JSON.stringify(log.report(store))
+      const report = JSON.stringify(log.report(store.runtime.http.diagnostics))
       expect(report).toContain('source-not-found')
       expect(report).toContain('odm-signs-hourly')
       expect(report).not.toMatch(/Учебная|private|PDF|формулировку/)
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()))
-      store.close()
+      store.runtime.close()
     }
   })
 })

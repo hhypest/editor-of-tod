@@ -3,7 +3,6 @@ import { arch, platform, release, totalmem } from 'node:os'
 import { z } from 'zod'
 import { databaseSummary, type DiagnosticDatabaseQueries } from './diagnostic-database.ts'
 
-export { databaseSummary } from './diagnostic-database.ts'
 import {
   parameterDefinitions,
   parameterRejectionReasons,

@@ -7,11 +7,8 @@ import { openDatabase } from '../database/connection'
 import { migrateDatabase } from '../database/migration-runner'
 import { Pu66KeyResolver } from '../pu66/key-resolver'
 import { Pu66VerificationRepository } from '../pu66/verification-repository'
-import { AmbiguousPu66Key, InvalidPu66Lifecycle, InvalidPu66Verification } from '../pu66/errors'
-import {
-  InvalidPu66Lifecycle as FacadeLifecycleError,
-  InvalidPu66Verification as FacadeVerificationError,
-} from '../store'
+import { AmbiguousPu66Key, InvalidPu66Verification } from '../pu66/errors'
+
 import { RevisionConflict } from '../storage-errors'
 import { readCard, seedReadCard } from './pu66-read-fixture'
 
@@ -40,8 +37,7 @@ describe('PU-66 verification storage without RegistryStore', () => {
     alias.run('old-single', card.key)
     alias.run('old-ambiguous', null)
     alias.run('dangling', 'missing-target')
-    expect(FacadeLifecycleError).toBe(InvalidPu66Lifecycle)
-    expect(FacadeVerificationError).toBe(InvalidPu66Verification)
+
     expect(journal.list('missing')).toBeNull()
     expect(journal.list(card.key)).toEqual([])
     expect(journal.list('dangling')).toEqual([])

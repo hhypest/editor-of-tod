@@ -1,28 +1,29 @@
+import { openTestApplication, type TestApplication } from './test-application'
 import type { Server } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createRegistryServer } from '../index'
-import { RegistryStore } from '../store'
+import { createHttpServer } from '../http/server'
+
 import { DiagnosticsLog } from '../diagnostics'
 import { catalogEntry } from './sign-catalog-fixture'
 import { documentFile, documentMeta } from './normative-document-fixture'
 import { listenHttp } from './http-request-fixture'
 
 const servers: Server[] = [],
-  stores: RegistryStore[] = []
+  stores: TestApplication[] = []
 const headers = { 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:5173' }
 const data = (response: { body: Buffer }) => JSON.parse(response.body.toString())
 afterEach(async () => {
   vi.restoreAllMocks()
   for (const server of servers.splice(0))
     await new Promise<void>((resolve) => server.close(() => resolve()))
-  for (const store of stores.splice(0)) store.close()
+  for (const store of stores.splice(0)) store.runtime.close()
 })
 async function setup() {
-  const store = new RegistryStore(':memory:')
+  const store = openTestApplication(':memory:')
   stores.push(store)
   const diagnostics = new DiagnosticsLog(null, { version: 'test', mode: 'test' })
   const request = vi.spyOn(diagnostics, 'request')
-  const server = createRegistryServer(store, 0, undefined, diagnostics)
+  const server = createHttpServer(store.runtime.http, 0, undefined, diagnostics)
   servers.push(server)
   return { store, request, ...(await listenHttp(server)) }
 }
@@ -32,7 +33,7 @@ describe('catalog/document/parameter contracts through createRegistryServer', ()
   it('keeps sign query limits, decode-once and historical metadata/image validation', async () => {
     const { store, send } = await setup()
     const entry = catalogEntry()
-    store.importSigns([entry])
+    store.signCatalog.import([entry])
     expect(data(await send('/api/signs?query=9.99'))).toEqual([
       { code: entry.code, width: entry.width, height: entry.height, revision: 1 },
     ])
@@ -64,7 +65,7 @@ describe('catalog/document/parameter contracts through createRegistryServer', ()
   it('keeps numeric document paths, method fallback and upload/default body limits', async () => {
     const { store, send } = await setup(),
       file = documentFile()
-    const document = store.addDocument(documentMeta(), file.filename, file.pdf, file.sha256)
+    const document = store.documentService.add(documentMeta(), file.filename, file.pdf, file.sha256)
     expect((await send(`/api/documents/0${document.id}/pdf`)).body).toEqual(file.pdf)
     expect((await send('/api/documents/9007199254740992/pdf')).status).toBe(400)
     expect((await send('/api/documents/%31/pdf')).status).toBe(404)

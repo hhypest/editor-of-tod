@@ -1,4 +1,4 @@
-import { createServerServices } from './composition-root.ts'
+import { createServerServices, type ServerServices } from './composition-root.ts'
 import { databaseBackupDirectory, createManualBackup } from './database/backups.ts'
 import { readSchemaVersion } from './database/schema-version.ts'
 import type { HttpServerDependencies } from './http/server.ts'
@@ -11,7 +11,12 @@ export function createServerRuntime(
   now: () => string = () => new Date().toISOString(),
 ) {
   const clock = () => now()
-  const services = createServerServices(path, clock)
+  return composeServerRuntime(path, createServerServices(path, clock), clock)
+}
+
+/** Wire an initialized set of services; ownership of its connection transfers to the runtime. */
+export function composeServerRuntime(path: string, services: ServerServices, now: () => string) {
+  const clock = () => now()
   const {
     db,
     projects,

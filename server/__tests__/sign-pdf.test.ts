@@ -1,3 +1,4 @@
+import { openTestApplication, type TestApplication } from './test-application'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,7 +14,7 @@ import {
   type PdfSignExtraction,
 } from '../sign-pdf'
 import { applyPdfSigns, pdfSignImage, previewPdfSigns } from '../sign-pdf-import'
-import { RegistryStore } from '../store'
+
 import { buildPdf, fictionalSignStandard as standard } from './pdf-fixture'
 
 function pixel(png: Buffer, x: number, y: number): number[] {
@@ -23,10 +24,10 @@ function pixel(png: Buffer, x: number, y: number): number[] {
 }
 
 const directories: string[] = []
-const stores: RegistryStore[] = []
+const stores: TestApplication[] = []
 afterEach(() => {
   // На Windows открытый файл SQLite не даёт удалить временную папку.
-  for (const store of stores.splice(0)) store.close()
+  for (const store of stores.splice(0)) store.runtime.close()
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 
@@ -174,7 +175,7 @@ describe('sign catalog from a library document', () => {
   async function library(kind: 'signs' | 'rules' = 'signs') {
     const directory = mkdtempSync(join(tmpdir(), 'tod-sign-pdf-'))
     directories.push(directory)
-    const store = new RegistryStore(join(directory, 'registry.sqlite'))
+    const store = openTestApplication(join(directory, 'registry.sqlite'))
     stores.push(store)
     const body = {
       file: { name: 'uchebny-standart.pdf', data: standard().toString('base64') },
@@ -190,9 +191,9 @@ describe('sign catalog from a library document', () => {
       },
     }
     const now = new Date('2026-09-29T12:00:00')
-    const preview = previewDocumentUpload(store, body, now)
+    const preview = previewDocumentUpload(store.runtime.http.documents.importCommands, body, now)
     const { document } = await applyDocumentUpload(
-      store,
+      store.runtime.http.documents.importCommands,
       { ...body, expectedFingerprint: preview.fingerprint },
       now,
     )
@@ -201,28 +202,44 @@ describe('sign catalog from a library document', () => {
 
   it('refuses to write while an image has no number and is not excluded', async () => {
     const { store, document } = await library()
-    const preview = await previewPdfSigns(store, document.id, {})
+    const preview = await previewPdfSigns(
+      store.runtime.http.documents.signImportCommands,
+      document.id,
+      {},
+    )
     expect(preview.images.find((image) => image.key === '2-5')?.reason).toBe('no-label')
     await expect(
-      applyPdfSigns(store, document.id, {
+      applyPdfSigns(store.runtime.http.documents.signImportCommands, document.id, {
         overrides: {},
         expectedFingerprint: preview.fingerprint,
       }),
     ).rejects.toThrow('2-5 не указан номер')
-    expect(store.latestSignCatalog()).toBeNull()
+    expect(store.signCatalog.latest()).toBeNull()
     const excluded = { '2-5': null }
-    const plan = await previewPdfSigns(store, document.id, { overrides: excluded })
-    const result = await applyPdfSigns(store, document.id, {
-      overrides: excluded,
-      expectedFingerprint: plan.fingerprint,
-    })
+    const plan = await previewPdfSigns(
+      store.runtime.http.documents.signImportCommands,
+      document.id,
+      { overrides: excluded },
+    )
+    const result = await applyPdfSigns(
+      store.runtime.http.documents.signImportCommands,
+      document.id,
+      {
+        overrides: excluded,
+        expectedFingerprint: plan.fingerprint,
+      },
+    )
     expect(result.signCount).toBe(9)
   })
 
   it('previews and writes the catalog with the document as its source', async () => {
     const { store, document } = await library()
     const overrides = { '2-5': '1.33' }
-    const preview = await previewPdfSigns(store, document.id, { overrides })
+    const preview = await previewPdfSigns(
+      store.runtime.http.documents.signImportCommands,
+      document.id,
+      { overrides },
+    )
     expect(preview.signCount).toBe(10)
     expect(preview.addedCodes).toContain('1.34.1_v2')
     expect(preview.yellowCodes).toEqual(['1.8', '1.15', '1.16'])
@@ -238,33 +255,52 @@ describe('sign catalog from a library document', () => {
       documentId: document.id,
     })
     await expect(
-      applyPdfSigns(store, document.id, {
+      applyPdfSigns(store.runtime.http.documents.signImportCommands, document.id, {
         overrides: {},
         expectedFingerprint: preview.fingerprint,
       }),
     ).rejects.toThrow()
-    const result = await applyPdfSigns(store, document.id, {
-      overrides,
-      expectedFingerprint: preview.fingerprint,
-    })
+    const result = await applyPdfSigns(
+      store.runtime.http.documents.signImportCommands,
+      document.id,
+      {
+        overrides,
+        expectedFingerprint: preview.fingerprint,
+      },
+    )
     expect(result.backup).toMatch(/\.sqlite$/)
     expect(result.catalog).toMatchObject({ documentId: document.id, signCount: 10 })
-    expect(store.listSigns().map((sign) => sign.code)).toContain('1.16_ж')
-    const again = await previewPdfSigns(store, document.id, { overrides })
+    expect(store.signCatalog.list().map((sign) => sign.code)).toContain('1.16_ж')
+    const again = await previewPdfSigns(
+      store.runtime.http.documents.signImportCommands,
+      document.id,
+      { overrides },
+    )
     expect(again).toMatchObject({ added: 0, updated: 0, retired: 0, unchanged: 10 })
-    const png = await pdfSignImage(store, document.id, '2-1', true)
+    const png = await pdfSignImage(
+      store.runtime.http.documents.signImportCommands,
+      document.id,
+      '2-1',
+      true,
+    )
     expect(pixel(png, 30, 40)).toEqual([254, 220, 0, 255])
   })
 
   it('accepts only sign documents and known images', async () => {
     const { store, document } = await library('rules')
-    await expect(previewPdfSigns(store, document.id, {})).rejects.toThrow('Изображения знаков')
+    await expect(
+      previewPdfSigns(store.runtime.http.documents.signImportCommands, document.id, {}),
+    ).rejects.toThrow('Изображения знаков')
     const signs = await library()
     await expect(
-      previewPdfSigns(signs.store, signs.document.id, { overrides: { '9-9': '1.1' } }),
+      previewPdfSigns(signs.store.runtime.http.documents.signImportCommands, signs.document.id, {
+        overrides: { '9-9': '1.1' },
+      }),
     ).rejects.toThrow('Нет изображений 9-9')
     await expect(
-      previewPdfSigns(signs.store, signs.document.id, { overrides: { '2-5': '1.8_ж' } }),
+      previewPdfSigns(signs.store.runtime.http.documents.signImportCommands, signs.document.id, {
+        overrides: { '2-5': '1.8_ж' },
+      }),
     ).rejects.toThrow()
   })
 })

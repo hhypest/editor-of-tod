@@ -1,19 +1,19 @@
+import { openTestApplication } from './test-application'
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { importSchemeJson } from '../../src/domain/import'
 import { RECOVERY_LEASE_MS } from '../../src/application/recovery-session'
 import { recoveryReceiptSchema } from '../../src/application/recovery-contract'
-import { createRegistryServer } from '../index'
-import { RegistryStore } from '../store'
+import { createHttpServer } from '../http/server'
 
 const scheme = importSchemeJson(readFileSync('tests/fixtures/manual-v1.json', 'utf8')).scheme
 
 describe('atomic recovery HTTP compatibility', () => {
   it('preserves ownership/validation error precedence, source isolation and the small receipt', async () => {
     let now = Date.parse('2030-01-01T00:00:00.000Z')
-    const store = new RegistryStore(':memory:', () => new Date(now).toISOString())
-    const server = createRegistryServer(store, 0)
+    const store = openTestApplication(':memory:', () => new Date(now).toISOString())
+    const server = createHttpServer(store.runtime.http, 0)
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     const address = server.address()
     if (!address || typeof address === 'string') throw new Error('Missing test address')
@@ -42,7 +42,7 @@ describe('atomic recovery HTTP compatibility', () => {
       expect(first.status).toBe(200)
       const receipt = recoveryReceiptSchema.parse(await first.json())
       expect(Object.keys(receipt).sort()).toEqual(['sourceSha256', 'updatedAt', 'version'])
-      const before = store.getRecovery(sessionId)
+      const before = store.recovery.get(sessionId)
       // The outer transfer is valid; ownership is checked before parsing its unknown Scheme.
       expect(
         (await send({ ...input, scheme: null, ownerId: other, expectedVersion: 1 })).status,
@@ -53,7 +53,7 @@ describe('atomic recovery HTTP compatibility', () => {
         (await send({ ...input, scheme: null, ownerId: other, expectedVersion: 1 })).status,
       ).toBe(400)
       expect((await send({ ...input, scheme: null })).status).toBe(400)
-      expect(store.getRecovery(sessionId)).toEqual(before)
+      expect(store.recovery.get(sessionId)).toEqual(before)
 
       const foreign = await send({
         ...input,
@@ -82,14 +82,14 @@ describe('atomic recovery HTTP compatibility', () => {
         (await send({ ...transfer, sessionId: randomUUID(), expectedVersion: 0 })).status,
       ).toBe(409)
       expect((await send({ ...transfer, scheme })).status).toBe(409)
-      expect(store.listRecoveries()).toHaveLength(2)
-      expect(store.getRecovery(sessionId)).toEqual(before)
+      expect(store.recovery.list()).toHaveLength(2)
+      expect(store.recovery.get(sessionId)).toEqual(before)
       const saved = await send(transfer)
       expect(saved.status).toBe(200)
       const second = recoveryReceiptSchema.parse(await saved.json())
       expect(second).toMatchObject({ version: 2, sourceSha256: receipt.sourceSha256 })
       expect(JSON.stringify(second).length).toBeLessThan(200)
-      expect(store.getRecovery(sessionId, { ownerId })?.scheme).toEqual(scheme)
+      expect(store.recovery.get(sessionId, { ownerId })?.scheme).toEqual(scheme)
 
       const native = await send({
         ...input,
@@ -101,11 +101,11 @@ describe('atomic recovery HTTP compatibility', () => {
         'updatedAt',
         'version',
       ])
-      expect(store.listProjects()).toEqual([])
+      expect(store.projects.list()).toEqual([])
     } finally {
       server.closeAllConnections()
       await new Promise<void>((resolve) => server.close(() => resolve()))
-      store.close()
+      store.runtime.close()
     }
   })
 })

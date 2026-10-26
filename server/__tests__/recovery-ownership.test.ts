@@ -1,3 +1,4 @@
+import { openTestApplication } from './test-application'
 import { randomUUID } from 'node:crypto'
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -6,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vitest'
 import { importSchemeJson } from '../../src/domain/import'
 import { RECOVERY_LEASE_MS } from '../../src/application/recovery-session'
-import { RegistryStore, RecoveryOwned, RevisionConflict } from '../store'
+import { RecoveryOwned, RevisionConflict } from '../storage-errors'
 
 const scheme = importSchemeJson(readFileSync('tests/fixtures/manual-v1.json', 'utf8')).scheme
 const input = () => ({
@@ -27,8 +28,8 @@ describe('recovery ownership', () => {
       const directory = mkdtempSync(join(tmpdir(), 'tod-wake-'))
       const path = join(directory, 'registry.sqlite')
       const clock = () => new Date(now).toISOString()
-      const one = new RegistryStore(path, clock)
-      const two = new RegistryStore(path, clock)
+      const one = openTestApplication(path, clock)
+      const two = openTestApplication(path, clock)
       const first = randomUUID(),
         second = randomUUID()
       const draft = input()
@@ -41,30 +42,38 @@ describe('recovery ownership', () => {
         },
       }
       try {
-        one.saveRecovery(draft, first)
+        one.recovery.save({ input: draft, ownerId: first })
         now += RECOVERY_LEASE_MS + 60_000
-        if (order !== 'claim-first') one.heartbeatRecovery(draft.sessionId, first)
+        if (order !== 'claim-first')
+          one.recovery.renew({ sessionId: draft.sessionId, ownerId: first })
         if (order === 'renew-first') {
-          expect(() => two.claimRecovery(draft.sessionId, second, 1)).toThrow(RecoveryOwned)
-          expect(one.saveRecovery(changed, first).version).toBe(2)
-          expect(two.getRecovery(draft.sessionId)?.scheme).toEqual(changed.scheme)
+          expect(() =>
+            two.recovery.claim({ sessionId: draft.sessionId, ownerId: second, expectedVersion: 1 }),
+          ).toThrow(RecoveryOwned)
+          expect(one.recovery.save({ input: changed, ownerId: first }).version).toBe(2)
+          expect(two.recovery.get(draft.sessionId)?.scheme).toEqual(changed.scheme)
         } else {
           // Another suspension can expire the renewal before the following PUT reaches SQLite.
           if (order === 'claim-before-save') now += RECOVERY_LEASE_MS + 1
-          expect(two.claimRecovery(draft.sessionId, second, 1).version).toBe(2)
-          const claimed = two.getRecovery(draft.sessionId)
-          expect(() => one.heartbeatRecovery(draft.sessionId, first)).toThrow(RecoveryOwned)
-          expect(() => one.saveRecovery(changed, first)).toThrow(RecoveryOwned)
-          one.releaseRecovery(draft.sessionId, first)
-          expect(one.getRecovery(draft.sessionId)).toEqual(claimed)
+          expect(
+            two.recovery.claim({ sessionId: draft.sessionId, ownerId: second, expectedVersion: 1 })
+              .version,
+          ).toBe(2)
+          const claimed = two.recovery.get(draft.sessionId)
+          expect(() => one.recovery.renew({ sessionId: draft.sessionId, ownerId: first })).toThrow(
+            RecoveryOwned,
+          )
+          expect(() => one.recovery.save({ input: changed, ownerId: first })).toThrow(RecoveryOwned)
+          one.recovery.release({ sessionId: draft.sessionId, ownerId: first })
+          expect(one.recovery.get(draft.sessionId)).toEqual(claimed)
           // Even after the new owner releases, the stale window must not reclaim by saving.
-          two.releaseRecovery(draft.sessionId, second)
-          expect(() => one.saveRecovery(changed, first)).toThrow(RecoveryOwned)
-          expect(one.getRecovery(draft.sessionId)).toEqual(claimed)
+          two.recovery.release({ sessionId: draft.sessionId, ownerId: second })
+          expect(() => one.recovery.save({ input: changed, ownerId: first })).toThrow(RecoveryOwned)
+          expect(one.recovery.get(draft.sessionId)).toEqual(claimed)
         }
       } finally {
-        one.close()
-        two.close()
+        one.runtime.close()
+        two.runtime.close()
         rmSync(directory, { recursive: true, force: true })
       }
     },
@@ -72,65 +81,86 @@ describe('recovery ownership', () => {
 
   it('protects live copies, renews without changing their content and fences the old window after takeover', () => {
     let now = Date.parse('2026-10-02T12:00:00Z')
-    const store = new RegistryStore(':memory:', () => new Date(now).toISOString())
+    const store = openTestApplication(':memory:', () => new Date(now).toISOString())
     const first = randomUUID(),
       second = randomUUID()
     const draft = input()
     try {
-      const saved = store.saveRecovery(draft, first)
-      expect(store.listRecoveries()).toMatchObject([{ active: true }])
-      expect(() => store.assertRecoveryAvailable(draft.sessionId)).toThrow(RecoveryOwned)
-      expect(() => store.claimRecovery(draft.sessionId, second, 1)).toThrow(RecoveryOwned)
-      expect(() => store.deleteRecovery(draft.sessionId, 1, second)).toThrow(RecoveryOwned)
-      expect(() => store.saveRecovery({ ...draft, expectedVersion: 1 }, second)).toThrow(
-        RecoveryOwned,
-      )
+      const saved = store.recovery.save({ input: draft, ownerId: first })
+      expect(store.recovery.list()).toMatchObject([{ active: true }])
+      expect(() => store.recovery.assertAvailable(draft.sessionId)).toThrow(RecoveryOwned)
+      expect(() =>
+        store.recovery.claim({ sessionId: draft.sessionId, ownerId: second, expectedVersion: 1 }),
+      ).toThrow(RecoveryOwned)
+      expect(() =>
+        store.recovery.delete({ sessionId: draft.sessionId, expectedVersion: 1, ownerId: second }),
+      ).toThrow(RecoveryOwned)
+      expect(() =>
+        store.recovery.save({ input: { ...draft, expectedVersion: 1 }, ownerId: second }),
+      ).toThrow(RecoveryOwned)
       now += RECOVERY_LEASE_MS - 1
-      store.heartbeatRecovery(draft.sessionId, first)
+      store.recovery.renew({ sessionId: draft.sessionId, ownerId: first })
       now += 2
-      expect(store.listRecoveries()[0]?.active).toBe(true)
-      expect(store.getRecovery(draft.sessionId)).toEqual(saved)
+      expect(store.recovery.list()[0]?.active).toBe(true)
+      expect(store.recovery.get(draft.sessionId)).toEqual(saved)
       now += RECOVERY_LEASE_MS
-      expect(store.listRecoveries()[0]?.active).toBe(false)
-      expect(() => store.claimRecovery(draft.sessionId, second, 2)).toThrow(RevisionConflict)
-      const claimed = store.claimRecovery(draft.sessionId, second, 1)
+      expect(store.recovery.list()[0]?.active).toBe(false)
+      expect(() =>
+        store.recovery.claim({ sessionId: draft.sessionId, ownerId: second, expectedVersion: 2 }),
+      ).toThrow(RevisionConflict)
+      const claimed = store.recovery.claim({
+        sessionId: draft.sessionId,
+        ownerId: second,
+        expectedVersion: 1,
+      })
       expect(claimed.version).toBe(2)
       expect(claimed.scheme).toEqual(scheme)
-      expect(() => store.heartbeatRecovery(draft.sessionId, first)).toThrow(RecoveryOwned)
-      store.releaseRecovery(draft.sessionId, first)
-      expect(store.listRecoveries()[0]?.active).toBe(true)
-      expect(() => store.saveRecovery({ ...draft, expectedVersion: 1 }, first)).toThrow(
+      expect(() => store.recovery.renew({ sessionId: draft.sessionId, ownerId: first })).toThrow(
         RecoveryOwned,
       )
-      store.releaseRecovery(draft.sessionId, second)
-      expect(() => store.deleteRecovery(draft.sessionId, 1, first)).toThrow(RevisionConflict)
-      store.deleteRecovery(draft.sessionId, 2, first)
-      expect(store.listRecoveries()).toEqual([])
+      store.recovery.release({ sessionId: draft.sessionId, ownerId: first })
+      expect(store.recovery.list()[0]?.active).toBe(true)
+      expect(() =>
+        store.recovery.save({ input: { ...draft, expectedVersion: 1 }, ownerId: first }),
+      ).toThrow(RecoveryOwned)
+      store.recovery.release({ sessionId: draft.sessionId, ownerId: second })
+      expect(() =>
+        store.recovery.delete({ sessionId: draft.sessionId, expectedVersion: 1, ownerId: first }),
+      ).toThrow(RevisionConflict)
+      store.recovery.delete({ sessionId: draft.sessionId, expectedVersion: 2, ownerId: first })
+      expect(store.recovery.list()).toEqual([])
     } finally {
-      store.close()
+      store.runtime.close()
     }
   })
 
   it('serializes competing claims from two SQLite connections and rejects stale writes after release', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-owner-'))
     const path = join(directory, 'registry.sqlite')
-    const one = new RegistryStore(path),
-      two = new RegistryStore(path)
+    const one = openTestApplication(path),
+      two = openTestApplication(path)
     const first = randomUUID(),
       second = randomUUID(),
       third = randomUUID()
     const draft = input()
     try {
-      one.saveRecovery(draft, first)
-      one.releaseRecovery(draft.sessionId, first)
-      expect(two.claimRecovery(draft.sessionId, second, 1).version).toBe(2)
-      expect(() => one.claimRecovery(draft.sessionId, third, 1)).toThrow(RecoveryOwned)
-      expect(() => one.saveRecovery({ ...draft, expectedVersion: 1 }, first)).toThrow(RecoveryOwned)
-      two.heartbeatRecovery(draft.sessionId, second)
-      expect(one.getRecovery(draft.sessionId)?.version).toBe(2)
+      one.recovery.save({ input: draft, ownerId: first })
+      one.recovery.release({ sessionId: draft.sessionId, ownerId: first })
+      expect(
+        two.recovery.claim({ sessionId: draft.sessionId, ownerId: second, expectedVersion: 1 })
+          .version,
+      ).toBe(2)
+      expect(() =>
+        one.recovery.claim({ sessionId: draft.sessionId, ownerId: third, expectedVersion: 1 }),
+      ).toThrow(RecoveryOwned)
+      expect(() =>
+        one.recovery.save({ input: { ...draft, expectedVersion: 1 }, ownerId: first }),
+      ).toThrow(RecoveryOwned)
+      two.recovery.renew({ sessionId: draft.sessionId, ownerId: second })
+      expect(one.recovery.get(draft.sessionId)?.version).toBe(2)
     } finally {
-      one.close()
-      two.close()
+      one.runtime.close()
+      two.runtime.close()
       rmSync(directory, { recursive: true, force: true })
     }
   })
@@ -138,23 +168,29 @@ describe('recovery ownership', () => {
   it('migrates v12 copies without losing pending input or creating saved revisions', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-owner-migration-'))
     const path = join(directory, 'registry.sqlite')
-    const old = new RegistryStore(path)
+    const old = openTestApplication(path)
     const draft = input()
-    old.saveRecovery(draft, randomUUID())
-    old.close()
+    old.recovery.save({ input: draft, ownerId: randomUUID() })
+    old.runtime.close()
     const raw = new DatabaseSync(path)
     raw.exec(
       'ALTER TABLE project_recovery DROP COLUMN owner_id; ALTER TABLE project_recovery DROP COLUMN owner_until; PRAGMA user_version = 12;',
     )
     raw.close()
-    const migrated = new RegistryStore(path)
+    const migrated = openTestApplication(path)
     try {
-      expect(migrated.schemaVersion()).toBe(13)
-      expect(migrated.listRecoveries()).toMatchObject([{ active: false, version: 1 }])
-      expect(migrated.claimRecovery(draft.sessionId, randomUUID(), 1).scheme).toEqual(scheme)
-      expect(migrated.listProjects()).toEqual([])
+      expect(migrated.runtime.schemaVersion()).toBe(13)
+      expect(migrated.recovery.list()).toMatchObject([{ active: false, version: 1 }])
+      expect(
+        migrated.recovery.claim({
+          sessionId: draft.sessionId,
+          ownerId: randomUUID(),
+          expectedVersion: 1,
+        }).scheme,
+      ).toEqual(scheme)
+      expect(migrated.projects.list()).toEqual([])
     } finally {
-      migrated.close()
+      migrated.runtime.close()
       rmSync(directory, { recursive: true, force: true })
     }
   })

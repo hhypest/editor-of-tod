@@ -1,24 +1,25 @@
+import { openTestApplication, type TestApplication } from './test-application'
 import type { Server } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createRegistryServer } from '../index'
-import { RegistryStore } from '../store'
+import { createHttpServer } from '../http/server'
+
 import { listenHttp } from './http-request-fixture'
 import { readCard, readEntry } from './pu66-read-fixture'
 import type { Pu66LifecycleWrite } from '../../src/domain/pu66-lifecycle'
 
 const servers: Server[] = [],
-  stores: RegistryStore[] = []
+  stores: TestApplication[] = []
 const headers = { 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:5173' }
 afterEach(async () => {
   vi.restoreAllMocks()
   for (const server of servers.splice(0))
     await new Promise<void>((resolve) => server.close(() => resolve()))
-  for (const store of stores.splice(0)) store.close()
+  for (const store of stores.splice(0)) store.runtime.close()
 })
 async function setup() {
-  const store = new RegistryStore(':memory:', () => '2030-02-01T12:00:00.000Z')
+  const store = openTestApplication(':memory:', () => '2030-02-01T12:00:00.000Z')
   stores.push(store)
-  const server = createRegistryServer(store, 0)
+  const server = createHttpServer(store.runtime.http, 0)
   servers.push(server)
   const http = await listenHttp(server)
   return {
@@ -54,7 +55,7 @@ describe('PU-66 HTTP compatibility before route extraction', () => {
       expect(response.status).toBe(404)
       expect(JSON.parse(response.body.toString())).toEqual({ error: 'Карточка ПУ-66 не найдена.' })
     }
-    const norms = vi.spyOn(store, 'getPu66Norms')
+    const norms = vi.spyOn(store.pu66, 'getNorms')
     expect((await send('/api/pu66/one/two/norms')).status).toBe(404)
     expect(norms).toHaveBeenLastCalledWith('one/two')
     expect((await send('/api/pu66/%252F/norms')).status).toBe(404)
@@ -76,7 +77,7 @@ describe('PU-66 HTTP compatibility before route extraction', () => {
 
   it('validates verification body before storage and blocks scheme lookup after exclusion', async () => {
     const { store, send, post } = await setup()
-    const record = vi.spyOn(store, 'recordPu66Verification')
+    const record = vi.spyOn(store.pu66Verifications, 'record')
     expect((await post('/api/pu66/missing/verification', {})).status).toBe(400)
     expect(record).not.toHaveBeenCalled()
     const input = {
@@ -86,12 +87,12 @@ describe('PU-66 HTTP compatibility before route extraction', () => {
     }
     expect((await post('/api/pu66/missing/verification', input)).status).toBe(404)
     const entry = readEntry(readCard())
-    store.importPu66([entry])
+    store.pu66Imports.record([entry])
     const path = `/api/pu66/${encodeURIComponent(entry.card.key)}`
     expect((await post(path + '/verification', input)).status).toBe(201)
     const command = exclusion(entry.card.key)
-    store.recordPu66Lifecycle(command, store.planPu66Lifecycle(command).fingerprint)
-    const fields = vi.spyOn(store, 'getPu66Scheme')
+    store.pu66LifecycleService.record(command, store.pu66LifecycleService.plan(command).fingerprint)
+    const fields = vi.spyOn(store.pu66, 'getScheme')
     const response = await send(path + '/scheme')
     expect(response.status).toBe(400)
     expect(JSON.parse(response.body.toString())).toEqual({
@@ -104,9 +105,9 @@ describe('PU-66 HTTP compatibility before route extraction', () => {
   it('lists lifecycle with excluded cards/status and rejects a stale plan before backup', async () => {
     const { store, send, post } = await setup()
     const entry = readEntry(readCard())
-    store.importPu66([entry])
-    const list = vi.spyOn(store, 'listPu66'),
-      status = vi.spyOn(store, 'getPu66Status')
+    store.pu66Imports.record([entry])
+    const list = vi.spyOn(store.pu66, 'list'),
+      status = vi.spyOn(store.pu66Lifecycle, 'getStatus')
     const response = await send('/api/pu66/lifecycle')
     expect(response.status).toBe(200)
     expect(list).toHaveBeenLastCalledWith(true)
@@ -115,13 +116,13 @@ describe('PU-66 HTTP compatibility before route extraction', () => {
       referenceId: entry.card.key,
       status: { excluded: false },
     })
-    const plan = vi.spyOn(store, 'planPu66Lifecycle')
+    const plan = vi.spyOn(store.pu66LifecycleService, 'plan')
     expect((await post('/api/pu66/lifecycle/preview', {})).status).toBe(400)
     expect(plan).not.toHaveBeenCalled()
     const input = exclusion(entry.card.key)
     expect((await post('/api/pu66/lifecycle/preview', input)).status).toBe(200)
-    const backup = vi.spyOn(store, 'createBackup'),
-      record = vi.spyOn(store, 'recordPu66Lifecycle')
+    const backup = vi.spyOn(store.runtime.http.pu66.lifecycleCommands, 'createBackup'),
+      record = vi.spyOn(store.pu66LifecycleService, 'record')
     expect(
       (await post('/api/pu66/lifecycle/apply', { input, expectedFingerprint: '0'.repeat(64) }))
         .status,

@@ -1,26 +1,26 @@
+import { openTestApplication, type TestApplication } from './test-application'
 import type { Server } from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
 import { zipSync } from 'fflate'
 import { PNG } from 'pngjs'
-import { createRegistryServer } from '../index'
+import { createHttpServer } from '../http/server'
 import { parseSignArchive } from '../signs'
-import { RegistryStore } from '../store'
 
 const servers: Server[] = []
-const stores: RegistryStore[] = []
+const stores: TestApplication[] = []
 afterEach(async () => {
   for (const server of servers.splice(0))
     await new Promise<void>((resolve) => server.close(() => resolve()))
-  for (const store of stores.splice(0)) store.close()
+  for (const store of stores.splice(0)) store.runtime.close()
 })
 
 async function catalog(value: number) {
   const image = new PNG({ width: 8, height: 8 })
   image.data.fill(value)
   const png = PNG.sync.write(image)
-  const store = new RegistryStore(':memory:')
+  const store = openTestApplication(':memory:')
   stores.push(store)
-  store.importSigns(
+  store.signCatalog.import(
     parseSignArchive(
       Buffer.from(
         zipSync({
@@ -30,7 +30,7 @@ async function catalog(value: number) {
       ),
     ),
   )
-  const server = createRegistryServer(store, 0)
+  const server = createHttpServer(store.runtime.http, 0)
   servers.push(server)
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const address = server.address()
@@ -50,7 +50,7 @@ describe('sign images are revalidated by content, including pinned revisions', (
           zipSync({ [`PNG с номером/${code}.png`]: png, [`PNG без номера/${code}.png`]: png }),
         ),
       )
-    original.store.importSigns(entries('1.25'))
+    original.store.signCatalog.import(entries('1.25'))
     const url = original.url.replace('/image', '/metadata')
     expect(await (await fetch(url + '?rev=1')).json()).toEqual({
       code: '1.25',
@@ -64,7 +64,7 @@ describe('sign images are revalidated by content, including pinned revisions', (
       width: 24,
       height: 12,
     })
-    original.store.importSigns(entries('1.20.2'))
+    original.store.signCatalog.import(entries('1.20.2'))
     expect(await (await fetch(url + '?rev=1')).json()).toMatchObject({ width: 8, height: 8 })
     for (const suffix of ['', '?rev=0', '?rev=-1', '?rev=1.5', '?rev=9007199254740992'])
       expect((await fetch(url + suffix)).status).toBe(400)

@@ -1,7 +1,7 @@
 import { lstat, readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 
-// Only files created by RegistryStore.createBackup are eligible. Other files are left alone.
+// Only files created by createManualBackup are eligible. Other files are left alone.
 const backupName =
   /^registry-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z-[a-f0-9]{8}\.sqlite$/
 

@@ -1,30 +1,31 @@
+import { openTestApplication, type TestApplication } from './test-application'
 import { randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Server } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createRegistryServer } from '../index'
+import { createHttpServer } from '../http/server'
 import { DiagnosticsLog } from '../diagnostics'
-import { RegistryStore } from '../store'
+
 import { listenHttp } from './http-request-fixture'
 
 const servers: Server[] = [],
-  stores: RegistryStore[] = [],
+  stores: TestApplication[] = [],
   directories: string[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
   for (const server of servers.splice(0))
     await new Promise<void>((resolve) => server.close(() => resolve()))
-  for (const store of stores.splice(0)) store.close()
+  for (const store of stores.splice(0)) store.runtime.close()
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 async function setup(path = ':memory:') {
-  const store = new RegistryStore(path)
+  const store = openTestApplication(path)
   stores.push(store)
   const diagnostics = new DiagnosticsLog(null, { version: 'test', mode: 'test' })
   const instanceId = randomUUID()
-  const server = createRegistryServer(store, 0, undefined, diagnostics, instanceId)
+  const server = createHttpServer(store.runtime.http, 0, undefined, diagnostics, instanceId)
   servers.push(server)
   const http = await listenHttp(server)
   return {
@@ -73,7 +74,7 @@ describe('system/diagnostics/legacy compatibility contracts', () => {
 
   it('keeps diagnostic report exclusion, isolated query failures, events and clear finish statistics', async () => {
     const { store, diagnostics, send, write } = await setup()
-    vi.spyOn(store, 'listProjects').mockImplementation(() => {
+    vi.spyOn(store.projects, 'list').mockImplementation(() => {
       throw new Error('PRIVATE')
     })
     const report = async () => JSON.parse((await send('/api/diagnostics')).body.toString())
@@ -96,7 +97,7 @@ describe('system/diagnostics/legacy compatibility contracts', () => {
       ).status,
     ).toBe(200)
     expect(JSON.stringify(await report())).not.toContain('PRIVATE')
-    const before = diagnostics.report(store)
+    const before = diagnostics.report(store.runtime.http.diagnostics)
     expect(before.eventsTotal).toBeGreaterThan(0)
     expect((await write('/api/diagnostics/clear', {})).status).toBe(200)
     expect(await report()).toMatchObject({
@@ -130,7 +131,7 @@ describe('system/diagnostics/legacy compatibility contracts', () => {
       (await write('/api/crossings', { ...crossing, expectedRevision: 1 }, 'PUT')).status,
     ).toBe(409)
     expect((await write('/api/normative', { expectedRevision: 0 }, 'PUT')).status).toBe(400)
-    const entry = store.listNormative()[0]!
+    const entry = store.legacy.listNormative()[0]!
     const { revision, updatedAt: _updatedAt, ...draft } = entry
     void _updatedAt
     expect(
@@ -139,7 +140,7 @@ describe('system/diagnostics/legacy compatibility contracts', () => {
     expect(
       (await write('/api/normative', { ...draft, expectedRevision: revision }, 'PUT')).status,
     ).toBe(409)
-    vi.spyOn(store, 'createBackup').mockResolvedValue('fictional-backup.sqlite')
+    vi.spyOn(store.runtime.http, 'createBackup').mockResolvedValue('fictional-backup.sqlite')
     const backup = await write('/api/backup', {})
     expect(backup.status).toBe(201)
     expect(JSON.parse(backup.body.toString())).toEqual({ filename: 'fictional-backup.sqlite' })

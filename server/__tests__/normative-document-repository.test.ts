@@ -8,7 +8,7 @@ import { migrateDatabase } from '../database/migration-runner'
 import { NormativeDocumentRepository } from '../documents/normative-document-repository'
 import { NormativeDocumentService } from '../documents/normative-document-service'
 import { DocumentInUse } from '../documents/errors'
-import { DocumentInUse as FacadeError } from '../store'
+
 import { applyDocumentUpload, previewDocumentUpload } from '../document-web-import'
 import { RevisionConflict } from '../storage-errors'
 import { documentMeta, documentFile, seedDocumentBatch } from './normative-document-fixture'
@@ -128,7 +128,7 @@ describe('normative documents without RegistryStore', () => {
     expect(() =>
       referenced.update(record.id, documentMeta({ kind: 'rules', amendsId: record.id })),
     ).toThrow('вид документа изменить нельзя')
-    expect(FacadeError).toBe(DocumentInUse)
+
     expect(new DocumentInUse('test').name).toBe('DocumentInUse')
   })
 

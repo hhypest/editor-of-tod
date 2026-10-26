@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { schemeSchema } from '../../src/domain/model'
-import { SCHEMA_VERSION } from '../store'
+import { SCHEMA_VERSION } from '../database/schema-version'
 
 const read = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8')
 const project = schemeSchema.shape.schemaVersion.value

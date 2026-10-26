@@ -1,5 +1,6 @@
+import { openTestApplication } from './test-application'
 import type { Server } from 'node:http'
-import { createRegistryServer } from '../index'
+import { createHttpServer } from '../http/server'
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,13 +10,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DocumentMeta } from '../../src/domain/normative-documents'
 import { applyDocumentUpload, previewDocumentUpload } from '../document-web-import'
 import { applySignUpload, previewSignUpload } from '../sign-web-import'
-import { DocumentInUse, RegistryStore, RevisionConflict } from '../store'
+import { DocumentInUse } from '../documents/errors'
+import { RevisionConflict } from '../storage-errors'
 
 const directories: string[] = []
 function store() {
   const directory = mkdtempSync(join(tmpdir(), 'tod-documents-'))
   directories.push(directory)
-  return { directory, store: new RegistryStore(join(directory, 'registry.sqlite')) }
+  return { directory, store: openTestApplication(join(directory, 'registry.sqlite')) }
 }
 afterEach(() => {
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
@@ -72,56 +74,82 @@ describe('normative document library', () => {
   ])('rejects stale PDF previews after library metadata changes: %j', async (change) => {
     const { store: registry } = store()
     try {
-      registry.addDocument(meta({ edition: '2020' }), 'parent.pdf', pdf('parent'), '1'.repeat(64))
-      const existing = registry.addDocument(
+      registry.documentService.add(
+        meta({ edition: '2020' }),
+        'parent.pdf',
+        pdf('parent'),
+        '1'.repeat(64),
+      )
+      const existing = registry.documentService.add(
         meta({ edition: '2022' }),
         'existing.pdf',
         pdf('existing'),
         '2'.repeat(64),
       )
       const body = upload('candidate')
-      const preview = previewDocumentUpload(registry, body, today)
-      registry.updateDocument(existing.id, meta({ edition: '2022', ...change }))
+      const preview = previewDocumentUpload(
+        registry.runtime.http.documents.importCommands,
+        body,
+        today,
+      )
+      registry.documentService.update(existing.id, meta({ edition: '2022', ...change }))
       await expect(
-        applyDocumentUpload(registry, { ...body, expectedFingerprint: preview.fingerprint }, today),
+        applyDocumentUpload(
+          registry.runtime.http.documents.importCommands,
+          { ...body, expectedFingerprint: preview.fingerprint },
+          today,
+        ),
       ).rejects.toBeInstanceOf(RevisionConflict)
-      expect(registry.listDocuments()).toHaveLength(2)
-      expect(registry.findDocumentBySha(preview.sha256)).toBeNull()
+      expect(registry.documents.list()).toHaveLength(2)
+      expect(registry.documents.findBySha(preview.sha256)).toBeNull()
     } finally {
-      registry.close()
+      registry.runtime.close()
     }
   })
 
   it('rechecks PDF metadata during backup and rejects a preview from another date', async () => {
     const { store: registry } = store()
     try {
-      const existing = registry.addDocument(
+      const existing = registry.documentService.add(
         meta({ edition: '2022' }),
         'existing.pdf',
         pdf('existing'),
         '2'.repeat(64),
       )
       const body = upload('candidate')
-      const preview = previewDocumentUpload(registry, body, today)
+      const preview = previewDocumentUpload(
+        registry.runtime.http.documents.importCommands,
+        body,
+        today,
+      )
       await expect(
         applyDocumentUpload(
-          registry,
+          registry.runtime.http.documents.importCommands,
           { ...body, expectedFingerprint: preview.fingerprint },
           new Date('2026-09-30T12:00:00'),
         ),
       ).rejects.toBeInstanceOf(RevisionConflict)
-      const backup = vi.spyOn(registry, 'createBackup').mockImplementation(async () => {
-        registry.updateDocument(existing.id, meta({ edition: '2022', effectiveFrom: '2027-01-01' }))
-        return 'synthetic-backup.sqlite'
-      })
+      const backup = vi
+        .spyOn(registry.runtime.http.documents.importCommands, 'createBackup')
+        .mockImplementation(async () => {
+          registry.documentService.update(
+            existing.id,
+            meta({ edition: '2022', effectiveFrom: '2027-01-01' }),
+          )
+          return 'synthetic-backup.sqlite'
+        })
       await expect(
-        applyDocumentUpload(registry, { ...body, expectedFingerprint: preview.fingerprint }, today),
+        applyDocumentUpload(
+          registry.runtime.http.documents.importCommands,
+          { ...body, expectedFingerprint: preview.fingerprint },
+          today,
+        ),
       ).rejects.toBeInstanceOf(RevisionConflict)
       expect(backup).toHaveBeenCalledOnce()
-      expect(registry.listDocuments()).toHaveLength(1)
-      expect(registry.findDocumentBySha(preview.sha256)).toBeNull()
+      expect(registry.documents.list()).toHaveLength(1)
+      expect(registry.documents.findBySha(preview.sha256)).toBeNull()
     } finally {
-      registry.close()
+      registry.runtime.close()
     }
   })
 
@@ -129,13 +157,13 @@ describe('normative document library', () => {
     const { store: registry } = store()
     let server: Server | undefined
     try {
-      const existing = registry.addDocument(
+      const existing = registry.documentService.add(
         meta({ edition: '2022' }),
         'existing.pdf',
         pdf('existing'),
         '2'.repeat(64),
       )
-      server = createRegistryServer(registry, 0)
+      server = createHttpServer(registry.runtime.http, 0)
       await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve))
       const address = server.address()
       if (!address || typeof address === 'string') throw new Error('Missing server address')
@@ -150,7 +178,7 @@ describe('normative document library', () => {
       const response = await post('/api/documents/preview', body)
       expect(response.status).toBe(200)
       const preview = (await response.json()) as { fingerprint: string; sha256: string }
-      registry.updateDocument(
+      registry.documentService.update(
         existing.id,
         meta({ edition: '2022', kind: 'rules', effectiveFrom: '2027-01-01' }),
       )
@@ -162,13 +190,13 @@ describe('normative document library', () => {
           })
         ).status,
       ).toBe(409)
-      expect(registry.findDocumentBySha(preview.sha256)).toBeNull()
-      expect(registry.listDocuments()).toHaveLength(1)
+      expect(registry.documents.findBySha(preview.sha256)).toBeNull()
+      expect(registry.documents.list()).toHaveLength(1)
       expect((await post('/api/signs/import/preview', signs(255, existing.id))).status).toBe(400)
-      expect(registry.latestSignCatalog()).toBeNull()
+      expect(registry.signCatalog.latest()).toBeNull()
     } finally {
       if (server?.listening) await new Promise<void>((resolve) => server!.close(() => resolve()))
-      registry.close()
+      registry.runtime.close()
     }
   })
 
@@ -176,7 +204,7 @@ describe('normative document library', () => {
     const { directory, store: registry } = store()
     try {
       const first = previewDocumentUpload(
-        registry,
+        registry.runtime.http.documents.importCommands,
         upload('old', { edition: '2004', effectiveFrom: '2006-01-01' }),
         today,
       )
@@ -185,7 +213,7 @@ describe('normative document library', () => {
         effect: { status: { kind: 'current' }, replaces: [] },
       })
       const old = await applyDocumentUpload(
-        registry,
+        registry.runtime.http.documents.importCommands,
         {
           ...upload('old', { edition: '2004', effectiveFrom: '2006-01-01' }),
           expectedFingerprint: first.fingerprint,
@@ -194,109 +222,133 @@ describe('normative document library', () => {
       )
       expect(old.backup).toMatch(/\.sqlite$/)
       expect(readdirSync(join(directory, 'backups'))).toHaveLength(1)
-      const next = previewDocumentUpload(registry, upload('new'), today)
+      const next = previewDocumentUpload(
+        registry.runtime.http.documents.importCommands,
+        upload('new'),
+        today,
+      )
       expect(next.effect).toEqual({
         status: { kind: 'current' },
         replaces: [{ id: old.document.id, code: 'ГОСТ Р 90000', edition: '2004' }],
       })
       const added = await applyDocumentUpload(
-        registry,
+        registry.runtime.http.documents.importCommands,
         { ...upload('new'), expectedFingerprint: next.fingerprint },
         today,
       )
-      expect(registry.listDocuments().map((document) => document.edition)).toEqual(['2004', '2024'])
-      expect(Buffer.from(registry.getDocumentPdf(added.document.id)!.pdf).toString()).toContain(
+      expect(registry.documents.list().map((document) => document.edition)).toEqual([
+        '2004',
+        '2024',
+      ])
+      expect(Buffer.from(registry.documents.getPdf(added.document.id)!.pdf).toString()).toContain(
         'new',
       )
       // Повторный PDF не добавляется.
-      expect(previewDocumentUpload(registry, upload('new'), today).duplicate?.id).toBe(
-        added.document.id,
-      )
+      expect(
+        previewDocumentUpload(registry.runtime.http.documents.importCommands, upload('new'), today)
+          .duplicate?.id,
+      ).toBe(added.document.id)
       await expect(
         applyDocumentUpload(
-          registry,
+          registry.runtime.http.documents.importCommands,
           { ...upload('new'), expectedFingerprint: next.fingerprint },
           today,
         ),
       ).rejects.toThrow()
     } finally {
-      registry.close()
+      registry.runtime.close()
     }
   })
 
   it('attaches amendments only to a base document and protects referenced documents', async () => {
     const { store: registry } = store()
     try {
-      const base = registry.addDocument(
+      const base = registry.documentService.add(
         meta({ kind: 'rules' }),
         'base.pdf',
         pdf('base'),
         'b'.repeat(64),
       )
-      const change = registry.addDocument(
+      const change = registry.documentService.add(
         meta({ kind: 'rules', edition: 'Изменение № 1', amendsId: base.id }),
         'change.pdf',
         pdf('change'),
         'c'.repeat(64),
       )
       expect(() =>
-        registry.addDocument(meta({ amendsId: change.id }), 'x.pdf', pdf('x'), 'd'.repeat(64)),
+        registry.documentService.add(
+          meta({ amendsId: change.id }),
+          'x.pdf',
+          pdf('x'),
+          'd'.repeat(64),
+        ),
       ).toThrow(DocumentInUse)
-      expect(() => registry.deleteDocument(base.id)).toThrow('изменения')
+      expect(() => registry.deleteDocumentCommand.execute(base.id)).toThrow('изменения')
       expect(
-        registry.updateDocument(base.id, meta({ kind: 'rules', actualCheckedAt: '2026-09-29' })),
+        registry.documentService.update(
+          base.id,
+          meta({ kind: 'rules', actualCheckedAt: '2026-09-29' }),
+        ),
       ).toMatchObject({ actualCheckedAt: '2026-09-29' })
-      expect(registry.deleteDocument(change.id)).toBe(true)
-      expect(registry.deleteDocument(base.id)).toBe(true)
-      expect(registry.listDocuments()).toEqual([])
+      expect(registry.deleteDocumentCommand.execute(change.id)).toBe(true)
+      expect(registry.deleteDocumentCommand.execute(base.id)).toBe(true)
+      expect(registry.documents.list()).toEqual([])
     } finally {
-      registry.close()
+      registry.runtime.close()
     }
   })
 
   it('takes the sign catalog source from the chosen document and lists changed signs', async () => {
     const { store: registry } = store()
     try {
-      const old = registry.addDocument(
+      const old = registry.documentService.add(
         meta({ edition: '2004' }),
         'old.pdf',
         pdf('old'),
         'e'.repeat(64),
       )
-      const current = registry.addDocument(meta(), 'new.pdf', pdf('new'), 'f'.repeat(64))
+      const current = registry.documentService.add(meta(), 'new.pdf', pdf('new'), 'f'.repeat(64))
       const first = signs(200, old.id)
-      const preview = previewSignUpload(registry, first)
+      const preview = previewSignUpload(registry.runtime.http.signs.importCommands, first)
       expect(preview.source).toEqual({
         documentCode: 'ГОСТ Р 90000',
         edition: '2004',
         pdfSha256: 'e'.repeat(64),
         documentId: old.id,
       })
-      await applySignUpload(registry, { ...first, expectedFingerprint: preview.fingerprint })
-      expect(registry.latestSignCatalog()).toMatchObject({ edition: '2004', documentId: old.id })
-      expect(() => registry.deleteDocument(old.id)).toThrow('каталога знаков')
+      await applySignUpload(registry.runtime.http.signs.importCommands, {
+        ...first,
+        expectedFingerprint: preview.fingerprint,
+      })
+      expect(registry.signCatalog.latest()).toMatchObject({ edition: '2004', documentId: old.id })
+      expect(() => registry.deleteDocumentCommand.execute(old.id)).toThrow('каталога знаков')
       // Вид документа, по которому загружен каталог, не меняется; прочие реквизиты — можно.
       expect(() =>
-        registry.updateDocument(old.id, meta({ edition: '2004', kind: 'rules' })),
+        registry.documentService.update(old.id, meta({ edition: '2004', kind: 'rules' })),
       ).toThrow('вид документа изменить нельзя')
-      expect(registry.getDocument(old.id)).toMatchObject({ kind: 'signs' })
+      expect(registry.documents.get(old.id)).toMatchObject({ kind: 'signs' })
       expect(
-        registry.updateDocument(old.id, meta({ edition: '2004', note: 'Учебная пометка' })),
+        registry.documentService.update(old.id, meta({ edition: '2004', note: 'Учебная пометка' })),
       ).toMatchObject({ kind: 'signs', note: 'Учебная пометка' })
 
       // Та же картинка по новой редакции: сменился только источник.
-      expect(previewSignUpload(registry, signs(200, current.id))).toMatchObject({
+      expect(
+        previewSignUpload(registry.runtime.http.signs.importCommands, signs(200, current.id)),
+      ).toMatchObject({
         updated: 1,
         relabelled: 1,
         changedCodes: [],
         changedPreviews: [],
       })
       // Новое изображение: знак в списке изменённых с превью для сравнения.
-      const redrawn = previewSignUpload(registry, signs(90, current.id))
+      const redrawn = previewSignUpload(
+        registry.runtime.http.signs.importCommands,
+        signs(90, current.id),
+      )
       expect(redrawn).toMatchObject({ updated: 1, relabelled: 0, changedCodes: ['1.25'] })
       expect(redrawn.changedPreviews[0]?.image).toMatch(/^data:image\/png;base64,/)
     } finally {
-      registry.close()
+      registry.runtime.close()
     }
   })
 })

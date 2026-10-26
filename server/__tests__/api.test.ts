@@ -1,3 +1,4 @@
+import { openTestApplication, type TestApplication } from './test-application'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Server } from 'node:http'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
@@ -9,13 +10,12 @@ import { importSchemeJson } from '../../src/domain/import'
 import { createSchemeDetailsDraft } from '../../src/domain/edit-details'
 import { recoveryReceiptSchema } from '../../src/application/recovery-contract'
 import { projectRecordSchema, projectSummarySchema } from '../../src/domain/local-projects'
-import { createRegistryServer } from '../index'
+import { createHttpServer } from '../http/server'
 import { extractPu66Cells } from '../pu66'
 import { parseSignArchive } from '../signs'
-import { RegistryStore } from '../store'
 
 const servers: Server[] = []
-const stores: RegistryStore[] = []
+const stores: TestApplication[] = []
 const directories: string[] = []
 const fixture = readFileSync(
   new URL('../../tests/fixtures/manual-v1.json', import.meta.url),
@@ -27,15 +27,15 @@ afterEach(async () => {
       .splice(0)
       .map((server) => new Promise<void>((resolve) => server.close(() => resolve()))),
   )
-  for (const store of stores.splice(0)) store.close()
+  for (const store of stores.splice(0)) store.runtime.close()
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 
 describe('local API', () => {
   it('keeps recovery snapshots local, validates pending fields, and does not create revisions', async () => {
-    const store = new RegistryStore(':memory:')
+    const store = openTestApplication(':memory:')
     stores.push(store)
-    const server = createRegistryServer(store, 0)
+    const server = createHttpServer(store.runtime.http, 0)
     servers.push(server)
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     const address = server.address()
@@ -73,8 +73,8 @@ describe('local API', () => {
       detailsDraft: input.detailsDraft,
     })
     expect(await (await fetch(`${base}/api/recovery`)).json()).toMatchObject([{ sessionId }])
-    expect(store.listProjects()).toEqual([])
-    expect(store.listProjectRevisions(scheme.id)).toEqual([])
+    expect(store.projects.list()).toEqual([])
+    expect(store.projects.listRevisions(scheme.id)).toEqual([])
     const deleteCopy = (expectedVersion: number) =>
       fetch(url, {
         method: 'DELETE',
@@ -88,9 +88,9 @@ describe('local API', () => {
 
   it('protects live recovery reads and writes and reuses the legacy source with a small receipt', async () => {
     let now = Date.parse('2026-10-02T12:00:00Z')
-    const store = new RegistryStore(':memory:', () => new Date(now).toISOString())
+    const store = openTestApplication(':memory:', () => new Date(now).toISOString())
     stores.push(store)
-    const server = createRegistryServer(store, 0)
+    const server = createHttpServer(store.runtime.http, 0)
     servers.push(server)
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     const address = server.address()
@@ -150,14 +150,14 @@ describe('local API', () => {
       scheme,
     })
     expect((await send(`${url}/heartbeat`, { ownerId })).status).toBe(200)
-    expect(store.getRecovery(sessionId)?.version).toBe(2)
+    expect(store.recovery.get(sessionId)?.version).toBe(2)
     now += 120_000
     expect((await send(`${url}/claim`, { ownerId: other, expectedVersion: 2 })).status).toBe(200)
     expect((await send(`${url}/heartbeat`, { ownerId })).status).toBe(409)
     expect((await send(`${url}/release`, { ownerId })).status).toBe(200)
-    expect(store.listRecoveries()[0]?.active).toBe(true)
+    expect(store.recovery.list()[0]?.active).toBe(true)
     expect((await send(url, { ...second, expectedVersion: 3 }, 'PUT')).status).toBe(409)
-    expect(store.getRecovery(sessionId)?.scheme).toEqual(scheme)
+    expect(store.recovery.get(sessionId)?.scheme).toEqual(scheme)
   })
 
   it('returns only versioned scheme fields from a synthetic PU-66 card', async () => {
@@ -175,8 +175,8 @@ describe('local API', () => {
       values.set(`L${47 + item}`, item + 1)
     }
     const card = extractPu66Cells((address) => values.get(address) ?? null)
-    const store = new RegistryStore(':memory:', () => '2026-09-27T12:00:00.000Z')
-    store.importPu66([
+    const store = openTestApplication(':memory:', () => '2026-09-27T12:00:00.000Z')
+    store.pu66Imports.record([
       {
         card,
         source: Buffer.from('synthetic bytes'),
@@ -185,7 +185,7 @@ describe('local API', () => {
       },
     ])
     stores.push(store)
-    const server = createRegistryServer(store, 0)
+    const server = createHttpServer(store.runtime.http, 0)
     servers.push(server)
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     const address = server.address()
@@ -249,10 +249,10 @@ describe('local API', () => {
     const archive = Buffer.from(
       zipSync({ 'PNG с номером/1.1_ж.png': numberedPng, 'PNG без номера/1.1_ж.png': plainPng }),
     )
-    const store = new RegistryStore(':memory:')
-    store.importSigns(parseSignArchive(archive))
+    const store = openTestApplication(':memory:')
+    store.signCatalog.import(parseSignArchive(archive))
     stores.push(store)
-    const server = createRegistryServer(store, 0)
+    const server = createHttpServer(store.runtime.http, 0)
     servers.push(server)
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
     const address = server.address()
@@ -273,9 +273,9 @@ describe('local API', () => {
   it('exposes sign archive preview and apply only to the local interface', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-api-signs-'))
     directories.push(directory)
-    const store = new RegistryStore(join(directory, 'registry.sqlite'))
+    const store = openTestApplication(join(directory, 'registry.sqlite'))
     stores.push(store)
-    const server = createRegistryServer(store, 0)
+    const server = createHttpServer(store.runtime.http, 0)
     servers.push(server)
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     const address = server.address()
@@ -322,9 +322,9 @@ describe('local API', () => {
   })
 
   it('accepts a same-origin write and rejects missing origin, invalid input, and stale revisions', async () => {
-    const store = new RegistryStore(':memory:')
+    const store = openTestApplication(':memory:')
     stores.push(store)
-    const server = createRegistryServer(store, 0)
+    const server = createHttpServer(store.runtime.http, 0)
     servers.push(server)
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
     const address = server.address()
@@ -369,9 +369,9 @@ describe('local API', () => {
   })
 
   it('saves local project snapshots through the API and restores a prior revision safely', async () => {
-    const store = new RegistryStore(':memory:')
+    const store = openTestApplication(':memory:')
     stores.push(store)
-    const server = createRegistryServer(store, 0)
+    const server = createHttpServer(store.runtime.http, 0)
     servers.push(server)
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     const address = server.address()
