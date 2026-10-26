@@ -26,7 +26,7 @@ ORM, микросервисы, несколько баз, DI-фреймворк 
 
 ## Последовательность PR
 
-Выделены [карта существующих контрактов](server-contracts.md), подключение (#196), migration/manual backup (#197), [миграции](sqlite-migrations.md), [ProjectSourceStore](project-source-store.md), [ProjectRepository](project-repository.md), [RecoveryRepository](recovery-repository.md), [LegacyRegistryRepository](legacy-registry-repository.md), [чтение/ключи ПУ-66](pu66-read-repository.md), [журнал сверок](pu66-verification-repository.md), [lifecycle](pu66-lifecycle.md) и [импорт ПУ-66](pu66-import.md). RegistryStore остаётся совместимым фасадом: его конструктор ещё собирает зависимости, HTTP и другие вызывающие используют forwarding methods. Выделены также [нормативные документы и связи изменений](normative-documents.md), [текст страниц/подтверждения](document-evidence.md). Выделен [прикладной сценарий удаления](delete-normative-document.md); выделен [каталог знаков](sign-catalog.md). Далее composition root/HTTP, остальные пункты ниже открыты.
+Выделены [карта существующих контрактов](server-contracts.md), подключение (#196), migration/manual backup (#197), [миграции](sqlite-migrations.md), [ProjectSourceStore](project-source-store.md), [ProjectRepository](project-repository.md), [RecoveryRepository](recovery-repository.md), [LegacyRegistryRepository](legacy-registry-repository.md), [чтение/ключи ПУ-66](pu66-read-repository.md), [журнал сверок](pu66-verification-repository.md), [lifecycle](pu66-lifecycle.md) и [импорт ПУ-66](pu66-import.md). RegistryStore остаётся совместимым фасадом: его конструктор делегирует сборку ручному composition root, HTTP и другие вызывающие пока используют forwarding methods. Выделены также [нормативные документы и связи изменений](normative-documents.md), [текст страниц/подтверждения](document-evidence.md). Выделен [прикладной сценарий удаления](delete-normative-document.md); выделен [каталог знаков](sign-catalog.md). Composition root и API-группы также выделены; далее bootstrap/shutdown и перевод оставшихся вызывающих по пунктам ниже.
 
 ### 1. Карта серверных контрактов
 
@@ -71,7 +71,7 @@ Preview/apply используют общий расчёт плана. Импо�
 
 Выделены [маршруты знаков, документов и нормативных параметров](catalog-document-routes.md): узкие операции ZIP/PDF/library/подтверждений, прежние байты/версии/ETag/лимиты и отдельный контекст диагностики на каждый запрос. Три контракта прошли до переноса; девять прямых HTTP-проверок без фасада сохраняют историю, backup/recheck, удаления/rollback, подтверждения и untouched fallback.
 
-Выполнено: HTTP-примитивы → project/recovery routes → ПУ-66 → signs/documents/normative parameters. Далее system/diagnostics/legacy → тонкий bootstrap/shutdown. `server/index.ts` после перехода не содержит SQL или предметные таблицы.
+Выполнено: HTTP-примитивы → project/recovery routes → ПУ-66 → signs/documents/normative parameters. Выделены [system/diagnostics/legacy](system-legacy-routes.md): девять API-ветвей с узкими зависимостями; диагностическая сводка получает только metadata/количественные запросы без типа фасада. Три контракта прошли до переноса; семь прямых проверок сохраняют probe/backup, privacy/лимиты/недоступные query, legacy/conflicts/rollback и untouched fallback. Далее тонкий bootstrap/shutdown и перевод оставшихся вызывающих. `server/index.ts` после перехода не содержит SQL или предметные таблицы.
 
 ### 7. Удаление совместимого фасада
 
@@ -87,7 +87,7 @@ Forwarding method удаляется только после прямых тес
 - [x] Миграции и backup отделены, все поддерживаемые исходные версии проверены (#196–#198).
 - [ ] Межмодульные изменения и recovery имеют явные атомарные команды.
 - [x] Общие HTTP-примитивы и error mapper выделены с сохранением статусов, заголовков, лимитов и диагностики.
-- [ ] Route groups зависят от узких контрактов, без RegistryStore/DatabaseSync.
+- [x] Route groups зависят от узких контрактов, без RegistryStore/DatabaseSync. Временный адаптер createRegistryServer связывает их с фасадом до перевода вызывающих.
 - [ ] `index.ts` выполняет bootstrap/shutdown, composition root собирает зависимости.
 - [ ] Прежние форматы, API, транзакции, история, source и графика сохранены.
 - [ ] Полный набор проверок и Windows exe пройдены; #134 подтверждена отдельно.

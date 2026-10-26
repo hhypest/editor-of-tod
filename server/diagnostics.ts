@@ -1,14 +1,9 @@
-import {
-  appendFileSync,
-  existsSync,
-  readdirSync,
-  readFileSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { arch, platform, release, totalmem } from 'node:os'
 import { z } from 'zod'
-import type { RegistryStore } from './store.ts'
+import { databaseSummary, type DiagnosticDatabaseQueries } from './diagnostic-database.ts'
+
+export { databaseSummary } from './diagnostic-database.ts'
 import {
   parameterDefinitions,
   parameterRejectionReasons,
@@ -299,7 +294,7 @@ export class DiagnosticsLog {
   }
 
   /** Отчёт для разработчика: среда, сводка базы, статистика запросов и журнал событий. */
-  report(store: RegistryStore): Record<string, unknown> {
+  report(store: DiagnosticDatabaseQueries): Record<string, unknown> {
     const routes = [...this.routes.entries()]
       .map(([route, stats]) => ({
         route,
@@ -332,40 +327,5 @@ export class DiagnosticsLog {
       events: this.events.slice(-300),
       eventsTotal: this.events.length,
     }
-  }
-}
-
-/** Сводка базы: версии и количества, без содержимого записей. */
-export function databaseSummary(store: RegistryStore): Record<string, unknown> {
-  const safe = <T>(read: () => T): T | 'недоступно' => {
-    try {
-      return read()
-    } catch {
-      return 'недоступно'
-    }
-  }
-  const catalog = safe(() => store.latestSignCatalog())
-  return {
-    location: store.path === ':memory:' ? 'память' : 'локальная база',
-    sizeKb: safe(() =>
-      store.path === ':memory:' ? 0 : Math.round(statSync(store.path).size / 1024),
-    ),
-    schemaVersion: safe(() => store.schemaVersion()),
-    pu66Cards: safe(() => store.listPu66().length),
-    projects: safe(() => store.listProjects().length),
-    recoveryCopies: safe(() => store.listRecoveries().length),
-    documents: safe(() => store.listDocuments().length),
-    parameterConfirmations: safe(() => store.listParameterConfirmations().length),
-    signCatalog:
-      catalog && catalog !== 'недоступно'
-        ? {
-            signCount: catalog.signCount,
-            fromPdf: catalog.documentId !== null,
-            importedAt: catalog.importedAt,
-          }
-        : catalog,
-    backups: safe(() =>
-      existsSync(store.backupDirectory) ? readdirSync(store.backupDirectory).length : 0,
-    ),
   }
 }
