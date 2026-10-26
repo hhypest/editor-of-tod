@@ -42,6 +42,7 @@
 - [Ручные реестры и история](refactoring/legacy-registry-repository.md) — crossings/normative/revisions, конфликты, ASC history и отдельное начальное наполнение.
 - [Чтение ПУ-66 и ключи](refactoring/pu66-read-repository.md) — прежние проекции, aliases/неоднозначность, metadata сверок и фильтрация исключённых карточек.
 - [Журнал сверок ПУ-66](refactoring/pu66-verification-repository.md) — даты/редакции, проверка исключения под блокировкой, история, rollback и переходный запрос lifecycle.
+- [Текст документов и подтверждения](refactoring/document-evidence.md) — cache/пустой скан, атомарная замена страниц, история значений/цитат и узкие операции нормативных сценариев.
 - [Нормативные документы](refactoring/normative-documents.md) — хранение PDF/реквизитов, связи изменений, исторические ссылки каталога знаков и узкий upload/backup port.
 - [Импорт ПУ-66](refactoring/pu66-import.md) — inspection/preview/fingerprint, атомарная запись книг/карточек/редакций и явный возврат при XLSX, узкий backup port.
 - [Исключение и возврат ПУ-66](refactoring/pu66-lifecycle.md) — repository/service, fingerprint/преемник, повторный план под блокировкой после backup и атомарный пакет.

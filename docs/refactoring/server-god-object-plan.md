@@ -26,7 +26,7 @@ ORM, микросервисы, несколько баз, DI-фреймворк 
 
 ## Последовательность PR
 
-Выделены [карта существующих контрактов](server-contracts.md), подключение (#196), migration/manual backup (#197), [миграции](sqlite-migrations.md), [ProjectSourceStore](project-source-store.md), [ProjectRepository](project-repository.md), [RecoveryRepository](recovery-repository.md), [LegacyRegistryRepository](legacy-registry-repository.md), [чтение/ключи ПУ-66](pu66-read-repository.md), [журнал сверок](pu66-verification-repository.md), [lifecycle](pu66-lifecycle.md) и [импорт ПУ-66](pu66-import.md). RegistryStore делегирует этим владельцам; остальные предметные операции и HTTP пока остаются за совместимым фасадом. Выделены также [нормативные документы и связи изменений](normative-documents.md); далее текст страниц/подтверждения. Остальные пункты ниже открыты.
+Выделены [карта существующих контрактов](server-contracts.md), подключение (#196), migration/manual backup (#197), [миграции](sqlite-migrations.md), [ProjectSourceStore](project-source-store.md), [ProjectRepository](project-repository.md), [RecoveryRepository](recovery-repository.md), [LegacyRegistryRepository](legacy-registry-repository.md), [чтение/ключи ПУ-66](pu66-read-repository.md), [журнал сверок](pu66-verification-repository.md), [lifecycle](pu66-lifecycle.md) и [импорт ПУ-66](pu66-import.md). RegistryStore делегирует этим владельцам; остальные предметные операции и HTTP пока остаются за совместимым фасадом. Выделены также [нормативные документы и связи изменений](normative-documents.md), [текст страниц/подтверждения](document-evidence.md). Далее — прикладной сценарий удаления документа. Остальные пункты ниже открыты.
 
 ### 1. Карта серверных контрактов
 
@@ -55,13 +55,13 @@ ORM, микросервисы, несколько баз, DI-фреймворк 
 
 ### 4. Legacy и ПУ-66
 
-Legacy crossings/normative/revisions выделены; начальное наполнение остаётся отдельной операцией инициализации. Чтение ПУ-66, key resolver, журнал сверок, lifecycle и импорт repository/service выделены; нормативные документы/amendments также выделены, далее текст страниц/подтверждения. Сервис lifecycle получает узкие запросы и синхронный TransactionRunner, повторно проверяет полный план под блокировкой после backup. Карточки, редакции, aliases, lifecycle и сверки остаются одной предметной областью.
+Legacy crossings/normative/revisions выделены; начальное наполнение остаётся отдельной операцией инициализации. Чтение ПУ-66, key resolver, журнал сверок, lifecycle и импорт repository/service выделены. Сервис lifecycle получает узкие запросы и синхронный TransactionRunner, повторно проверяет полный план под блокировкой после backup. Карточки, редакции, aliases, lifecycle и сверки остаются одной предметной областью.
 
 Preview/apply используют общий расчёт плана. Импорт, sources, текущие карточки, редакции и restore events остаются одной транзакцией; проекты и исторические ключи автоматически не заменяются.
 
 ### 5. Документы, подтверждения и знаки
 
-Документы/amendments выделены в repository/service: SQL/row mapper, schema/SHA/amends проверки и узкий запрос ссылок из истории знаков; одиночные INSERT/UPDATE и прежний порядок отказов сохранены. Следующие шаги: текст страниц/подтверждения → application service удаления документа → каталог знаков. Удаление проверяет ссылки из amendments, партий знаков и подтверждений в одной транзакции. Batch/active/history знаков сохраняют прежние границы атомарности; historical asset не подменяется active PNG.
+Документы/amendments выделены в repository/service: SQL/row mapper, schema/SHA/amends проверки и узкий запрос ссылок из истории знаков; одиночные INSERT/UPDATE и прежний порядок отказов сохранены. Текст страниц/подтверждения выделены в отдельные repositories, нормативные сценарии получают узкие операции вместо RegistryStore; тела SQL/транзакций/алгоритмов сохранены. Следующие шаги: application service удаления документа → каталог знаков. Удаление проверяет ссылки из amendments, партий знаков и подтверждений в одной транзакции. Batch/active/history знаков сохраняют прежние границы атомарности; historical asset не подменяется active PNG.
 
 ### 6. Composition root и транспорт
 

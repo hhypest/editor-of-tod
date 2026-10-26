@@ -53,6 +53,8 @@ import type { DocumentMeta, DocumentRecord } from '../src/domain/normative-docum
 import { NormativeDocumentRepository } from './documents/normative-document-repository.ts'
 import { NormativeDocumentService } from './documents/normative-document-service.ts'
 import { DocumentInUse } from './documents/errors.ts'
+import { DocumentTextRepository } from './documents/document-text-repository.ts'
+import { ParameterConfirmationRepository } from './parameters/confirmation-repository.ts'
 
 import type { ParameterConfirmation } from '../src/domain/normative-parameters.ts'
 
@@ -117,6 +119,8 @@ export class RegistryStore {
   private readonly pu66Lifecycle: Pu66LifecycleRepository
   private readonly pu66LifecycleService: Pu66LifecycleService
   private readonly documents: NormativeDocumentRepository
+  private readonly documentText: DocumentTextRepository
+  private readonly parameterConfirmations: ParameterConfirmationRepository
   private readonly documentService: NormativeDocumentService
   private readonly pu66Imports: Pu66ImportService
   private readonly pu66Verifications: Pu66VerificationRepository
@@ -171,6 +175,8 @@ export class RegistryStore {
           .get(id) as { count: number }
         return batches.count
       })
+      this.documentText = new DocumentTextRepository(this.db)
+      this.parameterConfirmations = new ParameterConfirmationRepository(this.db, () => this.now())
       if (this.listNormative().length === 0) {
         for (const entry of initialNormativeEntries) this.saveNormative(entry, 0)
       }
@@ -670,79 +676,20 @@ export class RegistryStore {
     return true
   }
 
-  /** Сохранённый текст страниц документа или null, если текст ещё не извлекался. */
   getDocumentText(id: number): string[] | null {
-    const rows = this.db
-      .prepare('SELECT page, text FROM document_pages WHERE document_id = ? ORDER BY page')
-      .all(id) as Array<{ page: number; text: string }>
-    return rows.length ? rows.map((row) => row.text) : null
+    return this.documentText.get(id)
   }
 
   saveDocumentText(id: number, pages: readonly string[]): void {
-    this.db.exec('BEGIN IMMEDIATE')
-    try {
-      this.db.prepare('DELETE FROM document_pages WHERE document_id = ?').run(id)
-      const insert = this.db.prepare(
-        'INSERT INTO document_pages (document_id, page, text) VALUES (?, ?, ?)',
-      )
-      // Пустой документ (скан без текста) сохраняется одной пустой страницей, чтобы не
-      // разбирать его повторно.
-      ;(pages.length ? pages : ['']).forEach((text, index) => insert.run(id, index + 1, text))
-      this.db.exec('COMMIT')
-    } catch (error) {
-      this.db.exec('ROLLBACK')
-      throw error
-    }
+    this.documentText.save(id, pages)
   }
 
   listParameterConfirmations(): ParameterConfirmation[] {
-    return (
-      this.db
-        .prepare(
-          `SELECT id, parameter_id, document_id, document_label, clause, page, quote, fragment,
-                  value_json, confirmed_by, confirmed_at, note
-             FROM parameter_confirmations ORDER BY parameter_id, id`,
-        )
-        .all() as Array<Record<string, unknown>>
-    ).map((row) => ({
-      id: Number(row.id),
-      parameterId: String(row.parameter_id),
-      documentId: row.document_id === null ? null : Number(row.document_id),
-      documentLabel: String(row.document_label),
-      clause: String(row.clause),
-      page: row.page === null ? null : Number(row.page),
-      quote: String(row.quote),
-      fragment: String(row.fragment),
-      value: JSON.parse(String(row.value_json)) as ParameterConfirmation['value'],
-      confirmedBy: String(row.confirmed_by),
-      confirmedAt: String(row.confirmed_at),
-      note: String(row.note),
-    }))
+    return this.parameterConfirmations.list()
   }
 
   addParameterConfirmation(input: Omit<ParameterConfirmation, 'id'>): ParameterConfirmation {
-    const row = this.db
-      .prepare(
-        `INSERT INTO parameter_confirmations
-          (parameter_id, document_id, document_label, clause, page, quote, fragment, value_json,
-           confirmed_by, confirmed_at, note, recorded_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-      )
-      .get(
-        input.parameterId,
-        input.documentId,
-        input.documentLabel,
-        input.clause,
-        input.page,
-        input.quote,
-        input.fragment,
-        JSON.stringify(input.value),
-        input.confirmedBy,
-        input.confirmedAt,
-        input.note,
-        this.now(),
-      ) as { id: number }
-    return { ...input, id: row.id }
+    return this.parameterConfirmations.add(input)
   }
 
   async createBackup(): Promise<string> {

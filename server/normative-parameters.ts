@@ -5,6 +5,7 @@ import {
   currentDocument,
   documentLabel,
   documentStatuses,
+  type DocumentRecord,
 } from '../src/domain/normative-documents.ts'
 import {
   parameterDefinitions,
@@ -21,7 +22,17 @@ import {
 } from '../src/domain/normative-parameters.ts'
 import { localCalendarDate } from '../src/domain/pu66-review.ts'
 import { extractPdfText } from './pdf-text.ts'
-import { RegistryStore, RevisionConflict } from './store.ts'
+import { RevisionConflict } from './storage-errors.ts'
+
+export interface NormativeParameterStorage {
+  listDocuments(): DocumentRecord[]
+  getDocument(id: number): DocumentRecord | null
+  getDocumentPdf(id: number): { filename: string; pdf: Uint8Array } | null
+  getDocumentText(id: number): string[] | null
+  saveDocumentText(id: number, pages: readonly string[]): void
+  listParameterConfirmations(): ParameterConfirmation[]
+  addParameterConfirmation(input: Omit<ParameterConfirmation, 'id'>): ParameterConfirmation
+}
 
 export class InvalidParameter extends Error {
   readonly status: number
@@ -51,7 +62,10 @@ export class ParameterConfirmationConflict extends RevisionConflict {
 }
 
 /** Текст документа: из SQLite, а при первом обращении — из PDF (несколько секунд). */
-export async function documentText(store: RegistryStore, id: number): Promise<string[]> {
+export async function documentText(
+  store: Pick<NormativeParameterStorage, 'getDocumentText' | 'getDocumentPdf' | 'saveDocumentText'>,
+  id: number,
+): Promise<string[]> {
   const saved = store.getDocumentText(id)
   if (saved) return saved
   const file = store.getDocumentPdf(id)
@@ -71,13 +85,19 @@ export async function documentText(store: RegistryStore, id: number): Promise<st
   return pages
 }
 
-function latestConfirmations(store: RegistryStore): Map<string, ParameterConfirmation> {
+function latestConfirmations(
+  store: Pick<NormativeParameterStorage, 'listParameterConfirmations'>,
+): Map<string, ParameterConfirmation> {
   const latest = new Map<string, ParameterConfirmation>()
   for (const item of store.listParameterConfirmations()) latest.set(item.parameterId, item)
   return latest
 }
 
-async function quoteFor(store: RegistryStore, definition: ParameterDefinition, id: number) {
+async function quoteFor(
+  store: NormativeParameterStorage,
+  definition: ParameterDefinition,
+  id: number,
+) {
   const source = definition.source
   if (source.kind === 'decision') return null
   const pages = await documentText(store, id)
@@ -93,7 +113,7 @@ async function quoteFor(store: RegistryStore, definition: ParameterDefinition, i
 
 /** Изменения к документу, которые уже действуют и упоминают пункт или таблицу параметра. */
 async function amendmentsFor(
-  store: RegistryStore,
+  store: NormativeParameterStorage,
   definition: ParameterDefinition,
   baseId: number,
   today: string,
@@ -143,7 +163,7 @@ async function amendmentsFor(
 
 /** Changes are part of the evidence, even when the base PDF has not changed. */
 function confirmationFragment(
-  store: RegistryStore,
+  store: NormativeParameterStorage,
   definition: ParameterDefinition,
   quote: { text: string } | null,
   amendments: readonly string[],
@@ -161,7 +181,7 @@ function confirmationFragment(
 }
 
 export async function listParameterStates(
-  store: RegistryStore,
+  store: NormativeParameterStorage,
   now = new Date(),
 ): Promise<ParameterState[]> {
   const today = localCalendarDate(now)
@@ -315,7 +335,7 @@ const confirmSchema = z.strictObject({
 })
 
 export async function confirmParameter(
-  store: RegistryStore,
+  store: NormativeParameterStorage,
   parameterId: string,
   body: unknown,
   now = new Date(),
