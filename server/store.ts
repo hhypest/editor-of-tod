@@ -29,7 +29,6 @@ import {
 } from '../src/domain/registry.ts'
 import {
   localCalendarDate,
-  pu66VerificationWriteSchema,
   type Pu66Verification,
   type Pu66VerificationWrite,
 } from '../src/domain/pu66-review.ts'
@@ -41,7 +40,8 @@ import {
   type Pu66Norms,
 } from './pu66/repository.ts'
 import { Pu66KeyResolver } from './pu66/key-resolver.ts'
-import { AmbiguousPu66Key } from './pu66/errors.ts'
+import { AmbiguousPu66Key, InvalidPu66Lifecycle, InvalidPu66Verification } from './pu66/errors.ts'
+import { Pu66VerificationRepository } from './pu66/verification-repository.ts'
 import { type SignImport } from './signs.ts'
 import {
   pu66LifecycleWriteSchema,
@@ -90,14 +90,13 @@ const unspecifiedSignSource: SignCatalogSource = {
   pdfSha256: null,
 }
 
-export { RevisionConflict, ProjectTooLarge, RecoveryOwned, AmbiguousPu66Key }
-
-export class InvalidPu66Lifecycle extends Error {}
-
-export class InvalidPu66Verification extends Error {
-  constructor() {
-    super('Дата сверки ПУ-66 не может быть в будущем.')
-  }
+export {
+  RevisionConflict,
+  ProjectTooLarge,
+  RecoveryOwned,
+  AmbiguousPu66Key,
+  InvalidPu66Lifecycle,
+  InvalidPu66Verification,
 }
 
 /** Текущая версия схемы локальной базы (`PRAGMA user_version`). */
@@ -120,6 +119,7 @@ export class RegistryStore {
   private readonly legacy: LegacyRegistryRepository
   private readonly pu66Keys: Pu66KeyResolver
   private readonly pu66: Pu66Repository
+  private readonly pu66Verifications: Pu66VerificationRepository
   readonly path: string
   private readonly now: () => string
   /** Версия схемы, с которой база обновлена при этом открытии; `null` — обновления не было. */
@@ -141,6 +141,12 @@ export class RegistryStore {
       this.legacy = new LegacyRegistryRepository(this.db, () => this.now())
       this.pu66Keys = new Pu66KeyResolver(this.db)
       this.pu66 = new Pu66Repository(this.db, this.pu66Keys)
+      this.pu66Verifications = new Pu66VerificationRepository(
+        this.db,
+        this.pu66Keys,
+        (key) => this.getPu66Status(key),
+        () => this.now(),
+      )
       if (this.listNormative().length === 0) {
         for (const entry of initialNormativeEntries) this.saveNormative(entry, 0)
       }
@@ -472,58 +478,11 @@ export class RegistryStore {
     requestedKey: string,
     input: Pu66VerificationWrite,
   ): Pu66Verification | null {
-    const { expectedRevision, verifiedAt, verifiedBy } = pu66VerificationWriteSchema.parse(input)
-    const key = this.pu66Keys.resolve(requestedKey)
-    if (!key) return null
-    const now = this.now()
-    if (verifiedAt > localCalendarDate(new Date(now))) throw new InvalidPu66Verification()
-    this.db.exec('BEGIN IMMEDIATE')
-    try {
-      const current = this.db.prepare('SELECT revision FROM pu66_cards WHERE key = ?').get(key) as
-        { revision: number } | undefined
-      if (!current) {
-        this.db.exec('ROLLBACK')
-        return null
-      }
-      if (current.revision !== expectedRevision) throw new RevisionConflict()
-      if (this.getPu66Status(key)?.excluded)
-        throw new InvalidPu66Lifecycle(
-          'Карточка исключена: верните её в действующие перед сверкой.',
-        )
-      this.db
-        .prepare(
-          `INSERT INTO pu66_verifications (key, card_revision, verified_at, verified_by, recorded_at)
-           VALUES (?, ?, ?, ?, ?)`,
-        )
-        .run(key, current.revision, verifiedAt, verifiedBy, now)
-      this.db.exec('COMMIT')
-      return { cardRevision: current.revision, verifiedAt, verifiedBy, recordedAt: now }
-    } catch (error) {
-      this.db.exec('ROLLBACK')
-      throw error
-    }
+    return this.pu66Verifications.record(requestedKey, input)
   }
 
   listPu66Verifications(requestedKey: string): Pu66Verification[] | null {
-    const key = this.pu66Keys.resolve(requestedKey)
-    if (!key) return null
-    const rows = this.db
-      .prepare(
-        `SELECT card_revision, verified_at, verified_by, recorded_at
-         FROM pu66_verifications WHERE key = ? ORDER BY id DESC`,
-      )
-      .all(key) as Array<{
-      card_revision: number
-      verified_at: string
-      verified_by: string
-      recorded_at: string
-    }>
-    return rows.map((row) => ({
-      cardRevision: row.card_revision,
-      verifiedAt: row.verified_at,
-      verifiedBy: row.verified_by,
-      recordedAt: row.recorded_at,
-    }))
+    return this.pu66Verifications.list(requestedKey)
   }
 
   getPu66Scheme(requestedKey: string): Pu66Scheme | null {
