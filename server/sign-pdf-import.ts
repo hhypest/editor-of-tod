@@ -9,7 +9,11 @@ import {
   type SignOverrides,
 } from './sign-pdf.ts'
 import { InvalidSignUpload } from './sign-web-import.ts'
-import { RegistryStore, RevisionConflict, type SignCatalogSource } from './store.ts'
+import { RevisionConflict } from './storage-errors.ts'
+import type { SignCatalogSource } from './signs/catalog-repository.ts'
+import type { SignImportCommands, SignImportRead } from './signs/import-commands.ts'
+
+type SignPdfDocuments = Pick<SignImportCommands, 'getDocument' | 'getDocumentPdf'>
 
 /**
  * Каталог знаков из PDF стандарта, прикреплённого в библиотеке нормативных документов.
@@ -38,7 +42,7 @@ const applySchema = requestSchema.extend({
 /** Последнее извлечение: разбор PDF занимает несколько секунд, а просмотр повторяется. */
 let cached: { sha256: string; result: Promise<PdfSignExtraction> } | null = null
 
-function sourceDocument(store: RegistryStore, documentId: number) {
+function sourceDocument(store: Pick<SignPdfDocuments, 'getDocument'>, documentId: number) {
   const document = store.getDocument(documentId)
   if (!document) throw new InvalidSignUpload('Документ не найден в библиотеке.', 404)
   if (document.amendsId !== null)
@@ -51,7 +55,7 @@ function sourceDocument(store: RegistryStore, documentId: number) {
 }
 
 export async function extractionFor(
-  store: RegistryStore,
+  store: SignPdfDocuments,
   documentId: number,
 ): Promise<PdfSignExtraction> {
   const document = sourceDocument(store, documentId)
@@ -74,7 +78,7 @@ export async function extractionFor(
   return extraction
 }
 
-async function plan(store: RegistryStore, documentId: number, overrides: SignOverrides) {
+async function plan(store: SignImportRead, documentId: number, overrides: SignOverrides) {
   const document = sourceDocument(store, documentId)
   const extraction = await extractionFor(store, documentId)
   const known = new Set(extraction.images.map((image) => image.key))
@@ -134,12 +138,12 @@ function summary(result: Awaited<ReturnType<typeof plan>>) {
   }
 }
 
-export async function previewPdfSigns(store: RegistryStore, documentId: number, body: unknown) {
+export async function previewPdfSigns(store: SignImportRead, documentId: number, body: unknown) {
   const { overrides } = requestSchema.parse(body)
   return summary(await plan(store, documentId, overrides))
 }
 
-export async function applyPdfSigns(store: RegistryStore, documentId: number, body: unknown) {
+export async function applyPdfSigns(store: SignImportCommands, documentId: number, body: unknown) {
   const { expectedFingerprint, overrides } = applySchema.parse(body)
   const first = await plan(store, documentId, overrides)
   if (first.fingerprint !== expectedFingerprint) throw new RevisionConflict()
@@ -178,7 +182,7 @@ export async function applyPdfSigns(store: RegistryStore, documentId: number, bo
 
 /** PNG изображения из PDF для просмотра; yellow — вариант с жёлтым фоном. */
 export async function pdfSignImage(
-  store: RegistryStore,
+  store: SignPdfDocuments,
   documentId: number,
   key: string,
   yellow: boolean,

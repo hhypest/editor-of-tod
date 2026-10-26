@@ -21,4 +21,4 @@ DeleteNormativeDocument получает Pick-контракты repository и �
 
 Семь [прямых проверок команды](../../server/__tests__/delete-normative-document.test.ts) без RegistryStore покрывают historical/read-only references/no init, точный порядок проверок под транзакцией, оба отказа DELETE, блокировку новой ссылки до первого чтения и между DELETE, rollback чтения/nested BEGIN и read-only reopen с посторонней историей/PDF. Сохраняются полный check, старые API/frozen JSON/SQLite и E2E. Тестовые PDF/сведения вымышлены, новых зависимостей нет.
 
-Далее — каталог знаков: batch/active/history/PNG/relabel/retire с прежними транзакциями; затем composition root и маршруты. #135/А4 пока открыты, Pinia первой после А4; новые функции после всего технического этапа.
+[Каталог знаков](sign-catalog.md) также выделен: batch/active/history/PNG/relabel/retire с прежними транзакциями. Далее composition root и маршруты. #135/А4 пока открыты, Pinia первой после А4; новые функции после всего технического этапа.

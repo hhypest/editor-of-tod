@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { parseSignArchive } from './signs.ts'
-import { RegistryStore, RevisionConflict, type SignCatalogSource } from './store.ts'
+import { RevisionConflict } from './storage-errors.ts'
+import type { SignCatalogSource } from './signs/catalog-repository.ts'
+import type { SignImportCommands, SignImportRead } from './signs/import-commands.ts'
+
+type SignArchiveRead = Omit<SignImportRead, 'getDocumentPdf'>
 import { normalizeDocumentCode } from '../src/domain/normative-documents.ts'
 
 const MAX_ZIP_BYTES = 32 * 1024 * 1024
@@ -56,7 +60,7 @@ function decode(data: string, maxBytes: number, label: string): Buffer {
   return bytes
 }
 
-function parse(store: RegistryStore, body: z.infer<typeof requestSchema>) {
+function parse(store: Pick<SignArchiveRead, 'getDocument'>, body: z.infer<typeof requestSchema>) {
   const archive = decode(body.archive.data, MAX_ZIP_BYTES, 'Архив знаков')
   const pdf = body.pdf ? decode(body.pdf.data, MAX_PDF_BYTES, 'PDF ГОСТ') : null
   if (pdf && !pdf.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
@@ -74,7 +78,7 @@ function parse(store: RegistryStore, body: z.infer<typeof requestSchema>) {
 }
 
 function sourceFor(
-  store: RegistryStore,
+  store: Pick<SignArchiveRead, 'getDocument'>,
   body: z.infer<typeof requestSchema>,
   pdf: Buffer | null,
 ): SignCatalogSource {
@@ -100,7 +104,7 @@ function sourceFor(
   }
 }
 
-function plan(store: RegistryStore, parsed: ReturnType<typeof parse>) {
+function plan(store: SignArchiveRead, parsed: ReturnType<typeof parse>) {
   const counts = store.planSigns(parsed.entries, parsed.source)
   const catalog = store.latestSignCatalog()
   const fingerprint = createHash('sha256')
@@ -148,12 +152,15 @@ function withoutPreview(preview: ReturnType<typeof plan>) {
   }
 }
 
-export function previewSignUpload(store: RegistryStore, body: unknown) {
+export function previewSignUpload(store: SignArchiveRead, body: unknown) {
   const parsed = parse(store, requestSchema.parse(body))
   return plan(store, parsed)
 }
 
-export async function applySignUpload(store: RegistryStore, body: unknown) {
+export async function applySignUpload(
+  store: Omit<SignImportCommands, 'getDocumentPdf'>,
+  body: unknown,
+) {
   const { expectedFingerprint, ...request } = applySchema.parse(body)
   const parsed = parse(store, request)
   const preview = plan(store, parsed)

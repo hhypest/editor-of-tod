@@ -805,6 +805,10 @@ PNG остаются только в локальной базе и показы
 
 Семь регрессионных `document-deletion.test.ts` повторно прошли до переноса; spy проверки блокировки направлен на фактический repository.get вместо forwarding method, ожидания сохранены. Семь прямых `delete-normative-document.test.ts` проверяют references/read-only/no init, точный порядок отказов под транзакцией, ошибки обоих DELETE, блокировку нового подтверждения до первого чтения и между DELETE, failed reference read/nested BEGIN и read-only reopen с сохранностью постороннего PDF/текста/истории. [Владельцы SQL и команда](docs/refactoring/delete-normative-document.md). Полные check/E2E и старые frozen-format/API сохранены; Windows exe — отдельная ручная контрольная сборка.
 
+## Серверное выделение каталога знаков (#135)
+
+Два `sign-catalog-contracts.test.ts` предварительно прошли на исходном фасаде: план/часы/no-op/relabel/retire/reactivate и rollback позднего retirement. Десять прямых `sign-catalog-repository.test.ts` проверяют read-only/no init/поиск/limit, pinned и повреждённый PNG, default source/пустой пакет/историю, три поздних отказа, блокировку второго соединения, reopen/FK/historical references и ZIP/PDF через узкие операции. Изображения/PDF программно созданы, нормы не взяты из реальных документов. Старые cache/API/PDF/import/frozen-format проверки сохранены; [контракты](docs/refactoring/sign-catalog.md). Полный check и E2E обязательны, Windows exe — отдельная ручная контрольная сборка.
+
 ## Первый блок А4: редакции и запоздалые ответы
 
 Автоматически: `npm run check` проверяет SaveProjectRevision / RestoreProjectRevision независимо от Vue/HTTP, типизированные ошибки адаптера и Vue lifecycle с управляемыми задержками. Проверяются смена сессии при том же id, новые правки и неприменённый ввод во время записи/возврата, сохранение отдельной копии, конфликт и повтор, отмена подтверждения, задержка recovery перед возвратом и при удалении, undo/redo. `npm run test:e2e` проверяет задержку ответа SQLite, блокировку ввода, повтор неизменённой записи, возврат с сохранением всех версий и реальный 409.
