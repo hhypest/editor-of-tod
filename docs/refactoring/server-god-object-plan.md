@@ -26,7 +26,7 @@ ORM, микросервисы, несколько баз, DI-фреймворк 
 
 ## Последовательность PR
 
-Выделены [карта существующих контрактов](server-contracts.md), подключение (#196), migration/manual backup (#197), [миграции](sqlite-migrations.md), [ProjectSourceStore](project-source-store.md), [ProjectRepository](project-repository.md), [RecoveryRepository](recovery-repository.md), [LegacyRegistryRepository](legacy-registry-repository.md), [чтение/ключи ПУ-66](pu66-read-repository.md), [журнал сверок](pu66-verification-repository.md), [lifecycle](pu66-lifecycle.md) и [импорт ПУ-66](pu66-import.md). RegistryStore делегирует этим владельцам; остальные предметные операции и HTTP пока остаются за совместимым фасадом. Выделены также [нормативные документы и связи изменений](normative-documents.md), [текст страниц/подтверждения](document-evidence.md). Выделен [прикладной сценарий удаления](delete-normative-document.md); далее каталог знаков. Остальные пункты ниже открыты.
+Выделены [карта существующих контрактов](server-contracts.md), подключение (#196), migration/manual backup (#197), [миграции](sqlite-migrations.md), [ProjectSourceStore](project-source-store.md), [ProjectRepository](project-repository.md), [RecoveryRepository](recovery-repository.md), [LegacyRegistryRepository](legacy-registry-repository.md), [чтение/ключи ПУ-66](pu66-read-repository.md), [журнал сверок](pu66-verification-repository.md), [lifecycle](pu66-lifecycle.md) и [импорт ПУ-66](pu66-import.md). RegistryStore остаётся совместимым фасадом: его конструктор ещё собирает зависимости, HTTP и другие вызывающие используют forwarding methods. Выделены также [нормативные документы и связи изменений](normative-documents.md), [текст страниц/подтверждения](document-evidence.md). Выделен [прикладной сценарий удаления](delete-normative-document.md); выделен [каталог знаков](sign-catalog.md). Далее composition root/HTTP, остальные пункты ниже открыты.
 
 ### 1. Карта серверных контрактов
 
@@ -61,7 +61,7 @@ Preview/apply используют общий расчёт плана. Импо�
 
 ### 5. Документы, подтверждения и знаки
 
-Документы/amendments выделены в repository/service: SQL/row mapper, schema/SHA/amends проверки и узкий запрос ссылок из истории знаков; одиночные INSERT/UPDATE и прежний порядок отказов сохранены. Текст страниц/подтверждения выделены в отдельные repositories, нормативные сценарии получают узкие операции вместо RegistryStore; тела SQL/транзакций/алгоритмов сохранены. После [отдельного исправления #215/#216](document-deletion-atomicity.md) выделен [DeleteNormativeDocument](delete-normative-document.md): прежняя атомарная команда и узкие владельцы DELETE/count ссылок, без SQL в фасаде удаления. SignCatalogDocumentReferences обслуживает также запрет смены kind. Далее каталог знаков. Удаление проверяет ссылки из amendments, партий знаков и подтверждений в одной транзакции. Batch/active/history знаков сохраняют прежние границы атомарности; historical asset не подменяется active PNG.
+Документы/amendments выделены в repository/service: SQL/row mapper, schema/SHA/amends проверки и узкий запрос ссылок из истории знаков; одиночные INSERT/UPDATE и прежний порядок отказов сохранены. Текст страниц/подтверждения выделены в отдельные repositories, нормативные сценарии получают узкие операции вместо RegistryStore; тела SQL/транзакций/алгоритмов сохранены. После [отдельного исправления #215/#216](document-deletion-atomicity.md) выделен [DeleteNormativeDocument](delete-normative-document.md): прежняя атомарная команда и узкие владельцы DELETE/count ссылок, без SQL в фасаде удаления. SignCatalogDocumentReferences обслуживает также запрет смены kind. [Каталог знаков](sign-catalog.md) выделен с прежними plan/import/latest/list/PNG/history и узкими ZIP/PDF операциями. Далее composition root и транспорт. Удаление проверяет ссылки из amendments, партий знаков и подтверждений в одной транзакции. Batch/active/history знаков сохраняют прежние границы атомарности; historical asset не подменяется active PNG.
 
 ### 6. Composition root и транспорт
 
@@ -79,7 +79,7 @@ Forwarding method удаляется только после прямых тес
 
 Завершение #135 и серверной части А4:
 
-- [ ] SQL областей и row mappers имеют отдельных владельцев.
+- [x] SQL областей и row mappers имеют отдельных владельцев: проекты/recovery/legacy/ПУ-66/документы/подтверждения/каталог знаков. Фасад ещё сохраняется до переноса вызывающих.
 - [x] Миграции и backup отделены, все поддерживаемые исходные версии проверены (#196–#198).
 - [ ] Межмодульные изменения и recovery имеют явные атомарные команды.
 - [ ] Route groups зависят от узких контрактов, без RegistryStore/DatabaseSync.
