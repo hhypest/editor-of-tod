@@ -13,3 +13,12 @@ export class InvalidPu66Verification extends Error {
     super('Дата сверки ПУ-66 не может быть в будущем.')
   }
 }
+
+export class InvalidPu66Upload extends Error {
+  readonly status: number
+
+  constructor(message: string, status = 400) {
+    super(message)
+    this.status = status
+  }
+}

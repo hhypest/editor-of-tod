@@ -6,6 +6,11 @@
 
 ## [0.3.0-dev] — в разработке
 
+### 26.10.2026 — отдельный импорт ПУ-66 (#135)
+
+- Inspection и запись источников/current/revisions выделены в Pu66ImportRepository, counts/preview/fingerprint и координация явного возврата — в Pu66ImportService. Restore INSERT SELECT принадлежит lifecycle repository; одна прежняя BEGIN IMMEDIATE охватывает карточки, редакции и все события возврата. Upload получает узкие команды plan/import/backup вместо RegistryStore.
+- Сохранены SQL, порядок JSON/hash, повторные ключи, unchanged/no-op, immutable history, валидация и отдельные timestamps карточек/возвратов, backup до записи и прежний экспорт InvalidPu66Upload. Три контракта прошли до переноса; прямые проверки фиксируют read-only/aliases, SHA/bytes/dedup, rollback и блокировку второго соединения. Форматы, HTTP, поля #110, нормативы и лист не меняются. #135/А4 открыты; далее документы/amendments.
+
 ### 26.10.2026 — отдельные события и сценарии исключения/возврата ПУ-66 (#135)
 
 - Status/history и вставка событий выделены в Pu66LifecycleRepository; план/fingerprint и атомарная команда — в Pu66LifecycleService. Выделенный синхронный TransactionRunner сохраняет BEGIN IMMEDIATE для повторного плана и всего пакета после backup. Apply получает узкие команды вместо RegistryStore, журнал сверок читает статус напрямую из нового репозитория.

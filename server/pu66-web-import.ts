@@ -1,8 +1,24 @@
-import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { parsePu66, type Pu66Import } from './pu66.ts'
-import { RegistryStore, RevisionConflict } from './store.ts'
+import { RevisionConflict } from './storage-errors.ts'
+import { InvalidPu66Upload } from './pu66/errors.ts'
+import type { Pu66ImportService } from './pu66/import-service.ts'
+
 import { pu66ImportRestoreSchema, type Pu66ImportRestore } from '../src/domain/pu66-lifecycle.ts'
+
+export { InvalidPu66Upload } from './pu66/errors.ts'
+
+export interface Pu66ImportCommands {
+  planPu66Import(
+    entries: Pu66Import[],
+    restoration: Pu66ImportRestore | null,
+  ): ReturnType<Pu66ImportService['preview']>
+  importPu66(
+    entries: Pu66Import[],
+    restoration: Pu66ImportRestore | null,
+  ): ReturnType<Pu66ImportService['record']>
+  createBackup(): Promise<string>
+}
 
 const MAX_WORKBOOK_BYTES = 4 * 1024 * 1024
 const MAX_FILES = 100
@@ -25,15 +41,6 @@ const applySchema = z.strictObject({
   expectedFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
   restoration,
 })
-
-export class InvalidPu66Upload extends Error {
-  readonly status: number
-
-  constructor(message: string, status = 400) {
-    super(message)
-    this.status = status
-  }
-}
 
 async function parseFiles(files: z.infer<typeof filesSchema>): Promise<Pu66Import[]> {
   const entries: Pu66Import[] = []
@@ -66,72 +73,24 @@ async function parseFiles(files: z.infer<typeof filesSchema>): Promise<Pu66Impor
   return entries
 }
 
-function planImport(
-  store: RegistryStore,
-  entries: Pu66Import[],
-  restoration: Pu66ImportRestore | null,
+export async function previewPu66Upload(
+  store: Pick<Pu66ImportCommands, 'planPu66Import'>,
+  body: unknown,
 ) {
-  let items: ReturnType<RegistryStore['inspectPu66']>
-  try {
-    items = store.inspectPu66(entries)
-  } catch (error) {
-    throw new InvalidPu66Upload(error instanceof Error ? error.message : 'Повторный ключ ПУ-66.')
-  }
-  const counts = { added: 0, updated: 0, unchanged: 0 }
-  for (const item of items) {
-    if (item.action === 'add') counts.added++
-    else if (item.action === 'update') counts.updated++
-    else counts.unchanged++
-  }
-  if (restoration) {
-    if (
-      restoration.keys.some(
-        (key) => !items.some((item) => item.referenceId === key && item.status?.excluded),
-      )
-    )
-      throw new InvalidPu66Upload('Возвращать можно только исключённые карточки из этого пакета.')
-    store.planPu66Lifecycle({
-      ...restoration,
-      action: 'restore',
-      comment: 'Возврат при импорте XLSX.',
-    })
-  }
-  const fingerprint = createHash('sha256')
-    .update(JSON.stringify({ items, restoration }))
-    .digest('hex')
-  return {
-    ...counts,
-    restored: restoration?.keys.length ?? 0,
-    fingerprint,
-    items: items.map(
-      ({ filename, referenceId, location, roadName, action, currentRevision, status }) => ({
-        filename,
-        referenceId,
-        location,
-        roadName,
-        action,
-        currentRevision,
-        status,
-      }),
-    ),
-  }
-}
-
-export async function previewPu66Upload(store: RegistryStore, body: unknown) {
   const { files, restoration } = previewSchema.parse(body)
-  return planImport(store, await parseFiles(files), restoration)
+  return store.planPu66Import(await parseFiles(files), restoration)
 }
 
-export async function applyPu66Upload(store: RegistryStore, body: unknown) {
+export async function applyPu66Upload(store: Pu66ImportCommands, body: unknown) {
   const { files, expectedFingerprint, restoration } = applySchema.parse(body)
   const entries = await parseFiles(files)
-  const planned = planImport(store, entries, restoration)
+  const planned = store.planPu66Import(entries, restoration)
   if (planned.fingerprint !== expectedFingerprint) throw new RevisionConflict()
   if (planned.added + planned.updated + planned.restored === 0) {
     return { added: 0, updated: 0, unchanged: planned.unchanged, restored: 0, backup: null }
   }
   const backup = await store.createBackup()
-  if (planImport(store, entries, restoration).fingerprint !== expectedFingerprint)
+  if (store.planPu66Import(entries, restoration).fingerprint !== expectedFingerprint)
     throw new RevisionConflict()
   return { ...store.importPu66(entries, restoration), restored: planned.restored, backup }
 }
