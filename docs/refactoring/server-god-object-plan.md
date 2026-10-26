@@ -65,7 +65,7 @@ Preview/apply используют общий расчёт плана. Импо�
 
 ### 6. Composition root и транспорт
 
-[Ручной composition root](composition-root.md) выделен: создаёт конкретные SQLite-адаптеры на одном соединении, выполняет прежнюю миграцию/seed и закрытие при отказе. RegistryStore пока сохраняет API и lifecycle после успешной сборки. Route groups получают узкие зависимости; application services не знают HTTP. Общий транспорт владеет JSON/body limits, security, path parsing, error mapping, бинарными ответами и static files.
+[Ручной composition root](composition-root.md) выделен: создаёт конкретные SQLite-адаптеры на одном соединении, выполняет прежнюю миграцию/seed и закрытие при отказе. RegistryStore пока сохраняет API и lifecycle после успешной сборки. Route groups получают узкие зависимости; application services не знают HTTP. [Общий транспорт](http-transport.md) выделен: JSON/body limits, security, path parsing, error mapping, бинарные ответы и static files; прежние route order и диагностика запроса остаются в index.
 
 Порядок: HTTP-примитивы → project/recovery routes → ПУ-66 → signs/documents → system/diagnostics/legacy → тонкий bootstrap/shutdown. `server/index.ts` после перехода не содержит SQL или предметные таблицы.
 
@@ -82,6 +82,7 @@ Forwarding method удаляется только после прямых тес
 - [x] SQL областей и row mappers имеют отдельных владельцев: проекты/recovery/legacy/ПУ-66/документы/подтверждения/каталог знаков. Фасад ещё сохраняется до переноса вызывающих.
 - [x] Миграции и backup отделены, все поддерживаемые исходные версии проверены (#196–#198).
 - [ ] Межмодульные изменения и recovery имеют явные атомарные команды.
+- [x] Общие HTTP-примитивы и error mapper выделены с сохранением статусов, заголовков, лимитов и диагностики.
 - [ ] Route groups зависят от узких контрактов, без RegistryStore/DatabaseSync.
 - [ ] `index.ts` выполняет bootstrap/shutdown, composition root собирает зависимости.
 - [ ] Прежние форматы, API, транзакции, история, source и графика сохранены.
