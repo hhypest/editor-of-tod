@@ -3,13 +3,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { basename, join } from 'node:path'
 import { parsePu66 } from './pu66.ts'
 import { parseSignArchive } from './signs.ts'
-import { RegistryStore } from './store.ts'
+import { createServerRuntime } from './server-runtime.ts'
+import type { ImportCliStorage } from './import-commands.ts'
 
 const databasePath =
   process.env.TOD_DATABASE_PATH ??
   fileURLToPath(new URL('../private-data/registry.sqlite', import.meta.url))
 
-export async function runImport(args: string[], store: RegistryStore): Promise<string> {
+export async function runImport(args: string[], store: ImportCliStorage): Promise<string> {
   const [kind, ...rest] = args
   const apply = rest.includes('--apply')
   const paths = rest.filter((arg) => !arg.startsWith('--'))
@@ -56,13 +57,13 @@ export async function runImport(args: string[], store: RegistryStore): Promise<s
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   process.umask(0o077)
-  const store = new RegistryStore(databasePath)
+  const runtime = createServerRuntime(databasePath)
   try {
-    console.log(await runImport(process.argv.slice(2), store))
+    console.log(await runImport(process.argv.slice(2), runtime.imports))
   } catch (error) {
     console.error(error instanceof Error ? error.message : 'Ошибка импорта.')
     process.exitCode = 1
   } finally {
-    store.close()
+    runtime.close()
   }
 }

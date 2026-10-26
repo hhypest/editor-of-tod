@@ -6,9 +6,10 @@ import { dirname, join } from 'node:path'
 import { getAsset, isSea } from 'node:sea'
 import { resolveDataDirectory, resolvePort } from './app-paths.ts'
 import { DiagnosticsLog } from './diagnostics.ts'
-import { DEFAULT_PORT, type StaticFiles } from './index.ts'
+import { DEFAULT_PORT } from './http/server.ts'
+import type { StaticFiles } from './http/static-files.ts'
 import { launchDesktop } from './desktop-instance.ts'
-import { migrationNotice } from './store.ts'
+import { migrationNotice } from './database/migration-notice.ts'
 
 declare const __TOD_VERSION__: string | undefined
 

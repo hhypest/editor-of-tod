@@ -6,6 +6,11 @@
 
 ## [0.3.0-dev] — в разработке
 
+### 26.10.2026 — рабочий запуск без RegistryStore (#135)
+
+- API, desktop и CLI получают прямую сборку сервисов через ServerRuntime на одном соединении. HTTP factory отделена от bootstrap/index; сохранены порядок обработки запросов, metadata/backup, поиск работающей базы до открытия, lock/marker и прежние graceful/forced политики завершения.
+- Совместимый createRegistryServer вынесен в отдельный адаптер; старые тестовые фасад/экспорты сохраняются до следующего перевода. Три предварительных контракта и шесть прямых runtime-проверок фиксируют общие source/state, CLI backup/no-op, HTTP завершение запроса перед close и future-schema guard. Локальный check: 129 файлов / 979 тестов; полный Chromium E2E — 56/56 без повторов. Форматы, нормативы и лист сохраняются; А4 не закрывается этим шагом.
+
 ### 26.10.2026 — маршруты system/diagnostics/legacy (#135)
 
 - Из index выделены последние девять API-ветвей: status/backup, diagnostics report/events/clear и ручные crossings/normative. Группы получают узкие операции; диагностическая сводка больше не зависит от типа RegistryStore. Прежние receiver, probe/identity, privacy, safe-query и finish после clear сохранены.
