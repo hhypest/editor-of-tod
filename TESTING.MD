@@ -876,3 +876,11 @@ PNG остаются только в локальной базе и показы
 `server/__tests__/pu66-api-contracts.test.ts`: три контракта прошли на прежнем index — missing-card статусы/decode once/разные шаблоны путей и fallback; schema сверки до record/guard исключения до scheme; lifecycle list включает исключённых/status, stale-plan apply отказывает до backup.
 
 `server/__tests__/pu66-routes.test.ts`: восемь прямых HTTP-проверок без RegistryStore — aliases/проекции/privacy/сверки; exclude/restore/history; изменение lifecycle-плана во время backup; XLSX preview больше 64 КиБ/apply/no-op/явный restore; повтор import fingerprint после backup; rollback второй книги и второго lifecycle event; untouched fallback с простыми ports. AST-сверка сохраняет 12 перенесённых ветвей после замены зависимостей, 23 остальных ветви и fallback. Полный check/E2E и прежние frozen-format/SQLite/конкурентные/API проверки обязательны; Windows exe проверяется отдельной ручной сборкой. [Контракт группы ПУ-66](docs/refactoring/pu66-routes.md).
+
+## Маршруты знаков, документов и параметров (#135)
+
+`server/__tests__/catalog-document-api-contracts.test.ts`: три контракта, прошедшие на прежнем index до переноса — поиск/декодирование/версии знаков, числовые пути/методы/лимиты документов, reason/field подтверждений и finish-диагностика.
+
+`server/__tests__/catalog-document-routes.test.ts`: девять прямых HTTP-проверок без RegistryStore — исторические PNG/metadata/ETag/numbered, ZIP preview/apply/no-op и смена документа после backup, PDF identify/preview/apply/duplicate/bytes/update/delete, post-backup fingerprint документа, PDF signs/явные исключения/yellow/no-op/исторические ссылки, rollback удаления/amendments, подтверждения/источники/история/параллельный контекст и untouched fallback. PDF/PNG/ZIP строятся программно, карточки и стандарты не добавляются. [Контракт групп](docs/refactoring/catalog-document-routes.md).
+
+Полный check/E2E и прежние frozen-format/SQLite/API/конкурентные проверки обязательны. Windows CI не заменяет отдельную проверку exe. Для итоговой регрессии использовать [профиль целевого ПК](docs/platforms.md#целевое-рабочее-место): реальные замеры запуска, памяти, импорта и листа; сведения из CI не подставлять вместо замеров на рабочем месте.

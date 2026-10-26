@@ -4,30 +4,25 @@ import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { crossingWriteSchema, normativeWriteSchema } from '../src/domain/registry.ts'
-import { applySignUpload, previewSignUpload, SIGN_UPLOAD_REQUEST_BYTES } from './sign-web-import.ts'
-import {
-  applyDocumentUpload,
-  DOCUMENT_UPLOAD_REQUEST_BYTES,
-  identifyDocumentUpload,
-  previewDocumentUpload,
-} from './document-web-import.ts'
-import { applyPdfSigns, pdfSignImage, previewPdfSigns } from './sign-pdf-import.ts'
-import { confirmParameter, listParameterStates } from './normative-parameters.ts'
-import { documentMetaSchema } from '../src/domain/normative-documents.ts'
+import type { SignImportCommands } from './signs/import-commands.ts'
 import { clientEventsSchema, DiagnosticsLog, routeOf } from './diagnostics.ts'
 import { databaseIdentity } from './database-identity.ts'
 import { RegistryStore, migrationNotice } from './store.ts'
 import { RequestError } from './http/request-error.ts'
 import { json, readJson } from './http/json.ts'
 import { checkRequest } from './http/security.ts'
-import { decodeKey } from './http/path.ts'
 import { defaultStaticFiles, serveBuiltApp, type StaticFiles } from './http/static-files.ts'
-import { sendPdf, sendPng, sendCachedPng } from './http/binary.ts'
 import { parameterRejection, writeHttpError, type ParameterRejection } from './http/error-mapper.ts'
 
 import { createProjectRoutes } from './http/routes/projects.ts'
 import { createRecoveryRoutes } from './http/routes/recovery.ts'
 import { createPu66Routes } from './http/routes/pu66.ts'
+import { createSignRoutes } from './http/routes/signs.ts'
+import { createDocumentRoutes } from './http/routes/documents.ts'
+import {
+  createNormativeParameterRoutes,
+  type ParameterRouteContext,
+} from './http/routes/normative-parameters.ts'
 
 export { directoryFiles, type StaticFiles } from './http/static-files.ts'
 
@@ -90,10 +85,50 @@ export function createRegistryServer(
       createBackup: () => store.createBackup(),
     },
   })
+  const signImportCommands: SignImportCommands = {
+    getDocument: (id) => store.getDocument(id),
+    getDocumentPdf: (id) => store.getDocumentPdf(id),
+    latestSignCatalog: () => store.latestSignCatalog(),
+    planSigns: (entries, source) => store.planSigns(entries, source),
+    importSigns: (entries, source) => store.importSigns(entries, source),
+    createBackup: () => store.createBackup(),
+  }
+  const signRoutes = createSignRoutes({
+    catalog: {
+      list: (query, limit) => store.listSigns(query, limit),
+      latest: () => store.latestSignCatalog(),
+      getMetadata: (code, revision) => store.getSignMetadata(code, revision),
+      getPng: (code, numbered, revision) => store.getSignPng(code, numbered, revision),
+    },
+    importCommands: signImportCommands,
+  })
+  const documentRoutes = createDocumentRoutes({
+    documents: {
+      list: () => store.listDocuments(),
+      getPdf: (id) => store.getDocumentPdf(id),
+      update: (id, meta) => store.updateDocument(id, meta),
+      delete: (id) => store.deleteDocument(id),
+    },
+    importCommands: {
+      listDocuments: () => store.listDocuments(),
+      addDocument: (meta, filename, pdf, sha256) => store.addDocument(meta, filename, pdf, sha256),
+      createBackup: () => store.createBackup(),
+    },
+    signImportCommands,
+  })
+  const normativeParameterRoutes = createNormativeParameterRoutes({
+    listDocuments: () => store.listDocuments(),
+    getDocument: (id) => store.getDocument(id),
+    getDocumentPdf: (id) => store.getDocumentPdf(id),
+    getDocumentText: (id) => store.getDocumentText(id),
+    saveDocumentText: (id, pages) => store.saveDocumentText(id, pages),
+    listParameterConfirmations: () => store.listParameterConfirmations(),
+    addParameterConfirmation: (input) => store.addParameterConfirmation(input),
+  })
   const server = createServer(async (req, res) => {
     const started = performance.now()
     let route = routeOf(req.method ?? 'GET', '/api/?')
-    let parameterId: string | undefined
+    const parameterContext: ParameterRouteContext = {}
     let rejection: ParameterRejection | undefined
     res.on('finish', () => {
       if (route !== 'GET /api/diagnostics')
@@ -109,10 +144,9 @@ export function createRegistryServer(
       if (await projectRoutes(req, res, url)) return
       if (await recoveryRoutes(req, res, url)) return
       if (await pu66Routes(req, res, url)) return
-      const documentPath =
-        /^\/api\/documents\/(\d+)(\/pdf|\/signs\/preview|\/signs\/apply|\/signs\/image)?$/.exec(
-          pathname,
-        )
+      if (await signRoutes(req, res, url)) return
+      if (await normativeParameterRoutes(req, res, url, parameterContext)) return
+      if (await documentRoutes(req, res, url)) return
       if (req.method === 'GET' && pathname === '/api/status') {
         // Другой запуск программы кладёт рядом со своей базой пустой файл и спрашивает, видим
         // ли мы его рядом с нашей: так он узнаёт, что база та же, каким бы путём её ни открыли.
@@ -141,100 +175,6 @@ export function createRegistryServer(
         json(res, 200, store.listCrossings())
       } else if (req.method === 'GET' && pathname === '/api/normative') {
         json(res, 200, store.listNormative())
-      } else if (req.method === 'GET' && pathname === '/api/signs') {
-        const query =
-          new URL(req.url ?? '/', `http://127.0.0.1:${actualPort}`).searchParams.get('query') ?? ''
-        if (query.length > 80) throw new RequestError(400, 'Поиск слишком длинный.')
-        json(res, 200, store.listSigns(query, 2_000))
-      } else if (req.method === 'GET' && pathname === '/api/signs/catalog') {
-        json(res, 200, store.latestSignCatalog())
-      } else if (req.method === 'POST' && pathname === '/api/signs/import/preview') {
-        json(res, 200, previewSignUpload(store, await readJson(req, SIGN_UPLOAD_REQUEST_BYTES)))
-      } else if (req.method === 'POST' && pathname === '/api/signs/import/apply') {
-        json(res, 200, await applySignUpload(store, await readJson(req, SIGN_UPLOAD_REQUEST_BYTES)))
-      } else if (req.method === 'GET' && pathname === '/api/normative-parameters') {
-        json(res, 200, await listParameterStates(store))
-      } else if (
-        req.method === 'POST' &&
-        /^\/api\/normative-parameters\/[a-z0-9-]{1,80}\/confirm$/.test(pathname)
-      ) {
-        const id = pathname.split('/')[3]!
-        parameterId = id
-        json(res, 200, await confirmParameter(store, id, await readJson(req)))
-      } else if (req.method === 'GET' && pathname === '/api/documents') {
-        json(res, 200, store.listDocuments())
-      } else if (req.method === 'POST' && pathname === '/api/documents/identify') {
-        json(
-          res,
-          200,
-          await identifyDocumentUpload(await readJson(req, DOCUMENT_UPLOAD_REQUEST_BYTES)),
-        )
-      } else if (req.method === 'POST' && pathname === '/api/documents/preview') {
-        json(
-          res,
-          200,
-          previewDocumentUpload(store, await readJson(req, DOCUMENT_UPLOAD_REQUEST_BYTES)),
-        )
-      } else if (req.method === 'POST' && pathname === '/api/documents/apply') {
-        json(
-          res,
-          201,
-          await applyDocumentUpload(store, await readJson(req, DOCUMENT_UPLOAD_REQUEST_BYTES)),
-        )
-      } else if (documentPath) {
-        const id = Number(documentPath[1])
-        if (!Number.isSafeInteger(id)) throw new RequestError(400, 'Неверный номер документа.')
-        if (req.method === 'GET' && documentPath[2] === '/pdf') {
-          const file = store.getDocumentPdf(id)
-          if (!file) throw new RequestError(404, 'Документ не найден.')
-          sendPdf(res, file)
-        } else if (req.method === 'POST' && documentPath[2] === '/signs/preview') {
-          json(res, 200, await previewPdfSigns(store, id, await readJson(req)))
-        } else if (req.method === 'POST' && documentPath[2] === '/signs/apply') {
-          json(res, 200, await applyPdfSigns(store, id, await readJson(req)))
-        } else if (req.method === 'GET' && documentPath[2] === '/signs/image') {
-          const params = new URL(req.url ?? '/', `http://127.0.0.1:${actualPort}`).searchParams
-          const key = params.get('key') ?? ''
-          if (!/^\d{1,4}-\d{1,4}(\.\d{1,2})?$/.test(key))
-            throw new RequestError(400, 'Неверный номер изображения.')
-          const png = await pdfSignImage(store, id, key, params.get('yellow') === '1')
-          sendPng(res, png)
-        } else if (req.method === 'PUT' && !documentPath[2]) {
-          const updated = store.updateDocument(id, documentMetaSchema.parse(await readJson(req)))
-          if (!updated) throw new RequestError(404, 'Документ не найден.')
-          json(res, 200, updated)
-        } else if (req.method === 'DELETE' && !documentPath[2]) {
-          if (!store.deleteDocument(id)) throw new RequestError(404, 'Документ не найден.')
-          json(res, 200, { deleted: id })
-        } else throw new RequestError(405, 'Метод не поддерживается.')
-      } else if (req.method === 'GET' && /^\/api\/signs\/[^/]+\/metadata$/.test(pathname)) {
-        const code = decodeKey(pathname.slice('/api/signs/'.length, -'/metadata'.length))
-        if (!/^[0-9][0-9A-Za-z._-]*ж?$/.test(code))
-          throw new RequestError(400, 'Неверный код знака.')
-        const rev = new URL(req.url ?? '/', `http://127.0.0.1:${actualPort}`).searchParams.get(
-          'rev',
-        )
-        if (rev === null || !/^[1-9]\d*$/.test(rev) || !Number.isSafeInteger(Number(rev)))
-          throw new RequestError(400, 'Укажите версию изображения знака.')
-        const metadata = store.getSignMetadata(code, Number(rev))
-        if (!metadata)
-          throw new RequestError(404, 'Версия изображения знака не найдена. Обновите каталог.')
-        json(res, 200, metadata)
-      } else if (req.method === 'GET' && /^\/api\/signs\/[^/]+\/image$/.test(pathname)) {
-        const code = decodeKey(pathname.slice('/api/signs/'.length, -'/image'.length))
-        if (!/^[0-9][0-9A-Za-z._-]*ж?$/.test(code))
-          throw new RequestError(400, 'Неверный код знака.')
-        const params = new URL(req.url ?? '/', `http://127.0.0.1:${actualPort}`).searchParams
-        const format = params.get('format')
-        if (format && format !== 'png')
-          throw new RequestError(400, 'Изображения знаков доступны только в PNG.')
-        const numbered = params.get('numbered') === '1'
-        const rev = params.get('rev')
-        if (rev !== null && (!/^[1-9]\d*$/.test(rev) || !Number.isSafeInteger(Number(rev))))
-          throw new RequestError(400, 'Неверная версия изображения знака.')
-        const asset = store.getSignPng(code, numbered, rev === null ? undefined : Number(rev))
-        if (!asset) throw new RequestError(404, 'Изображение знака не найдено.')
-        sendCachedPng(req, res, asset)
       } else if (req.method === 'PUT' && pathname === '/api/crossings') {
         const { expectedRevision, ...draft } = crossingWriteSchema.parse(await readJson(req))
         json(res, 200, store.saveCrossing(draft, expectedRevision))
@@ -249,7 +189,7 @@ export function createRegistryServer(
         throw new RequestError(404, 'Адрес не найден.')
       }
     } catch (error) {
-      rejection = parameterRejection(error, parameterId)
+      rejection = parameterRejection(error, parameterContext.parameterId)
       writeHttpError(res, error, route, diagnostics)
     }
   })
