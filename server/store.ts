@@ -49,12 +49,14 @@ import {
   type Pu66Status,
   type Pu66ImportRestore,
 } from '../src/domain/pu66-lifecycle.ts'
-import {
-  documentMetaSchema,
-  type DocumentMeta,
-  type DocumentRecord,
-} from '../src/domain/normative-documents.ts'
+import type { DocumentMeta, DocumentRecord } from '../src/domain/normative-documents.ts'
+import { NormativeDocumentRepository } from './documents/normative-document-repository.ts'
+import { NormativeDocumentService } from './documents/normative-document-service.ts'
+import { DocumentInUse } from './documents/errors.ts'
+
 import type { ParameterConfirmation } from '../src/domain/normative-parameters.ts'
+
+export { DocumentInUse } from './documents/errors.ts'
 
 export type SignCatalogSource = {
   documentCode: string
@@ -75,13 +77,6 @@ export type SignCatalogPlan = {
   addedCodes: string[]
   changedCodes: string[]
   retiredCodes: string[]
-}
-
-export class DocumentInUse extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'DocumentInUse'
-  }
 }
 
 const unspecifiedSignSource: SignCatalogSource = {
@@ -121,6 +116,8 @@ export class RegistryStore {
   private readonly pu66: Pu66Repository
   private readonly pu66Lifecycle: Pu66LifecycleRepository
   private readonly pu66LifecycleService: Pu66LifecycleService
+  private readonly documents: NormativeDocumentRepository
+  private readonly documentService: NormativeDocumentService
   private readonly pu66Imports: Pu66ImportService
   private readonly pu66Verifications: Pu66VerificationRepository
   readonly path: string
@@ -167,6 +164,13 @@ export class RegistryStore {
         (key) => this.pu66Lifecycle.getStatus(key),
         () => this.now(),
       )
+      this.documents = new NormativeDocumentRepository(this.db, () => this.now())
+      this.documentService = new NormativeDocumentService(this.documents, (id) => {
+        const batches = this.db
+          .prepare('SELECT COUNT(*) AS count FROM sign_catalog_batches WHERE document_id = ?')
+          .get(id) as { count: number }
+        return batches.count
+      })
       if (this.listNormative().length === 0) {
         for (const entry of initialNormativeEntries) this.saveNormative(entry, 0)
       }
@@ -613,68 +617,20 @@ export class RegistryStore {
     return databaseBackupDirectory(this.path)
   }
 
-  private documentRow(row: Record<string, unknown>): DocumentRecord {
-    return {
-      id: Number(row.id),
-      code: String(row.code),
-      edition: String(row.edition),
-      title: String(row.title),
-      kind: row.kind as DocumentRecord['kind'],
-      effectiveFrom: String(row.effective_from),
-      amendsId: row.amends_id === null ? null : Number(row.amends_id),
-      note: String(row.note),
-      actualCheckedAt: String(row.actual_checked_at),
-      filename: String(row.filename),
-      sha256: String(row.sha256),
-      sizeBytes: Number(row.size_bytes),
-      addedAt: String(row.added_at),
-    }
-  }
-
-  /** Библиотека нормативных документов без содержимого PDF. */
   listDocuments(): DocumentRecord[] {
-    return (
-      this.db
-        .prepare(
-          `SELECT id, code, edition, title, kind, effective_from, amends_id, note,
-                  actual_checked_at, filename, sha256, size_bytes, added_at
-             FROM normative_documents ORDER BY code, effective_from, id`,
-        )
-        .all() as Record<string, unknown>[]
-    ).map((row) => this.documentRow(row))
+    return this.documents.list()
   }
 
   getDocument(id: number): DocumentRecord | null {
-    return this.listDocuments().find((document) => document.id === id) ?? null
+    return this.documents.get(id)
   }
 
   getDocumentPdf(id: number): { filename: string; pdf: Uint8Array } | null {
-    const row = this.db
-      .prepare('SELECT filename, pdf FROM normative_documents WHERE id = ?')
-      .get(id) as { filename: string; pdf: Uint8Array } | undefined
-    return row ?? null
+    return this.documents.getPdf(id)
   }
 
   findDocumentBySha(sha256: string): DocumentRecord | null {
-    return this.listDocuments().find((document) => document.sha256 === sha256) ?? null
-  }
-
-  private checkAmends(meta: DocumentMeta, selfId: number | null): void {
-    if (meta.amendsId === null) return
-    if (meta.amendsId === selfId) throw new DocumentInUse('Документ не может изменять сам себя.')
-    const base = this.getDocument(meta.amendsId)
-    if (!base) throw new DocumentInUse('Изменяемый документ не найден в библиотеке.')
-    if (base.amendsId !== null)
-      throw new DocumentInUse(
-        'Изменение прикрепляется к основному документу, а не к другому изменению.',
-      )
-    if (selfId !== null) {
-      const dependants = this.listDocuments().filter((item) => item.amendsId === selfId)
-      if (dependants.length)
-        throw new DocumentInUse(
-          'К этому документу прикреплены изменения: он не может сам быть изменением.',
-        )
-    }
+    return this.documents.findBySha(sha256)
   }
 
   addDocument(
@@ -683,67 +639,11 @@ export class RegistryStore {
     pdf: Uint8Array,
     sha256: string,
   ): DocumentRecord {
-    const meta = documentMetaSchema.parse(input)
-    if (this.findDocumentBySha(sha256)) throw new DocumentInUse('Этот PDF уже есть в библиотеке.')
-    this.checkAmends(meta, null)
-    const row = this.db
-      .prepare(
-        `INSERT INTO normative_documents
-          (code, edition, title, kind, effective_from, amends_id, note, actual_checked_at,
-           filename, pdf, sha256, size_bytes, added_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-      )
-      .get(
-        meta.code,
-        meta.edition,
-        meta.title,
-        meta.kind,
-        meta.effectiveFrom,
-        meta.amendsId,
-        meta.note,
-        meta.actualCheckedAt,
-        filename,
-        pdf,
-        sha256,
-        pdf.byteLength,
-        this.now(),
-      ) as { id: number }
-    return this.getDocument(row.id)!
+    return this.documentService.add(input, filename, pdf, sha256)
   }
 
   updateDocument(id: number, input: DocumentMeta): DocumentRecord | null {
-    const meta = documentMetaSchema.parse(input)
-    const existing = this.getDocument(id)
-    if (!existing) return null
-    if (existing.kind !== meta.kind) {
-      // Партия каталога знаков ссылается на документ как на стандарт знаков: после смены
-      // вида история каталога указывала бы на документ, из которого знаки взять нельзя.
-      const batches = this.db
-        .prepare('SELECT COUNT(*) AS count FROM sign_catalog_batches WHERE document_id = ?')
-        .get(id) as { count: number }
-      if (batches.count)
-        throw new DocumentInUse(
-          'С этим документом сверен импорт каталога знаков: вид документа изменить нельзя.',
-        )
-    }
-    this.checkAmends(meta, id)
-    this.db
-      .prepare(
-        `UPDATE normative_documents SET code = ?, edition = ?, title = ?, kind = ?,
-           effective_from = ?, amends_id = ?, note = ?, actual_checked_at = ? WHERE id = ?`,
-      )
-      .run(
-        meta.code,
-        meta.edition,
-        meta.title,
-        meta.kind,
-        meta.effectiveFrom,
-        meta.amendsId,
-        meta.note,
-        meta.actualCheckedAt,
-        id,
-      )
-    return this.getDocument(id)
+    return this.documentService.update(id, input)
   }
 
   /** Удаление допустимо, только если на документ не ссылаются каталог знаков и изменения. */

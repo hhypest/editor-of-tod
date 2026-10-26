@@ -5,11 +5,18 @@ import {
   documentStatuses,
   normalizeDocumentCode,
   type DocumentRecord,
+  type DocumentMeta,
 } from '../src/domain/normative-documents.ts'
 import { localCalendarDate } from '../src/domain/pu66-review.ts'
-import { RegistryStore, RevisionConflict } from './store.ts'
+import { RevisionConflict } from './storage-errors.ts'
 import { identifyDocument } from '../src/domain/document-identification.ts'
 import { extractPdfText } from './pdf-text.ts'
+
+export interface DocumentImportCommands {
+  listDocuments(): DocumentRecord[]
+  addDocument(meta: DocumentMeta, filename: string, pdf: Uint8Array, sha256: string): DocumentRecord
+  createBackup(): Promise<string>
+}
 
 export const MAX_DOCUMENT_BYTES = 40 * 1024 * 1024
 /** base64 PDF до 40 МБ и сведения о документе. */
@@ -89,7 +96,11 @@ function effect(existing: DocumentRecord[], candidate: DocumentRecord, today: st
   }
 }
 
-function plan(store: RegistryStore, body: z.infer<typeof requestSchema>, today: string) {
+function plan(
+  store: Pick<DocumentImportCommands, 'listDocuments'>,
+  body: z.infer<typeof requestSchema>,
+  today: string,
+) {
   const pdf = decode(body.file.data)
   const sha256 = createHash('sha256').update(pdf).digest('hex')
   const filename = body.file.name.split(/[\\/]/).at(-1) ?? body.file.name
@@ -128,11 +139,19 @@ function plan(store: RegistryStore, body: z.infer<typeof requestSchema>, today: 
   }
 }
 
-export function previewDocumentUpload(store: RegistryStore, body: unknown, now = new Date()) {
+export function previewDocumentUpload(
+  store: Pick<DocumentImportCommands, 'listDocuments'>,
+  body: unknown,
+  now = new Date(),
+) {
   return plan(store, requestSchema.parse(body), localCalendarDate(now)).preview
 }
 
-export async function applyDocumentUpload(store: RegistryStore, body: unknown, now?: Date) {
+export async function applyDocumentUpload(
+  store: DocumentImportCommands,
+  body: unknown,
+  now?: Date,
+) {
   const { expectedFingerprint, ...request } = applySchema.parse(body)
   const today = () => localCalendarDate(now ?? new Date())
   const first = plan(store, request, today())

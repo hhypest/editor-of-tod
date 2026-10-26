@@ -6,6 +6,11 @@
 
 ## [0.3.0-dev] — в разработке
 
+### 26.10.2026 — отдельная библиотека нормативных документов (#135)
+
+- SQL/row mapper, чтение PDF и запись реквизитов выделены в NormativeDocumentRepository, проверки schema/SHA/amends и запрет смены kind при исторических ссылках знаков — в NormativeDocumentService. Фасад делегирует прежние методы и передаёт узкий запрос ссылок на том же соединении; upload получает list/add/backup вместо RegistryStore.
+- Сохранены порядок ошибок, поля/порядок JSON, точные PDF bytes и неизменность исходника при правке реквизитов, receiver часов и single-statement/внешние транзакции. Три контракта прошли до переноса; прямые SQLite/service проверки фиксируют read-only, reopen, ограничения связей, откат, сохранность других областей и backup. Форматы, нормативы и лист не меняются. #135/А4 открыты; далее текст/подтверждения, затем сценарий удаления документа.
+
 ### 26.10.2026 — отдельный импорт ПУ-66 (#135)
 
 - Inspection и запись источников/current/revisions выделены в Pu66ImportRepository, counts/preview/fingerprint и координация явного возврата — в Pu66ImportService. Restore INSERT SELECT принадлежит lifecycle repository; одна прежняя BEGIN IMMEDIATE охватывает карточки, редакции и все события возврата. Upload получает узкие команды plan/import/backup вместо RegistryStore.
