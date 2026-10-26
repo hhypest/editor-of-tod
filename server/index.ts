@@ -4,10 +4,6 @@ import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { crossingWriteSchema, normativeWriteSchema } from '../src/domain/registry.ts'
-import { pu66VerificationWriteSchema } from '../src/domain/pu66-review.ts'
-import { pu66LifecycleWriteSchema } from '../src/domain/pu66-lifecycle.ts'
-import { applyPu66Lifecycle } from './pu66-lifecycle.ts'
-import { applyPu66Upload, previewPu66Upload, PU66_UPLOAD_REQUEST_BYTES } from './pu66-web-import.ts'
 import { applySignUpload, previewSignUpload, SIGN_UPLOAD_REQUEST_BYTES } from './sign-web-import.ts'
 import {
   applyDocumentUpload,
@@ -21,7 +17,6 @@ import { documentMetaSchema } from '../src/domain/normative-documents.ts'
 import { clientEventsSchema, DiagnosticsLog, routeOf } from './diagnostics.ts'
 import { databaseIdentity } from './database-identity.ts'
 import { RegistryStore, migrationNotice } from './store.ts'
-import { InvalidPu66Lifecycle } from './pu66/errors.ts'
 import { RequestError } from './http/request-error.ts'
 import { json, readJson } from './http/json.ts'
 import { checkRequest } from './http/security.ts'
@@ -32,6 +27,7 @@ import { parameterRejection, writeHttpError, type ParameterRejection } from './h
 
 import { createProjectRoutes } from './http/routes/projects.ts'
 import { createRecoveryRoutes } from './http/routes/recovery.ts'
+import { createPu66Routes } from './http/routes/pu66.ts'
 
 export { directoryFiles, type StaticFiles } from './http/static-files.ts'
 
@@ -69,6 +65,31 @@ export function createRegistryServer(
     delete: ({ sessionId, expectedVersion, ownerId }) =>
       store.deleteRecovery(sessionId, expectedVersion, ownerId),
   })
+  const pu66Routes = createPu66Routes({
+    cards: {
+      list: (includeExcluded) => store.listPu66(includeExcluded),
+      getNorms: (key) => store.getPu66Norms(key),
+      getScheme: (key) => store.getPu66Scheme(key),
+    },
+    lifecycle: {
+      getStatus: (key) => store.getPu66Status(key),
+      list: (key) => store.listPu66Lifecycle(key),
+    },
+    verifications: {
+      list: (key) => store.listPu66Verifications(key),
+      record: (key, input) => store.recordPu66Verification(key, input),
+    },
+    lifecycleCommands: {
+      planPu66Lifecycle: (input) => store.planPu66Lifecycle(input),
+      recordPu66Lifecycle: (input, fingerprint) => store.recordPu66Lifecycle(input, fingerprint),
+      createBackup: () => store.createBackup(),
+    },
+    importCommands: {
+      planPu66Import: (entries, restoration) => store.planPu66Import(entries, restoration),
+      importPu66: (entries, restoration) => store.importPu66(entries, restoration),
+      createBackup: () => store.createBackup(),
+    },
+  })
   const server = createServer(async (req, res) => {
     const started = performance.now()
     let route = routeOf(req.method ?? 'GET', '/api/?')
@@ -87,6 +108,7 @@ export function createRegistryServer(
       checkRequest(req, actualPort)
       if (await projectRoutes(req, res, url)) return
       if (await recoveryRoutes(req, res, url)) return
+      if (await pu66Routes(req, res, url)) return
       const documentPath =
         /^\/api\/documents\/(\d+)(\/pdf|\/signs\/preview|\/signs\/apply|\/signs\/image)?$/.exec(
           pathname,
@@ -119,77 +141,6 @@ export function createRegistryServer(
         json(res, 200, store.listCrossings())
       } else if (req.method === 'GET' && pathname === '/api/normative') {
         json(res, 200, store.listNormative())
-      } else if (req.method === 'GET' && pathname === '/api/pu66') {
-        json(res, 200, store.listPu66())
-      } else if (req.method === 'GET' && pathname === '/api/pu66/lifecycle') {
-        json(
-          res,
-          200,
-          store.listPu66(true).map((card) => ({
-            ...card,
-            status: store.getPu66Status(card.referenceId),
-          })),
-        )
-      } else if (req.method === 'POST' && pathname === '/api/pu66/lifecycle/preview') {
-        json(res, 200, store.planPu66Lifecycle(pu66LifecycleWriteSchema.parse(await readJson(req))))
-      } else if (req.method === 'POST' && pathname === '/api/pu66/lifecycle/apply') {
-        json(res, 200, await applyPu66Lifecycle(store, await readJson(req)))
-      } else if (req.method === 'GET' && /^\/api\/pu66\/[^/]+\/status$/.test(pathname)) {
-        const key = decodeKey(pathname.slice('/api/pu66/'.length, -'/status'.length))
-        json(res, 200, store.getPu66Status(key))
-      } else if (req.method === 'GET' && /^\/api\/pu66\/[^/]+\/lifecycle$/.test(pathname)) {
-        const key = decodeKey(pathname.slice('/api/pu66/'.length, -'/lifecycle'.length))
-        const history = store.listPu66Lifecycle(key)
-        if (!history) throw new RequestError(404, 'Карточка ПУ-66 не найдена.')
-        json(res, 200, history)
-      } else if (req.method === 'POST' && pathname === '/api/pu66/import/preview') {
-        json(
-          res,
-          200,
-          await previewPu66Upload(store, await readJson(req, PU66_UPLOAD_REQUEST_BYTES)),
-        )
-      } else if (req.method === 'POST' && pathname === '/api/pu66/import/apply') {
-        json(res, 200, await applyPu66Upload(store, await readJson(req, PU66_UPLOAD_REQUEST_BYTES)))
-      } else if (
-        req.method === 'GET' &&
-        pathname.startsWith('/api/pu66/') &&
-        pathname.endsWith('/norms')
-      ) {
-        const key = decodeKey(pathname.slice('/api/pu66/'.length, -'/norms'.length))
-        const norms = store.getPu66Norms(key)
-        if (!norms) throw new RequestError(404, 'Карточка ПУ-66 не найдена.')
-        json(res, 200, norms)
-      } else if (
-        req.method === 'GET' &&
-        pathname.startsWith('/api/pu66/') &&
-        pathname.endsWith('/scheme')
-      ) {
-        const encodedKey = pathname.slice('/api/pu66/'.length, -'/scheme'.length)
-        const key = decodeKey(encodedKey)
-        if (store.getPu66Status(key)?.excluded)
-          throw new InvalidPu66Lifecycle('Карточка ПУ-66 исключена. Выберите действующую карточку.')
-        const fields = store.getPu66Scheme(key)
-        if (!fields) throw new RequestError(404, 'Карточка ПУ-66 не найдена.')
-        json(res, 200, fields)
-      } else if (
-        req.method === 'GET' &&
-        pathname.startsWith('/api/pu66/') &&
-        pathname.endsWith('/verifications')
-      ) {
-        const key = decodeKey(pathname.slice('/api/pu66/'.length, -'/verifications'.length))
-        const history = store.listPu66Verifications(key)
-        if (!history) throw new RequestError(404, 'Карточка ПУ-66 не найдена.')
-        json(res, 200, history)
-      } else if (
-        req.method === 'POST' &&
-        pathname.startsWith('/api/pu66/') &&
-        pathname.endsWith('/verification')
-      ) {
-        const key = decodeKey(pathname.slice('/api/pu66/'.length, -'/verification'.length))
-        const input = pu66VerificationWriteSchema.parse(await readJson(req))
-        const verification = store.recordPu66Verification(key, input)
-        if (!verification) throw new RequestError(404, 'Карточка ПУ-66 не найдена.')
-        json(res, 201, verification)
       } else if (req.method === 'GET' && pathname === '/api/signs') {
         const query =
           new URL(req.url ?? '/', `http://127.0.0.1:${actualPort}`).searchParams.get('query') ?? ''
