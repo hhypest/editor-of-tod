@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import type { Server } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createRegistryServer } from '../index'
+import { NormativeDocumentRepository } from '../documents/normative-document-repository'
 import { evidenceConfirmation } from './document-evidence-fixture'
 import { RegistryStore } from '../store'
 import { documentMeta, documentFile, seedDocumentBatch } from './normative-document-fixture'
@@ -95,10 +96,13 @@ describe('atomic normative document deletion', () => {
 
   it('acquires the write lock before the initial existence/reference checks', () => {
     const { store, raw, document } = setup(),
-      get = store.getDocument.bind(store)
+      get = NormativeDocumentRepository.prototype.get
     raw.exec('PRAGMA busy_timeout = 1')
     let checked = false
-    vi.spyOn(store, 'getDocument').mockImplementation((id) => {
+    vi.spyOn(NormativeDocumentRepository.prototype, 'get').mockImplementation(function (
+      this: NormativeDocumentRepository,
+      id,
+    ) {
       checked = true
       expect(() =>
         raw.prepare('UPDATE normative_documents SET note = ? WHERE id = ?').run('blocked', id),
@@ -106,7 +110,7 @@ describe('atomic normative document deletion', () => {
       expect(
         raw.prepare('SELECT COUNT(*) AS count FROM document_pages WHERE document_id = ?').get(id),
       ).toEqual({ count: 3 })
-      return get(id)
+      return get.call(this, id)
     })
     expect(store.deleteDocument(document.id)).toBe(true)
     expect(checked).toBe(true)

@@ -59,4 +59,11 @@ export class ParameterConfirmationRepository {
       ) as { id: number }
     return { ...input, id: row.id }
   }
+
+  countForDocument(id: number): number {
+    const confirmations = this.db
+      .prepare('SELECT COUNT(*) AS count FROM parameter_confirmations WHERE document_id = ?')
+      .get(id) as { count: number }
+    return confirmations.count
+  }
 }
