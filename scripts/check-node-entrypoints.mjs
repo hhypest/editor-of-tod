@@ -3,12 +3,12 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { launchDesktop } from '../server/desktop-instance.ts'
-import { createRegistryServer } from '../server/index.ts'
+import { createHttpServer } from '../server/http/server.ts'
 import { runImport } from '../server/import-cli.ts'
-import { RegistryStore } from '../server/store.ts'
+import { createServerRuntime } from '../server/server-runtime.ts'
 
-const store = new RegistryStore(':memory:')
-const server = createRegistryServer(store, 0)
+const store = createServerRuntime(':memory:')
+const server = createHttpServer(store.http, 0)
 
 try {
   await new Promise((resolve, reject) => {

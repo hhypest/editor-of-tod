@@ -1,5 +1,9 @@
 # Проверка приложения
 
+## Runtime/HTTP server/bootstrap без фасада (26.10.2026, #135)
+
+Три предварительных контракта прошли до переноса рабочих API/desktop/CLI: импорт preview/apply/backup/no-op и отказ backup, cleanup после отказа listen. Шесть прямых runtime-проверок сохраняют общее состояние/историю/source, связи ПУ-66/документов/знаков, настоящий CLI backup, завершение активного HTTP-запроса до close и future-schema без изменения файла. Прежние desktop-instance сценарии переведены на runtime без ослабления ожиданий. [Границы и остаток](docs/refactoring/server-runtime-bootstrap.md). Локальный npm run check: **129 файлов / 979 тестов**, Node API/CLI/desktop и production build. Полный локальный Chromium E2E: **56/56 без повторов**. CI/Windows exe фиксируются в PR. #135/А4 открыты до удаления совместимых тестовых фасада/адаптера и итоговых проверок.
+
 ## Серверный перенос system/diagnostics/legacy (26.10.2026, #135)
 
 Три новых предварительных контракта прошли на прежнем index до переноса. Семь прямых проверок без RegistryStore сохраняют status/probe/backup, количественную сводку и независимые отказы чтений, события/privacy/лимит 64 КиБ, legacy/новые версии/конфликты двух соединений и rollback обоих видов истории, untouched fallback. Описание и ссылки — [профиль переноса](docs/refactoring/system-legacy-routes.md). Полный локальный npm run check: **127 файлов / 970 тестов**, архитектура/формат/lint/типы, Node API/CLI/desktop и production build. Полный локальный Chromium E2E: **56/56 без повторов**. Результат CI фиксируется в PR; отдельная Windows exe этого шага не собиралась. #135/А4 остаются открыты.

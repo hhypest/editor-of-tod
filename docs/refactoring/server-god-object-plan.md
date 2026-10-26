@@ -71,7 +71,7 @@ Preview/apply используют общий расчёт плана. Импо�
 
 Выделены [маршруты знаков, документов и нормативных параметров](catalog-document-routes.md): узкие операции ZIP/PDF/library/подтверждений, прежние байты/версии/ETag/лимиты и отдельный контекст диагностики на каждый запрос. Три контракта прошли до переноса; девять прямых HTTP-проверок без фасада сохраняют историю, backup/recheck, удаления/rollback, подтверждения и untouched fallback.
 
-Выполнено: HTTP-примитивы → project/recovery routes → ПУ-66 → signs/documents/normative parameters. Выделены [system/diagnostics/legacy](system-legacy-routes.md): девять API-ветвей с узкими зависимостями; диагностическая сводка получает только metadata/количественные запросы без типа фасада. Три контракта прошли до переноса; семь прямых проверок сохраняют probe/backup, privacy/лимиты/недоступные query, legacy/conflicts/rollback и untouched fallback. Далее тонкий bootstrap/shutdown и перевод оставшихся вызывающих. `server/index.ts` после перехода не содержит SQL или предметные таблицы.
+Выполнено: HTTP-примитивы → project/recovery routes → ПУ-66 → signs/documents/normative parameters. Выделены [system/diagnostics/legacy](system-legacy-routes.md): девять API-ветвей с узкими зависимостями; диагностическая сводка получает только metadata/количественные запросы без типа фасада. Три контракта прошли до переноса; семь прямых проверок сохраняют probe/backup, privacy/лимиты/недоступные query, legacy/conflicts/rollback и untouched fallback. Выделены [runtime/HTTP server/bootstrap](server-runtime-bootstrap.md): рабочие API/desktop/CLI используют прямую сборку без фасада, metadata/backup/close принадлежат runtime. Прежний createRegistryServer вынесен в совместимый адаптер для тестов. Далее перевод совместимых тестовых вызывающих и удаление фасада/адаптера. `server/index.ts` после перехода не содержит SQL или предметные таблицы.
 
 ### 7. Удаление совместимого фасада
 
@@ -88,7 +88,7 @@ Forwarding method удаляется только после прямых тес
 - [ ] Межмодульные изменения и recovery имеют явные атомарные команды.
 - [x] Общие HTTP-примитивы и error mapper выделены с сохранением статусов, заголовков, лимитов и диагностики.
 - [x] Route groups зависят от узких контрактов, без RegistryStore/DatabaseSync. Временный адаптер createRegistryServer связывает их с фасадом до перевода вызывающих.
-- [ ] `index.ts` выполняет bootstrap/shutdown, composition root собирает зависимости.
+- [x] `index.ts` передаёт запуск в bootstrap; composition root/runtime собирают зависимости, HTTP factory получает узкие порты. Рабочие API/desktop/CLI не создают фасад. Совместимые тестовые адаптер/экспорты пока сохраняются.
 - [ ] Прежние форматы, API, транзакции, история, source и графика сохранены.
 - [ ] Полный набор проверок и Windows exe пройдены; #134 подтверждена отдельно.
 - [ ] ROADMAP, архитектура и #144 отражают фактическое завершение; далее первым идёт #191.

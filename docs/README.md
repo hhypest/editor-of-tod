@@ -47,6 +47,7 @@
 - [Маршруты проектов и восстановления](refactoring/project-recovery-routes.md) — узкие операции, прежние guards/owner/version/source/receipt и совместимый адаптер перед переводом bootstrap.
 - [Общие HTTP-компоненты](refactoring/http-transport.md) — JSON/лимиты, Host/Origin, ключи, статика, PDF/PNG/ETag и отображение ошибок перед выделением маршрутов.
 - [Ручная сборка серверных зависимостей](refactoring/composition-root.md) — одна SQLite, порядок migration/seed, закрытие при отказе и совместимый фасад.
+- [Сборка приложения и запуск без фасада](refactoring/server-runtime-bootstrap.md) — runtime/HTTP factory, рабочие API/desktop/CLI, metadata/backup/close и оставшийся совместимый тестовый адаптер.
 - [Маршруты system/diagnostics/legacy](refactoring/system-legacy-routes.md) — status/probe/backup, события и количественная сводка без фасада, ручные реестры и их HTTP-контракты.
 - [Каталог знаков](refactoring/sign-catalog.md) — партии/active/history, plan/import, исторические PNG/metadata, rollback и узкие ZIP/PDF операции.
 - [Сценарий удаления документа](refactoring/delete-normative-document.md) — команда с узкими владельцами DELETE и исторических ссылок, сохранением транзакции и rollback #215/#216.

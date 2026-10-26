@@ -19,10 +19,11 @@ import {
   LegacyInstanceRunning,
   startDesktopInstance,
 } from '../desktop-instance'
-import { RegistryStore, SCHEMA_VERSION } from '../store'
+import { createServerRuntime, type ServerRuntime } from '../server-runtime'
+import { SCHEMA_VERSION } from '../database/schema-version'
 
 const servers: Server[] = []
-const stores: RegistryStore[] = []
+const stores: ServerRuntime[] = []
 const directories: string[] = []
 afterEach(async () => {
   for (const server of servers.splice(0))
@@ -35,7 +36,7 @@ afterEach(async () => {
 function database() {
   const directory = mkdtempSync(join(tmpdir(), 'tod-instance-'))
   directories.push(directory)
-  const store = new RegistryStore(join(directory, 'registry.sqlite'))
+  const store = createServerRuntime(join(directory, 'registry.sqlite'))
   stores.push(store)
   return store
 }
@@ -71,7 +72,7 @@ async function availablePair(): Promise<number> {
   throw new Error('No available neighbouring ports for the test')
 }
 
-async function start(store: RegistryStore, port?: number) {
+async function start(store: ServerRuntime, port?: number) {
   const { release, ...instance } = await startDesktopInstance(
     store,
     port ?? (await availablePair()),
@@ -105,7 +106,7 @@ describe('desktop instances preserve the selected database', () => {
   it('reuses the server for the same canonical file without exposing its path', async () => {
     const store = database()
     const first = await start(store)
-    const secondStore = new RegistryStore(join(store.path, '..', 'registry.sqlite'))
+    const secondStore = createServerRuntime(join(store.path, '..', 'registry.sqlite'))
     stores.push(secondStore)
     expect(await start(secondStore, first.port)).toEqual({ server: null, port: first.port })
     const response = await fetch(`http://127.0.0.1:${first.port}/api/status`)
@@ -141,7 +142,7 @@ describe('desktop instances preserve the selected database', () => {
   })
 
   describe('looking for a running program before the database file is opened', () => {
-    const marker = (store: RegistryStore) => `${store.path}.instance.json`
+    const marker = (store: ServerRuntime) => `${store.path}.instance.json`
     /** Порт вне диапазона работающей программы: поиск по портам её не найдёт. */
     const elsewhere = (port: number) => (port > 30_000 ? port - 5_000 : port + 5_000)
     /** Диапазон «по умолчанию» совпадает с заданным: настоящий порт 4100 тесты не трогают. */
@@ -151,7 +152,7 @@ describe('desktop instances preserve the selected database', () => {
       const directory = mkdtempSync(join(tmpdir(), name))
       directories.push(directory)
       const path = join(directory, 'registry.sqlite')
-      new RegistryStore(path).close()
+      createServerRuntime(path).close()
       const raw = new DatabaseSync(path)
       raw.exec(
         'ALTER TABLE project_recovery DROP COLUMN owner_until; ALTER TABLE project_recovery DROP COLUMN owner_id; PRAGMA user_version = 12;',

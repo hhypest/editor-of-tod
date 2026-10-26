@@ -4,9 +4,10 @@ import { get, type Server } from 'node:http'
 import { hostname } from 'node:os'
 import { dirname } from 'node:path'
 import { databaseIdentity } from './database-identity.ts'
-import { createRegistryServer, DEFAULT_PORT, type StaticFiles } from './index.ts'
+import { createHttpServer, DEFAULT_PORT } from './http/server.ts'
+import type { StaticFiles } from './http/static-files.ts'
 import type { DiagnosticsLog } from './diagnostics.ts'
-import { RegistryStore } from './store.ts'
+import { createServerRuntime, type ServerRuntime } from './server-runtime.ts'
 
 type JsonReply = { body: unknown; json: boolean }
 
@@ -290,14 +291,14 @@ function listen(server: Server, port: number): Promise<void> {
 
 /** Возвращает работающую базу или занимает следующий доступный порт, сохраняя выбор базы. */
 export async function startDesktopInstance(
-  store: RegistryStore,
+  store: ServerRuntime,
   initialPort: number,
   staticFiles?: StaticFiles,
   diagnostics?: DiagnosticsLog,
 ): Promise<{ server: Server | null; port: number; release: () => void }> {
   const instanceId = randomUUID()
   for (const port of candidatePorts(initialPort)) {
-    const server = createRegistryServer(store, port, staticFiles, diagnostics, instanceId)
+    const server = createHttpServer(store.http, port, staticFiles, diagnostics, instanceId)
     try {
       await listen(server, port)
       const address = server.address()
@@ -329,7 +330,7 @@ export async function launchDesktop(
   options: { staticFiles?: StaticFiles; diagnostics?: () => DiagnosticsLog } = {},
 ): Promise<
   | { running: true; port: number }
-  | { running: false; port: number; server: Server; store: RegistryStore; release: () => void }
+  | { running: false; port: number; server: Server; store: ServerRuntime; release: () => void }
 > {
   const running = await findRunningInstance(databasePath, initialPort)
   if (running !== null) return { running: true, port: running }
@@ -339,7 +340,7 @@ export async function launchDesktop(
     // Пока мы искали программу и ждали замок, другой запуск мог завершиться и оставить отметку.
     const started = await findByMarker(databasePath)
     if (started !== null) return { running: true, port: started }
-    const store = new RegistryStore(databasePath)
+    const store = createServerRuntime(databasePath)
     try {
       const instance = await startDesktopInstance(
         store,

@@ -1,4 +1,3 @@
-import { join } from 'node:path'
 import { createServerServices, type ServerServices } from './composition-root.ts'
 import type { DatabaseSync } from 'node:sqlite'
 import { SCHEMA_VERSION, readSchemaVersion } from './database/schema-version.ts'
@@ -51,14 +50,7 @@ export {
 /** Текущая версия схемы локальной базы (`PRAGMA user_version`). */
 export { SCHEMA_VERSION }
 
-/** Сообщение для окна программы после обновления схемы базы; `null`, если обновления не было. */
-export function migrationNotice(store: RegistryStore): string | null {
-  if (store.migratedFrom === null) return null
-  const versions = `База обновлена: версия ${store.migratedFrom} → ${SCHEMA_VERSION}.`
-  return store.migrationBackup
-    ? `${versions} Прежняя база сохранена: ${join(store.backupDirectory, store.migrationBackup)}`
-    : versions
-}
+export { migrationNotice } from './database/migration-notice.ts'
 
 export class RegistryStore {
   private readonly db: DatabaseSync
