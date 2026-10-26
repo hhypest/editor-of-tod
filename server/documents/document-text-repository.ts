@@ -31,4 +31,9 @@ export class DocumentTextRepository {
       throw error
     }
   }
+
+  /** Caller owns the transaction spanning text and PDF deletion. */
+  delete(id: number): void {
+    this.db.prepare('DELETE FROM document_pages WHERE document_id = ?').run(id)
+  }
 }

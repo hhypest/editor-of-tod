@@ -52,7 +52,8 @@ import {
 import type { DocumentMeta, DocumentRecord } from '../src/domain/normative-documents.ts'
 import { NormativeDocumentRepository } from './documents/normative-document-repository.ts'
 import { NormativeDocumentService } from './documents/normative-document-service.ts'
-import { DocumentInUse } from './documents/errors.ts'
+import { DeleteNormativeDocument } from './documents/delete-normative-document.ts'
+import { SignCatalogDocumentReferences } from './signs/document-references.ts'
 import { DocumentTextRepository } from './documents/document-text-repository.ts'
 import { ParameterConfirmationRepository } from './parameters/confirmation-repository.ts'
 
@@ -121,6 +122,7 @@ export class RegistryStore {
   private readonly documents: NormativeDocumentRepository
   private readonly documentText: DocumentTextRepository
   private readonly parameterConfirmations: ParameterConfirmationRepository
+  private readonly deleteDocumentCommand: DeleteNormativeDocument
   private readonly documentService: NormativeDocumentService
   private readonly pu66Imports: Pu66ImportService
   private readonly pu66Verifications: Pu66VerificationRepository
@@ -169,14 +171,19 @@ export class RegistryStore {
         () => this.now(),
       )
       this.documents = new NormativeDocumentRepository(this.db, () => this.now())
-      this.documentService = new NormativeDocumentService(this.documents, (id) => {
-        const batches = this.db
-          .prepare('SELECT COUNT(*) AS count FROM sign_catalog_batches WHERE document_id = ?')
-          .get(id) as { count: number }
-        return batches.count
-      })
+      const signDocumentReferences = new SignCatalogDocumentReferences(this.db)
+      this.documentService = new NormativeDocumentService(this.documents, (id) =>
+        signDocumentReferences.countBatches(id),
+      )
       this.documentText = new DocumentTextRepository(this.db)
       this.parameterConfirmations = new ParameterConfirmationRepository(this.db, () => this.now())
+      this.deleteDocumentCommand = new DeleteNormativeDocument(
+        this.documents,
+        this.documentText,
+        this.parameterConfirmations,
+        signDocumentReferences,
+        new SqliteTransactionRunner(this.db),
+      )
       if (this.listNormative().length === 0) {
         for (const entry of initialNormativeEntries) this.saveNormative(entry, 0)
       }
@@ -652,30 +659,8 @@ export class RegistryStore {
     return this.documentService.update(id, input)
   }
 
-  /** Все проверки ссылок и удаление текста/PDF выполняются в одной транзакции. */
   deleteDocument(id: number): boolean {
-    return new SqliteTransactionRunner(this.db).immediate(() => {
-      if (!this.getDocument(id)) return false
-      const batches = this.db
-        .prepare('SELECT COUNT(*) AS count FROM sign_catalog_batches WHERE document_id = ?')
-        .get(id) as { count: number }
-      if (batches.count)
-        throw new DocumentInUse(
-          'С этим документом сверен импорт каталога знаков: запись нужна для истории и не удаляется.',
-        )
-      if (this.listDocuments().some((document) => document.amendsId === id))
-        throw new DocumentInUse('Сначала удалите изменения, прикреплённые к этому документу.')
-      const confirmations = this.db
-        .prepare('SELECT COUNT(*) AS count FROM parameter_confirmations WHERE document_id = ?')
-        .get(id) as { count: number }
-      if (confirmations.count)
-        throw new DocumentInUse(
-          'По этому документу подтверждены нормативные параметры: запись нужна для истории и не удаляется.',
-        )
-      this.db.prepare('DELETE FROM document_pages WHERE document_id = ?').run(id)
-      this.db.prepare('DELETE FROM normative_documents WHERE id = ?').run(id)
-      return true
-    })
+    return this.deleteDocumentCommand.execute(id)
   }
 
   getDocumentText(id: number): string[] | null {

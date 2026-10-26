@@ -42,6 +42,7 @@
 - [Ручные реестры и история](refactoring/legacy-registry-repository.md) — crossings/normative/revisions, конфликты, ASC history и отдельное начальное наполнение.
 - [Чтение ПУ-66 и ключи](refactoring/pu66-read-repository.md) — прежние проекции, aliases/неоднозначность, metadata сверок и фильтрация исключённых карточек.
 - [Журнал сверок ПУ-66](refactoring/pu66-verification-repository.md) — даты/редакции, проверка исключения под блокировкой, история, rollback и переходный запрос lifecycle.
+- [Сценарий удаления документа](refactoring/delete-normative-document.md) — команда с узкими владельцами DELETE и исторических ссылок, сохранением транзакции и rollback #215/#216.
 - [Атомарное удаление документа](refactoring/document-deletion-atomicity.md) — отдельное исправление #215 перед переносом: сохранение текста/PDF при отказе и блокировка между проверками и записью.
 - [Текст документов и подтверждения](refactoring/document-evidence.md) — cache/пустой скан, атомарная замена страниц, история значений/цитат и узкие операции нормативных сценариев.
 - [Нормативные документы](refactoring/normative-documents.md) — хранение PDF/реквизитов, связи изменений, исторические ссылки каталога знаков и узкий upload/backup port.

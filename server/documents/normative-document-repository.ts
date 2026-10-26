@@ -101,4 +101,9 @@ export class NormativeDocumentRepository {
       )
     return this.get(id)
   }
+
+  /** Caller owns the transaction and has checked all historical references. */
+  delete(id: number): void {
+    this.db.prepare('DELETE FROM normative_documents WHERE id = ?').run(id)
+  }
 }
