@@ -67,7 +67,7 @@ Preview/apply используют общий расчёт плана. Импо�
 
 [Ручной composition root](composition-root.md) выделен: создаёт конкретные SQLite-адаптеры на одном соединении, выполняет прежнюю миграцию/seed и закрытие при отказе. RegistryStore пока сохраняет API и lifecycle после успешной сборки. Route groups получают узкие зависимости; application services не знают HTTP. [Общий транспорт](http-transport.md) выделен: JSON/body limits, security, path parsing, error mapping, бинарные ответы и static files; прежние route order и диагностика запроса остаются в index.
 
-[Project/recovery routes](project-recovery-routes.md) выделены с узкими операциями и временным адаптером в index; группы можно напрямую связать с repositories. Bootstrap/фасад ещё сохраняются.
+[Project/recovery routes](project-recovery-routes.md) выделены с узкими операциями и временным адаптером в index; группы можно напрямую связать с repositories. Bootstrap/фасад ещё сохраняются. [Маршруты ПУ-66](pu66-routes.md) также выделены: cards/lifecycle/verifications и прежние узкие команды импорта/backup; 12 HTTP-ветвей сохраняют guards, проекции и атомарные сценарии.
 
 Порядок: HTTP-примитивы → project/recovery routes → ПУ-66 → signs/documents → system/diagnostics/legacy → тонкий bootstrap/shutdown. `server/index.ts` после перехода не содержит SQL или предметные таблицы.
 
