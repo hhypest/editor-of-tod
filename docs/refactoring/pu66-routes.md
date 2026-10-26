@@ -30,4 +30,4 @@ createRegistryServer сохраняет сигнатуру и пока соби�
 
 AST-сверка сохраняет все 12 перенесённых условий/тел после замены зависимостей; 23 остальных ветви и fallback совпадают. Старые API/web-import/lifecycle/read/verification/конкурентные/frozen-format проверки и полный E2E остаются обязательными. Новых зависимостей и рабочих данных нет; XLSX создаются программно.
 
-Далее signs/documents/normative parameters, system/diagnostics/legacy, тонкий bootstrap/shutdown и удаление фасада. #135/А4 открыты; JSON v10/SQLite v13, поля #110, нормативные алгоритмы и выпускной лист сохраняются. Pinia первой после А4, переработка интерфейса — 0.4.0, настольные оболочки пока отложены.
+После этой группы выделены [маршруты signs/documents/normative parameters](catalog-document-routes.md). Далее system/diagnostics/legacy, тонкий bootstrap/shutdown и удаление фасада. #135/А4 открыты; JSON v10/SQLite v13, поля #110, нормативные алгоритмы и выпускной лист сохраняются. Pinia первой после А4, переработка интерфейса — 0.4.0, настольные оболочки пока отложены.
