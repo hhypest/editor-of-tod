@@ -5,3 +5,11 @@ export class AmbiguousPu66Key extends Error {
     )
   }
 }
+
+export class InvalidPu66Lifecycle extends Error {}
+
+export class InvalidPu66Verification extends Error {
+  constructor() {
+    super('Дата сверки ПУ-66 не может быть в будущем.')
+  }
+}
