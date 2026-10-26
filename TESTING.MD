@@ -1,5 +1,9 @@
 # Проверка приложения
 
+## Удаление серверного фасада (26.10.2026, #135)
+
+Сохранённые контракты переведены на реальные repositories/services, узкие команды и createHttpServer. Помощник тестов создаёт владельцев и общую composeServerRuntime на одном соединении, без копии forwarding methods. Все **129 файлов / 979 тестов** сохраняются; SQL-фикстуры, ожидаемые payload/status/версии/ошибки и негативные проверки не ослабляются. Удалены десять проверок равенства старых реэкспортов, clock receiver проверяется через явно привязанный контекст. [Описание и критерии А4](docs/refactoring/facade-removal.md). Полный локальный npm run check прошёл: 129 файлов / 979 тестов, Node API/CLI/desktop и production build. Полный локальный Chromium E2E: **56/56 без повторов**. CI и Windows exe фиксируются в PR на итоговом дереве.
+
 ## Runtime/HTTP server/bootstrap без фасада (26.10.2026, #135)
 
 Три предварительных контракта прошли до переноса рабочих API/desktop/CLI: импорт preview/apply/backup/no-op и отказ backup, cleanup после отказа listen. Шесть прямых runtime-проверок сохраняют общее состояние/историю/source, связи ПУ-66/документов/знаков, настоящий CLI backup, завершение активного HTTP-запроса до close и future-schema без изменения файла. Прежние desktop-instance сценарии переведены на runtime без ослабления ожиданий. [Границы и остаток](docs/refactoring/server-runtime-bootstrap.md). Локальный npm run check: **129 файлов / 979 тестов**, Node API/CLI/desktop и production build. Полный локальный Chromium E2E: **56/56 без повторов**. CI/Windows exe фиксируются в PR. #135/А4 открыты до удаления совместимых тестовых фасада/адаптера и итоговых проверок.

@@ -8,7 +8,7 @@ import { migrateDatabase } from '../database/migration-runner'
 import { Pu66Repository } from '../pu66/repository'
 import { Pu66KeyResolver } from '../pu66/key-resolver'
 import { AmbiguousPu66Key } from '../pu66/errors'
-import { AmbiguousPu66Key as FacadeAmbiguousPu66Key } from '../store'
+
 import { readCard, seedReadCard, PRIVATE_MARKER } from './pu66-read-fixture'
 
 const connections: DatabaseSync[] = [],
@@ -48,7 +48,7 @@ describe('PU-66 read repository and key resolver without RegistryStore', () => {
     insert.run('dangling', 'missing-target')
     insert.run('chain', 'old-single')
     db.exec('PRAGMA query_only = ON')
-    expect(FacadeAmbiguousPu66Key).toBe(AmbiguousPu66Key)
+
     expect(keys.resolve(card.key)).toBe(card.key)
     expect(keys.resolve('old-single')).toBe(card.key)
     expect(cards.getScheme('old-single')).toEqual(cards.getScheme(card.key))

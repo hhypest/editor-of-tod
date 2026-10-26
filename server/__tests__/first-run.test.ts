@@ -1,3 +1,4 @@
+import { openTestApplication } from './test-application'
 import { mkdtempSync, existsSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,7 +7,7 @@ import { zipSync } from 'fflate'
 import { PNG } from 'pngjs'
 import { createSampleWorkbook, sampleCards } from '../../scripts/generate-pu66-samples.ts'
 import { parsePu66 } from '../pu66.ts'
-import { RegistryStore } from '../store.ts'
+
 import { applyPu66Upload, previewPu66Upload } from '../pu66-web-import.ts'
 import { applySignUpload, previewSignUpload } from '../sign-web-import.ts'
 
@@ -22,12 +23,12 @@ describe('first launch with synthetic source files', () => {
     const database = join(directory, 'private-data', 'registry.sqlite')
     expect(existsSync(database)).toBe(false)
 
-    const store = new RegistryStore(database)
+    const store = openTestApplication(database)
     try {
       expect(existsSync(database)).toBe(true)
-      expect(store.listPu66()).toHaveLength(0)
-      expect(store.listSigns()).toHaveLength(0)
-      expect(store.listNormative()).toHaveLength(4)
+      expect(store.pu66.list()).toHaveLength(0)
+      expect(store.signCatalog.list()).toHaveLength(0)
+      expect(store.legacy.listNormative()).toHaveLength(4)
 
       const files = await Promise.all(
         sampleCards.slice(0, 4).map(async (sample) => {
@@ -49,16 +50,19 @@ describe('first launch with synthetic source files', () => {
           return { name: sample.filename, data: bytes.toString('base64') }
         }),
       )
-      const pu66Plan = await previewPu66Upload(store, { files })
+      const pu66Plan = await previewPu66Upload(store.runtime.http.pu66.importCommands, { files })
       expect(pu66Plan).toMatchObject({ added: 4, updated: 0, unchanged: 0 })
-      expect(store.listPu66()).toHaveLength(0)
+      expect(store.pu66.list()).toHaveLength(0)
       expect(
-        await applyPu66Upload(store, { files, expectedFingerprint: pu66Plan.fingerprint }),
+        await applyPu66Upload(store.runtime.http.pu66.importCommands, {
+          files,
+          expectedFingerprint: pu66Plan.fingerprint,
+        }),
       ).toMatchObject({
         added: 4,
       })
-      expect(store.listPu66()).toHaveLength(4)
-      expect(store.listPu66().every((entry) => entry.verification === null)).toBe(true)
+      expect(store.pu66.list()).toHaveLength(4)
+      expect(store.pu66.list().every((entry) => entry.verification === null)).toBe(true)
 
       const image = new PNG({ width: 8, height: 8 })
       image.data.fill(255)
@@ -72,20 +76,23 @@ describe('first launch with synthetic source files', () => {
         edition: 'демо',
         pdf: null,
       }
-      const signPlan = previewSignUpload(store, signFiles)
+      const signPlan = previewSignUpload(store.runtime.http.signs.importCommands, signFiles)
       expect(signPlan).toMatchObject({ added: 1, signCount: 1 })
-      await applySignUpload(store, { ...signFiles, expectedFingerprint: signPlan.fingerprint })
-      expect(store.listSigns()).toHaveLength(1)
+      await applySignUpload(store.runtime.http.signs.importCommands, {
+        ...signFiles,
+        expectedFingerprint: signPlan.fingerprint,
+      })
+      expect(store.signCatalog.list()).toHaveLength(1)
       expect(readdirSync(join(directory, 'private-data', 'backups'))).toHaveLength(2)
     } finally {
-      store.close()
+      store.runtime.close()
     }
-    const reopened = new RegistryStore(database)
+    const reopened = openTestApplication(database)
     try {
-      expect(reopened.listPu66()).toHaveLength(4)
-      expect(reopened.listSigns()).toHaveLength(1)
+      expect(reopened.pu66.list()).toHaveLength(4)
+      expect(reopened.signCatalog.list()).toHaveLength(1)
     } finally {
-      reopened.close()
+      reopened.runtime.close()
     }
   })
 
@@ -112,10 +119,10 @@ describe('first launch with synthetic source files', () => {
   it('gives the local editor traffic, visibility and the norm column of a synthetic card', async () => {
     const sample = sampleCards[0]!
     const parsed = await parsePu66(await createSampleWorkbook(sample), sample.filename)
-    const store = new RegistryStore(':memory:')
+    const store = openTestApplication(':memory:')
     try {
-      store.importPu66([parsed])
-      const norms = store.getPu66Norms(parsed.card.key)!
+      store.pu66Imports.record([parsed])
+      const norms = store.pu66.getNorms(parsed.card.key)!
       expect(norms).toMatchObject({
         referenceId: '90001:12:3',
         carCountPerDay: parsed.card.carCountPerDay,
@@ -131,10 +138,10 @@ describe('first launch with synthetic source files', () => {
         'current',
       ])
       // Выборка для схемы по-прежнему без технической таблицы и интенсивности.
-      expect(store.getPu66Scheme(parsed.card.key)).not.toHaveProperty('technicalRows')
-      expect(store.getPu66Norms('90009:1:1')).toBeNull()
+      expect(store.pu66.getScheme(parsed.card.key)).not.toHaveProperty('technicalRows')
+      expect(store.pu66.getNorms('90009:1:1')).toBeNull()
     } finally {
-      store.close()
+      store.runtime.close()
     }
   })
 })

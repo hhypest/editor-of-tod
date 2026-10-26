@@ -12,10 +12,6 @@ import { migrateDatabase } from '../database/migration-runner'
 import { ProjectRepository } from '../projects/project-repository'
 import { ProjectSourceStore } from '../projects/project-source-store'
 import { ProjectTooLarge, RevisionConflict } from '../storage-errors'
-import {
-  ProjectTooLarge as FacadeProjectTooLarge,
-  RevisionConflict as FacadeRevisionConflict,
-} from '../store'
 
 const scheme = importSchemeJson(readFileSync('tests/fixtures/manual-v1.json', 'utf8')).scheme
 const connections: DatabaseSync[] = []
@@ -55,8 +51,7 @@ describe('ProjectRepository independently of RegistryStore', () => {
   it('checks expectedRevision before no-op, and preserves explicit force/restore and immutable history', () => {
     let reads = 0
     const { projects } = setup(':memory:', () => `2030-01-01T00:00:0${++reads}.000Z`)
-    expect(FacadeRevisionConflict).toBe(RevisionConflict)
-    expect(FacadeProjectTooLarge).toBe(ProjectTooLarge)
+
     const first = projects.save(scheme, 0)
     expect(projects.save(scheme, 1)).toEqual(first)
     expect(reads).toBe(1)
@@ -88,7 +83,7 @@ describe('ProjectRepository independently of RegistryStore', () => {
       ...scheme,
       source: { ...scheme.source, originalJson: '{"fictional":"losing source"}' },
     }
-    expect(() => two.projects.save(edited, stale.revision)).toThrow(FacadeRevisionConflict)
+    expect(() => two.projects.save(edited, stale.revision)).toThrow(RevisionConflict)
     expect(two.projects.get(scheme.id)?.scheme).toEqual(winner)
     expect(sourceCount(two.db)).toBe(1)
     expect(two.db.isTransaction).toBe(false)
@@ -232,7 +227,7 @@ describe('ProjectRepository independently of RegistryStore', () => {
     }
     expect(Buffer.byteLength(JSON.stringify(large))).toBeGreaterThan(MAX_LOCAL_PROJECT_BYTES)
     db.exec('BEGIN IMMEDIATE')
-    expect(() => projects.save(large, 0)).toThrow(FacadeProjectTooLarge)
+    expect(() => projects.save(large, 0)).toThrow(ProjectTooLarge)
     expect(db.isTransaction).toBe(true) // The size gate must neither begin nor roll back caller work.
     expect(clockReads).toBe(0)
     expect(sourceCount(db)).toBe(0)

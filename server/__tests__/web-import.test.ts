@@ -1,14 +1,14 @@
+import { openTestApplication, type TestApplication } from './test-application'
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import type { Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import ExcelJS from 'exceljs'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createRegistryServer } from '../index'
-import { RegistryStore } from '../store'
+import { createHttpServer } from '../http/server'
 
 const servers: Server[] = []
-const stores: RegistryStore[] = []
+const stores: TestApplication[] = []
 const directories: string[] = []
 
 afterEach(async () => {
@@ -17,7 +17,7 @@ afterEach(async () => {
       .splice(0)
       .map((server) => new Promise<void>((resolve) => server.close(() => resolve()))),
   )
-  for (const store of stores.splice(0)) store.close()
+  for (const store of stores.splice(0)) store.runtime.close()
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 
@@ -56,9 +56,9 @@ describe('browser PU-66 import', () => {
   it('imports several books as one batch with one backup and rejects more than 100', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-web-batch-'))
     directories.push(directory)
-    const store = new RegistryStore(join(directory, 'registry.sqlite'))
+    const store = openTestApplication(join(directory, 'registry.sqlite'))
     stores.push(store)
-    const server = createRegistryServer(store, 0)
+    const server = createHttpServer(store.runtime.http, 0)
     servers.push(server)
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     const address = server.address()
@@ -89,16 +89,16 @@ describe('browser PU-66 import', () => {
       expectedFingerprint: preview.fingerprint,
     })
     expect(result.status).toBe(200)
-    expect(store.listPu66()).toHaveLength(5)
+    expect(store.pu66.list()).toHaveLength(5)
     expect(readdirSync(join(directory, 'backups'))).toHaveLength(1)
   })
 
   it('previews without writing, requires a matching plan, and backs up before import', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-web-import-'))
     directories.push(directory)
-    const store = new RegistryStore(join(directory, 'registry.sqlite'))
+    const store = openTestApplication(join(directory, 'registry.sqlite'))
     stores.push(store)
-    const server = createRegistryServer(store, 0)
+    const server = createHttpServer(store.runtime.http, 0)
     servers.push(server)
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     const address = server.address()
@@ -142,7 +142,7 @@ describe('browser PU-66 import', () => {
     })
     expect(JSON.stringify(preview)).not.toContain(file.data)
     expect(JSON.stringify(preview)).not.toContain('technicalRows')
-    expect(store.listPu66()).toHaveLength(0)
+    expect(store.pu66.list()).toHaveLength(0)
     expect(
       (await post('apply', { files: [file], expectedFingerprint: '0'.repeat(64) })).status,
     ).toBe(409)
@@ -160,7 +160,7 @@ describe('browser PU-66 import', () => {
       backup: expect.stringMatching(/^registry-.*\.sqlite$/),
     })
     expect(readdirSync(join(directory, 'backups'))).toHaveLength(1)
-    expect(store.listPu66()).toMatchObject([{ referenceId: '99999:88:3', revision: 1 }])
+    expect(store.pu66.list()).toMatchObject([{ referenceId: '99999:88:3', revision: 1 }])
     expect(
       (await post('apply', { files: [file], expectedFingerprint: preview.fingerprint })).status,
     ).toBe(409)
@@ -188,7 +188,7 @@ describe('browser PU-66 import', () => {
       (await post('apply', { files: [changed], expectedFingerprint: changedPlan.fingerprint }))
         .status,
     ).toBe(200)
-    expect(store.listPu66()).toMatchObject([{ revision: 2, verification: null }])
+    expect(store.pu66.list()).toMatchObject([{ revision: 2, verification: null }])
     expect(readdirSync(join(directory, 'backups'))).toHaveLength(2)
   })
 })

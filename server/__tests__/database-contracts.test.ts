@@ -1,9 +1,10 @@
+import { openTestApplication } from './test-application'
 import { mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { RegistryStore, SCHEMA_VERSION } from '../store'
+import { SCHEMA_VERSION } from '../database/schema-version'
 
 const directories: string[] = []
 afterEach(() => {
@@ -11,7 +12,7 @@ afterEach(() => {
   for (const path of directories.splice(0)) rmSync(path, { recursive: true, force: true })
 })
 
-describe('database lifecycle through the stable RegistryStore facade', () => {
+describe('database lifecycle through initialized storage owners', () => {
   it('closes after a seed failure, preserving earlier committed entries and the original error', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-seed-failure-'))
     directories.push(directory)
@@ -19,26 +20,25 @@ describe('database lifecycle through the stable RegistryStore facade', () => {
     const failure = new Error('fictional second seed failure')
     let calls = 0
     const close = vi.spyOn(DatabaseSync.prototype, 'close')
-    expect(
-      () =>
-        new RegistryStore(path, () => {
-          if (++calls === 2) throw failure
-          return '2030-01-02T03:04:05.000Z'
-        }),
+    expect(() =>
+      openTestApplication(path, () => {
+        if (++calls === 2) throw failure
+        return '2030-01-02T03:04:05.000Z'
+      }),
     ).toThrow(failure)
     expect(close).toHaveBeenCalledTimes(1)
     const closed = close.mock.contexts[0] as DatabaseSync
     expect(() => closed.prepare('SELECT 1')).toThrow()
-    const reopened = new RegistryStore(path, () => {
+    const reopened = openTestApplication(path, () => {
       throw new Error('A nonempty registry must not be seeded again')
     })
     try {
-      expect(reopened.schemaVersion()).toBe(SCHEMA_VERSION)
-      const records = reopened.listNormative()
+      expect(reopened.runtime.schemaVersion()).toBe(SCHEMA_VERSION)
+      const records = reopened.legacy.listNormative()
       expect(records).toHaveLength(1)
-      expect(reopened.history('normative', records[0]!.id)).toHaveLength(1)
+      expect(reopened.legacy.history('normative', records[0]!.id)).toHaveLength(1)
     } finally {
-      reopened.close()
+      reopened.runtime.close()
     }
   })
 
@@ -51,7 +51,7 @@ describe('database lifecycle through the stable RegistryStore facade', () => {
     raw.exec('ALTER TABLE project_recovery ADD COLUMN owner_id TEXT')
     raw.close()
     const close = vi.spyOn(DatabaseSync.prototype, 'close')
-    expect(() => new RegistryStore(path)).toThrow(/duplicate column name: owner_id/)
+    expect(() => openTestApplication(path)).toThrow(/duplicate column name: owner_id/)
     expect(close).toHaveBeenCalledTimes(1)
     const closed = close.mock.contexts[0] as DatabaseSync
     expect(() => closed.prepare('SELECT 1')).toThrow()
@@ -62,12 +62,12 @@ describe('database lifecycle through the stable RegistryStore facade', () => {
     } finally {
       repair.close()
     }
-    const reopened = new RegistryStore(path)
+    const reopened = openTestApplication(path)
     try {
-      expect(reopened.migratedFrom).toBe(12)
-      expect(reopened.schemaVersion()).toBe(SCHEMA_VERSION)
+      expect(reopened.runtime.migratedFrom).toBe(12)
+      expect(reopened.runtime.schemaVersion()).toBe(SCHEMA_VERSION)
     } finally {
-      reopened.close()
+      reopened.runtime.close()
     }
   })
 
@@ -75,27 +75,28 @@ describe('database lifecycle through the stable RegistryStore facade', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-backup-clock-'))
     directories.push(directory)
     const path = join(directory, 'registry.sqlite')
-    function clock(this: RegistryStore) {
-      expect(this).toBeInstanceOf(RegistryStore)
+    const clockContext = { path: path }
+    function clock(this: typeof clockContext) {
+      expect(this).toBe(clockContext)
       expect(this.path).toBe(path)
       return '2030-01-02T03:04:05.000Z'
     }
-    const original = new RegistryStore(path, clock)
+    const original = openTestApplication(path, clock.bind(clockContext))
     try {
-      expect(await original.createBackup()).toMatch(/^registry-2030-01-02/)
+      expect(await original.runtime.http.createBackup()).toMatch(/^registry-2030-01-02/)
     } finally {
-      original.close()
+      original.runtime.close()
     }
     const raw = new DatabaseSync(path)
     raw.exec(
       'ALTER TABLE project_recovery DROP COLUMN owner_until; ALTER TABLE project_recovery DROP COLUMN owner_id; PRAGMA user_version = 12',
     )
     raw.close()
-    const reopened = new RegistryStore(path, clock)
+    const reopened = openTestApplication(path, clock.bind(clockContext))
     try {
-      expect(reopened.migrationBackup).toMatch(/^registry-before-update-v12-2030-01-02/)
+      expect(reopened.runtime.migrationBackup).toMatch(/^registry-before-update-v12-2030-01-02/)
     } finally {
-      reopened.close()
+      reopened.runtime.close()
     }
   })
 
@@ -110,7 +111,7 @@ describe('database lifecycle through the stable RegistryStore facade', () => {
     raw.close()
     const before = readFileSync(path)
     for (let attempt = 0; attempt < 2; attempt++) {
-      expect(() => new RegistryStore(path)).toThrow('Неизвестная версия локальной базы')
+      expect(() => openTestApplication(path)).toThrow('Неизвестная версия локальной базы')
       expect(readFileSync(path)).toEqual(before)
       expect(existsSync(join(directory, 'backups'))).toBe(false)
     }

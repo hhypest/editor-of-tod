@@ -7,7 +7,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createServerServices } from '../composition-root'
 import { databaseSummary, type DiagnosticDatabaseQueries } from '../diagnostic-database'
-import { databaseSummary as compatibleSummary, DiagnosticsLog } from '../diagnostics'
+import { DiagnosticsLog } from '../diagnostics'
 import { createSystemRoutes } from '../http/routes/system'
 import { createDiagnosticRoutes } from '../http/routes/diagnostics'
 import { createLegacyRoutes } from '../http/routes/legacy'
@@ -154,14 +154,13 @@ describe('system/diagnostics/legacy groups without the storage facade', () => {
     expect(createBackup).toHaveBeenCalledExactlyOnceWith()
   })
 
-  it('projects summary counts/catalog metadata only, observes live queries and keeps the compatible export', () => {
+  it('projects summary counts/catalog metadata only, observes live queries with the original projection', () => {
     const path = join(directory(), 'fictional.sqlite'),
       backupDirectory = join(directory(), 'backups')
     writeFileSync(path, Buffer.alloc(2048))
     mkdirSync(backupDirectory)
     writeFileSync(join(backupDirectory, 'fictional.sqlite'), '')
     const source = queries(path, backupDirectory)
-    expect(compatibleSummary).toBe(databaseSummary)
     const summary = databaseSummary(source)
     expect(summary).toEqual({
       location: 'локальная база',

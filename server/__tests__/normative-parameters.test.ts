@@ -1,3 +1,4 @@
+import { openTestApplication, type TestApplication } from './test-application'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,23 +7,24 @@ import type { DocumentMeta } from '../../src/domain/normative-documents'
 import { parameterDefinitions, rulesFrom } from '../../src/domain/normative-parameters'
 import { applyDocumentUpload, previewDocumentUpload } from '../document-web-import'
 import { confirmParameter, listParameterStates } from '../normative-parameters'
-import { DocumentInUse, RegistryStore, RevisionConflict } from '../store'
+import { DocumentInUse } from '../documents/errors'
+import { RevisionConflict } from '../storage-errors'
 import { fictionalMethodology as methodology, textPdf } from './pdf-fixture'
 import { createUnlinkedScheme } from '../../src/domain/create-scheme'
 import { reviewScheme } from '../../src/domain/review-scheme'
 import { markState, setMark, unmarkedChecks } from '../../src/domain/review-marks'
 
 const directories: string[] = []
-const stores: RegistryStore[] = []
+const stores: TestApplication[] = []
 afterEach(() => {
   // На Windows открытый файл SQLite не даёт удалить временную папку.
-  for (const store of stores.splice(0)) store.close()
+  for (const store of stores.splice(0)) store.runtime.close()
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
 })
 
 const now = new Date('2031-03-01T12:00:00')
 
-async function add(store: RegistryStore, pdf: Buffer, meta: Partial<DocumentMeta>) {
+async function add(store: TestApplication, pdf: Buffer, meta: Partial<DocumentMeta>) {
   const body = {
     file: { name: 'uchebny.pdf', data: pdf.toString('base64') },
     meta: {
@@ -37,16 +39,20 @@ async function add(store: RegistryStore, pdf: Buffer, meta: Partial<DocumentMeta
       ...meta,
     },
   }
-  const preview = previewDocumentUpload(store, body, now)
+  const preview = previewDocumentUpload(store.runtime.http.documents.importCommands, body, now)
   return (
-    await applyDocumentUpload(store, { ...body, expectedFingerprint: preview.fingerprint }, now)
+    await applyDocumentUpload(
+      store.runtime.http.documents.importCommands,
+      { ...body, expectedFingerprint: preview.fingerprint },
+      now,
+    )
   ).document
 }
 
 function library() {
   const directory = mkdtempSync(join(tmpdir(), 'tod-parameters-'))
   directories.push(directory)
-  const store = new RegistryStore(join(directory, 'registry.sqlite'))
+  const store = openTestApplication(join(directory, 'registry.sqlite'))
   stores.push(store)
   return store
 }
@@ -69,9 +75,10 @@ describe('normative parameters from library documents', () => {
       ]),
       { code: 'ПДД', edition: '2030-04-01', effectiveFrom: '' },
     )
-    expect(state(await listParameterStates(store, now), 'pdd-speed-settlement').status.kind).toBe(
-      'no-document',
-    )
+    expect(
+      state(await listParameterStates(store.runtime.http.parameters, now), 'pdd-speed-settlement')
+        .status.kind,
+    ).toBe('no-document')
     const dated = await add(
       store,
       textPdf([
@@ -89,7 +96,7 @@ describe('normative parameters from library documents', () => {
     )!
     if (definition.type !== 'table') throw new Error('Expected table')
     await confirmParameter(
-      store,
+      store.runtime.http.parameters,
       definition.id,
       {
         value: definition.fallback,
@@ -99,7 +106,7 @@ describe('normative parameters from library documents', () => {
       },
       now,
     )
-    const before = rulesFrom(await listParameterStates(store, now))
+    const before = rulesFrom(await listParameterStates(store.runtime.http.parameters, now))
     expect(before.pddDocument?.id).toBe(dated.id)
     expect(before.confirmed[definition.id]).toBe(true)
     const amendment = await add(
@@ -112,7 +119,7 @@ describe('normative parameters from library documents', () => {
         amendsId: dated.id,
       },
     )
-    const undated = rulesFrom(await listParameterStates(store, now))
+    const undated = rulesFrom(await listParameterStates(store.runtime.http.parameters, now))
     expect(undated.confirmed[definition.id]).toBe(true)
     expect(undated.evidence[definition.id]).toBe(before.evidence[definition.id])
     const scheme = createUnlinkedScheme(
@@ -144,7 +151,7 @@ describe('normative parameters from library documents', () => {
         reviewScheme(checked, undated).find((item) => item.id === 'pdd-speed')!,
       ).status,
     ).toBe('marked')
-    store.updateDocument(amendment.id, {
+    store.documentService.update(amendment.id, {
       code: amendment.code,
       edition: amendment.edition,
       title: amendment.title,
@@ -154,7 +161,7 @@ describe('normative parameters from library documents', () => {
       note: amendment.note,
       actualCheckedAt: amendment.actualCheckedAt,
     })
-    const after = rulesFrom(await listParameterStates(store, now))
+    const after = rulesFrom(await listParameterStates(store.runtime.http.parameters, now))
     expect(after.confirmed[definition.id]).toBe(false)
     expect(after.parameterBasis[definition.id]).toMatchObject({
       document: { id: dated.id, sha256: dated.sha256, effectiveFrom: '2030-09-01' },
@@ -170,7 +177,7 @@ describe('normative parameters from library documents', () => {
         reviewScheme(checked, after).find((item) => item.id === 'pdd-speed')!,
       ).status,
     ).toBe('stale')
-    store.updateDocument(amendment.id, {
+    store.documentService.update(amendment.id, {
       code: amendment.code,
       edition: amendment.edition,
       title: amendment.title,
@@ -180,10 +187,10 @@ describe('normative parameters from library documents', () => {
       note: amendment.note,
       actualCheckedAt: amendment.actualCheckedAt,
     })
-    const revised = rulesFrom(await listParameterStates(store, now))
+    const revised = rulesFrom(await listParameterStates(store.runtime.http.parameters, now))
     expect(revised.confirmed[definition.id]).toBe(false)
     expect(revised.evidence[definition.id]).not.toBe(after.evidence[definition.id])
-    store.updateDocument(dated.id, {
+    store.documentService.update(dated.id, {
       code: dated.code,
       edition: dated.edition,
       title: dated.title,
@@ -193,7 +200,7 @@ describe('normative parameters from library documents', () => {
       note: '',
       actualCheckedAt: '',
     })
-    const noCurrent = rulesFrom(await listParameterStates(store, now))
+    const noCurrent = rulesFrom(await listParameterStates(store.runtime.http.parameters, now))
     expect(noCurrent.parameterBasis[definition.id]).toMatchObject({
       confirmed: false,
       currentDocument: null,
@@ -204,7 +211,12 @@ describe('normative parameters from library documents', () => {
     const store = library()
     const document = await add(store, methodology(520), {})
     const who = { confirmedBy: 'Учебный составитель', note: '', expectedDocumentId: document.id }
-    await confirmParameter(store, 'odm-signs-hourly', { ...who, value: 260 }, now)
+    await confirmParameter(
+      store.runtime.http.parameters,
+      'odm-signs-hourly',
+      { ...who, value: 260 },
+      now,
+    )
     let scheme = createUnlinkedScheme({
       referenceId: 'TEST-AMENDMENT',
       locationText: 'Учебный участок',
@@ -226,7 +238,7 @@ describe('normative parameters from library documents', () => {
       },
     })
     scheme.parameters.regulation = { ...scheme.parameters.regulation, mode: 'two', hourly: '300' }
-    const original = rulesFrom(await listParameterStates(store, now))
+    const original = rulesFrom(await listParameterStates(store.runtime.http.parameters, now))
     scheme = setMark(scheme, reviewScheme(scheme, original), 'b34-traffic', true, now.toISOString())
     const traffic = (rules: typeof original) =>
       reviewScheme(scheme, rules).find((finding) => finding.id === 'b34-traffic')!
@@ -237,7 +249,7 @@ describe('normative parameters from library documents', () => {
       effectiveFrom: '2031-01-01',
       amendsId: document.id,
     })
-    const amended = rulesFrom(await listParameterStates(store, now))
+    const amended = rulesFrom(await listParameterStates(store.runtime.http.parameters, now))
     expect(amended.signsHourly).toBe(original.signsHourly)
     expect(amended.sources).toEqual(original.sources)
     expect(amended.confirmed['odm-signs-hourly']).toBe(false)
@@ -246,8 +258,13 @@ describe('normative parameters from library documents', () => {
       unmarkedChecks(scheme, reviewScheme(scheme, amended)).map((finding) => finding.id),
     ).toContain('b34-traffic')
 
-    await confirmParameter(store, 'odm-signs-hourly', { ...who, value: 260 }, now)
-    const reconfirmed = rulesFrom(await listParameterStates(store, now))
+    await confirmParameter(
+      store.runtime.http.parameters,
+      'odm-signs-hourly',
+      { ...who, value: 260 },
+      now,
+    )
+    const reconfirmed = rulesFrom(await listParameterStates(store.runtime.http.parameters, now))
     expect(reconfirmed.confirmed['odm-signs-hourly']).toBe(true)
     expect(markState(scheme, traffic(reconfirmed)).status).toBe('stale')
     scheme = setMark(
@@ -259,7 +276,7 @@ describe('normative parameters from library documents', () => {
     )
     expect(markState(scheme, traffic(reconfirmed)).status).toBe('marked')
     await confirmParameter(
-      store,
+      store.runtime.http.parameters,
       'peak-hour-share',
       {
         value: 0.1,
@@ -270,14 +287,17 @@ describe('normative parameters from library documents', () => {
       now,
     )
     expect(
-      markState(scheme, traffic(rulesFrom(await listParameterStates(store, now)))).status,
+      markState(
+        scheme,
+        traffic(rulesFrom(await listParameterStates(store.runtime.http.parameters, now))),
+      ).status,
     ).toBe('marked')
   })
 
   it('requires reconfirmation for an old clause in the same library document', async () => {
     const store = library()
     const document = await add(store, methodology(520), {})
-    store.addParameterConfirmation({
+    store.parameterConfirmations.add({
       parameterId: 'odm-signs-hourly',
       documentId: document.id,
       documentLabel: 'ОДМ 218.6.019-2016',
@@ -290,7 +310,7 @@ describe('normative parameters from library documents', () => {
       confirmedAt: '2030-01-01',
       note: 'Учебное старое основание',
     })
-    const states = await listParameterStates(store, now)
+    const states = await listParameterStates(store.runtime.http.parameters, now)
     expect(state(states, 'odm-signs-hourly').status.kind).toBe('changed')
     expect(state(states, 'odm-signs-hourly').confirmation?.value).toBe(999)
     expect(rulesFrom(states).signsHourly).toBe(250)
@@ -304,7 +324,7 @@ describe('normative parameters from library documents', () => {
     if (definition.type !== 'table' || definition.source.kind !== 'table')
       throw new Error('Expected table')
     // Так могло быть записано до проверки строк: строки 1.25 нет, остальные изменены.
-    store.addParameterConfirmation({
+    store.parameterConfirmations.add({
       parameterId: definition.id,
       documentId: document.id,
       documentLabel: 'ОДМ 218.6.019-2016',
@@ -321,7 +341,7 @@ describe('normative parameters from library documents', () => {
       confirmedAt: '2030-01-01',
       note: 'стр. 2',
     })
-    const states = await listParameterStates(store, now)
+    const states = await listParameterStates(store.runtime.http.parameters, now)
     expect(state(states, definition.id).status).toEqual({
       kind: 'invalid',
       problem:
@@ -345,7 +365,7 @@ describe('normative parameters from library documents', () => {
       ]),
       { code: 'ГОСТ Р 58350', kind: 'rules', edition: '2019', effectiveFrom: '2019-07-01' },
     )
-    let states = await listParameterStates(store, now)
+    let states = await listParameterStates(store.runtime.http.parameters, now)
     expect(state(states, 'gost-work-traffic').quote?.page).toBe(1)
     expect(state(states, 'gost-work-traffic').suggestion).toBeNull()
     expect(state(states, 'odm-signs-taper').suggestion).toBe(14)
@@ -354,38 +374,57 @@ describe('normative parameters from library documents', () => {
       note: 'Сверены учебные сноски',
       expectedDocumentId: document.id,
     }
-    await confirmParameter(store, 'odm-signs-taper', { ...who, value: 14 }, now)
+    await confirmParameter(
+      store.runtime.http.parameters,
+      'odm-signs-taper',
+      { ...who, value: 14 },
+      now,
+    )
     await add(store, textPdf([['Учебное изменение к таблице И.1.']]), {
       code: 'Изменение № 1 к ГОСТ Р 58350',
       edition: '2031',
       effectiveFrom: '2031-01-01',
       amendsId: document.id,
     })
-    states = await listParameterStates(store, now)
+    states = await listParameterStates(store.runtime.http.parameters, now)
     expect(state(states, 'odm-signs-taper').status.kind).toBe('changed')
     expect(rulesFrom(states).confirmed['odm-signs-taper']).toBe(false)
-    await confirmParameter(store, 'odm-signs-taper', { ...who, value: 16 }, now)
-    expect(state(await listParameterStates(store, now), 'odm-signs-taper').status.kind).toBe(
-      'confirmed',
+    await confirmParameter(
+      store.runtime.http.parameters,
+      'odm-signs-taper',
+      { ...who, value: 16 },
+      now,
     )
+    expect(
+      state(await listParameterStates(store.runtime.http.parameters, now), 'odm-signs-taper').status
+        .kind,
+    ).toBe('confirmed')
     const traffic = parameterDefinitions.find((item) => item.id === 'gost-work-traffic')!
-    await confirmParameter(store, traffic.id, { ...who, value: traffic.fallback }, now)
+    await confirmParameter(
+      store.runtime.http.parameters,
+      traffic.id,
+      { ...who, value: traffic.fallback },
+      now,
+    )
     await add(store, textPdf([['Учебное изменение пункта 6.1.3.']]), {
       code: 'Изменение № 2 к ГОСТ Р 58350',
       edition: '2033',
       effectiveFrom: '2031-02-01',
       amendsId: document.id,
     })
-    expect(state(await listParameterStates(store, now), traffic.id).status.kind).toBe('changed')
+    expect(
+      state(await listParameterStates(store.runtime.http.parameters, now), traffic.id).status.kind,
+    ).toBe('changed')
     await add(store, textPdf([['Учебная поправка к пункту 4.1.']]), {
       code: 'Поправка к ГОСТ Р 58350',
       edition: '2032',
       effectiveFrom: '2031-02-01',
       amendsId: document.id,
     })
-    expect(state(await listParameterStates(store, now), 'odm-signs-taper').status.kind).toBe(
-      'confirmed',
-    )
+    expect(
+      state(await listParameterStates(store.runtime.http.parameters, now), 'odm-signs-taper').status
+        .kind,
+    ).toBe('confirmed')
   })
   it('treats an amendment mentioning a figure as changing the values taken from it', async () => {
     const store = library()
@@ -395,9 +434,19 @@ describe('normative parameters from library documents', () => {
       note: 'Рисунок на учебной странице 2',
       expectedDocumentId: document.id,
     }
-    await confirmParameter(store, 'odm-b34-taper', { ...who, value: 10 }, now)
-    await confirmParameter(store, 'odm-zone-speed', { ...who, value: 40 }, now)
-    let states = await listParameterStates(store, now)
+    await confirmParameter(
+      store.runtime.http.parameters,
+      'odm-b34-taper',
+      { ...who, value: 10 },
+      now,
+    )
+    await confirmParameter(
+      store.runtime.http.parameters,
+      'odm-zone-speed',
+      { ...who, value: 40 },
+      now,
+    )
+    let states = await listParameterStates(store.runtime.http.parameters, now)
     expect(state(states, 'odm-b34-taper').status.kind).toBe('confirmed')
     // Изменение рисунка Б.33 касается значений «рисунки Б.33 и Б.34», но не отвода рисунка Б.34.
     await add(store, textPdf([['Учебное изменение: рисунок Б.33 изложить в новой редакции.']]), {
@@ -406,7 +455,7 @@ describe('normative parameters from library documents', () => {
       effectiveFrom: '2031-01-01',
       amendsId: document.id,
     })
-    states = await listParameterStates(store, now)
+    states = await listParameterStates(store.runtime.http.parameters, now)
     expect(state(states, 'odm-zone-speed').amendments).toEqual([
       'Изменение № 1 к ОДМ 218.6.019 (2031)',
     ])
@@ -420,7 +469,7 @@ describe('normative parameters from library documents', () => {
       effectiveFrom: '2031-02-01',
       amendsId: document.id,
     })
-    states = await listParameterStates(store, now)
+    states = await listParameterStates(store.runtime.http.parameters, now)
     expect(state(states, 'odm-b34-taper').amendments).toEqual(['Поправка к ОДМ 218.6.019 (2031)'])
     expect(state(states, 'odm-b34-taper').status.kind).toBe('changed')
     expect(rulesFrom(states).confirmed['odm-b34-taper']).toBe(false)
@@ -429,7 +478,7 @@ describe('normative parameters from library documents', () => {
   it('quotes clauses of the current edition and suggests values from their text', async () => {
     const store = library()
     const document = await add(store, methodology(520), {})
-    const states = await listParameterStates(store, now)
+    const states = await listParameterStates(store.runtime.http.parameters, now)
     expect(state(states, 'odm-signs-hourly')).toMatchObject({
       status: { kind: 'unconfirmed' },
       document: { id: document.id, label: 'ОДМ 218.6.019-2016' },
@@ -443,7 +492,7 @@ describe('normative parameters from library documents', () => {
     expect(state(states, 'odm-regulator-distance').suggestion).toEqual({ '30': '12', '50': '34' })
     expect(state(states, 'gost-speed-step').status).toEqual({ kind: 'no-document' })
     expect(state(states, 'peak-hour-share').status).toEqual({ kind: 'unconfirmed' })
-    expect(store.getDocumentText(document.id)).toHaveLength(3)
+    expect(store.documentText.get(document.id)).toHaveLength(3)
     expect(rulesFrom(states).signsHourly).toBe(250)
   })
 
@@ -465,7 +514,10 @@ describe('normative parameters from library documents', () => {
       ]),
       { code: 'ПДД', edition: '2030-04-01', effectiveFrom: '2030-04-01' },
     )
-    const towing = state(await listParameterStates(store, now), 'pdd-speed-towing')
+    const towing = state(
+      await listParameterStates(store.runtime.http.parameters, now),
+      'pdd-speed-towing',
+    )
     expect(towing.quote?.page).toBe(1)
     expect(towing.quote?.text).toContain('буксирующим механические транспортные средства')
     expect(towing.suggestion).toBe(50)
@@ -476,14 +528,14 @@ describe('normative parameters from library documents', () => {
     const document = await add(store, methodology(520), {})
     await expect(
       confirmParameter(
-        store,
+        store.runtime.http.parameters,
         'odm-signs-hourly',
         { value: 260, confirmedBy: 'Учебный составитель', note: '', expectedDocumentId: 999 },
         now,
       ),
     ).rejects.toBeInstanceOf(RevisionConflict)
     const confirmation = await confirmParameter(
-      store,
+      store.runtime.http.parameters,
       'odm-signs-hourly',
       { value: 260, confirmedBy: 'Учебный составитель', note: '', expectedDocumentId: document.id },
       now,
@@ -495,28 +547,38 @@ describe('normative parameters from library documents', () => {
       value: 260,
       confirmedAt: '2031-03-01',
     })
-    const rules = rulesFrom(await listParameterStates(store, now))
+    const rules = rulesFrom(await listParameterStates(store.runtime.http.parameters, now))
     expect(rules.signsHourly).toBe(260)
     expect(rules.confirmed['odm-signs-hourly']).toBe(true)
     await expect(
       confirmParameter(
-        store,
+        store.runtime.http.parameters,
         'odm-signs-hourly',
         { value: 0, confirmedBy: 'Учебный составитель', note: '', expectedDocumentId: document.id },
         now,
       ),
     ).rejects.toThrow('Допустимо')
-    expect(() => store.deleteDocument(document.id)).toThrow(DocumentInUse)
+    expect(() => store.deleteDocumentCommand.execute(document.id)).toThrow(DocumentInUse)
   })
 
   it('requires grounds for a compiler decision', async () => {
     const store = library()
     const input = { value: 0.1, confirmedBy: 'Учебный составитель', expectedDocumentId: null }
     await expect(
-      confirmParameter(store, 'peak-hour-share', { ...input, note: '' }, now),
+      confirmParameter(
+        store.runtime.http.parameters,
+        'peak-hour-share',
+        { ...input, note: '' },
+        now,
+      ),
     ).rejects.toThrow('основание')
-    await confirmParameter(store, 'peak-hour-share', { ...input, note: 'Учебный подсчёт' }, now)
-    const states = await listParameterStates(store, now)
+    await confirmParameter(
+      store.runtime.http.parameters,
+      'peak-hour-share',
+      { ...input, note: 'Учебный подсчёт' },
+      now,
+    )
+    const states = await listParameterStates(store.runtime.http.parameters, now)
     expect(state(states, 'peak-hour-share').status).toEqual({ kind: 'confirmed' })
     expect(rulesFrom(states).peakHourShare).toBe(0.1)
   })
@@ -525,14 +587,24 @@ describe('normative parameters from library documents', () => {
     const store = library()
     const old = await add(store, methodology(520), {})
     const who = { confirmedBy: 'Учебный составитель', note: '', expectedDocumentId: old.id }
-    await confirmParameter(store, 'odm-signs-hourly', { ...who, value: 260 }, now)
-    await confirmParameter(store, 'odm-alternate-hourly', { ...who, value: 520 }, now)
+    await confirmParameter(
+      store.runtime.http.parameters,
+      'odm-signs-hourly',
+      { ...who, value: 260 },
+      now,
+    )
+    await confirmParameter(
+      store.runtime.http.parameters,
+      'odm-alternate-hourly',
+      { ...who, value: 520 },
+      now,
+    )
     // Новая редакция: условие 6.4.4 то же (изменено только другое предложение), 6.4.2 другое.
     const next = await add(store, methodology(610, ' Учебное дополнение.'), {
       edition: '2030',
       effectiveFrom: '2030-01-01',
     })
-    const states = await listParameterStates(store, now)
+    const states = await listParameterStates(store.runtime.http.parameters, now)
     expect(state(states, 'odm-signs-hourly')).toMatchObject({
       status: { kind: 'same-text', previous: 'ОДМ 218.6.019-2016' },
       document: { id: next.id },
@@ -552,7 +624,7 @@ describe('normative parameters from library documents', () => {
       effectiveFrom: '2031-01-01',
       amendsId: next.id,
     })
-    const amended = await listParameterStates(store, now)
+    const amended = await listParameterStates(store.runtime.http.parameters, now)
     expect(state(amended, 'odm-signs-hourly').amendments).toEqual([
       'Изменение № 1 к ОДМ 218.6.019 (2031)',
     ])
@@ -574,7 +646,7 @@ describe('normative parameters from library documents', () => {
       (item) => item.id === 'gost-single-warning-distance',
     )!
     await confirmParameter(
-      store,
+      store.runtime.http.parameters,
       definition.id,
       {
         value: definition.fallback,
@@ -584,12 +656,15 @@ describe('normative parameters from library documents', () => {
       },
       now,
     )
-    expect(rulesFrom(await listParameterStates(store, now)).singleWarningDistance).toEqual([10, 15])
+    expect(
+      rulesFrom(await listParameterStates(store.runtime.http.parameters, now))
+        .singleWarningDistance,
+    ).toEqual([10, 15])
     const speedDefinition = parameterDefinitions.find(
       (item) => item.id === 'gost-single-warning-max-speed',
     )!
     await confirmParameter(
-      store,
+      store.runtime.http.parameters,
       speedDefinition.id,
       {
         value: 30,
@@ -599,7 +674,10 @@ describe('normative parameters from library documents', () => {
       },
       now,
     )
-    expect(rulesFrom(await listParameterStates(store, now)).singleWarningMaxSpeedKmh).toBe(30)
+    expect(
+      rulesFrom(await listParameterStates(store.runtime.http.parameters, now))
+        .singleWarningMaxSpeedKmh,
+    ).toBe(30)
 
     await add(store, textPdf([['Изменение 1: пункт 5.2.27 изложить в новой редакции.']]), {
       code: 'Изменение № 1 к ГОСТ Р 52289',
@@ -607,7 +685,7 @@ describe('normative parameters from library documents', () => {
       effectiveFrom: '2026-01-01',
       amendsId: document.id,
     })
-    const first = await listParameterStates(store, now)
+    const first = await listParameterStates(store.runtime.http.parameters, now)
     expect(state(first, definition.id).status.kind).toBe('changed')
     expect(state(first, speedDefinition.id).status.kind).toBe('changed')
     expect(state(first, definition.id).amendments).toEqual(['Изменение № 1 к ГОСТ Р 52289 (2025)'])
@@ -618,7 +696,7 @@ describe('normative parameters from library documents', () => {
       effectiveFrom: '2026-07-01',
       amendsId: document.id,
     })
-    const second = await listParameterStates(store, now)
+    const second = await listParameterStates(store.runtime.http.parameters, now)
     expect(state(second, definition.id).amendments).toEqual([
       'Изменение № 1 к ГОСТ Р 52289 (2025)',
       'Изменение № 2 к ГОСТ Р 52289 (2026)',

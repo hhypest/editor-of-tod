@@ -1,3 +1,4 @@
+import { openTestApplication } from './test-application'
 import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
@@ -9,7 +10,9 @@ import { importSchemeJson } from '../../src/domain/import'
 import { createSchemeDetailsDraft } from '../../src/domain/edit-details'
 import { schemeSchema, schemeV2Schema, schemeV3Schema } from '../../src/domain/model'
 import { normativeDraftSchema, type CrossingDraft } from '../../src/domain/registry'
-import { migrationNotice, RegistryStore, RevisionConflict, SCHEMA_VERSION } from '../store'
+import { migrationNotice } from '../database/migration-notice'
+import { RevisionConflict } from '../storage-errors'
+import { SCHEMA_VERSION } from '../database/schema-version'
 import { planBackupPrune } from '../backup-retention'
 import { oldSnapshot } from '../../tests/fixtures/old-version'
 import { recordSpeedDecision, recordRegulationDecision } from '../../src/domain/decision-evidence'
@@ -55,16 +58,16 @@ describe('local SQLite registries', () => {
     draft.decisionNotes!.speed = 'Неприменённое новое обоснование'
     const sessionId = randomUUID()
     const ownerId = randomUUID()
-    const store = new RegistryStore(path)
+    const store = openTestApplication(path)
     try {
-      expect(store.saveProject(scheme, 0).revision).toBe(1)
+      expect(store.projects.save(scheme, 0).revision).toBe(1)
       const changed = { ...scheme, parameters: { ...scheme.parameters, approachSpeedKmh: 65 } }
-      expect(store.saveProject(changed, 1).revision).toBe(2)
-      expect(store.restoreProject(scheme.id, 1, 2)?.scheme.decisionEvidence).toEqual(
+      expect(store.projects.save(changed, 1).revision).toBe(2)
+      expect(store.projects.restore(scheme.id, 1, 2)?.scheme.decisionEvidence).toEqual(
         scheme.decisionEvidence,
       )
-      store.saveRecovery(
-        {
+      store.recovery.save({
+        input: {
           sessionId,
           scheme,
           baseRevision: 3,
@@ -73,21 +76,21 @@ describe('local SQLite registries', () => {
           fileName: 'synthetic-v9.json',
           expectedVersion: 0,
         },
-        ownerId,
-      )
+        ownerId: ownerId,
+      })
     } finally {
-      store.close()
+      store.runtime.close()
     }
-    const reopened = new RegistryStore(path)
+    const reopened = openTestApplication(path)
     try {
-      expect(reopened.schemaVersion()).toBe(13)
-      expect(reopened.getProjectRevision(scheme.id, 1)?.scheme.decisionEvidence).toEqual(
+      expect(reopened.runtime.schemaVersion()).toBe(13)
+      expect(reopened.projects.getRevision(scheme.id, 1)?.scheme.decisionEvidence).toEqual(
         scheme.decisionEvidence,
       )
-      expect(reopened.getProject(scheme.id)?.scheme).toEqual(scheme)
-      expect(reopened.getRecovery(sessionId)?.detailsDraft).toEqual(draft)
+      expect(reopened.projects.get(scheme.id)?.scheme).toEqual(scheme)
+      expect(reopened.recovery.get(sessionId)?.detailsDraft).toEqual(draft)
     } finally {
-      reopened.close()
+      reopened.runtime.close()
     }
   })
   it('recovers uncommitted fields without making a project revision and rejects stale recovery writes', () => {
@@ -108,30 +111,36 @@ describe('local SQLite registries', () => {
       fileName: 'учебный.json',
       expectedVersion: 0,
     }
-    const store = new RegistryStore(path)
+    const store = openTestApplication(path)
     try {
-      expect(store.saveRecovery(input, ownerId).version).toBe(1)
-      expect(store.listProjects()).toEqual([])
-      expect(store.listProjectRevisions(scheme.id)).toEqual([])
-      expect(store.listRecoveries()).toMatchObject([{ sessionId, referenceId: 'TEST-001' }])
-      expect(() => store.saveRecovery(input, ownerId)).toThrow(RevisionConflict)
-      expect(store.saveRecovery({ ...input, expectedVersion: 1 }, ownerId).version).toBe(2)
+      expect(store.recovery.save({ input: input, ownerId: ownerId }).version).toBe(1)
+      expect(store.projects.list()).toEqual([])
+      expect(store.projects.listRevisions(scheme.id)).toEqual([])
+      expect(store.recovery.list()).toMatchObject([{ sessionId, referenceId: 'TEST-001' }])
+      expect(() => store.recovery.save({ input: input, ownerId: ownerId })).toThrow(
+        RevisionConflict,
+      )
+      expect(
+        store.recovery.save({ input: { ...input, expectedVersion: 1 }, ownerId: ownerId }).version,
+      ).toBe(2)
     } finally {
-      store.close()
+      store.runtime.close()
     }
-    const reopened = new RegistryStore(path)
+    const reopened = openTestApplication(path)
     try {
-      expect(reopened.getRecovery(sessionId)).toMatchObject({
+      expect(reopened.recovery.get(sessionId)).toMatchObject({
         scheme,
         detailsDraft,
         version: 2,
       })
-      expect(() => reopened.deleteRecovery(sessionId, 1, ownerId)).toThrow(RevisionConflict)
-      reopened.deleteRecovery(sessionId, 2, ownerId)
-      expect(reopened.getRecovery(sessionId)).toBeNull()
-      expect(reopened.listProjects()).toEqual([])
+      expect(() =>
+        reopened.recovery.delete({ sessionId: sessionId, expectedVersion: 1, ownerId: ownerId }),
+      ).toThrow(RevisionConflict)
+      reopened.recovery.delete({ sessionId: sessionId, expectedVersion: 2, ownerId: ownerId })
+      expect(reopened.recovery.get(sessionId)).toBeNull()
+      expect(reopened.projects.list()).toEqual([])
     } finally {
-      reopened.close()
+      reopened.runtime.close()
     }
     const raw = new DatabaseSync(path)
     try {
@@ -147,50 +156,59 @@ describe('local SQLite registries', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-registry-'))
     directories.push(directory)
     const path = join(directory, 'registry.sqlite')
-    const store = new RegistryStore(path, () => '2026-09-26T12:00:00.000Z')
+    const store = openTestApplication(path, () => '2026-09-26T12:00:00.000Z')
     try {
-      expect(store.listNormative()).toHaveLength(4)
-      expect(store.listNormative().every((row) => row.reviewStatus === 'needs-review')).toBe(true)
-      expect(store.listCrossings()).toEqual([])
-      expect(store.saveCrossing(crossing, 0).revision).toBe(1)
+      expect(store.legacy.listNormative()).toHaveLength(4)
+      expect(store.legacy.listNormative().every((row) => row.reviewStatus === 'needs-review')).toBe(
+        true,
+      )
+      expect(store.legacy.listCrossings()).toEqual([])
+      expect(store.legacy.saveCrossing(crossing, 0).revision).toBe(1)
       expect(
-        store.saveCrossing({ ...crossing, roadOwner: 'Другой учебный владелец' }, 1).revision,
+        store.legacy.saveCrossing({ ...crossing, roadOwner: 'Другой учебный владелец' }, 1)
+          .revision,
       ).toBe(2)
-      expect(() => store.saveCrossing(crossing, 1)).toThrow(RevisionConflict)
-      expect(store.history('crossings', 'TEST-001').map((row) => row.revision)).toEqual([1, 2])
-      const backupName = await store.createBackup()
+      expect(() => store.legacy.saveCrossing(crossing, 1)).toThrow(RevisionConflict)
+      expect(store.legacy.history('crossings', 'TEST-001').map((row) => row.revision)).toEqual([
+        1, 2,
+      ])
+      const backupName = await store.runtime.http.createBackup()
       const backupPath = join(directory, 'backups', backupName)
       expect(existsSync(backupPath)).toBe(true)
-      const restored = new RegistryStore(backupPath)
+      const restored = openTestApplication(backupPath)
       try {
-        expect(restored.listCrossings()).toMatchObject([{ referenceId: 'TEST-001', revision: 2 }])
-        expect(restored.history('crossings', 'TEST-001')).toHaveLength(2)
+        expect(restored.legacy.listCrossings()).toMatchObject([
+          { referenceId: 'TEST-001', revision: 2 },
+        ])
+        expect(restored.legacy.history('crossings', 'TEST-001')).toHaveLength(2)
       } finally {
-        restored.close()
+        restored.runtime.close()
       }
     } finally {
-      store.close()
+      store.runtime.close()
     }
-    const reopened = new RegistryStore(path)
+    const reopened = openTestApplication(path)
     try {
-      expect(reopened.listCrossings()).toMatchObject([{ referenceId: 'TEST-001', revision: 2 }])
-      expect(reopened.listNormative()).toHaveLength(4)
+      expect(reopened.legacy.listCrossings()).toMatchObject([
+        { referenceId: 'TEST-001', revision: 2 },
+      ])
+      expect(reopened.legacy.listNormative()).toHaveLength(4)
     } finally {
-      reopened.close()
+      reopened.runtime.close()
     }
   })
 
   it('requires date and reviewer to mark a normative entry checked', () => {
-    const store = new RegistryStore(':memory:')
+    const store = openTestApplication(':memory:')
     try {
-      const entry = store.listNormative()[0]!
+      const entry = store.legacy.listNormative()[0]!
       const { revision, updatedAt: _updatedAt, ...draft } = entry
       void _updatedAt
       expect(normativeDraftSchema.safeParse({ ...draft, reviewStatus: 'checked' }).success).toBe(
         false,
       )
       expect(
-        store.saveNormative(
+        store.legacy.saveNormative(
           {
             ...draft,
             reviewStatus: 'checked',
@@ -201,7 +219,7 @@ describe('local SQLite registries', () => {
         ).revision,
       ).toBe(2)
     } finally {
-      store.close()
+      store.runtime.close()
     }
   })
 
@@ -210,18 +228,18 @@ describe('local SQLite registries', () => {
     directories.push(directory)
     const path = join(directory, 'registry.sqlite')
     const scheme = importSchemeJson(fixture).scheme
-    const store = new RegistryStore(path, () => '2026-09-26T12:00:00.000Z')
+    const store = openTestApplication(path, () => '2026-09-26T12:00:00.000Z')
     try {
-      expect(store.listProjects()).toEqual([])
-      expect(store.saveProject(scheme, 0).revision).toBe(1)
-      expect(store.saveProject(scheme, 1).revision).toBe(1)
+      expect(store.projects.list()).toEqual([])
+      expect(store.projects.save(scheme, 0).revision).toBe(1)
+      expect(store.projects.save(scheme, 1).revision).toBe(1)
       const changed = {
         ...scheme,
         parameters: { ...scheme.parameters, locationText: 'Изменённый учебный участок' },
       }
-      expect(store.saveProject(changed, 1).revision).toBe(2)
-      expect(() => store.saveProject(scheme, 1)).toThrow(RevisionConflict)
-      expect(store.listProjects()).toMatchObject([
+      expect(store.projects.save(changed, 1).revision).toBe(2)
+      expect(() => store.projects.save(scheme, 1)).toThrow(RevisionConflict)
+      expect(store.projects.list()).toMatchObject([
         {
           id: scheme.id,
           referenceId: 'TEST-001',
@@ -234,30 +252,32 @@ describe('local SQLite registries', () => {
           roadName: '',
         },
       ])
-      expect(store.listProjectRevisions(scheme.id).map((entry) => entry.revision)).toEqual([2, 1])
-      expect(store.getProjectRevision(scheme.id, 1)?.scheme).toEqual(scheme)
-      expect(store.restoreProject(scheme.id, 1, 2)).toMatchObject({ revision: 3, scheme })
-      expect(store.restoreProject(scheme.id, 1, 3)).toMatchObject({ revision: 4, scheme })
-      expect(store.getProjectRevision(scheme.id, 2)?.scheme.parameters.locationText).toBe(
+      expect(store.projects.listRevisions(scheme.id).map((entry) => entry.revision)).toEqual([2, 1])
+      expect(store.projects.getRevision(scheme.id, 1)?.scheme).toEqual(scheme)
+      expect(store.projects.restore(scheme.id, 1, 2)).toMatchObject({ revision: 3, scheme })
+      expect(store.projects.restore(scheme.id, 1, 3)).toMatchObject({ revision: 4, scheme })
+      expect(store.projects.getRevision(scheme.id, 2)?.scheme.parameters.locationText).toBe(
         'Изменённый учебный участок',
       )
-      expect(store.getProject(scheme.id)?.scheme.source).toMatchObject({ originalJson: fixture })
-      const backupName = await store.createBackup()
-      const backup = new RegistryStore(join(directory, 'backups', backupName))
+      expect(store.projects.get(scheme.id)?.scheme.source).toMatchObject({ originalJson: fixture })
+      const backupName = await store.runtime.http.createBackup()
+      const backup = openTestApplication(join(directory, 'backups', backupName))
       try {
-        expect(backup.listProjectRevisions(scheme.id)).toHaveLength(4)
+        expect(backup.projects.listRevisions(scheme.id)).toHaveLength(4)
       } finally {
-        backup.close()
+        backup.runtime.close()
       }
     } finally {
-      store.close()
+      store.runtime.close()
     }
-    const reopened = new RegistryStore(path)
+    const reopened = openTestApplication(path)
     try {
-      expect(reopened.getProject(scheme.id)?.revision).toBe(4)
-      expect(reopened.getProject(scheme.id)?.scheme.source).toMatchObject({ originalJson: fixture })
+      expect(reopened.projects.get(scheme.id)?.revision).toBe(4)
+      expect(reopened.projects.get(scheme.id)?.scheme.source).toMatchObject({
+        originalJson: fixture,
+      })
     } finally {
-      reopened.close()
+      reopened.runtime.close()
     }
   })
 
@@ -267,19 +287,19 @@ describe('local SQLite registries', () => {
     const path = join(directory, 'registry.sqlite')
     const scheme = importSchemeJson(fixture).scheme
     const other = { ...scheme, id: randomUUID() }
-    const store = new RegistryStore(path)
+    const store = openTestApplication(path)
     try {
-      store.saveProject(scheme, 0)
-      store.saveProject(
+      store.projects.save(scheme, 0)
+      store.projects.save(
         { ...scheme, parameters: { ...scheme.parameters, locationText: 'Правка' } },
         1,
       )
-      store.saveProject(other, 0)
-      expect(store.getProjectRevision(scheme.id, 1)?.scheme).toEqual(scheme)
-      expect(store.getProject(other.id)?.scheme).toEqual(other)
-      expect(store.restoreProject(scheme.id, 1, 2)?.scheme).toEqual(scheme)
+      store.projects.save(other, 0)
+      expect(store.projects.getRevision(scheme.id, 1)?.scheme).toEqual(scheme)
+      expect(store.projects.get(other.id)?.scheme).toEqual(other)
+      expect(store.projects.restore(scheme.id, 1, 2)?.scheme).toEqual(scheme)
     } finally {
-      store.close()
+      store.runtime.close()
     }
     const raw = new DatabaseSync(path)
     try {
@@ -305,11 +325,13 @@ describe('local SQLite registries', () => {
     } finally {
       raw.close()
     }
-    const reopened = new RegistryStore(path)
+    const reopened = openTestApplication(path)
     try {
-      expect(reopened.getProject(scheme.id)?.scheme.source).toMatchObject({ originalJson: fixture })
+      expect(reopened.projects.get(scheme.id)?.scheme.source).toMatchObject({
+        originalJson: fixture,
+      })
     } finally {
-      reopened.close()
+      reopened.runtime.close()
     }
   })
 
@@ -330,19 +352,21 @@ describe('local SQLite registries', () => {
       approachSpeedKmh: '90',
       yellowTemporarySigns: false,
     })
-    const store = new RegistryStore(path)
+    const store = openTestApplication(path)
     try {
-      expect(store.saveProject(scheme, 0).revision).toBe(1)
+      expect(store.projects.save(scheme, 0).revision).toBe(1)
     } finally {
-      store.close()
+      store.runtime.close()
     }
-    const reopened = new RegistryStore(path)
+    const reopened = openTestApplication(path)
     try {
-      expect(reopened.getProject(scheme.id)?.scheme).toEqual(scheme)
-      expect(reopened.getProjectRevision(scheme.id, 1)?.scheme.parameters.workZones.b33).toBeNull()
-      expect(reopened.listProjects()).toMatchObject([{ referenceId: 'TEST-NATIVE', revision: 1 }])
+      expect(reopened.projects.get(scheme.id)?.scheme).toEqual(scheme)
+      expect(
+        reopened.projects.getRevision(scheme.id, 1)?.scheme.parameters.workZones.b33,
+      ).toBeNull()
+      expect(reopened.projects.list()).toMatchObject([{ referenceId: 'TEST-NATIVE', revision: 1 }])
     } finally {
-      reopened.close()
+      reopened.runtime.close()
     }
   })
 
@@ -352,8 +376,8 @@ describe('local SQLite registries', () => {
     const path = join(directory, 'registry.sqlite')
     const scheme = importSchemeJson(fixture).scheme
     const previous = schemeV2Schema.parse(oldSnapshot(scheme, 2))
-    const initialized = new RegistryStore(path)
-    initialized.close()
+    const initialized = openTestApplication(path)
+    initialized.runtime.close()
     const raw = new DatabaseSync(path)
     const savedAt = '2026-09-26T12:00:00.000Z'
     raw
@@ -375,24 +399,24 @@ describe('local SQLite registries', () => {
       .run(scheme.id, JSON.stringify(previous), savedAt)
     raw.close()
 
-    const store = new RegistryStore(path)
+    const store = openTestApplication(path)
     // Старые версии получают прежнюю версию условной раскладки шаблона.
     const upgraded = { ...scheme, template: { ...scheme.template, projectionVersion: 'draft-1' } }
     try {
-      expect(store.getProject(scheme.id)?.scheme).toEqual(upgraded)
-      expect(store.getProjectRevision(scheme.id, 1)?.scheme).toEqual(upgraded)
+      expect(store.projects.get(scheme.id)?.scheme).toEqual(upgraded)
+      expect(store.projects.getRevision(scheme.id, 1)?.scheme).toEqual(upgraded)
       // Сохранение без правок записывает снимок в текущем формате (редакция 2), повторное — нет.
-      expect(store.saveProject(schemeSchema.parse(upgraded), 1).revision).toBe(2)
-      expect(store.getProject(scheme.id)?.storedSchemaVersion).toBe(10)
-      expect(store.saveProject(schemeSchema.parse(upgraded), 2).revision).toBe(2)
+      expect(store.projects.save(schemeSchema.parse(upgraded), 1).revision).toBe(2)
+      expect(store.projects.get(scheme.id)?.storedSchemaVersion).toBe(10)
+      expect(store.projects.save(schemeSchema.parse(upgraded), 2).revision).toBe(2)
       const edited = {
         ...scheme,
         parameters: { ...scheme.parameters, locationText: 'Новая редакция' },
       }
-      expect(store.saveProject(edited, 2).revision).toBe(3)
-      expect(store.restoreProject(scheme.id, 1, 3)?.scheme).toEqual(scheme)
+      expect(store.projects.save(edited, 2).revision).toBe(3)
+      expect(store.projects.restore(scheme.id, 1, 3)?.scheme).toEqual(scheme)
     } finally {
-      store.close()
+      store.runtime.close()
     }
     const check = new DatabaseSync(path)
     try {
@@ -426,8 +450,8 @@ describe('local SQLite registries', () => {
       yellowTemporarySigns: false,
     })
     const old = schemeV3Schema.parse(oldSnapshot(scheme, 3))
-    const initialized = new RegistryStore(path)
-    initialized.close()
+    const initialized = openTestApplication(path)
+    initialized.runtime.close()
     const raw = new DatabaseSync(path)
     const savedAt = '2026-09-26T12:00:00.000Z'
     raw
@@ -442,7 +466,7 @@ describe('local SQLite registries', () => {
       .run(scheme.id, JSON.stringify(old), savedAt)
     raw.close()
 
-    const store = new RegistryStore(path)
+    const store = openTestApplication(path)
     // Старые версии получают прежнюю версию условной раскладки шаблона; местоположения и
     // скорости на подходе в v3 не было.
     const upgraded = {
@@ -456,12 +480,12 @@ describe('local SQLite registries', () => {
       },
     }
     try {
-      expect(store.getProject(scheme.id)?.scheme).toEqual(upgraded)
-      expect(store.getProjectRevision(scheme.id, 1)?.scheme).toEqual(upgraded)
+      expect(store.projects.get(scheme.id)?.scheme).toEqual(upgraded)
+      expect(store.projects.getRevision(scheme.id, 1)?.scheme).toEqual(upgraded)
       // Без правок снимок переписывается в текущий формат новой редакцией; первая не меняется.
-      expect(store.saveProject(schemeSchema.parse(upgraded), 1).revision).toBe(2)
+      expect(store.projects.save(schemeSchema.parse(upgraded), 1).revision).toBe(2)
     } finally {
-      store.close()
+      store.runtime.close()
     }
     const check = new DatabaseSync(path)
     try {
@@ -479,8 +503,8 @@ describe('local SQLite registries', () => {
     directories.push(directory)
     const path = join(directory, 'registry.sqlite')
     const scheme = importSchemeJson(fixture).scheme
-    const initialized = new RegistryStore(path)
-    initialized.close()
+    const initialized = openTestApplication(path)
+    initialized.runtime.close()
     const raw = new DatabaseSync(path)
     const oldPayload = JSON.stringify(scheme)
     raw.exec('DROP TABLE project_recovery; DROP TABLE project_sources; PRAGMA user_version = 6;')
@@ -499,14 +523,14 @@ describe('local SQLite registries', () => {
       .run(scheme.id, oldPayload, '2026-09-26T12:00:00Z')
     raw.close()
 
-    const upgraded = new RegistryStore(path)
+    const upgraded = openTestApplication(path)
     try {
-      expect(upgraded.getProjectRevision(scheme.id, 1)?.scheme).toEqual(scheme)
+      expect(upgraded.projects.getRevision(scheme.id, 1)?.scheme).toEqual(scheme)
       const changed = { ...scheme, parameters: { ...scheme.parameters, locationText: 'Правка' } }
-      expect(upgraded.saveProject(changed, 1).revision).toBe(2)
-      expect(upgraded.getProjectRevision(scheme.id, 1)?.scheme).toEqual(scheme)
+      expect(upgraded.projects.save(changed, 1).revision).toBe(2)
+      expect(upgraded.projects.getRevision(scheme.id, 1)?.scheme).toEqual(scheme)
     } finally {
-      upgraded.close()
+      upgraded.runtime.close()
     }
     const check = new DatabaseSync(path)
     try {
@@ -528,7 +552,7 @@ describe('local SQLite registries', () => {
     const raw = new DatabaseSync(path)
     raw.exec('PRAGMA user_version = 5')
     raw.close()
-    expect(() => new RegistryStore(path)).toThrow()
+    expect(() => openTestApplication(path)).toThrow()
     const reopened = new DatabaseSync(path)
     try {
       expect(reopened.prepare('PRAGMA user_version').get()).toEqual({ user_version: 5 })
@@ -546,22 +570,24 @@ describe('local SQLite registries', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-v3-upgrade-'))
     directories.push(directory)
     const path = join(directory, 'registry.sqlite')
-    const current = new RegistryStore(path)
-    current.saveCrossing(crossing, 0)
-    current.close()
+    const current = openTestApplication(path)
+    current.legacy.saveCrossing(crossing, 0)
+    current.runtime.close()
     const old = new DatabaseSync(path)
     old.exec(
       'DROP TABLE project_recovery; DROP TABLE project_sources; DROP TABLE pu66_verifications; DROP TABLE project_revisions; DROP TABLE project_drafts; PRAGMA user_version = 3;',
     )
     old.close()
 
-    const migrated = new RegistryStore(path)
+    const migrated = openTestApplication(path)
     try {
-      expect(migrated.listCrossings()).toMatchObject([{ referenceId: 'TEST-001', revision: 1 }])
-      expect(migrated.listProjects()).toEqual([])
-      expect(migrated.saveProject(importSchemeJson(fixture).scheme, 0).revision).toBe(1)
+      expect(migrated.legacy.listCrossings()).toMatchObject([
+        { referenceId: 'TEST-001', revision: 1 },
+      ])
+      expect(migrated.projects.list()).toEqual([])
+      expect(migrated.projects.save(importSchemeJson(fixture).scheme, 0).revision).toBe(1)
     } finally {
-      migrated.close()
+      migrated.runtime.close()
     }
     const database = new DatabaseSync(path)
     expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 13 })
@@ -573,11 +599,11 @@ describe('local SQLite registries', () => {
       const directory = mkdtempSync(join(tmpdir(), name))
       directories.push(directory)
       const path = join(directory, 'registry.sqlite')
-      const current = new RegistryStore(path)
-      current.saveCrossing(crossing, 0)
-      expect(current.migratedFrom).toBeNull()
-      expect(migrationNotice(current)).toBeNull()
-      current.close()
+      const current = openTestApplication(path)
+      current.legacy.saveCrossing(crossing, 0)
+      expect(current.runtime.migratedFrom).toBeNull()
+      expect(migrationNotice(current.runtime)).toBeNull()
+      current.runtime.close()
       expect(existsSync(join(directory, 'backups'))).toBe(false)
       const old = new DatabaseSync(path)
       old.exec(
@@ -589,19 +615,19 @@ describe('local SQLite registries', () => {
 
     it('keeps the previous file, reports it and does not repeat on the next start', () => {
       const { directory, path } = oldDatabase('tod-backup-update-')
-      const updated = new RegistryStore(path, () => '2026-10-05T12:00:00.000Z')
-      const backup = updated.migrationBackup!
+      const updated = openTestApplication(path, () => '2026-10-05T12:00:00.000Z')
+      const backup = updated.runtime.migrationBackup!
       try {
-        expect(updated.migratedFrom).toBe(12)
+        expect(updated.runtime.migratedFrom).toBe(12)
         expect(backup).toMatch(
           /^registry-before-update-v12-2026-10-05T12-00-00-000Z-[a-f0-9]{8}\.sqlite$/,
         )
-        expect(migrationNotice(updated)).toBe(
+        expect(migrationNotice(updated.runtime)).toBe(
           `База обновлена: версия 12 → ${SCHEMA_VERSION}. Прежняя база сохранена: ${join(directory, 'backups', backup)}`,
         )
-        expect(updated.listCrossings()).toMatchObject([{ referenceId: 'TEST-001' }])
+        expect(updated.legacy.listCrossings()).toMatchObject([{ referenceId: 'TEST-001' }])
       } finally {
-        updated.close()
+        updated.runtime.close()
       }
       const copy = new DatabaseSync(join(directory, 'backups', backup), { readOnly: true })
       try {
@@ -610,12 +636,12 @@ describe('local SQLite registries', () => {
       } finally {
         copy.close()
       }
-      const again = new RegistryStore(path)
+      const again = openTestApplication(path)
       try {
-        expect(again.migratedFrom).toBeNull()
-        expect(again.migrationBackup).toBeNull()
+        expect(again.runtime.migratedFrom).toBeNull()
+        expect(again.runtime.migrationBackup).toBeNull()
       } finally {
-        again.close()
+        again.runtime.close()
       }
       expect(readdirSync(join(directory, 'backups'))).toEqual([backup])
     })
@@ -628,7 +654,7 @@ describe('local SQLite registries', () => {
       raw.exec('CREATE TABLE crossings (key TEXT PRIMARY KEY); PRAGMA user_version = 5;')
       raw.prepare('INSERT INTO crossings VALUES (?)').run('TEST-KEPT')
       raw.close()
-      expect(() => new RegistryStore(path)).toThrow()
+      expect(() => openTestApplication(path)).toThrow()
       const [backup] = readdirSync(join(directory, 'backups'))
       expect(backup).toMatch(/^registry-before-update-v5-/)
       const copy = new DatabaseSync(join(directory, 'backups', backup!), { readOnly: true })
@@ -642,7 +668,7 @@ describe('local SQLite registries', () => {
     it('does not touch the database when the copy cannot be written', () => {
       const { directory, path } = oldDatabase('tod-backup-refused-')
       writeFileSync(join(directory, 'backups'), 'не каталог')
-      expect(() => new RegistryStore(path)).toThrow(
+      expect(() => openTestApplication(path)).toThrow(
         /Не удалось сохранить копию базы перед обновлением.*База не изменена/s,
       )
       const untouched = new DatabaseSync(path, { readOnly: true })
@@ -655,7 +681,7 @@ describe('local SQLite registries', () => {
 
     it('is not picked up by automatic pruning of manual backups', async () => {
       const { directory, path } = oldDatabase('tod-backup-prune-')
-      new RegistryStore(path).close()
+      openTestApplication(path).runtime.close()
       const plan = await planBackupPrune(join(directory, 'backups'), { keep: 1, maxAgeDays: 1 })
       expect(plan).toEqual({ keep: [], remove: [] })
     })

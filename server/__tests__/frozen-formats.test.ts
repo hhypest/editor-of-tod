@@ -1,3 +1,4 @@
+import { openTestApplication } from './test-application'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -12,7 +13,7 @@ import { reviewScheme } from '../../src/domain/review-scheme'
 import { decisionEvidenceState } from '../../src/domain/decision-evidence'
 import { switchLocation } from '../../src/domain/normative-defaults'
 import { PROTOTYPE_RULES } from '../../src/domain/normative-parameters'
-import { RegistryStore, SCHEMA_VERSION } from '../store'
+import { SCHEMA_VERSION } from '../database/schema-version'
 
 /**
  * Файлы в tests/fixtures/frozen записаны прежними версиями программы (см. README там же)
@@ -156,51 +157,53 @@ describe('frozen files of previous formats', () => {
       const raw = new DatabaseSync(path)
       raw.exec(readFileSync(join(root, 'databases', filename), 'utf8'))
       raw.close()
-      return { directory, store: new RegistryStore(path, () => '2026-10-05T12:00:00.000Z') }
+      return { directory, store: openTestApplication(path, () => '2026-10-05T12:00:00.000Z') }
     }
 
     it('is updated to the current schema without losing its records', () => {
       const { directory, store } = open()
       try {
-        expect(store.schemaVersion()).toBe(SCHEMA_VERSION)
+        expect(store.runtime.schemaVersion()).toBe(SCHEMA_VERSION)
         if (from === SCHEMA_VERSION) {
-          expect(store.migratedFrom).toBeNull()
+          expect(store.runtime.migratedFrom).toBeNull()
           expect(existsSync(join(directory, 'backups'))).toBe(false)
         } else {
-          expect(store.migratedFrom).toBe(from)
-          expect(readdirSync(join(directory, 'backups'))).toEqual([store.migrationBackup])
+          expect(store.runtime.migratedFrom).toBe(from)
+          expect(readdirSync(join(directory, 'backups'))).toEqual([store.runtime.migrationBackup])
         }
 
-        expect(store.listCrossings()).toMatchObject([{ referenceId: 'TEST-001', revision: 1 }])
-        expect(store.listNormative()).toHaveLength(4)
+        expect(store.legacy.listCrossings()).toMatchObject([
+          { referenceId: 'TEST-001', revision: 1 },
+        ])
+        expect(store.legacy.listNormative()).toHaveLength(4)
 
         if (from >= 4) {
-          const [project] = store.listProjects()
+          const [project] = store.projects.list()
           expect(project).toMatchObject({ referenceId: 'TEST-001', revision: 2 })
           // Редакция в базе не переписана: клиенту сообщается её исходный формат, чтобы при
           // открытии показать то же предупреждение о стойках, что и для файла.
-          const storedVersion = store.getProject(project!.id)!.storedSchemaVersion
+          const storedVersion = store.projects.get(project!.id)!.storedSchemaVersion
           expect(storedVersion).toBeGreaterThanOrEqual(2)
           expect(storedVersion).toBeLessThanOrEqual(CURRENT_PROJECT_VERSION)
           if (from < 13) expect(storedVersion).toBeLessThan(CURRENT_PROJECT_VERSION)
-          const first = store.getProjectRevision(project!.id, 1)!.scheme
-          const second = store.getProject(project!.id)!.scheme
+          const first = store.projects.getRevision(project!.id, 1)!.scheme
+          const second = store.projects.get(project!.id)!.scheme
           expect(first.schemaVersion).toBe(CURRENT_PROJECT_VERSION)
           expect(first.placements).toHaveLength(2)
           expect(second.parameters.locationText).toBe('Учебный участок, вторая редакция')
           // Сохранение без правок переписывает снимок прежнего формата в текущий: сообщения о
           // прежнем формате при следующем открытии не повторяются (замечание Codex к PR #148).
-          const resaved = store.saveProject(second, 2).revision
+          const resaved = store.projects.save(second, 2).revision
           expect(resaved).toBe(storedVersion! < CURRENT_PROJECT_VERSION ? 3 : 2)
-          expect(store.getProject(project!.id)!.storedSchemaVersion).toBe(CURRENT_PROJECT_VERSION)
-          expect(store.saveProject(second, resaved).revision).toBe(resaved)
+          expect(store.projects.get(project!.id)!.storedSchemaVersion).toBe(CURRENT_PROJECT_VERSION)
+          expect(store.projects.save(second, resaved).revision).toBe(resaved)
           const edited = { ...second, parameters: { ...second.parameters, locationText: 'Правка' } }
-          expect(store.saveProject(edited, resaved).revision).toBe(resaved + 1)
+          expect(store.projects.save(edited, resaved).revision).toBe(resaved + 1)
         } else {
-          expect(store.listProjects()).toEqual([])
+          expect(store.projects.list()).toEqual([])
         }
 
-        const cards = store.listPu66(true)
+        const cards = store.pu66.list(true)
         // Станционные карточки появились в базе версии 7; до версии 9 их ключ не содержал
         // номера карточки, и обновление должно перенести запись под новый ключ.
         const station = 'ст.Учебная:88:3:к77'
@@ -212,44 +215,44 @@ describe('frozen files of previous formats', () => {
               ]
             : [['99999:88:3', 2]],
         )
-        expect(store.getPu66Scheme('99999:88:3')).toMatchObject({
+        expect(store.pu66.getScheme('99999:88:3')).toMatchObject({
           roadName: 'Условная дорога, уточнение',
         })
         if (from >= 7)
-          expect(store.getPu66Scheme(station)).toMatchObject({
+          expect(store.pu66.getScheme(station)).toMatchObject({
             roadName: 'Условная дорога у станции',
           })
         if (from >= 5)
-          expect(store.listPu66Verifications('99999:88:3')).toMatchObject([
+          expect(store.pu66Verifications.list('99999:88:3')).toMatchObject([
             { verifiedAt: '2026-09-20', verifiedBy: 'Учебное подразделение А' },
           ])
-        expect(store.getPu66Status('99999:88:3')).toMatchObject({ excluded: from >= 12 })
-        expect(store.listPu66()).toHaveLength((from >= 7 ? 2 : 1) - (from >= 12 ? 1 : 0))
+        expect(store.pu66Lifecycle.getStatus('99999:88:3')).toMatchObject({ excluded: from >= 12 })
+        expect(store.pu66.list()).toHaveLength((from >= 7 ? 2 : 1) - (from >= 12 ? 1 : 0))
 
-        expect(store.listSigns()).toMatchObject([{ code: '1.1_ж', width: 30, height: 30 }])
-        expect(store.getSignPng('1.1_ж', false)?.subarray(1, 4)).toEqual(
+        expect(store.signCatalog.list()).toMatchObject([{ code: '1.1_ж', width: 30, height: 30 }])
+        expect(store.signCatalog.getPng('1.1_ж', false)?.subarray(1, 4)).toEqual(
           new Uint8Array(Buffer.from('PNG')),
         )
 
         if (from >= 8) {
-          const [recovery] = store.listRecoveries()
+          const [recovery] = store.recovery.list()
           expect(recovery).toMatchObject({ referenceId: 'TEST-001', fileName: 'учебный.json' })
-          const saved = store.getRecovery(recovery!.sessionId)!
+          const saved = store.recovery.get(recovery!.sessionId)!
           expect(saved.scheme.schemaVersion).toBe(CURRENT_PROJECT_VERSION)
           expect(saved.detailsDraft?.parameters.locationText).toBe('Неприменённое значение')
         } else {
-          expect(store.listRecoveries()).toEqual([])
+          expect(store.recovery.list()).toEqual([])
         }
 
-        const documents = store.listDocuments()
+        const documents = store.documents.list()
         expect(documents.map((document) => document.code)).toEqual(
           from >= 11 ? ['ГОСТ Р 90000', 'ОДМ 218.6.019'] : from >= 10 ? ['ГОСТ Р 90000'] : [],
         )
-        expect(store.listParameterConfirmations()).toMatchObject(
+        expect(store.parameterConfirmations.list()).toMatchObject(
           from >= 11 ? [{ parameterId: 'odm-signs-hourly', value: 260 }] : [],
         )
       } finally {
-        store.close()
+        store.runtime.close()
       }
     })
   })

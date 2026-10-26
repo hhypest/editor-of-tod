@@ -1,26 +1,27 @@
+import { openTestApplication, type TestApplication } from './test-application'
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import type { Server } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { importSchemeJson } from '../../src/domain/import'
-import { createRegistryServer } from '../index'
-import { RegistryStore } from '../store'
+import { createHttpServer } from '../http/server'
+
 import { listenHttp } from './http-request-fixture'
 
 const scheme = importSchemeJson(readFileSync('tests/fixtures/manual-v1.json', 'utf8')).scheme
 const servers: Server[] = [],
-  stores: RegistryStore[] = []
+  stores: TestApplication[] = []
 const headers = { 'Content-Type': 'application/json', Origin: 'http://127.0.0.1:5173' }
 afterEach(async () => {
   vi.restoreAllMocks()
   for (const server of servers.splice(0))
     await new Promise<void>((resolve) => server.close(() => resolve()))
-  for (const store of stores.splice(0)) store.close()
+  for (const store of stores.splice(0)) store.runtime.close()
 })
 async function setup() {
-  const store = new RegistryStore(':memory:')
+  const store = openTestApplication(':memory:')
   stores.push(store)
-  const server = createRegistryServer(store, 0)
+  const server = createHttpServer(store.runtime.http, 0)
   servers.push(server)
   const http = await listenHttp(server)
   return {
@@ -39,7 +40,7 @@ async function setup() {
 describe('project/recovery route compatibility', () => {
   it('validates URL then body then project identity before storage and keeps history lookup order', async () => {
     const { store, send, write } = await setup()
-    const save = vi.spyOn(store, 'saveProject')
+    const save = vi.spyOn(store.projects, 'save')
     expect((await write('/api/projects/%ZZ', null)).status).toBe(400)
     expect((await write(`/api/projects/${scheme.id}`, null)).status).toBe(400)
     const mismatch = await write(`/api/projects/${randomUUID()}`, { scheme, expectedRevision: 0 })
@@ -47,12 +48,12 @@ describe('project/recovery route compatibility', () => {
       error: 'ID проекта в адресе и файле не совпадают.',
     })
     expect(save).not.toHaveBeenCalled()
-    const get = vi.spyOn(store, 'getProject'),
-      revisions = vi.spyOn(store, 'listProjectRevisions')
+    const get = vi.spyOn(store.projects, 'get'),
+      revisions = vi.spyOn(store.projects, 'listRevisions')
     const missing = await send(`/api/projects/${scheme.id}/revisions`)
     expect(missing.status).toBe(404)
     expect(revisions).not.toHaveBeenCalled()
-    store.saveProject(scheme, 0)
+    store.projects.save(scheme, 0)
     get.mockClear()
     expect((await send(`/api/projects/${scheme.id}/revisions`)).status).toBe(200)
     expect(get.mock.invocationCallOrder[0]).toBeLessThan(revisions.mock.invocationCallOrder[0]!)
@@ -80,8 +81,8 @@ describe('project/recovery route compatibility', () => {
       placementDraft: null,
       fileName: 'fictional.json',
     }
-    const get = vi.spyOn(store, 'getRecovery'),
-      save = vi.spyOn(store, 'saveRecovery')
+    const get = vi.spyOn(store.recovery, 'get'),
+      save = vi.spyOn(store.recovery, 'save')
     expect((await send(path + '?ownerId=invalid')).status).toBe(400)
     expect(get).not.toHaveBeenCalled()
     expect((await send(path)).status).toBe(404)
@@ -98,13 +99,13 @@ describe('project/recovery route compatibility', () => {
     expect((await send(path + `?ownerId=${ownerId}`)).status).toBe(200)
     expect(get).toHaveBeenLastCalledWith(sessionId, { ownerId })
     expect((await write(path, { expectedVersion: 1 }, 'DELETE')).status).toBe(400)
-    expect(store.getRecovery(sessionId)?.version).toBe(1)
+    expect(store.recovery.get(sessionId)?.version).toBe(1)
   })
 
   it('keeps unsupported methods and partial paths as global 404 without storage effects', async () => {
     const { store, send } = await setup()
-    const list = vi.spyOn(store, 'listProjects'),
-      recoveries = vi.spyOn(store, 'listRecoveries')
+    const list = vi.spyOn(store.projects, 'list'),
+      recoveries = vi.spyOn(store.recovery, 'list')
     for (const [path, method] of [
       ['/api/projects', 'POST'],
       ['/api/recovery', 'PUT'],

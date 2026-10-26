@@ -13,7 +13,6 @@ import { createHttpServer } from '../http/server'
 import { runImport } from '../import-cli'
 import { registerApiShutdown } from '../bootstrap'
 import { migrationNotice } from '../database/migration-notice'
-import { migrationNotice as compatibleNotice } from '../store'
 import { catalogEntry, catalogSource } from './sign-catalog-fixture'
 import { documentFile, documentMeta } from './normative-document-fixture'
 import { readCard, readEntry } from './pu66-read-fixture'
@@ -232,7 +231,6 @@ describe('production runtime without the storage facade', () => {
   })
 
   it('preserves migration metadata and rejects future databases without changing bytes or creating backups', () => {
-    expect(compatibleNotice).toBe(migrationNotice)
     expect(migrationNotice(runtime())).toBeNull()
     const path = join(directory(), 'future.sqlite'),
       db = new DatabaseSync(path)

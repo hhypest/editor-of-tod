@@ -9,7 +9,6 @@ import { openDatabase } from '../database/connection'
 import { migrateDatabase } from '../database/migration-runner'
 import { LegacyRegistryRepository } from '../legacy/legacy-registry-repository'
 import { RevisionConflict } from '../storage-errors'
-import { RevisionConflict as FacadeRevisionConflict } from '../store'
 
 const crossing: CrossingDraft = {
   referenceId: 'test-shared',
@@ -51,7 +50,7 @@ describe('LegacyRegistryRepository independently of the facade', () => {
     const { registry } = setup()
     expect(registry.listNormative()).toEqual([])
     expect(registry.listCrossings()).toEqual([])
-    expect(FacadeRevisionConflict).toBe(RevisionConflict)
+
     const first = registry.saveCrossing(
       { ...crossing, referenceId: ' test-shared ', notes: ' Учебная заметка ' },
       0,
@@ -95,7 +94,7 @@ describe('LegacyRegistryRepository independently of the facade', () => {
     one.registry.saveCrossing({ ...crossing, notes: 'Правка первого окна' }, 1)
     expect(() =>
       two.registry.saveCrossing({ ...crossing, notes: 'Правка второго окна' }, stale.revision),
-    ).toThrow(FacadeRevisionConflict)
+    ).toThrow(RevisionConflict)
     expect(two.db.isTransaction).toBe(false)
     expect(two.registry.listCrossings()).toMatchObject([
       { notes: 'Правка первого окна', revision: 2 },

@@ -26,7 +26,7 @@ ORM, микросервисы, несколько баз, DI-фреймворк 
 
 ## Последовательность PR
 
-Выделены [карта существующих контрактов](server-contracts.md), подключение (#196), migration/manual backup (#197), [миграции](sqlite-migrations.md), [ProjectSourceStore](project-source-store.md), [ProjectRepository](project-repository.md), [RecoveryRepository](recovery-repository.md), [LegacyRegistryRepository](legacy-registry-repository.md), [чтение/ключи ПУ-66](pu66-read-repository.md), [журнал сверок](pu66-verification-repository.md), [lifecycle](pu66-lifecycle.md) и [импорт ПУ-66](pu66-import.md). RegistryStore остаётся совместимым фасадом: его конструктор делегирует сборку ручному composition root, HTTP и другие вызывающие пока используют forwarding methods. Выделены также [нормативные документы и связи изменений](normative-documents.md), [текст страниц/подтверждения](document-evidence.md). Выделен [прикладной сценарий удаления](delete-normative-document.md); выделен [каталог знаков](sign-catalog.md). Composition root и API-группы также выделены; далее bootstrap/shutdown и перевод оставшихся вызывающих по пунктам ниже.
+Выделены [карта существующих контрактов](server-contracts.md), подключение (#196), migration/manual backup (#197), [миграции](sqlite-migrations.md), [ProjectSourceStore](project-source-store.md), [ProjectRepository](project-repository.md), [RecoveryRepository](recovery-repository.md), [LegacyRegistryRepository](legacy-registry-repository.md), [чтение/ключи ПУ-66](pu66-read-repository.md), [журнал сверок](pu66-verification-repository.md), [lifecycle](pu66-lifecycle.md) и [импорт ПУ-66](pu66-import.md). На промежуточных шагах RegistryStore делегировал сборку ручному composition root; после перевода всех вызывающих фасад и forwarding methods удалены. Выделены также [нормативные документы и связи изменений](normative-documents.md), [текст страниц/подтверждения](document-evidence.md). Выделен [прикладной сценарий удаления](delete-normative-document.md); выделен [каталог знаков](sign-catalog.md). Composition root и API-группы также выделены; bootstrap/runtime и перевод вызывающих завершены, далее итоговая фиксация проверок.
 
 ### 1. Карта серверных контрактов
 
@@ -65,17 +65,17 @@ Preview/apply используют общий расчёт плана. Импо�
 
 ### 6. Composition root и транспорт
 
-[Ручной composition root](composition-root.md) выделен: создаёт конкретные SQLite-адаптеры на одном соединении, выполняет прежнюю миграцию/seed и закрытие при отказе. RegistryStore пока сохраняет API и lifecycle после успешной сборки. Route groups получают узкие зависимости; application services не знают HTTP. [Общий транспорт](http-transport.md) выделен: JSON/body limits, security, path parsing, error mapping, бинарные ответы и static files; прежние route order и диагностика запроса остаются в index.
+[Ручной composition root](composition-root.md) выделен: создаёт конкретные SQLite-адаптеры на одном соединении, выполняет прежнюю миграцию/seed и закрытие при отказе. Промежуточный RegistryStore сохранял API и lifecycle до перевода вызывающих; теперь lifecycle принадлежит runtime. Route groups получают узкие зависимости; application services не знают HTTP. [Общий транспорт](http-transport.md) выделен: JSON/body limits, security, path parsing, error mapping, бинарные ответы и static files; прежние route order и диагностика запроса принадлежат общей HTTP factory.
 
-[Project/recovery routes](project-recovery-routes.md) выделены с узкими операциями и временным адаптером в index; группы можно напрямую связать с repositories. Bootstrap/фасад ещё сохраняются. [Маршруты ПУ-66](pu66-routes.md) также выделены: cards/lifecycle/verifications и прежние узкие команды импорта/backup; 12 HTTP-ветвей сохраняют guards, проекции и атомарные сценарии.
+[Project/recovery routes](project-recovery-routes.md) выделены с узкими операциями и напрямую связаны с repositories через runtime. Временный адаптер удалён. [Маршруты ПУ-66](pu66-routes.md) также выделены: cards/lifecycle/verifications и прежние узкие команды импорта/backup; 12 HTTP-ветвей сохраняют guards, проекции и атомарные сценарии.
 
 Выделены [маршруты знаков, документов и нормативных параметров](catalog-document-routes.md): узкие операции ZIP/PDF/library/подтверждений, прежние байты/версии/ETag/лимиты и отдельный контекст диагностики на каждый запрос. Три контракта прошли до переноса; девять прямых HTTP-проверок без фасада сохраняют историю, backup/recheck, удаления/rollback, подтверждения и untouched fallback.
 
-Выполнено: HTTP-примитивы → project/recovery routes → ПУ-66 → signs/documents/normative parameters. Выделены [system/diagnostics/legacy](system-legacy-routes.md): девять API-ветвей с узкими зависимостями; диагностическая сводка получает только metadata/количественные запросы без типа фасада. Три контракта прошли до переноса; семь прямых проверок сохраняют probe/backup, privacy/лимиты/недоступные query, legacy/conflicts/rollback и untouched fallback. Выделены [runtime/HTTP server/bootstrap](server-runtime-bootstrap.md): рабочие API/desktop/CLI используют прямую сборку без фасада, metadata/backup/close принадлежат runtime. Прежний createRegistryServer вынесен в совместимый адаптер для тестов. Далее перевод совместимых тестовых вызывающих и удаление фасада/адаптера. `server/index.ts` после перехода не содержит SQL или предметные таблицы.
+Выполнено: HTTP-примитивы → project/recovery routes → ПУ-66 → signs/documents/normative parameters. Выделены [system/diagnostics/legacy](system-legacy-routes.md): девять API-ветвей с узкими зависимостями; диагностическая сводка получает только metadata/количественные запросы без типа фасада. Три контракта прошли до переноса; семь прямых проверок сохраняют probe/backup, privacy/лимиты/недоступные query, legacy/conflicts/rollback и untouched fallback. Выделены [runtime/HTTP server/bootstrap](server-runtime-bootstrap.md): рабочие API/desktop/CLI используют прямую сборку без фасада, metadata/backup/close принадлежат runtime. Прежний createRegistryServer служил промежуточным адаптером для тестов до их перевода. [Совместимые тестовые вызывающие переведены, фасад/адаптер удалены](facade-removal.md). Далее включение завершающего переноса и фиксация итоговых контрактов/main/Windows exe. `server/index.ts` после перехода не содержит SQL или предметные таблицы.
 
 ### 7. Удаление совместимого фасада
 
-Forwarding method удаляется только после прямых тестов нового контракта, перевода всех вызывающих и поиска оставшихся обращений. Финальный фасад удаляется или заменяется небольшим владельцем lifecycle базы с `close()`/metadata. Временный фасад не получает новые предметные сценарии.
+[Фасад удалён](facade-removal.md) после прямых контрактов и перевода вызывающих. Сохранённые API/SQLite/конкурентные тесты обращаются к владельцам через общую сборку на одном соединении; старые реэкспорты и compatibility-server удалены. Runtime владеет close/metadata/backup; SQL и алгоритмы не менялись.
 
 ## Проверки и критерии выхода
 
@@ -83,12 +83,12 @@ Forwarding method удаляется только после прямых тес
 
 Завершение #135 и серверной части А4:
 
-- [x] SQL областей и row mappers имеют отдельных владельцев: проекты/recovery/legacy/ПУ-66/документы/подтверждения/каталог знаков. Фасад ещё сохраняется до переноса вызывающих.
+- [x] SQL областей и row mappers имеют отдельных владельцев: проекты/recovery/legacy/ПУ-66/документы/подтверждения/каталог знаков. Фасад удалён после перевода вызывающих.
 - [x] Миграции и backup отделены, все поддерживаемые исходные версии проверены (#196–#198).
-- [ ] Межмодульные изменения и recovery имеют явные атомарные команды.
+- [x] Межмодульные изменения и recovery имеют явные атомарные команды: source/draft/revision, owner/version/save recovery, lifecycle/import и delete document с прежними transaction runner/rollback контрактами.
 - [x] Общие HTTP-примитивы и error mapper выделены с сохранением статусов, заголовков, лимитов и диагностики.
-- [x] Route groups зависят от узких контрактов, без RegistryStore/DatabaseSync. Временный адаптер createRegistryServer связывает их с фасадом до перевода вызывающих.
-- [x] `index.ts` передаёт запуск в bootstrap; composition root/runtime собирают зависимости, HTTP factory получает узкие порты. Рабочие API/desktop/CLI не создают фасад. Совместимые тестовые адаптер/экспорты пока сохраняются.
+- [x] Route groups зависят от узких контрактов, без RegistryStore/DatabaseSync. Общая HTTP factory получает прямую сборку runtime; совместимый адаптер удалён.
+- [x] `index.ts` передаёт запуск в bootstrap; composition root/runtime собирают зависимости, HTTP factory получает узкие порты. Рабочие API/desktop/CLI не создают фасад. Совместимые тестовые адаптер/экспорты удалены после перевода вызывающих.
 - [ ] Прежние форматы, API, транзакции, история, source и графика сохранены.
 - [ ] Полный набор проверок и Windows exe пройдены; #134 подтверждена отдельно.
 - [ ] ROADMAP, архитектура и #144 отражают фактическое завершение; далее первым идёт #191.

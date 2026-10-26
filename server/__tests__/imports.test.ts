@@ -1,3 +1,4 @@
+import { openTestApplication } from './test-application'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -12,7 +13,6 @@ import { annualPu66ReviewStatus } from '../../src/domain/pu66-review'
 import { runImport } from '../import-cli'
 import { extractPu66Cells, schemeFields, type Pu66Import } from '../pu66'
 import { parseSignArchive } from '../signs'
-import { RegistryStore } from '../store'
 
 function sampleCard(cardRow: number) {
   const values = new Map<string, string | number>()
@@ -62,11 +62,11 @@ describe('private import formats', () => {
   it('reports the backup beside a database set by TOD_DATABASE_PATH', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-cli-backup-'))
     try {
-      const store = new RegistryStore(join(directory, 'custom', 'registry.sqlite'))
+      const store = openTestApplication(join(directory, 'custom', 'registry.sqlite'))
       const archive = join(directory, 'signs.zip')
       writeFileSync(archive, signZip())
-      const message = await runImport(['signs', '--apply', archive], store)
-      store.close()
+      const message = await runImport(['signs', '--apply', archive], store.runtime.imports)
+      store.runtime.close()
       const backup = /Резервная копия: (.+)\.$/.exec(message)?.[1]
       expect(backup?.startsWith(join(directory, 'custom', 'backups'))).toBe(true)
       expect(existsSync(backup!)).toBe(true)
@@ -76,11 +76,11 @@ describe('private import formats', () => {
   })
 
   it('uses the latest actual review date after a historical entry is backfilled', () => {
-    const store = new RegistryStore(':memory:', () => '2027-02-01T12:00:00.000Z')
+    const store = openTestApplication(':memory:', () => '2027-02-01T12:00:00.000Z')
     try {
       const card = sampleCard(5)
       const source = Buffer.from('synthetic workbook')
-      store.importPu66([
+      store.pu66Imports.record([
         {
           card,
           source,
@@ -88,34 +88,34 @@ describe('private import formats', () => {
           filename: 'TEST-99.xlsx',
         },
       ])
-      store.recordPu66Verification(card.key, {
+      store.pu66Verifications.record(card.key, {
         expectedRevision: 1,
         verifiedAt: '2027-01-30',
         verifiedBy: 'Учебное подразделение А',
       })
-      store.recordPu66Verification(card.key, {
+      store.pu66Verifications.record(card.key, {
         expectedRevision: 1,
         verifiedAt: '2026-01-30',
         verifiedBy: 'Учебное подразделение Б',
       })
-      const latest = store.listPu66()[0]?.verification
+      const latest = store.pu66.list()[0]?.verification
       expect(latest).toMatchObject({ verifiedAt: '2027-01-30' })
       expect(annualPu66ReviewStatus(latest?.verifiedAt ?? null, '2027-02-01')).toMatchObject({
         kind: 'current',
         nextDue: '2028-01-30',
       })
-      expect(store.listPu66Verifications(card.key)?.map((record) => record.verifiedAt)).toEqual([
+      expect(store.pu66Verifications.list(card.key)?.map((record) => record.verifiedAt)).toEqual([
         '2026-01-30',
         '2027-01-30',
       ])
-      store.recordPu66Verification(card.key, {
+      store.pu66Verifications.record(card.key, {
         expectedRevision: 1,
         verifiedAt: '2027-01-30',
         verifiedBy: 'Учебное подразделение В',
       })
-      expect(store.listPu66()[0]?.verification?.verifiedBy).toBe('Учебное подразделение В')
+      expect(store.pu66.list()[0]?.verification?.verifiedBy).toBe('Учебное подразделение В')
     } finally {
-      store.close()
+      store.runtime.close()
     }
   })
 
@@ -137,7 +137,7 @@ describe('private import formats', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-private-import-'))
     const path = join(directory, 'registry.sqlite')
     try {
-      const store = new RegistryStore(path, () => '2026-09-27T12:00:00.000Z')
+      const store = openTestApplication(path, () => '2026-09-27T12:00:00.000Z')
       const source = Buffer.from('synthetic workbook bytes')
       const card = sampleCard(5)
       const entry: Pu66Import = {
@@ -146,36 +146,36 @@ describe('private import formats', () => {
         sha256: createHash('sha256').update(source).digest('hex'),
         filename: 'TEST-99.xlsx',
       }
-      expect(() => store.planPu66([entry, entry])).toThrow('Повторный ключ')
-      expect(store.importPu66([entry])).toEqual({ added: 1, updated: 0, unchanged: 0 })
-      expect(store.importPu66([entry])).toEqual({ added: 0, updated: 0, unchanged: 1 })
-      expect(store.listPu66()).toMatchObject([{ referenceId: '99999:88:3', revision: 1 }])
-      expect(store.listPu66()[0]?.verification).toBeNull()
+      expect(() => store.pu66Imports.plan([entry, entry])).toThrow('Повторный ключ')
+      expect(store.pu66Imports.record([entry])).toEqual({ added: 1, updated: 0, unchanged: 0 })
+      expect(store.pu66Imports.record([entry])).toEqual({ added: 0, updated: 0, unchanged: 1 })
+      expect(store.pu66.list()).toMatchObject([{ referenceId: '99999:88:3', revision: 1 }])
+      expect(store.pu66.list()[0]?.verification).toBeNull()
       expect(() =>
-        store.recordPu66Verification(card.key, {
+        store.pu66Verifications.record(card.key, {
           expectedRevision: 1,
           verifiedAt: '2027-01-30',
           verifiedBy: 'Учебное линейное подразделение',
         }),
       ).toThrow('не может быть в будущем')
       expect(
-        store.recordPu66Verification(card.key, {
+        store.pu66Verifications.record(card.key, {
           expectedRevision: 1,
           verifiedAt: '2026-01-30',
           verifiedBy: 'Учебное линейное подразделение',
         }),
       ).toMatchObject({ cardRevision: 1, verifiedAt: '2026-01-30' })
-      expect(store.listPu66()[0]?.verification).toMatchObject({
+      expect(store.pu66.list()[0]?.verification).toMatchObject({
         verifiedBy: 'Учебное линейное подразделение',
       })
       expect(() =>
-        store.recordPu66Verification(card.key, {
+        store.pu66Verifications.record(card.key, {
           expectedRevision: 2,
           verifiedAt: '2026-01-30',
           verifiedBy: 'Учебное линейное подразделение',
         }),
       ).toThrow('Запись изменилась')
-      expect(store.getPu66Scheme(card.key)).toMatchObject({
+      expect(store.pu66.getScheme(card.key)).toMatchObject({
         ...schemeFields(card),
         revision: 1,
         updatedAt: expect.any(String),
@@ -193,9 +193,9 @@ describe('private import formats', () => {
         approachSpeedKmh: '90',
         yellowTemporarySigns: false,
       })
-      const selected = store.getPu66Scheme(card.key)
+      const selected = store.pu66.getScheme(card.key)
       if (!selected) throw new Error('Synthetic card missing')
-      store.saveProject(linkPu66Card(native, selected), 0)
+      store.projects.save(linkPu66Card(native, selected), 0)
       const newSource = Buffer.from('synthetic workbook revision')
       const next = {
         ...entry,
@@ -203,30 +203,30 @@ describe('private import formats', () => {
         source: newSource,
         sha256: createHash('sha256').update(newSource).digest('hex'),
       }
-      expect(store.importPu66([next])).toEqual({ added: 0, updated: 1, unchanged: 0 })
-      const newer = store.getPu66Scheme(card.key)
+      expect(store.pu66Imports.record([next])).toEqual({ added: 0, updated: 1, unchanged: 0 })
+      const newer = store.pu66.getScheme(card.key)
       expect(newer?.revision).toBe(2)
-      expect(store.listPu66()[0]?.verification).toBeNull()
-      expect(store.listPu66Verifications(card.key)).toMatchObject([
+      expect(store.pu66.list()[0]?.verification).toBeNull()
+      expect(store.pu66Verifications.list(card.key)).toMatchObject([
         { cardRevision: 1, verifiedAt: '2026-01-30' },
       ])
       expect(newer?.roadName).toBe('Обновлённая вымышленная дорога')
       expect(newer).not.toHaveProperty('technicalRows')
       expect(newer).not.toHaveProperty('carCountPerDay')
-      const saved = store.getProject(native.id)
+      const saved = store.projects.get(native.id)
       expect(saved?.scheme.crossing.snapshot?.revision).toBe(1)
       expect(saved?.scheme.crossing.snapshot?.roadName).toBe(selected.roadName)
       expect(saved?.revision).toBe(1)
-      store.recordPu66Verification(card.key, {
+      store.pu66Verifications.record(card.key, {
         expectedRevision: 2,
         verifiedAt: '2026-09-27',
         verifiedBy: 'Учебное линейное подразделение',
       })
-      expect(store.listPu66Verifications(card.key)).toMatchObject([
+      expect(store.pu66Verifications.list(card.key)).toMatchObject([
         { cardRevision: 2, verifiedAt: '2026-09-27' },
         { cardRevision: 1, verifiedAt: '2026-01-30' },
       ])
-      store.close()
+      store.runtime.close()
       const database = new DatabaseSync(path)
       expect(database.prepare('SELECT COUNT(*) AS total FROM pu66_revisions').get()).toMatchObject({
         total: 2,
@@ -251,9 +251,9 @@ describe('private import formats', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-v4-verification-'))
     const path = join(directory, 'registry.sqlite')
     try {
-      const original = new RegistryStore(path)
+      const original = openTestApplication(path)
       const card = sampleCard(5)
-      original.importPu66([
+      original.pu66Imports.record([
         {
           card,
           source: Buffer.from('synthetic workbook'),
@@ -261,16 +261,16 @@ describe('private import formats', () => {
           filename: 'TEST-99.xlsx',
         },
       ])
-      original.close()
+      original.runtime.close()
       const old = new DatabaseSync(path)
       old.exec(
         'DROP TABLE project_recovery; DROP TABLE project_sources; DROP TABLE pu66_verifications; PRAGMA user_version = 4;',
       )
       old.close()
-      const migrated = new RegistryStore(path)
-      expect(migrated.listPu66()).toMatchObject([{ referenceId: card.key, revision: 1 }])
-      expect(migrated.listPu66()[0]?.verification).toBeNull()
-      migrated.close()
+      const migrated = openTestApplication(path)
+      expect(migrated.pu66.list()).toMatchObject([{ referenceId: card.key, revision: 1 }])
+      expect(migrated.pu66.list()[0]?.verification).toBeNull()
+      migrated.runtime.close()
       const current = new DatabaseSync(path)
       expect(current.prepare('PRAGMA user_version').get()).toEqual({ user_version: 13 })
       current.close()
@@ -285,19 +285,21 @@ describe('private import formats', () => {
     expect(entries).toHaveLength(1)
     expect(entries[0]?.code).toBe('1.1_ж')
     expect(entries[0]).not.toHaveProperty('plainSvg')
-    const store = new RegistryStore(':memory:')
+    const store = openTestApplication(':memory:')
     try {
-      expect(store.importSigns(entries)).toMatchObject({ added: 1 })
-      expect(store.importSigns(parseSignArchive(source))).toMatchObject({ unchanged: 1 })
-      expect(store.listSigns()).toEqual([{ code: '1.1_ж', width: 30, height: 30, revision: 1 }])
-      expect(Buffer.from(store.getSignPng('1.1_ж', true) as Uint8Array)).toEqual(
+      expect(store.signCatalog.import(entries)).toMatchObject({ added: 1 })
+      expect(store.signCatalog.import(parseSignArchive(source))).toMatchObject({ unchanged: 1 })
+      expect(store.signCatalog.list()).toEqual([
+        { code: '1.1_ж', width: 30, height: 30, revision: 1 },
+      ])
+      expect(Buffer.from(store.signCatalog.getPng('1.1_ж', true) as Uint8Array)).toEqual(
         entries[0]?.numberedPng,
       )
-      expect(Buffer.from(store.getSignPng('1.1_ж', false) as Uint8Array)).toEqual(
+      expect(Buffer.from(store.signCatalog.getPng('1.1_ж', false) as Uint8Array)).toEqual(
         entries[0]?.plainPng,
       )
     } finally {
-      store.close()
+      store.runtime.close()
     }
   })
 
@@ -309,22 +311,26 @@ describe('private import formats', () => {
       const second = parseSignArchive(signZip('3.20', 190))
       const source = { documentCode: 'ГОСТ Р TEST', edition: '2024', pdfSha256: null }
       const updated = { ...source, edition: '2026' }
-      const store = new RegistryStore(path)
-      expect(store.importSigns(first, source)).toMatchObject({ added: 1 })
-      expect(store.latestSignCatalog()).toMatchObject({ edition: '2024', signCount: 1 })
-      expect(store.importSigns(first, source)).toMatchObject({ unchanged: 1 })
-      expect(store.planSigns(first, updated)).toMatchObject({ updated: 1 })
-      expect(store.importSigns(first, updated)).toMatchObject({ updated: 1 })
-      expect(store.latestSignCatalog()).toMatchObject({ edition: '2026' })
-      expect(store.importSigns(second, updated)).toMatchObject({ added: 1, retired: 1 })
-      expect(store.listSigns()).toEqual([{ code: '3.20', width: 30, height: 30, revision: 1 }])
-      expect(store.getSignPng('1.25', false)).toBeNull()
-      expect(store.importSigns(first, updated)).toMatchObject({ added: 1, retired: 1 })
-      expect(Buffer.from(store.getSignPng('1.25', false) as Uint8Array)).toEqual(first[0]?.plainPng)
-      expect(Buffer.from(store.getSignPng('1.25', false, 1) as Uint8Array)).toEqual(
+      const store = openTestApplication(path)
+      expect(store.signCatalog.import(first, source)).toMatchObject({ added: 1 })
+      expect(store.signCatalog.latest()).toMatchObject({ edition: '2024', signCount: 1 })
+      expect(store.signCatalog.import(first, source)).toMatchObject({ unchanged: 1 })
+      expect(store.signCatalog.plan(first, updated)).toMatchObject({ updated: 1 })
+      expect(store.signCatalog.import(first, updated)).toMatchObject({ updated: 1 })
+      expect(store.signCatalog.latest()).toMatchObject({ edition: '2026' })
+      expect(store.signCatalog.import(second, updated)).toMatchObject({ added: 1, retired: 1 })
+      expect(store.signCatalog.list()).toEqual([
+        { code: '3.20', width: 30, height: 30, revision: 1 },
+      ])
+      expect(store.signCatalog.getPng('1.25', false)).toBeNull()
+      expect(store.signCatalog.import(first, updated)).toMatchObject({ added: 1, retired: 1 })
+      expect(Buffer.from(store.signCatalog.getPng('1.25', false) as Uint8Array)).toEqual(
         first[0]?.plainPng,
       )
-      store.close()
+      expect(Buffer.from(store.signCatalog.getPng('1.25', false, 1) as Uint8Array)).toEqual(
+        first[0]?.plainPng,
+      )
+      store.runtime.close()
       const database = new DatabaseSync(path)
       expect(database.prepare('SELECT COUNT(*) AS total FROM sign_catalog_batches').get()).toEqual({
         total: 4,
@@ -369,10 +375,12 @@ describe('private import formats', () => {
         .prepare('INSERT INTO crossings VALUES (?, ?, ?, ?)')
         .run('TEST-001', 1, JSON.stringify(payload), '2026-09-26T00:00:00Z')
       old.close()
-      const migrated = new RegistryStore(path)
-      expect(migrated.listCrossings()).toMatchObject([{ referenceId: 'TEST-001', revision: 1 }])
-      expect(migrated.listPu66()).toEqual([])
-      migrated.close()
+      const migrated = openTestApplication(path)
+      expect(migrated.legacy.listCrossings()).toMatchObject([
+        { referenceId: 'TEST-001', revision: 1 },
+      ])
+      expect(migrated.pu66.list()).toEqual([])
+      migrated.runtime.close()
       expect(readFileSync(path).subarray(0, 16).toString()).toBe('SQLite format 3\u0000')
     } finally {
       rmSync(directory, { recursive: true, force: true })
@@ -386,9 +394,9 @@ describe('private import formats', () => {
     try {
       const source = signZip()
       const entry = parseSignArchive(source)[0]!
-      const store = new RegistryStore(path)
-      store.importSigns([entry])
-      store.close()
+      const store = openTestApplication(path)
+      store.signCatalog.import([entry])
+      store.runtime.close()
       const old = new DatabaseSync(path)
       old.exec(`
         DROP TABLE project_recovery;
@@ -402,18 +410,18 @@ describe('private import formats', () => {
       old.prepare('UPDATE signs SET plain_svg = ? WHERE code = ?').run(marker, entry.code)
       old.close()
 
-      const migrated = new RegistryStore(path)
-      expect(migrated.listSigns()).toEqual([
+      const migrated = openTestApplication(path)
+      expect(migrated.signCatalog.list()).toEqual([
         { code: entry.code, width: 30, height: 30, revision: 1 },
       ])
-      expect(Buffer.from(migrated.getSignPng(entry.code, true) as Uint8Array)).toEqual(
+      expect(Buffer.from(migrated.signCatalog.getPng(entry.code, true) as Uint8Array)).toEqual(
         entry.numberedPng,
       )
-      expect(Buffer.from(migrated.getSignPng(entry.code, false) as Uint8Array)).toEqual(
+      expect(Buffer.from(migrated.signCatalog.getPng(entry.code, false) as Uint8Array)).toEqual(
         entry.plainPng,
       )
-      expect(migrated.planSigns([entry])).toMatchObject({ unchanged: 1 })
-      migrated.close()
+      expect(migrated.signCatalog.plan([entry])).toMatchObject({ unchanged: 1 })
+      migrated.runtime.close()
 
       const database = new DatabaseSync(path)
       expect(database.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 13 })
@@ -436,7 +444,7 @@ describe('private import formats', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-station-keys-'))
     const path = join(directory, 'registry.sqlite')
     try {
-      const store = new RegistryStore(path, () => '2026-09-27T12:00:00.000Z')
+      const store = openTestApplication(path, () => '2026-09-27T12:00:00.000Z')
       const stationCard = (cardNumber: string, key: string) => ({
         ...sampleCard(5),
         section: '',
@@ -454,40 +462,40 @@ describe('private import formats', () => {
         }
       }
       // Так ключи выглядели до версии 9: вторая карточка перезаписала первую.
-      store.importPu66([entry(stationCard('11', 'ст.Учебная:0:1'), 'first')])
-      store.recordPu66Verification('ст.Учебная:0:1', {
+      store.pu66Imports.record([entry(stationCard('11', 'ст.Учебная:0:1'), 'first')])
+      store.pu66Verifications.record('ст.Учебная:0:1', {
         expectedRevision: 1,
         verifiedAt: '2026-01-30',
         verifiedBy: 'Учебное подразделение',
       })
       expect(
-        store.importPu66([entry(stationCard('12', 'ст.Учебная:0:1'), 'second')]),
+        store.pu66Imports.record([entry(stationCard('12', 'ст.Учебная:0:1'), 'second')]),
       ).toMatchObject({
         updated: 1,
       })
-      store.importPu66([entry(stationCard('21', 'ст.Учебная:0:2'), 'single')])
-      store.close()
+      store.pu66Imports.record([entry(stationCard('21', 'ст.Учебная:0:2'), 'single')])
+      store.runtime.close()
       const database = new DatabaseSync(path)
       database.exec(
         'ALTER TABLE project_recovery DROP COLUMN owner_id; ALTER TABLE project_recovery DROP COLUMN owner_until; DROP TABLE pu66_key_aliases; PRAGMA user_version = 8;',
       )
       database.close()
 
-      const reopened = new RegistryStore(path)
+      const reopened = openTestApplication(path)
       try {
-        const keys = reopened
-          .listPu66()
+        const keys = reopened.pu66
+          .list()
           .map((card) => card.referenceId)
           .sort()
         expect(keys).toEqual(['ст.Учебная:0:1:к11', 'ст.Учебная:0:1:к12', 'ст.Учебная:0:2:к21'])
-        expect(reopened.listPu66Verifications('ст.Учебная:0:1:к11')).toMatchObject([
+        expect(reopened.pu66Verifications.list('ст.Учебная:0:1:к11')).toMatchObject([
           { cardRevision: 1, verifiedAt: '2026-01-30' },
         ])
-        expect(reopened.listPu66Verifications('ст.Учебная:0:1:к12')).toEqual([])
-        expect(reopened.getPu66Scheme('ст.Учебная:0:2')).toMatchObject({ revision: 1 })
-        expect(() => reopened.getPu66Scheme('ст.Учебная:0:1')).toThrow('несколько карточек')
+        expect(reopened.pu66Verifications.list('ст.Учебная:0:1:к12')).toEqual([])
+        expect(reopened.pu66.getScheme('ст.Учебная:0:2')).toMatchObject({ revision: 1 })
+        expect(() => reopened.pu66.getScheme('ст.Учебная:0:1')).toThrow('несколько карточек')
       } finally {
-        reopened.close()
+        reopened.runtime.close()
       }
       const check = new DatabaseSync(path)
       expect(check.prepare('PRAGMA user_version').get()).toEqual({ user_version: 13 })
@@ -502,11 +510,11 @@ describe('private import formats', () => {
     const directory = mkdtempSync(join(tmpdir(), 'tod-future-version-'))
     const path = join(directory, 'registry.sqlite')
     try {
-      new RegistryStore(path).close()
+      openTestApplication(path).runtime.close()
       const database = new DatabaseSync(path)
       database.exec('PRAGMA user_version = 99')
       database.close()
-      expect(() => new RegistryStore(path)).toThrow('Неизвестная версия локальной базы: 99')
+      expect(() => openTestApplication(path)).toThrow('Неизвестная версия локальной базы: 99')
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }

@@ -1,19 +1,20 @@
+import { openTestApplication, type TestApplication } from './test-application'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Server } from 'node:http'
-import { RegistryStore } from '../store'
-import { createRegistryServer } from '../index'
+
+import { createHttpServer } from '../http/server'
 import { identifyDocumentUpload } from '../document-web-import'
 import { buildPdf, textPdf } from './pdf-fixture'
 
 const servers: Server[] = []
-const stores: RegistryStore[] = []
+const stores: TestApplication[] = []
 afterEach(async () => {
   await Promise.all(
     servers
       .splice(0)
       .map((server) => new Promise<void>((resolve) => server.close(() => resolve()))),
   )
-  for (const store of stores.splice(0)) store.close()
+  for (const store of stores.splice(0)) store.runtime.close()
 })
 const upload = (pdf: Buffer, name = 'copy.pdf') => ({
   file: { name, data: pdf.toString('base64') },
@@ -37,9 +38,9 @@ describe('read-only PDF identification', () => {
   })
 
   it('validates the upload and does not write a library document through the API', async () => {
-    const store = new RegistryStore(':memory:')
+    const store = openTestApplication(':memory:')
     stores.push(store)
-    const server = createRegistryServer(store, 0)
+    const server = createHttpServer(store.runtime.http, 0)
     servers.push(server)
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     const address = server.address()
@@ -56,7 +57,7 @@ describe('read-only PDF identification', () => {
       status: 'identified',
       candidates: [{ code: 'ГОСТ Р 90001' }],
     })
-    expect(store.listDocuments()).toEqual([])
+    expect(store.documents.list()).toEqual([])
     expect((await post(upload(Buffer.from('not a PDF')))).status).toBe(400)
     expect((await post(upload(textPdf([['Учебный текст']]), 'wrong.txt'))).status).toBe(400)
     expect((await post(upload(Buffer.from('%PDF-malformed')))).status).toBe(400)

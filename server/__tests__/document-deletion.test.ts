@@ -1,13 +1,14 @@
+import { openTestApplication } from './test-application'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { Server } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createRegistryServer } from '../index'
+import { createHttpServer } from '../http/server'
 import { NormativeDocumentRepository } from '../documents/normative-document-repository'
 import { evidenceConfirmation } from './document-evidence-fixture'
-import { RegistryStore } from '../store'
+
 import { documentMeta, documentFile, seedDocumentBatch } from './normative-document-fixture'
 
 const cleanups: Array<() => void> = [],
@@ -21,15 +22,15 @@ afterEach(async () => {
 function setup() {
   const directory = mkdtempSync(join(tmpdir(), 'tod-delete-document-')),
     path = join(directory, 'registry.sqlite'),
-    store = new RegistryStore(path),
+    store = openTestApplication(path),
     raw = new DatabaseSync(path),
     file = documentFile(),
-    document = store.addDocument(documentMeta(), file.filename, file.pdf, file.sha256),
+    document = store.documentService.add(documentMeta(), file.filename, file.pdf, file.sha256),
     pages = ['Fictional first page', '', 'Fictional third page']
-  store.saveDocumentText(document.id, pages)
+  store.documentText.save(document.id, pages)
   cleanups.push(() => {
     raw.close()
-    store.close()
+    store.runtime.close()
     rmSync(directory, { recursive: true, force: true })
   })
   return { directory, path, store, raw, document, file, pages }
@@ -42,14 +43,14 @@ describe('atomic normative document deletion', () => {
     raw.exec(
       "CREATE TRIGGER reject_document_delete BEFORE DELETE ON normative_documents BEGIN SELECT RAISE(ABORT, 'document delete failed'); END",
     )
-    expect(() => store.deleteDocument(document.id)).toThrow('document delete failed')
-    expect(store.getDocumentText(document.id)).toEqual(pages)
+    expect(() => store.deleteDocumentCommand.execute(document.id)).toThrow('document delete failed')
+    expect(store.documentText.get(document.id)).toEqual(pages)
     expect(raw.prepare('SELECT * FROM normative_documents').all()).toEqual(before)
-    expect(Buffer.from(store.getDocumentPdf(document.id)!.pdf)).toEqual(file.pdf)
+    expect(Buffer.from(store.documents.getPdf(document.id)!.pdf)).toEqual(file.pdf)
     raw.exec('DROP TRIGGER reject_document_delete')
-    expect(store.deleteDocument(document.id)).toBe(true)
-    expect(store.getDocument(document.id)).toBeNull()
-    expect(store.getDocumentText(document.id)).toBeNull()
+    expect(store.deleteDocumentCommand.execute(document.id)).toBe(true)
+    expect(store.documents.get(document.id)).toBeNull()
+    expect(store.documentText.get(document.id)).toBeNull()
   })
 
   it('rolls back an aborted page DELETE without touching the document or leaving an open transaction', () => {
@@ -57,40 +58,42 @@ describe('atomic normative document deletion', () => {
     raw.exec(
       "CREATE TRIGGER reject_page_delete BEFORE DELETE ON document_pages WHEN OLD.page = 2 BEGIN SELECT RAISE(ABORT, 'page delete failed'); END",
     )
-    expect(() => store.deleteDocument(document.id)).toThrow('page delete failed')
-    expect(store.getDocument(document.id)).toEqual(document)
-    expect(store.getDocumentText(document.id)).toEqual(pages)
+    expect(() => store.deleteDocumentCommand.execute(document.id)).toThrow('page delete failed')
+    expect(store.documents.get(document.id)).toEqual(document)
+    expect(store.documentText.get(document.id)).toEqual(pages)
     raw.exec('DROP TRIGGER reject_page_delete')
-    expect(store.deleteDocument(document.id)).toBe(true)
+    expect(store.deleteDocumentCommand.execute(document.id)).toBe(true)
   })
 
   it('preserves historical sign/amendment/confirmation guard order and all content on each refusal', () => {
     const { store, raw, document, pages } = setup(),
       changeFile = documentFile('Fictional amendment'),
-      amendment = store.addDocument(
+      amendment = store.documentService.add(
         documentMeta({ amendsId: document.id }),
         changeFile.filename,
         changeFile.pdf,
         changeFile.sha256,
       )
     seedDocumentBatch(raw, document.id)
-    const confirmation = store.addParameterConfirmation(
+    const confirmation = store.parameterConfirmations.add(
       evidenceConfirmation({ documentId: document.id }),
     )
-    expect(() => store.deleteDocument(document.id)).toThrow(
+    expect(() => store.deleteDocumentCommand.execute(document.id)).toThrow(
       'С этим документом сверен импорт каталога знаков',
     )
-    expect(store.getDocumentText(document.id)).toEqual(pages)
+    expect(store.documentText.get(document.id)).toEqual(pages)
     raw.prepare('DELETE FROM sign_catalog_batches WHERE document_id = ?').run(document.id)
-    expect(() => store.deleteDocument(document.id)).toThrow('Сначала удалите изменения')
-    expect(store.getDocumentText(document.id)).toEqual(pages)
-    expect(store.deleteDocument(amendment.id)).toBe(true)
-    expect(() => store.deleteDocument(document.id)).toThrow(
+    expect(() => store.deleteDocumentCommand.execute(document.id)).toThrow(
+      'Сначала удалите изменения',
+    )
+    expect(store.documentText.get(document.id)).toEqual(pages)
+    expect(store.deleteDocumentCommand.execute(amendment.id)).toBe(true)
+    expect(() => store.deleteDocumentCommand.execute(document.id)).toThrow(
       'По этому документу подтверждены нормативные параметры',
     )
-    expect(store.getDocumentText(document.id)).toEqual(pages)
-    expect(store.listParameterConfirmations()).toEqual([confirmation])
-    expect(store.getDocument(document.id)).toEqual(document)
+    expect(store.documentText.get(document.id)).toEqual(pages)
+    expect(store.parameterConfirmations.list()).toEqual([confirmation])
+    expect(store.documents.get(document.id)).toEqual(document)
     expect(raw.prepare('PRAGMA foreign_key_check').all()).toEqual([])
   })
 
@@ -112,7 +115,7 @@ describe('atomic normative document deletion', () => {
       ).toEqual({ count: 3 })
       return get.call(this, id)
     })
-    expect(store.deleteDocument(document.id)).toBe(true)
+    expect(store.deleteDocumentCommand.execute(document.id)).toBe(true)
     expect(checked).toBe(true)
   })
 
@@ -150,7 +153,7 @@ describe('atomic normative document deletion', () => {
     raw.exec(
       'CREATE TRIGGER observe_delete BEFORE DELETE ON normative_documents BEGIN SELECT observe_document_delete(); END',
     )
-    expect(store.deleteDocument(document.id)).toBe(true)
+    expect(store.deleteDocumentCommand.execute(document.id)).toBe(true)
     expect(observed).toBe(1)
     expect(raw.prepare('SELECT COUNT(*) AS count FROM document_pages').get()).toEqual({ count: 0 })
     expect(raw.prepare('SELECT COUNT(*) AS count FROM normative_documents').get()).toEqual({
@@ -161,33 +164,33 @@ describe('atomic normative document deletion', () => {
   it('keeps missing-id false, refuses nested BEGIN without rolling back the caller, and reopens after rollback', () => {
     const { store, raw, path, document, pages } = setup(),
       connection = (store as unknown as { db: DatabaseSync }).db
-    expect(store.deleteDocument(999)).toBe(false)
-    expect(store.getDocumentText(document.id)).toEqual(pages)
+    expect(store.deleteDocumentCommand.execute(999)).toBe(false)
+    expect(store.documentText.get(document.id)).toEqual(pages)
     connection.exec('BEGIN IMMEDIATE')
     connection
       .prepare('UPDATE normative_documents SET note = ? WHERE id = ?')
       .run('Caller input', document.id)
-    expect(() => store.deleteDocument(document.id)).toThrow(/transaction/)
+    expect(() => store.deleteDocumentCommand.execute(document.id)).toThrow(/transaction/)
     expect(connection.isTransaction).toBe(true)
-    expect(store.getDocument(document.id)?.note).toBe('Caller input')
+    expect(store.documents.get(document.id)?.note).toBe('Caller input')
     expect(
       raw.prepare('SELECT note FROM normative_documents WHERE id = ?').get(document.id),
     ).toEqual({ note: document.note })
     connection.exec('ROLLBACK')
-    const reopened = new RegistryStore(path)
+    const reopened = openTestApplication(path)
     try {
-      expect(reopened.getDocument(document.id)).toEqual(document)
-      expect(reopened.getDocumentText(document.id)).toEqual(pages)
-      expect(reopened.deleteDocument(document.id)).toBe(true)
-      expect(store.deleteDocument(document.id)).toBe(false)
+      expect(reopened.documents.get(document.id)).toEqual(document)
+      expect(reopened.documentText.get(document.id)).toEqual(pages)
+      expect(reopened.deleteDocumentCommand.execute(document.id)).toBe(true)
+      expect(store.deleteDocumentCommand.execute(document.id)).toBe(false)
     } finally {
-      reopened.close()
+      reopened.runtime.close()
     }
   })
 
   it('keeps HTTP 403/500/409/200/404 and the cached text after a failed DELETE', async () => {
     const { store, raw, document, pages } = setup(),
-      server = createRegistryServer(store, 0)
+      server = createHttpServer(store.runtime.http, 0)
     servers.push(server)
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     const address = server.address()
@@ -202,12 +205,12 @@ describe('atomic normative document deletion', () => {
     const failed = await remove()
     expect(failed.status).toBe(500)
     expect(await failed.json()).toEqual({ error: 'Внутренняя ошибка локального реестра.' })
-    expect(store.getDocumentText(document.id)).toEqual(pages)
-    expect(store.getDocument(document.id)).toEqual(document)
+    expect(store.documentText.get(document.id)).toEqual(pages)
+    expect(store.documents.get(document.id)).toEqual(document)
     raw.exec('DROP TRIGGER reject_http_delete')
-    store.addParameterConfirmation(evidenceConfirmation({ documentId: document.id }))
+    store.parameterConfirmations.add(evidenceConfirmation({ documentId: document.id }))
     expect((await remove()).status).toBe(409)
-    expect(store.getDocumentText(document.id)).toEqual(pages)
+    expect(store.documentText.get(document.id)).toEqual(pages)
     raw.prepare('DELETE FROM parameter_confirmations WHERE document_id = ?').run(document.id)
     const removed = await remove()
     expect(removed.status).toBe(200)
