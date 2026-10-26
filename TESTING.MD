@@ -789,6 +789,10 @@ PNG остаются только в локальной базе и показы
 
 Три `pu66-import-contracts.test.ts` предварительно проходят на исходном фасаде: порядок inspection/дубликаты/no-op/receiver часов, полный rollback при отказе второго возврата и валидация restoration. Прямые `pu66-import-service.test.ts` проверяют read-only/aliases, workbook bytes/SHA dedup/immutable history, whitelist/fingerprint, откат после ошибки редакции/события/часов, блокировку второго соединения и порядок timestamps, узкий upload/backup port. Существующие API/XLSX/lifecycle/frozen-format/E2E сохраняются; [профиль и границы](docs/refactoring/pu66-import.md). Полный check, E2E и Windows exe обязательны.
 
+## Серверное выделение нормативных документов (#135)
+
+Три `normative-document-contracts.test.ts` предварительно проходят на исходном фасаде: нормализация/поля/receiver часов, порядок отказов и откат INSERT/UPDATE при ошибке trigger. Восемь прямых `normative-document-repository.test.ts` проверяют read-only/порядок/whitelist/PDF bytes, reopen/другое соединение, узкий запрос ссылок и его отказ, порядок часов, сохранность внешней транзакции и блокировку записи, detach/reattach, неизменность текста/подтверждений/истории знаков и узкий upload/backup port. Удаление, текст и подтверждения остаются следующими отдельными шагами; [границы](docs/refactoring/normative-documents.md). Полный check и E2E обязательны; Windows exe проверяется отдельной ручной сборкой.
+
 ## Первый блок А4: редакции и запоздалые ответы
 
 Автоматически: `npm run check` проверяет SaveProjectRevision / RestoreProjectRevision независимо от Vue/HTTP, типизированные ошибки адаптера и Vue lifecycle с управляемыми задержками. Проверяются смена сессии при том же id, новые правки и неприменённый ввод во время записи/возврата, сохранение отдельной копии, конфликт и повтор, отмена подтверждения, задержка recovery перед возвратом и при удалении, undo/redo. `npm run test:e2e` проверяет задержку ответа SQLite, блокировку ввода, повтор неизменённой записи, возврат с сохранением всех версий и реальный 409.
