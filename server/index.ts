@@ -1,10 +1,9 @@
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { createServer } from 'node:http'
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
-import { dirname, join, extname } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { z, ZodError } from 'zod'
+import { z } from 'zod'
 import {
   MAX_LOCAL_PROJECT_BYTES,
   projectRestoreSchema,
@@ -20,186 +19,34 @@ import { crossingWriteSchema, normativeWriteSchema } from '../src/domain/registr
 import { pu66VerificationWriteSchema } from '../src/domain/pu66-review.ts'
 import { pu66LifecycleWriteSchema } from '../src/domain/pu66-lifecycle.ts'
 import { applyPu66Lifecycle } from './pu66-lifecycle.ts'
-import {
-  applyPu66Upload,
-  InvalidPu66Upload,
-  previewPu66Upload,
-  PU66_UPLOAD_REQUEST_BYTES,
-} from './pu66-web-import.ts'
-import {
-  applySignUpload,
-  InvalidSignUpload,
-  previewSignUpload,
-  SIGN_UPLOAD_REQUEST_BYTES,
-} from './sign-web-import.ts'
+import { applyPu66Upload, previewPu66Upload, PU66_UPLOAD_REQUEST_BYTES } from './pu66-web-import.ts'
+import { applySignUpload, previewSignUpload, SIGN_UPLOAD_REQUEST_BYTES } from './sign-web-import.ts'
 import {
   applyDocumentUpload,
   DOCUMENT_UPLOAD_REQUEST_BYTES,
-  InvalidDocumentUpload,
   identifyDocumentUpload,
   previewDocumentUpload,
 } from './document-web-import.ts'
 import { applyPdfSigns, pdfSignImage, previewPdfSigns } from './sign-pdf-import.ts'
-import {
-  confirmParameter,
-  InvalidParameter,
-  listParameterStates,
-  ParameterConfirmationConflict,
-} from './normative-parameters.ts'
-import type { ParameterRejectionReason } from '../src/domain/normative-parameters.ts'
+import { confirmParameter, listParameterStates } from './normative-parameters.ts'
 import { documentMetaSchema } from '../src/domain/normative-documents.ts'
 import { clientEventsSchema, DiagnosticsLog, routeOf } from './diagnostics.ts'
 import { databaseIdentity } from './database-identity.ts'
-import {
-  InvalidPu66Verification,
-  InvalidPu66Lifecycle,
-  ProjectTooLarge,
-  RegistryStore,
-  RevisionConflict,
-  RecoveryOwned,
-  AmbiguousPu66Key,
-  DocumentInUse,
-  migrationNotice,
-} from './store.ts'
+import { RegistryStore, migrationNotice } from './store.ts'
+import { InvalidPu66Lifecycle } from './pu66/errors.ts'
+import { RequestError } from './http/request-error.ts'
+import { json, readJson } from './http/json.ts'
+import { checkRequest } from './http/security.ts'
+import { decodeKey, projectId } from './http/path.ts'
+import { defaultStaticFiles, serveBuiltApp, type StaticFiles } from './http/static-files.ts'
+import { sendPdf, sendPng, sendCachedPng } from './http/binary.ts'
+import { parameterRejection, writeHttpError, type ParameterRejection } from './http/error-mapper.ts'
+
+export { directoryFiles, type StaticFiles } from './http/static-files.ts'
 
 export const DEFAULT_PORT = 4100
 const PROBE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const port = DEFAULT_PORT
-
-/** Источник файлов собранного интерфейса: папка `dist/` или ресурсы исполняемого файла. */
-export type StaticFiles = (filename: string) => Promise<Buffer>
-
-export function directoryFiles(directory: string): StaticFiles {
-  return (filename) => readFile(join(directory, filename))
-}
-
-function defaultStaticFiles(): StaticFiles {
-  return directoryFiles(fileURLToPath(new URL('../dist/', import.meta.url)))
-}
-
-class RequestError extends Error {
-  readonly status: number
-
-  constructor(status: number, message: string) {
-    super(message)
-    this.status = status
-  }
-}
-
-function json(res: ServerResponse, status: number, data: unknown): void {
-  res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff',
-  })
-  res.end(JSON.stringify(data))
-}
-
-async function readJson(req: IncomingMessage, maxBytes = 64 * 1024): Promise<unknown> {
-  if (!req.headers['content-type']?.startsWith('application/json')) {
-    throw new RequestError(
-      415,
-      'Программа не смогла выполнить действие. Перезапустите её и повторите.',
-    )
-  }
-  const chunks: Buffer[] = []
-  let size = 0
-  for await (const chunk of req) {
-    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-    size += bytes.length
-    if (size > maxBytes)
-      throw new RequestError(
-        413,
-        'Слишком много данных для одного действия. Скачайте файл проекта, перезапустите программу и повторите.',
-      )
-    chunks.push(bytes)
-  }
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
-  } catch {
-    throw new RequestError(
-      400,
-      'Программа не смогла прочитать данные. Перезапустите её и повторите действие.',
-    )
-  }
-}
-
-function checkRequest(req: IncomingMessage, listenPort: number): void {
-  const host = req.headers.host
-  if (host !== `127.0.0.1:${listenPort}` && host !== `localhost:${listenPort}`) {
-    throw new RequestError(403, 'Допускается только локальное обращение.')
-  }
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    const allowed = [
-      `http://127.0.0.1:${listenPort}`,
-      `http://localhost:${listenPort}`,
-      'http://127.0.0.1:5173',
-      'http://localhost:5173',
-      'http://127.0.0.1:4173',
-      'http://localhost:4173',
-    ]
-    if (!req.headers.origin || !allowed.includes(req.headers.origin)) {
-      throw new RequestError(403, 'Запись доступна только из локального интерфейса.')
-    }
-  }
-}
-
-function decodeKey(encoded: string): string {
-  try {
-    return decodeURIComponent(encoded)
-  } catch {
-    throw new RequestError(400, 'Неверный код в адресе.')
-  }
-}
-
-function projectId(encoded: string): string {
-  const id = decodeKey(encoded)
-  if (!z.uuid().safeParse(id).success) throw new RequestError(400, 'Неверный ID проекта.')
-  return id
-}
-
-/** Сведения о лицензиях сторонних компонентов из сборки интерфейса (раздел «О программе»). */
-const LEGAL_FILES = new Set(['/legal/THIRD_PARTY_LICENSES.txt', '/legal/third-party.json'])
-
-async function serveBuiltApp(
-  pathname: string,
-  res: ServerResponse,
-  staticFiles: StaticFiles,
-): Promise<void> {
-  const filename =
-    pathname === '/' || pathname === '/index.html'
-      ? 'index.html'
-      : pathname === '/favicon.svg' ||
-          /^\/assets\/[a-zA-Z0-9._-]+$/.test(pathname) ||
-          LEGAL_FILES.has(pathname)
-        ? pathname.slice(1)
-        : null
-  if (!filename) throw new RequestError(404, 'Страница не найдена.')
-  try {
-    const body = await staticFiles(filename)
-    const type = {
-      '.html': 'text/html',
-      '.js': 'text/javascript',
-      '.css': 'text/css',
-      '.svg': 'image/svg+xml',
-      '.txt': 'text/plain',
-      '.json': 'application/json',
-    }[extname(filename)]
-    if (!type) throw new RequestError(404, 'Файл не найден.')
-    res.writeHead(200, {
-      'Content-Type': `${type}; charset=utf-8`,
-      'X-Content-Type-Options': 'nosniff',
-      'Cache-Control': 'no-store',
-    })
-    res.end(body)
-  } catch (error) {
-    if (error instanceof RequestError) throw error
-    throw new RequestError(
-      404,
-      'Файлы интерфейса не найдены. Переустановите программу и повторите запуск.',
-    )
-  }
-}
 
 export function createRegistryServer(
   store: RegistryStore,
@@ -214,7 +61,7 @@ export function createRegistryServer(
     const started = performance.now()
     let route = routeOf(req.method ?? 'GET', '/api/?')
     let parameterId: string | undefined
-    let rejection: { parameterId: string; rejectionReason: ParameterRejectionReason } | undefined
+    let rejection: ParameterRejection | undefined
     res.on('finish', () => {
       if (route !== 'GET /api/diagnostics')
         diagnostics.request(route, res.statusCode, performance.now() - started, rejection)
@@ -416,13 +263,7 @@ export function createRegistryServer(
         if (req.method === 'GET' && documentPath[2] === '/pdf') {
           const file = store.getDocumentPdf(id)
           if (!file) throw new RequestError(404, 'Документ не найден.')
-          res.writeHead(200, {
-            'Content-Type': 'application/pdf',
-            'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
-            'X-Content-Type-Options': 'nosniff',
-            'Cache-Control': 'no-store',
-          })
-          res.end(Buffer.from(file.pdf))
+          sendPdf(res, file)
         } else if (req.method === 'POST' && documentPath[2] === '/signs/preview') {
           json(res, 200, await previewPdfSigns(store, id, await readJson(req)))
         } else if (req.method === 'POST' && documentPath[2] === '/signs/apply') {
@@ -433,14 +274,7 @@ export function createRegistryServer(
           if (!/^\d{1,4}-\d{1,4}(\.\d{1,2})?$/.test(key))
             throw new RequestError(400, 'Неверный номер изображения.')
           const png = await pdfSignImage(store, id, key, params.get('yellow') === '1')
-          res.writeHead(200, {
-            'Content-Type': 'image/png',
-            'Cache-Control': 'no-store',
-            'X-Content-Type-Options': 'nosniff',
-            'Cross-Origin-Resource-Policy': 'same-origin',
-            'Content-Security-Policy': "default-src 'none'; sandbox",
-          })
-          res.end(png)
+          sendPng(res, png)
         } else if (req.method === 'PUT' && !documentPath[2]) {
           const updated = store.updateDocument(id, documentMetaSchema.parse(await readJson(req)))
           if (!updated) throw new RequestError(404, 'Документ не найден.')
@@ -476,19 +310,7 @@ export function createRegistryServer(
           throw new RequestError(400, 'Неверная версия изображения знака.')
         const asset = store.getSignPng(code, numbered, rev === null ? undefined : Number(rev))
         if (!asset) throw new RequestError(404, 'Изображение знака не найдено.')
-        const etag = `"${createHash('sha256').update(asset).digest('hex')}"`
-        const unchanged = (req.headers['if-none-match'] ?? '')
-          .split(',')
-          .some((value) => value.trim().replace(/^W\//, '') === etag || value.trim() === '*')
-        res.writeHead(unchanged ? 304 : 200, {
-          'Content-Type': 'image/png',
-          'Cache-Control': 'private, no-cache',
-          ETag: etag,
-          'X-Content-Type-Options': 'nosniff',
-          'Cross-Origin-Resource-Policy': 'same-origin',
-          'Content-Security-Policy': "default-src 'none'; sandbox",
-        })
-        res.end(unchanged ? undefined : asset)
+        sendCachedPng(req, res, asset)
       } else if (req.method === 'PUT' && pathname === '/api/crossings') {
         const { expectedRevision, ...draft } = crossingWriteSchema.parse(await readJson(req))
         json(res, 200, store.saveCrossing(draft, expectedRevision))
@@ -559,38 +381,8 @@ export function createRegistryServer(
         throw new RequestError(404, 'Адрес не найден.')
       }
     } catch (error) {
-      if (
-        (error instanceof InvalidParameter || error instanceof ParameterConfirmationConflict) &&
-        parameterId
-      )
-        rejection = { parameterId, rejectionReason: error.reason }
-      if (error instanceof RequestError) json(res, error.status, { error: error.message })
-      else if (error instanceof ParameterConfirmationConflict)
-        json(res, 409, { error: error.message, reason: error.reason, field: error.field })
-      else if (
-        error instanceof RevisionConflict ||
-        error instanceof AmbiguousPu66Key ||
-        error instanceof RecoveryOwned
-      )
-        json(res, 409, { error: error.message })
-      else if (error instanceof InvalidPu66Verification || error instanceof InvalidPu66Lifecycle)
-        json(res, 400, { error: error.message })
-      else if (error instanceof InvalidPu66Upload) json(res, error.status, { error: error.message })
-      else if (error instanceof InvalidSignUpload) json(res, error.status, { error: error.message })
-      else if (error instanceof InvalidDocumentUpload)
-        json(res, error.status, { error: error.message })
-      else if (error instanceof DocumentInUse) json(res, 409, { error: error.message })
-      else if (error instanceof InvalidParameter)
-        json(res, error.status, { error: error.message, reason: error.reason, field: error.field })
-      else if (error instanceof ProjectTooLarge) json(res, 413, { error: error.message })
-      else if (error instanceof ZodError) {
-        const issue = error.issues[0]
-        json(res, 400, { error: `Неверное поле «${issue?.path.join('.') || 'запись'}».` })
-      } else {
-        json(res, 500, { error: 'Внутренняя ошибка локального реестра.' })
-        diagnostics.serverError(route, error)
-        console.error('Ошибка локального реестра:', error)
-      }
+      rejection = parameterRejection(error, parameterId)
+      writeHttpError(res, error, route, diagnostics)
     }
   })
   return server
