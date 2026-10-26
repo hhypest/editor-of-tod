@@ -6,6 +6,11 @@
 
 ## [0.3.0-dev] — в разработке
 
+### 26.10.2026 — отдельные маршруты проектов и восстановления (#135)
+
+- Из index выделены шесть project и пять recovery ветвей. Группы получают только нужные операции, не импортируют RegistryStore/SQLite и используют общий транспорт. Совместимый createRegistryServer пока собирает узкие callback к фасаду; bootstrap и forwarding methods сохраняются до перевода остальных вызывающих.
+- Сохранены URL/body/identity/ownership order, лимиты, no-op/conflicts/restore, история, source/короткая квитанция и атомарность save recovery. Три контракта прошли на прежнем index, семь прямых проверок без фасада фиксируют также SQL rollback и untouched fallback. Форматы, нормативы и лист сохраняются; #135/А4 открыты. Далее маршруты ПУ-66.
+
 ### 26.10.2026 — общие HTTP-компоненты (#135)
 
 - Из server/index.ts выделены JSON/лимиты тела, Host/Origin, разбор ключей/UUID, статика, PDF/PNG/ETag и общий error mapper. Прежние заголовки/байты/status/error details и порядок диагностики сохранены; directoryFiles/StaticFiles экспортируются из index для совместимости desktop/SEA. Путь default dist скорректирован только из-за расположения нового модуля.

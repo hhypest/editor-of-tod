@@ -1,20 +1,8 @@
 import { createServer } from 'node:http'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { z } from 'zod'
-import {
-  MAX_LOCAL_PROJECT_BYTES,
-  projectRestoreSchema,
-  projectWriteSchema,
-} from '../src/domain/local-projects.ts'
-import { recoveryDeleteSchema } from '../src/domain/recovery.ts'
-import {
-  recoveryClaimSchema,
-  recoveryOwnerSchema,
-  recoveryTransferSchema,
-} from '../src/application/recovery-contract.ts'
 import { crossingWriteSchema, normativeWriteSchema } from '../src/domain/registry.ts'
 import { pu66VerificationWriteSchema } from '../src/domain/pu66-review.ts'
 import { pu66LifecycleWriteSchema } from '../src/domain/pu66-lifecycle.ts'
@@ -37,10 +25,13 @@ import { InvalidPu66Lifecycle } from './pu66/errors.ts'
 import { RequestError } from './http/request-error.ts'
 import { json, readJson } from './http/json.ts'
 import { checkRequest } from './http/security.ts'
-import { decodeKey, projectId } from './http/path.ts'
+import { decodeKey } from './http/path.ts'
 import { defaultStaticFiles, serveBuiltApp, type StaticFiles } from './http/static-files.ts'
 import { sendPdf, sendPng, sendCachedPng } from './http/binary.ts'
 import { parameterRejection, writeHttpError, type ParameterRejection } from './http/error-mapper.ts'
+
+import { createProjectRoutes } from './http/routes/projects.ts'
+import { createRecoveryRoutes } from './http/routes/recovery.ts'
 
 export { directoryFiles, type StaticFiles } from './http/static-files.ts'
 
@@ -57,6 +48,27 @@ export function createRegistryServer(
   instanceId: string = randomUUID(),
 ) {
   const databaseId = databaseIdentity(store.path)
+  // Temporary compatibility wiring; route groups receive only these operations.
+  const projectRoutes = createProjectRoutes({
+    list: () => store.listProjects(),
+    get: (id) => store.getProject(id),
+    listRevisions: (id) => store.listProjectRevisions(id),
+    getRevision: (id, revision) => store.getProjectRevision(id, revision),
+    save: (scheme, expectedRevision) => store.saveProject(scheme, expectedRevision),
+    restore: (id, sourceRevision, expectedRevision) =>
+      store.restoreProject(id, sourceRevision, expectedRevision),
+  })
+  const recoveryRoutes = createRecoveryRoutes({
+    list: () => store.listRecoveries(),
+    get: (id, access) => store.getRecovery(id, access),
+    claim: ({ sessionId, ownerId, expectedVersion }) =>
+      store.claimRecovery(sessionId, ownerId, expectedVersion),
+    renew: ({ sessionId, ownerId }) => store.heartbeatRecovery(sessionId, ownerId),
+    release: ({ sessionId, ownerId }) => store.releaseRecovery(sessionId, ownerId),
+    save: ({ input, ownerId, sourceSha256 }) => store.saveRecovery(input, ownerId, sourceSha256),
+    delete: ({ sessionId, expectedVersion, ownerId }) =>
+      store.deleteRecovery(sessionId, expectedVersion, ownerId),
+  })
   const server = createServer(async (req, res) => {
     const started = performance.now()
     let route = routeOf(req.method ?? 'GET', '/api/?')
@@ -73,12 +85,8 @@ export function createRegistryServer(
       const pathname = url.pathname
       route = routeOf(req.method ?? 'GET', pathname)
       checkRequest(req, actualPort)
-      const projectPath = /^\/api\/projects\/([^/]+)$/.exec(pathname)
-      const revisionListPath = /^\/api\/projects\/([^/]+)\/revisions$/.exec(pathname)
-      const revisionPath = /^\/api\/projects\/([^/]+)\/revisions\/(\d+)$/.exec(pathname)
-      const restorePath = /^\/api\/projects\/([^/]+)\/restore$/.exec(pathname)
-      const recoveryPath = /^\/api\/recovery\/([^/]+)$/.exec(pathname)
-      const recoveryAction = /^\/api\/recovery\/([^/]+)\/(claim|heartbeat|release)$/.exec(pathname)
+      if (await projectRoutes(req, res, url)) return
+      if (await recoveryRoutes(req, res, url)) return
       const documentPath =
         /^\/api\/documents\/(\d+)(\/pdf|\/signs\/preview|\/signs\/apply|\/signs\/image)?$/.exec(
           pathname,
@@ -142,41 +150,6 @@ export function createRegistryServer(
         )
       } else if (req.method === 'POST' && pathname === '/api/pu66/import/apply') {
         json(res, 200, await applyPu66Upload(store, await readJson(req, PU66_UPLOAD_REQUEST_BYTES)))
-      } else if (req.method === 'GET' && pathname === '/api/projects') {
-        json(res, 200, store.listProjects())
-      } else if (req.method === 'GET' && pathname === '/api/recovery') {
-        json(res, 200, store.listRecoveries())
-      } else if (req.method === 'GET' && recoveryPath) {
-        const id = projectId(recoveryPath[1]!)
-        const ownerId = z
-          .uuid()
-          .optional()
-          .parse(
-            new URL(req.url!, `http://127.0.0.1:${actualPort}`).searchParams.get('ownerId') ??
-              undefined,
-          )
-        const record = store.getRecovery(id, { ownerId })
-        if (!record) throw new RequestError(404, 'Копия восстановления не найдена.')
-        json(res, 200, record)
-      } else if (req.method === 'GET' && revisionPath) {
-        const record = store.getProjectRevision(
-          projectId(revisionPath[1]!),
-          Number(revisionPath[2]),
-        )
-        if (!record)
-          throw new RequestError(
-            404,
-            'Версия проекта не найдена. Обновите список проектов и повторите действие.',
-          )
-        json(res, 200, record)
-      } else if (req.method === 'GET' && revisionListPath) {
-        const id = projectId(revisionListPath[1]!)
-        if (!store.getProject(id)) throw new RequestError(404, 'Проект не найден.')
-        json(res, 200, store.listProjectRevisions(id))
-      } else if (req.method === 'GET' && projectPath) {
-        const record = store.getProject(projectId(projectPath[1]!))
-        if (!record) throw new RequestError(404, 'Проект не найден.')
-        json(res, 200, record)
       } else if (
         req.method === 'GET' &&
         pathname.startsWith('/api/pu66/') &&
@@ -317,62 +290,6 @@ export function createRegistryServer(
       } else if (req.method === 'PUT' && pathname === '/api/normative') {
         const { expectedRevision, ...draft } = normativeWriteSchema.parse(await readJson(req))
         json(res, 200, store.saveNormative(draft, expectedRevision))
-      } else if (req.method === 'PUT' && projectPath) {
-        const id = projectId(projectPath[1]!)
-        const { expectedRevision, scheme } = projectWriteSchema.parse(
-          await readJson(req, MAX_LOCAL_PROJECT_BYTES + 64 * 1024),
-        )
-        if (scheme.id !== id)
-          throw new RequestError(400, 'ID проекта в адресе и файле не совпадают.')
-        json(res, 200, store.saveProject(scheme, expectedRevision))
-      } else if (req.method === 'POST' && recoveryAction) {
-        const id = projectId(recoveryAction[1]!)
-        if (recoveryAction[2] === 'claim') {
-          const { ownerId, expectedVersion } = recoveryClaimSchema.parse(await readJson(req))
-          json(res, 200, store.claimRecovery(id, ownerId, expectedVersion))
-        } else {
-          const { ownerId } = recoveryOwnerSchema.parse(await readJson(req))
-          if (recoveryAction[2] === 'heartbeat') store.heartbeatRecovery(id, ownerId)
-          else store.releaseRecovery(id, ownerId)
-          json(res, 200, { ok: true })
-        }
-      } else if (req.method === 'PUT' && recoveryPath) {
-        const id = projectId(recoveryPath[1]!)
-        const { ownerId, sourceSha256, ...transfer } = recoveryTransferSchema.parse(
-          await readJson(req, MAX_LOCAL_PROJECT_BYTES + 64 * 1024),
-        )
-        if (transfer.sessionId !== id)
-          throw new RequestError(400, 'ID копии восстановления в адресе и запросе не совпадают.')
-        const record = store.saveRecovery(transfer, ownerId, sourceSha256)
-        const { scheme } = record
-        json(res, 200, {
-          version: record.version,
-          updatedAt: record.updatedAt,
-          ...(scheme.source.kind === 'legacy-html-v1'
-            ? {
-                sourceSha256: createHash('sha256')
-                  .update(scheme.source.originalJson, 'utf8')
-                  .digest('hex'),
-              }
-            : {}),
-        })
-      } else if (req.method === 'DELETE' && recoveryPath) {
-        const id = projectId(recoveryPath[1]!)
-        const { expectedVersion, ownerId } = recoveryDeleteSchema
-          .extend({ ownerId: z.uuid() })
-          .parse(await readJson(req))
-        store.deleteRecovery(id, expectedVersion, ownerId)
-        json(res, 200, { deleted: true })
-      } else if (req.method === 'POST' && restorePath) {
-        const id = projectId(restorePath[1]!)
-        const { sourceRevision, expectedRevision } = projectRestoreSchema.parse(await readJson(req))
-        const restored = store.restoreProject(id, sourceRevision, expectedRevision)
-        if (!restored)
-          throw new RequestError(
-            404,
-            'Версия проекта не найдена. Обновите список проектов и повторите действие.',
-          )
-        json(res, 200, restored)
       } else if (req.method === 'POST' && pathname === '/api/backup') {
         json(res, 201, { filename: await store.createBackup() })
       } else if (req.method === 'GET' && !pathname.startsWith('/api/')) {

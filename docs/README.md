@@ -42,6 +42,7 @@
 - [Ручные реестры и история](refactoring/legacy-registry-repository.md) — crossings/normative/revisions, конфликты, ASC history и отдельное начальное наполнение.
 - [Чтение ПУ-66 и ключи](refactoring/pu66-read-repository.md) — прежние проекции, aliases/неоднозначность, metadata сверок и фильтрация исключённых карточек.
 - [Журнал сверок ПУ-66](refactoring/pu66-verification-repository.md) — даты/редакции, проверка исключения под блокировкой, история, rollback и переходный запрос lifecycle.
+- [Маршруты проектов и восстановления](refactoring/project-recovery-routes.md) — узкие операции, прежние guards/owner/version/source/receipt и совместимый адаптер перед переводом bootstrap.
 - [Общие HTTP-компоненты](refactoring/http-transport.md) — JSON/лимиты, Host/Origin, ключи, статика, PDF/PNG/ETag и отображение ошибок перед выделением маршрутов.
 - [Ручная сборка серверных зависимостей](refactoring/composition-root.md) — одна SQLite, порядок migration/seed, закрытие при отказе и совместимый фасад.
 - [Каталог знаков](refactoring/sign-catalog.md) — партии/active/history, plan/import, исторические PNG/metadata, rollback и узкие ZIP/PDF операции.
