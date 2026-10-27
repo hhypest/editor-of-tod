@@ -59,6 +59,7 @@
 - [Исключение и возврат ПУ-66](refactoring/pu66-lifecycle.md) — repository/service, fingerprint/преемник, повторный план под блокировкой после backup и атомарный пакет.
 - [Контракты рефакторинга](refactoring-contracts.md) фиксируют baseline, совместимость review и рисунка, ограничения контроля зависимостей.
 - [Сверка независимого аудита и технического долга](refactoring/audit-2026-10-24.md) — актуальные замечания, состояние задач и порядок работ перед продолжением 0.3.0.
+- [Навигация и обновление каталогов в Pinia](refactoring/editor-navigation-store.md) — общие refs, прежний DOM/startup lifecycle, отдельные счётчики и обоснование локального setup.
 - [Общая UI-проекция сессии в Pinia](refactoring/project-session-ui-store.md) — busy/сообщения/refresh/recovery refs, прежние workflows и проверка чтения без второго lifecycle.
 - [Документ, история и восстановимый ввод в Pinia](refactoring/project-document-store.md) — общие shallow refs, прежние операции, 44 ключа сессии и проверки одной recovery-очереди.
 - [Кэш статусов ПУ-66 в Pinia](refactoring/pu66-status-store.md) — общий запрос на ключ, invalidation/retry, component lifecycle и callback исходного app после await.

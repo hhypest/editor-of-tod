@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { templateLabel } from './domain/registry'
 import { computed, onMounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useEditorNavigationStore } from './stores/editor-navigation'
+import { useCatalogRefreshStore } from './stores/catalog-refresh'
 import HelpPage from './components/HelpPage.vue'
 import { usePu66StatusInvalidation } from './composables/usePu66Status'
 import SchemeDraftSheet from './components/SchemeDraftSheet.vue'
@@ -19,6 +22,8 @@ import RegistryHub from './components/editor/RegistryHub.vue'
 import EditorWorkspace from './components/editor/EditorWorkspace.vue'
 import { useEditorNavigation } from './composables/useEditorNavigation'
 const invalidatePu66Status = usePu66StatusInvalidation()
+const navigationState = storeToRefs(useEditorNavigationStore())
+const { signCatalogVersion, pu66CatalogVersion } = storeToRefs(useCatalogRefreshStore())
 const {
   reload: reloadNormativeRules,
   rules: normativeRules,
@@ -111,7 +116,7 @@ const {
   openHelp,
   openSetupImport,
   navigateToFinding,
-} = useEditorNavigation({ imported, placementDirty })
+} = useEditorNavigation({ imported, placementDirty }, navigationState)
 
 // При возвращении обновляем состояние, в том числе после изменений в другом окне.
 watch(activeView, (view) => {
@@ -121,8 +126,6 @@ watch(activeView, (view) => {
   }
 })
 
-const signCatalogVersion = ref(0)
-const pu66CatalogVersion = ref(0)
 function onPu66Updated(): void {
   pu66CatalogVersion.value++
   invalidatePu66Status()

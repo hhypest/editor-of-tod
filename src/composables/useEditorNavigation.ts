@@ -1,4 +1,6 @@
-import { nextTick, onMounted, ref, watch, type Ref } from 'vue'
+import { nextTick, onMounted, watch, type Ref } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useEditorNavigationStore, type EditorNavigationRefs } from '../stores/editor-navigation'
 import type { ImportResult } from '../domain/import'
 import type { ReviewFinding } from '../domain/review-scheme'
 import { mapReviewTarget } from '../presentation/review/map-review-target'
@@ -6,26 +8,32 @@ import {
   editorStages,
   type EditorView,
   type ProjectTab,
-  type RegistryTab,
   type SetupImportTarget,
 } from '../presentation/editor-navigation'
 import { helpSectionFor } from '../help/help-content'
 import { listLocalProjects } from '../services/local-projects'
 
 /** Navigation changes visibility; it never opens or disposes a project session. */
-export function useEditorNavigation({
-  imported,
-  placementDirty,
-}: {
-  imported: Readonly<Ref<ImportResult | null>>
-  placementDirty: Readonly<Ref<boolean>>
-}) {
-  const activeView = ref<EditorView>('projects')
-  const projectTab = ref<ProjectTab>('new')
-  const registryTab = ref<RegistryTab>('imports')
-  const registriesVisited = ref(false)
-  /** Вкладку выбрал сам составитель — после этого стартовая вкладка не переключается. */
-  const projectTabChosen = ref(false)
+export function useEditorNavigation(
+  {
+    imported,
+    placementDirty,
+  }: {
+    imported: Readonly<Ref<ImportResult | null>>
+    placementDirty: Readonly<Ref<boolean>>
+  },
+  state: EditorNavigationRefs = storeToRefs(useEditorNavigationStore()),
+) {
+  const {
+    activeView,
+    projectTab,
+    registryTab,
+    registriesVisited,
+    projectTabChosen,
+    helpSection,
+    helpOpenKey,
+    findingNotice,
+  } = state
   function chooseProjectTab(tab: ProjectTab): void {
     projectTab.value = tab
     projectTabChosen.value = true
@@ -45,8 +53,6 @@ export function useEditorNavigation({
       // Без локальной базы остаётся «Новый проект»: там показана причина.
     }
   }
-  const helpSection = ref<string | null>(null)
-  const helpOpenKey = ref(0)
 
   /** Справка по экрану, с которого её открыли. */
   function openHelp(section?: string): void {
@@ -64,7 +70,6 @@ export function useEditorNavigation({
   }
 
   /** Пояснение, почему «Перейти» не смог поставить курсор в поле. */
-  const findingNotice = ref('')
   watch(placementDirty, (dirty) => {
     if (!dirty) findingNotice.value = ''
   })
