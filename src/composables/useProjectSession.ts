@@ -1,6 +1,7 @@
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useProjectDocumentStore } from '../stores/project-document'
+import { useProjectSessionUiStore } from '../stores/project-session-ui'
 import { storedFormatWarnings } from '../domain/import'
 import type { Scheme } from '../domain/model'
 import { loadSignCatalogSnapshot } from '../services/local-signs'
@@ -31,6 +32,7 @@ import { useProjectDocument } from './useProjectDocument'
 export function useProjectSession(onProjectOpened: () => void) {
   const { rules: normativeRules } = useNormativeRules()
   const documentState = storeToRefs(useProjectDocumentStore())
+  const sessionState = storeToRefs(useProjectSessionUiStore())
   const drafts = useEditorDraftState(documentState)
   const edits = useProjectHistory(documentState)
   const projectDocument = useProjectDocument(drafts, edits, documentState)
@@ -52,10 +54,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     editorDirty,
   } = drafts
   const { history } = edits
-  const localBusy = ref(false)
-  const localError = ref('')
-  const localNotice = ref('')
-  const projectsRefreshKey = ref(0)
+  const { localBusy, localError, localNotice, projectsRefreshKey } = sessionState
   const {
     templateMessage,
     templateError,
@@ -73,6 +72,7 @@ export function useProjectSession(onProjectOpened: () => void) {
       onProjectApplied: projectDocument.commitScheme,
     },
     { loadCatalog: loadSignCatalogSnapshot },
+    sessionState,
   )
   const hasUnsavedWork = computed(() => editorDirty.value || modifiedSinceLocalSave.value)
   const cursor = useSessionCursor([
@@ -83,33 +83,36 @@ export function useProjectSession(onProjectOpened: () => void) {
     pendingPlacement,
   ])
   const revisionCursor = cursor.snapshot
-  const recovery = useProjectRecovery({
-    initialId: crypto.randomUUID(),
-    repository: createRecoveryRepository(crypto.randomUUID()),
-    list: listRecoveryDrafts,
-    hasUnsavedWork,
-    changes: [
-      imported,
-      detailsDirty,
-      placementDirty,
-      pendingDetails,
-      pendingPlacement,
-      modifiedSinceLocalSave,
-      localRevision,
-    ],
-    showError: showLocalError,
-    snapshot(sessionId) {
-      if (!imported.value || !hasUnsavedWork.value) return null
-      return {
-        sessionId,
-        scheme: imported.value.scheme,
-        baseRevision: localRevision.value,
-        detailsDraft: pendingDetails.value,
-        placementDraft: pendingPlacement.value,
-        fileName: selectedFileName.value,
-      }
+  const recovery = useProjectRecovery(
+    {
+      initialId: crypto.randomUUID(),
+      repository: createRecoveryRepository(crypto.randomUUID()),
+      list: listRecoveryDrafts,
+      hasUnsavedWork,
+      changes: [
+        imported,
+        detailsDirty,
+        placementDirty,
+        pendingDetails,
+        pendingPlacement,
+        modifiedSinceLocalSave,
+        localRevision,
+      ],
+      showError: showLocalError,
+      snapshot(sessionId) {
+        if (!imported.value || !hasUnsavedWork.value) return null
+        return {
+          sessionId,
+          scheme: imported.value.scheme,
+          baseRevision: localRevision.value,
+          detailsDraft: pendingDetails.value,
+          placementDraft: pendingPlacement.value,
+          fileName: selectedFileName.value,
+        }
+      },
     },
-  })
+    sessionState,
+  )
   const {
     recoveryCopies,
     recoveryStatus,
