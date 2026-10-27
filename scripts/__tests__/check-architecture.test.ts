@@ -5,6 +5,132 @@ import { join } from 'node:path'
 import { architectureProblems, readArchitectureSources } from '../check-architecture'
 
 describe('resolved architecture checks', () => {
+  it('parses normal script and script setup independently, including attributes containing >', () => {
+    const sources = new Map([
+      [
+        'src/App.vue',
+        `<script lang="ts">import type { Model } from '@/domain/model'</script>
+        <script setup lang="ts" generic="T extends Record<string, unknown>">
+        import { store } from '@/../server/store'
+        </script>`,
+      ],
+      ['src/domain/model.ts', 'export type Model = string'],
+      ['server/store.ts', 'export const store = {}'],
+    ])
+    expect(architectureProblems(sources)).toEqual([
+      'src/App.vue: client imports server module server/store.ts',
+    ])
+  })
+
+  it('ignores script-looking text inside HTML comments and templates', () => {
+    expect(
+      architectureProblems(
+        new Map([
+          [
+            'src/App.vue',
+            `<!-- <script>import '@/missing'</script> -->
+        <template><p>&lt;script&gt;import '@/also-missing'&lt;/script&gt;</p></template>`,
+          ],
+        ]),
+      ),
+    ).toEqual([])
+  })
+
+  it.each([
+    '<script setup>import "./missing"',
+    '<script>const a = 1</script><script>const b = 2</script>',
+    '<template><div></template>',
+  ])('reports malformed SFCs instead of silently extracting partial text: %s', (source) => {
+    expect(architectureProblems(new Map([['src/App.vue', source]]))).toEqual(
+      expect.arrayContaining([expect.stringContaining('src/App.vue: invalid Vue SFC')]),
+    )
+  })
+
+  it('follows a script src edge and refuses unsupported script languages', () => {
+    const sources = new Map([
+      ['src/App.vue', '<template><p /></template><script src="../server/entry.ts"></script>'],
+      ['server/entry.ts', 'export default {}'],
+      ['src/Other.vue', '<script lang="coffee">x = 1</script>'],
+    ])
+    expect(architectureProblems(sources)).toEqual([
+      'src/App.vue: client imports server module server/entry.ts',
+      'src/Other.vue: unsupported Vue script language coffee',
+    ])
+  })
+
+  it.each([
+    'import type { A } from "@/application/feature?raw"',
+    'export { A } from "../application/feature/index.ts?worker#source"',
+    'export * from "../application/feature"',
+    'type T = import("@/application/feature").A',
+    'const load = import("../application/feature")',
+    'const load = import(`@/application/feature`)',
+  ])('normalizes static forms to the same indexed module boundary: %s', (source) => {
+    expect(
+      architectureProblems(
+        new Map([
+          ['src/domain/model.ts', source],
+          ['src/application/feature/index.ts', 'export type A = string'],
+        ]),
+      ),
+    ).toEqual(['src/domain/model.ts: domain imports application src/application/feature/index.ts'])
+  })
+
+  it.each([
+    'const load = import(path)',
+    'const load = import(`./${name}.ts`)',
+    'const load = import("./" + name)',
+  ])('rejects an unresolvable dynamic import explicitly: %s', (source) => {
+    expect(architectureProblems(new Map([['src/services/load.ts', source]]))).toEqual([
+      'src/services/load.ts: non-static dynamic import cannot be checked',
+    ])
+  })
+
+  it('keeps raw assets out of the module graph, but follows raw module dependencies', () => {
+    expect(
+      architectureProblems(
+        new Map([
+          [
+            'src/services/license.ts',
+            'import text from "../../LICENSE?raw"; import "@/domain/model.ts?raw"',
+          ],
+          ['src/domain/model.ts', 'export const model = 1'],
+        ]),
+      ),
+    ).toEqual([])
+    expect(
+      architectureProblems(new Map([['src/services/license.ts', 'import "@/missing.ts?raw"']])),
+    ).toEqual(['src/services/license.ts: unresolved local import @/missing.ts?raw'])
+  })
+
+  it('detects a cycle through both SFC blocks, an index and a type re-export', () => {
+    expect(
+      architectureProblems(
+        new Map([
+          [
+            'src/View.vue',
+            '<script>import "./feature"</script><script setup>import "./other"</script>',
+          ],
+          ['src/feature/index.ts', 'export type { View } from "../View.vue?raw"'],
+          ['src/other.ts', 'export const other = 1'],
+        ]),
+      ),
+    ).toEqual(['Import cycle: src/View.vue -> src/feature/index.ts -> src/View.vue'])
+  })
+
+  it('recognizes only the raw query flag as a non-module text asset', () => {
+    expect(
+      architectureProblems(
+        new Map([
+          [
+            'src/services/license.ts',
+            'import "../../LICENSE?other&raw"; import "../../missing.txt?rawish"',
+          ],
+        ]),
+      ),
+    ).toEqual(['src/services/license.ts: unresolved local import ../../missing.txt?rawish'])
+  })
+
   it('collects TSX/MTS modules and rejects resolved server, adapter and cycle imports', () => {
     const root = mkdtempSync(join(tmpdir(), 'tod-architecture-'))
     try {
@@ -104,6 +230,7 @@ describe('resolved architecture checks', () => {
         ['export { defineStore } from "pinia"', 'pinia'],
         ['type T = import("pinia/dist/pinia.mjs").Pinia', 'pinia/dist/pinia.mjs'],
         ['const state = import("pinia")', 'pinia'],
+        ['const state = import("pinia?raw")', 'pinia?raw'],
       ].map(([source, specifier]) => ({ path, source: source!, specifier })),
     ),
   )('rejects core Pinia dependency: $path / $source', ({ path, source, specifier }) => {

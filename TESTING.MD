@@ -1,5 +1,9 @@
 # Проверка приложения
 
+## Архитектурный анализатор #184 (27.10.2026)
+
+[Профиль и границы](docs/refactoring/architecture-checker.md): локально прошли 36 сценариев `scripts/__tests__/check-architecture.test.ts`, включая все прежние негативные ожидания, разбор обоих script-блоков Vue, комментарии/атрибуты, повреждённые SFC, src/lang, aliases/index/query, type/re-export/static dynamic imports, явный отказ для вычисляемого import, raw assets/modules и циклы. `npm run check:architecture` прошёл на 221 модуле; проверка типов и lint также прошли. Это проверка нового инструмента, без переноса итоговой регрессии приложения на текущий шаг. После полного технического долга остаются полный check/E2E, приёмка состояния и Windows exe на итоговом main.
+
 ## Продолжение Pinia и отложенные итоговые проверки (27.10.2026, #191)
 
 После включённого #232 продолжается [перевод представлений на stores](docs/refactoring/pinia-view-consumers.md). Четыре новых component-сценария: живые данные ProjectHub и корневой create command; два app с одним project id после смены active Pinia; dirty/draft/apply граница EditorWorkspace; RegistryHub refresh/locks/diagnostics. Монтируются настоящие родительские SFC с подменёнными дочерними формами; workflow/E2E контракты сохраняются отдельно. При исправлении CI по запросу владельца выявлена SSR-компиляция SFC в Node-среде. Файл явно выбирает локальную `vue-renderer` среду: Node globals, клиентская компиляция, прежний custom renderer; четыре теста прошли локально. В итоговом прогоне проверить также маршруты команд корня, отсутствие второй сессии/repository и прежние 44 ключа фасада.
