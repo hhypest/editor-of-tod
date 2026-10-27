@@ -1,3 +1,5 @@
+// @vitest-environment vue-renderer
+
 import { createRenderer, nextTick, type Component } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
