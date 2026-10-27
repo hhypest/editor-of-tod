@@ -1,15 +1,17 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createApp } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
+import { useNormativeRules } from '../useNormativeRules'
 import { PROTOTYPE_RULES, type ParameterState } from '../../domain/normative-parameters'
 
 const api = vi.hoisted(() => ({ list: vi.fn<() => Promise<ParameterState[]>>() }))
 vi.mock('../../services/local-normatives', () => ({ listParameterStates: api.list }))
 
-let useNormativeRules: typeof import('../useNormativeRules').useNormativeRules
-beforeEach(async () => {
-  vi.resetModules()
+beforeEach(() => {
   api.list.mockReset()
-  ;({ useNormativeRules } = await import('../useNormativeRules'))
+  setActivePinia(createPinia())
 })
+afterEach(() => setActivePinia(undefined))
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -47,7 +49,7 @@ function confirmedState(value: number): ParameterState {
   }
 }
 
-describe('shared normative state before the Pinia migration (#191)', () => {
+describe('shared normative state across the Pinia migration (#191)', () => {
   it('starts with prototype rules and does not fetch just because another consumer reads it', () => {
     const first = useNormativeRules()
     const second = useNormativeRules()
@@ -136,5 +138,53 @@ describe('shared normative state before the Pinia migration (#191)', () => {
     expect(state.states.value).toEqual([])
     expect(state.rules.value).toEqual(PROTOTYPE_RULES)
     expect(state.error.value).toBe('')
+  })
+})
+
+describe('normative state ownership (#191)', () => {
+  it('isolates data, errors and pending requests between apps even when the active Pinia changes', async () => {
+    const firstApp = createApp({ render: () => null }).use(createPinia())
+    const secondApp = createApp({ render: () => null }).use(createPinia())
+    const first = firstApp.runWithContext(() => useNormativeRules())
+    const second = secondApp.runWithContext(() => useNormativeRules())
+    const firstResponse = deferred<ParameterState[]>()
+    const secondResponse = deferred<ParameterState[]>()
+    api.list.mockReturnValueOnce(firstResponse.promise).mockReturnValueOnce(secondResponse.promise)
+    const firstReload = first.reload()
+    const secondReload = second.reload()
+    expect(api.list).toHaveBeenCalledTimes(2)
+    firstResponse.resolve([confirmedState(42)])
+    await firstReload
+    expect(first.rules.value.frontLimitMetres).toBe(42)
+    expect(second.states.value).toEqual([])
+    expect(second.loading.value).toBe(true)
+    expect(second.rules.value).toEqual(PROTOTYPE_RULES)
+    secondResponse.reject(new Error('Учебный отказ второго окна'))
+    await secondReload
+    expect(second.error.value).toBe('Учебный отказ второго окна')
+    expect(first.error.value).toBe('')
+    expect(first.states.value).toEqual([confirmedState(42)])
+    // Re-enter the first app after actions in the second: injection must select its own store.
+    const anotherFirstConsumer = firstApp.runWithContext(() => useNormativeRules())
+    expect(anotherFirstConsumer.rules.value.frontLimitMetres).toBe(42)
+    expect(anotherFirstConsumer.error.value).toBe('')
+  })
+
+  it('shares one request for two consumers in the same app without changing the public facade', async () => {
+    const app = createApp({ render: () => null }).use(createPinia())
+    const first = app.runWithContext(() => useNormativeRules())
+    const second = app.runWithContext(() => useNormativeRules())
+    expect(Object.keys(first).sort()).toEqual(['error', 'loading', 'reload', 'rules', 'states'])
+    const response = deferred<ParameterState[]>()
+    api.list.mockReturnValueOnce(response.promise)
+    const pending = [first.reload(), second.reload()]
+    expect(api.list).toHaveBeenCalledTimes(1)
+    expect(second.loading.value).toBe(true)
+    response.resolve([confirmedState(43)])
+    await Promise.all(pending)
+    expect(first.rules.value.frontLimitMetres).toBe(43)
+    expect(second.states.value).toEqual([confirmedState(43)])
+    expect(first.loading.value).toBe(false)
+    expect(second.loading.value).toBe(false)
   })
 })

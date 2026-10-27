@@ -96,4 +96,47 @@ describe('resolved architecture checks', () => {
     ])
     expect(architectureProblems(sources)).toEqual([])
   })
+
+  it.each(
+    ['src/domain/a.ts', 'src/application/a.ts'].flatMap((path) =>
+      [
+        ['import type { Pinia } from "pinia"', 'pinia'],
+        ['export { defineStore } from "pinia"', 'pinia'],
+        ['type T = import("pinia/dist/pinia.mjs").Pinia', 'pinia/dist/pinia.mjs'],
+        ['const state = import("pinia")', 'pinia'],
+      ].map(([source, specifier]) => ({ path, source: source!, specifier })),
+    ),
+  )('rejects core Pinia dependency: $path / $source', ({ path, source, specifier }) => {
+    expect(architectureProblems(new Map([[path, source]]))).toEqual([
+      `${path}: core imports Pinia ${specifier}`,
+    ])
+  })
+
+  it('rejects resolved store imports from both core layers through alias and relative index paths', () => {
+    const sources = new Map([
+      ['src/domain/a.ts', 'export { state } from "@/stores/normative"'],
+      ['src/application/a.ts', 'type T = import("../stores/normative/index.ts?raw").State'],
+      ['src/stores/normative/index.ts', 'export const state = {}; export type State = string'],
+    ])
+    expect(architectureProblems(sources)).toEqual([
+      'src/application/a.ts: core imports adapter src/stores/normative/index.ts',
+      'src/domain/a.ts: core imports adapter src/stores/normative/index.ts',
+    ])
+  })
+
+  it('allows stores to compose services and domain while a compatible facade reads the store', () => {
+    const sources = new Map([
+      [
+        'src/composables/useRules.ts',
+        'import "../stores/rules"; import { storeToRefs } from "pinia"',
+      ],
+      [
+        'src/stores/rules.ts',
+        'import { defineStore } from "pinia"; import "../domain/rules"; import "../services/api"',
+      ],
+      ['src/services/api.ts', 'import "../domain/rules"'],
+      ['src/domain/rules.ts', 'export const rules = {}'],
+    ])
+    expect(architectureProblems(sources)).toEqual([])
+  })
 })
