@@ -1,4 +1,9 @@
-import { createRenderer, defineComponent, nextTick } from 'vue'
+import { createRenderer, defineComponent, nextTick, type App } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
+import { useEditorDraftState } from '../useEditorDraftState'
+import { useProjectHistory } from '../useProjectHistory'
+import { useProjectDocument } from '../useProjectDocument'
+import { createRecoveryRepository } from '../../services/local-projects'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Scheme } from '../../domain/model'
 import type { ProjectRecord } from '../../domain/local-projects'
@@ -70,14 +75,14 @@ const local = vi.hoisted(() => ({
 }))
 vi.mock('../../services/local-projects', () => ({
   ...local,
-  createRecoveryRepository: () => ({
+  createRecoveryRepository: vi.fn(() => ({
     save: local.saveRecoveryDraft,
     remove: local.deleteRecoveryDraft,
     claim: vi.fn(),
     heartbeat: local.heartbeat,
     release: vi.fn(async () => undefined),
     releaseOnExit: local.releaseOnExit,
-  }),
+  })),
 }))
 vi.mock('../useNormativeRules', async () => {
   const { ref } = await import('vue')
@@ -124,6 +129,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   unmount?.()
+  setActivePinia(undefined)
   vi.useRealTimers()
   vi.unstubAllGlobals()
 })
@@ -135,7 +141,7 @@ it('preserves the public ProjectSession surface and semantic export aliases', as
   expect(session.saveOriginal).toBe(session.exportOriginalProject)
 })
 
-async function openEditedSession() {
+async function openEditedSession(onSessionCreated?: (app: App) => void) {
   let session!: ReturnType<typeof useProjectSession>
   const app = renderer.createApp(
     defineComponent({
@@ -145,7 +151,9 @@ async function openEditedSession() {
       },
     }),
   )
+  app.use(createPinia())
   app.mount({ children: [] })
+  onSessionCreated?.(app)
   unmount = () => app.unmount()
   await session.onFileSelected({
     target: {
@@ -817,4 +825,46 @@ describe('JSON export does not acknowledge a database save', () => {
     expect(local.releaseOnExit).toHaveBeenCalledWith(session.activeRecoveryId.value)
     expect(local.saveRecoveryDraft).toHaveBeenCalledTimes(writes)
   })
+})
+
+it('lets another document consumer share live state without creating a second session or recovery queue', async () => {
+  const listeners = vi.spyOn(window, 'addEventListener')
+  let ownerApp!: App
+  const session = await openEditedSession((app) => {
+    ownerApp = app
+  })
+  const before = session.imported.value!
+  const history = session.history.value
+  const consumer = ownerApp.runWithContext(() => {
+    const drafts = useEditorDraftState()
+    const edits = useProjectHistory()
+    return useProjectDocument(drafts, edits)
+  })
+  expect(consumer.imported.value).toBe(before)
+  expect(session.history.value).toBe(history)
+  expect(vi.mocked(createRecoveryRepository)).toHaveBeenCalledTimes(1)
+  expect(listeners.mock.calls.map(([name]) => name)).toEqual([
+    'beforeunload',
+    'pagehide',
+    'pageshow',
+    'focus',
+    'online',
+  ])
+  expect(local.saveRecoveryDraft).toHaveBeenCalledTimes(1)
+  const recoveryId = session.activeRecoveryId.value
+  local.saveRecoveryDraft.mockResolvedValueOnce({ version: 2 })
+  consumer.commitScheme({
+    ...before.scheme,
+    parameters: { ...before.scheme.parameters, locationText: 'Правка другого читателя' },
+  })
+  expect(session.imported.value!.scheme.parameters.locationText).toBe('Правка другого читателя')
+  await nextTick()
+  await vi.advanceTimersByTimeAsync(800)
+  expect(local.saveRecoveryDraft).toHaveBeenCalledTimes(2)
+  expect(session.recoveryStatus.value).toBe('saved')
+  expect(local.saveRecoveryDraft.mock.calls.map(([input]) => input.sessionId)).toEqual([
+    recoveryId,
+    recoveryId,
+  ])
+  expect(vi.mocked(createRecoveryRepository)).toHaveBeenCalledTimes(1)
 })

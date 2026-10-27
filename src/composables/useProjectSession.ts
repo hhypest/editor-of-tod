@@ -1,4 +1,6 @@
 import { computed, ref } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useProjectDocumentStore } from '../stores/project-document'
 import { storedFormatWarnings } from '../domain/import'
 import type { Scheme } from '../domain/model'
 import { loadSignCatalogSnapshot } from '../services/local-signs'
@@ -28,9 +30,10 @@ import { useProjectDocument } from './useProjectDocument'
 
 export function useProjectSession(onProjectOpened: () => void) {
   const { rules: normativeRules } = useNormativeRules()
-  const drafts = useEditorDraftState()
-  const edits = useProjectHistory()
-  const projectDocument = useProjectDocument(drafts, edits)
+  const documentState = storeToRefs(useProjectDocumentStore())
+  const drafts = useEditorDraftState(documentState)
+  const edits = useProjectHistory(documentState)
+  const projectDocument = useProjectDocument(drafts, edits, documentState)
   const {
     imported,
     selectedFileName,

@@ -1,9 +1,21 @@
-import { ref, shallowRef } from 'vue'
+import { storeToRefs } from 'pinia'
 import type { ImportResult } from '../domain/import'
 import type { Scheme } from '../domain/model'
 import { clearPinsAfterSignChange } from '../domain/sign-images'
 import type { EditorDraftState } from './useEditorDraftState'
 import type { ProjectHistory } from './useProjectHistory'
+import { useProjectDocumentStore, type ProjectDocumentRefs } from '../stores/project-document'
+
+type DocumentState = Pick<
+  ProjectDocumentRefs,
+  | 'imported'
+  | 'selectedFileName'
+  | 'errorMessage'
+  | 'loading'
+  | 'modifiedSinceLocalSave'
+  | 'localRevision'
+  | 'selectedPlacementId'
+>
 
 export interface OpenProjectDocument {
   result: ImportResult
@@ -14,14 +26,20 @@ export interface OpenProjectDocument {
 }
 
 /** Coordinates the in-memory document and history; no HTTP, timers or browser lifecycle. */
-export function useProjectDocument(drafts: EditorDraftState, edits: ProjectHistory) {
-  const imported = shallowRef<ImportResult | null>(null)
-  const selectedFileName = ref('')
-  const errorMessage = ref('')
-  const loading = ref(false)
-  const modifiedSinceLocalSave = ref(false)
-  const localRevision = ref<number | null>(null)
-  const selectedPlacementId = ref<number | null>(null)
+export function useProjectDocument(
+  drafts: EditorDraftState,
+  edits: ProjectHistory,
+  state: DocumentState = storeToRefs(useProjectDocumentStore()),
+) {
+  const {
+    imported,
+    selectedFileName,
+    errorMessage,
+    loading,
+    modifiedSinceLocalSave,
+    localRevision,
+    selectedPlacementId,
+  } = state
 
   function clearDocument(fileName: string): void {
     imported.value = null
