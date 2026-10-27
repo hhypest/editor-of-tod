@@ -35,11 +35,14 @@ export default defineConfigWithVueTs(
               group: [
                 'vue',
                 'vue/**',
+                'pinia',
+                'pinia/**',
                 'node:*',
                 '**/components/**',
                 '**/composables/**',
                 '**/services/**',
                 '**/presentation/**',
+                '**/stores/**',
                 '**/server/**',
               ],
               message:
@@ -74,11 +77,14 @@ export default defineConfigWithVueTs(
               group: [
                 'vue',
                 'vue/**',
+                'pinia',
+                'pinia/**',
                 'node:*',
                 '**/components/**',
                 '**/composables/**',
                 '**/services/**',
                 '**/presentation/**',
+                '**/stores/**',
                 '**/server/**',
                 '**/application/**',
               ],
@@ -92,7 +98,7 @@ export default defineConfigWithVueTs(
 
   {
     name: 'app/http-adapters',
-    files: ['src/**/*.vue', 'src/composables/**/*.{ts,tsx,mts}'],
+    files: ['src/**/*.vue', 'src/composables/**/*.{ts,tsx,mts}', 'src/stores/**/*.{ts,tsx,mts}'],
     ignores: ['**/__tests__/**'],
     rules: {
       'no-restricted-globals': [

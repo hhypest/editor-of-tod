@@ -37,6 +37,11 @@ export function architectureProblems(sources: ReadonlyMap<string, string>): stri
         ts.isStringLiteral(node.argument.literal)
       )
         specifier = node.argument.literal.text
+      if (
+        (path.startsWith('src/domain/') || path.startsWith('src/application/')) &&
+        (specifier === 'pinia' || specifier?.startsWith('pinia/'))
+      )
+        problems.push(`${path}: core imports Pinia ${specifier}`)
       if (specifier?.startsWith('.') || specifier?.startsWith('@/')) {
         const clean = specifier.split('?')[0]!
         const base = posix.normalize(
@@ -55,7 +60,7 @@ export function architectureProblems(sources: ReadonlyMap<string, string>): stri
           if (path.startsWith('src/') && target.startsWith('server/'))
             problems.push(`${path}: client imports server module ${target}`)
           if (path.startsWith('src/domain/') || path.startsWith('src/application/')) {
-            if (/^src\/(?:components|composables|services|presentation)\//.test(target))
+            if (/^src\/(?:components|composables|services|presentation|stores)\//.test(target))
               problems.push(`${path}: core imports adapter ${target}`)
           }
           if (path.startsWith('src/domain/') && target.startsWith('src/application/'))
