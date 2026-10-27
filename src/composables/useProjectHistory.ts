@@ -1,16 +1,13 @@
-import { shallowRef } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useProjectDocumentStore, type ProjectDocumentRefs } from '../stores/project-document'
 import type { Scheme } from '../domain/model'
-import {
-  recordEdit,
-  redoEdit,
-  startHistory,
-  undoEdit,
-  type EditHistory,
-} from '../domain/edit-history'
+import { recordEdit, redoEdit, startHistory, undoEdit } from '../domain/edit-history'
 
 /** One history for the one open document; storage and recovery do not belong here. */
-export function useProjectHistory() {
-  const history = shallowRef<EditHistory<Scheme> | null>(null)
+export function useProjectHistory(
+  state: Pick<ProjectDocumentRefs, 'history'> = storeToRefs(useProjectDocumentStore()),
+) {
+  const { history } = state
 
   function start(scheme: Scheme): void {
     history.value = startHistory(scheme)

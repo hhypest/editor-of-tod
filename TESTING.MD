@@ -1,5 +1,11 @@
 # Проверка приложения
 
+## Документ, история и ввод в Pinia (27.10.2026, #191)
+
+[Профиль переноса](docs/refactoring/project-document-store.md): четыре предварительных контракта project-document сначала прошли на прежних composables вместе с исходными document/recovery/session тестами (42 сценария). Сохранены shallow identity, метаданные, раздельные clearDirty/clearPending и блокировка истории. После переноса добавлены три app/explicit-port проверки и один consumer в настоящей session/recovery сборке: общее чтение/правка без сброса состояния, изоляция app после await/смены active Pinia, отсутствие HTTP/таймеров при работе data owner и один repository/очередь/listeners/id для двух читателей.
+
+Затронутый набор — 46 сценариев, прежние ожидания и 44 ключа ProjectSession сохранены. Полный API/CLI/desktop, frozen formats, application queue, late response/conflict и browser E2E остаются обязательными. Последняя Windows exe завершения А4 не выдаётся за проверку третьего store; итоговая exe следует при завершении #191.
+
 ## Кэш статусов ПУ-66 в Pinia (27.10.2026, #191)
 
 [9 предварительных и 3 дополнительные проверки](src/composables/__tests__/usePu66Status.test.ts) используют реальные mounted Vue-компоненты: шесть полей/пустой ключ, общий запрос, независимые ключи/ответы, переключение ключа, failure/retry, invalidation во время успешного/неуспешного чтения, частичный/полный unmount. Девять сценариев сначала прошли на прежнем module-level кэше. Дополнительные проверки фиксируют изоляцию двух app при одинаковом ключе, callback исходного app после await/смены active Pinia и отсутствие HTTP/browser listeners при создании store. Данные полностью вымышленные и проходят существующую схему.

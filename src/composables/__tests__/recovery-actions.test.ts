@@ -1,5 +1,6 @@
 import { ref } from 'vue'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 import raw from '../../../tests/fixtures/manual-v1.json?raw'
 import { importSchemeJson } from '../../domain/import'
 import { createSchemeDetailsDraft } from '../../domain/edit-details'
@@ -9,7 +10,11 @@ import { useProjectHistory } from '../useProjectHistory'
 import { useProjectDocument } from '../useProjectDocument'
 import { useRecoveryActions } from '../useRecoveryActions'
 
-afterEach(() => vi.unstubAllGlobals())
+beforeEach(() => setActivePinia(createPinia()))
+afterEach(() => {
+  setActivePinia(undefined)
+  vi.unstubAllGlobals()
+})
 
 it('opens a claimed copy and hydrates its unapplied form input after opening the document view', async () => {
   vi.stubGlobal('window', { confirm: vi.fn(() => true) })
