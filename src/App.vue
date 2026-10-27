@@ -2,7 +2,7 @@
 import { templateLabel } from './domain/registry'
 import { computed, onMounted, ref, watch } from 'vue'
 import HelpPage from './components/HelpPage.vue'
-import { invalidatePu66Status } from './composables/usePu66Status'
+import { usePu66StatusInvalidation } from './composables/usePu66Status'
 import SchemeDraftSheet from './components/SchemeDraftSheet.vue'
 import { reviewScheme } from './domain/review-scheme'
 import { usedSignCodes } from './domain/sign-images'
@@ -18,6 +18,7 @@ import ProjectHub from './components/editor/ProjectHub.vue'
 import RegistryHub from './components/editor/RegistryHub.vue'
 import EditorWorkspace from './components/editor/EditorWorkspace.vue'
 import { useEditorNavigation } from './composables/useEditorNavigation'
+const invalidatePu66Status = usePu66StatusInvalidation()
 const {
   reload: reloadNormativeRules,
   rules: normativeRules,

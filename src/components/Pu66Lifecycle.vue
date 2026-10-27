@@ -13,8 +13,9 @@ import {
   previewPu66Lifecycle,
   applyPu66Lifecycle,
 } from '../services/local-pu66'
-import { invalidatePu66Status } from '../composables/usePu66Status'
+import { usePu66StatusInvalidation } from '../composables/usePu66Status'
 
+const invalidatePu66Status = usePu66StatusInvalidation()
 const props = defineProps<{ locked?: boolean; refreshKey?: number }>()
 const emit = defineEmits<{ changed: [] }>()
 const cards = ref<Awaited<ReturnType<typeof listPu66LifecycleCards>>>([])
