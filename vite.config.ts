@@ -87,6 +87,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // Only the custom-renderer SFC tests opt into client compilation without a DOM emulator.
+      'vitest-environment-vue-renderer': fileURLToPath(
+        new URL('./src/components/editor/__tests__/vue-renderer-environment.ts', import.meta.url),
+      ),
     },
   },
 })
