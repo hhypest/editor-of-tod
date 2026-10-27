@@ -2,19 +2,63 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { posix } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import ts from 'typescript'
+import { parse as parseSfc } from '@vue/compiler-sfc'
+import { externalImportRules, localImportRules, moduleLayers } from './architecture-policy.ts'
 
 const moduleExtensions = ['.ts', '.tsx', '.mts', '.vue', '.mjs']
 const isModule = (path: string) => moduleExtensions.some((extension) => path.endsWith(extension))
+
+function scriptsIn(path: string, text: string, problems: string[]): ts.SourceFile[] {
+  if (!path.endsWith('.vue')) return [ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true)]
+  const { descriptor, errors } = parseSfc(text, {
+    filename: path,
+    sourceMap: false,
+    ignoreEmpty: false,
+  })
+  for (const error of errors) {
+    const location =
+      'loc' in error && error.loc ? ` at ${error.loc.start.line}:${error.loc.start.column}` : ''
+    problems.push(`${path}: invalid Vue SFC${location}: ${error.message}`)
+  }
+  const scripts: ts.SourceFile[] = []
+  for (const block of [descriptor.script, descriptor.scriptSetup]) {
+    if (!block) continue
+    if (block.lang && !['js', 'jsx', 'ts', 'tsx'].includes(block.lang))
+      problems.push(`${path}: unsupported Vue script language ${block.lang}`)
+    const kind = block.lang === 'tsx' || block.lang === 'jsx' ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+    scripts.push(ts.createSourceFile(path, block.content, ts.ScriptTarget.Latest, true, kind))
+    // An external script is an import edge even though the SFC block has no inline content.
+    if (block.src)
+      scripts.push(
+        ts.createSourceFile(
+          path,
+          `import ${JSON.stringify(block.src)}`,
+          ts.ScriptTarget.Latest,
+          true,
+        ),
+      )
+  }
+  return scripts
+}
+
+function resolveLocal(sources: ReadonlyMap<string, string>, path: string, specifier: string) {
+  const clean = specifier.split(/[?#]/)[0]!
+  const base = posix.normalize(
+    clean.startsWith('@/') ? `src/${clean.slice(2)}` : posix.join(posix.dirname(path), clean),
+  )
+  const target = [
+    base,
+    ...moduleExtensions.map((extension) => `${base}${extension}`),
+    ...moduleExtensions.map((extension) => `${base}/index${extension}`),
+  ].find((candidate) => sources.has(candidate))
+  return { target, base }
+}
 
 /** Analyze resolved local imports, including type imports, re-exports and literal import(). */
 export function architectureProblems(sources: ReadonlyMap<string, string>): string[] {
   const problems: string[] = []
   const graph = new Map<string, string[]>()
   for (const [path, text] of sources) {
-    const script = path.endsWith('.vue')
-      ? [...text.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join('\n')
-      : text
-    const ast = ts.createSourceFile(path, script, ts.ScriptTarget.Latest, true)
     const edges = new Set<string>()
     const visit = (node: ts.Node): void => {
       let specifier: string | undefined
@@ -28,53 +72,40 @@ export function architectureProblems(sources: ReadonlyMap<string, string>): stri
         ts.isCallExpression(node) &&
         node.expression.kind === ts.SyntaxKind.ImportKeyword &&
         node.arguments[0] &&
-        ts.isStringLiteral(node.arguments[0])
+        (ts.isStringLiteral(node.arguments[0]) ||
+          ts.isNoSubstitutionTemplateLiteral(node.arguments[0]))
       )
         specifier = node.arguments[0].text
+      else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword)
+        problems.push(`${path}: non-static dynamic import cannot be checked`)
       if (
         ts.isImportTypeNode(node) &&
         ts.isLiteralTypeNode(node.argument) &&
         ts.isStringLiteral(node.argument.literal)
       )
         specifier = node.argument.literal.text
-      if (
-        (path.startsWith('src/domain/') || path.startsWith('src/application/')) &&
-        (specifier === 'pinia' || specifier?.startsWith('pinia/'))
-      )
-        problems.push(`${path}: core imports Pinia ${specifier}`)
-      if (specifier?.startsWith('.') || specifier?.startsWith('@/')) {
-        const clean = specifier.split('?')[0]!
-        const base = posix.normalize(
-          clean.startsWith('@/') ? `src/${clean.slice(2)}` : posix.join(posix.dirname(path), clean),
+      for (const rule of externalImportRules)
+        if (
+          specifier &&
+          moduleLayers[rule.from].test(path) &&
+          rule.specifier.test(specifier.split(/[?#]/)[0]!)
         )
-        const target = [
-          base,
-          ...moduleExtensions.map((extension) => `${base}${extension}`),
-          ...moduleExtensions.map((extension) => `${base}/index${extension}`),
-        ].find((candidate) => sources.has(candidate))
+          problems.push(`${path}: ${rule.message} ${specifier}`)
+      if (specifier?.startsWith('.') || specifier?.startsWith('@/')) {
+        const { target, base } = resolveLocal(sources, path, specifier)
         // Raw text assets (licenses, etc.) have no module dependency graph.
-        if (!target && specifier.includes('?raw') && !isModule(base)) return
+        if (!target && /[?&]raw(?:[&#]|$)/.test(specifier) && !isModule(base)) return
         if (!target) problems.push(`${path}: unresolved local import ${specifier}`)
         else {
           edges.add(target)
-          if (path.startsWith('src/') && target.startsWith('server/'))
-            problems.push(`${path}: client imports server module ${target}`)
-          if (path.startsWith('src/domain/') || path.startsWith('src/application/')) {
-            if (/^src\/(?:components|composables|services|presentation|stores)\//.test(target))
-              problems.push(`${path}: core imports adapter ${target}`)
-          }
-          if (path.startsWith('src/domain/') && target.startsWith('src/application/'))
-            problems.push(`${path}: domain imports application ${target}`)
-          if (
-            /^src\/domain\/review[^/]*\.(?:ts|tsx|mts)$/.test(path) &&
-            target === 'src/domain/sheet-drawing.ts'
-          )
-            problems.push(`${path}: review imports sheet drawing`)
+          for (const rule of localImportRules)
+            if (moduleLayers[rule.from].test(path) && moduleLayers[rule.to].test(target))
+              problems.push(`${path}: ${rule.message}${rule.includeTarget ? ` ${target}` : ''}`)
         }
       }
       ts.forEachChild(node, visit)
     }
-    visit(ast)
+    for (const ast of scriptsIn(path, text, problems)) visit(ast)
     graph.set(path, [...edges].sort())
   }
   const visited = new Set<string>()
