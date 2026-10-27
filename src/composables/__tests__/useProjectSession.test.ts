@@ -1,5 +1,6 @@
 import { createRenderer, defineComponent, nextTick, type App } from 'vue'
-import { createPinia, setActivePinia } from 'pinia'
+import { createPinia, setActivePinia, storeToRefs } from 'pinia'
+import { useProjectSessionUiStore } from '../../stores/project-session-ui'
 import { useEditorDraftState } from '../useEditorDraftState'
 import { useProjectHistory } from '../useProjectHistory'
 import { useProjectDocument } from '../useProjectDocument'
@@ -139,6 +140,54 @@ it('preserves the public ProjectSession surface and semantic export aliases', as
   expect(Object.keys(session).sort()).toEqual(publicSessionKeys)
   expect(session.saveV5).toBe(session.exportCurrentProject)
   expect(session.saveOriginal).toBe(session.exportOriginalProject)
+})
+
+it('shares save feedback and recovery with another reader without new lifecycle or requests', async () => {
+  const listeners = vi.spyOn(window, 'addEventListener')
+  const removed = vi.spyOn(window, 'removeEventListener')
+  let ownerApp!: App
+  const session = await openEditedSession((app) => {
+    ownerApp = app
+  })
+  const timers = vi.getTimerCount()
+  const listenerCount = listeners.mock.calls.length
+  const listCount = local.listRecoveryDrafts.mock.calls.length
+  const reader = ownerApp.runWithContext(() => storeToRefs(useProjectSessionUiStore()))
+  const another = ownerApp.runWithContext(() => storeToRefs(useProjectSessionUiStore()))
+  const recoveryId = reader.activeRecoveryId.value
+  expect(reader.recoveryStatus.value).toBe('saved')
+  expect(reader.activeRecoveryId.value).toBe(session.activeRecoveryId.value)
+  expect(vi.getTimerCount()).toBe(timers)
+  expect(listeners).toHaveBeenCalledTimes(listenerCount)
+  expect(local.listRecoveryDrafts).toHaveBeenCalledTimes(listCount)
+  expect(createRecoveryRepository).toHaveBeenCalledTimes(1)
+
+  const response = deferred<ProjectRecord>()
+  local.saveLocalProject.mockReturnValueOnce(response.promise)
+  const saving = session.saveLocally()
+  expect(reader.localBusy.value).toBe(true)
+  expect(another.localBusy.value).toBe(true)
+  const other = useProjectSessionUiStore(createPinia())
+  setActivePinia(createPinia())
+  response.resolve(record(session.imported.value!.scheme))
+  await saving
+  expect(reader.localBusy.value).toBe(false)
+  expect(reader.localNotice.value).toBe(session.localNotice.value)
+  expect(reader.localNotice.value).not.toBe('')
+  expect(reader.projectsRefreshKey.value).toBe(1)
+  expect(reader.activeRecoveryId.value).toBe(recoveryId)
+  expect(other.localNotice).toBe('')
+  expect(other.projectsRefreshKey).toBe(0)
+  expect(other.activeRecoveryId).toBe('')
+  unmount()
+  expect(removed.mock.calls.map(([name]) => name)).toEqual([
+    'beforeunload',
+    'pagehide',
+    'pageshow',
+    'focus',
+    'online',
+  ])
+  expect(vi.getTimerCount()).toBe(0)
 })
 
 async function openEditedSession(onSessionCreated?: (app: App) => void) {

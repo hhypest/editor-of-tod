@@ -1,4 +1,6 @@
-import { ref, type Ref } from 'vue'
+import type { Ref } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useProjectSessionUiStore, type ProjectSessionUiRefs } from '../stores/project-session-ui'
 import type { ImportResult } from '../domain/import'
 import type { Scheme } from '../domain/model'
 import type { NormativeRules } from '../domain/normative-parameters'
@@ -18,7 +20,14 @@ export interface TemplateEditor {
 }
 
 /** UI feedback and selection around the existing pure template rules and pinning workflow. */
-export function useTemplateActions(editor: TemplateEditor, repository: SignCatalogRepository) {
+export function useTemplateActions(
+  editor: TemplateEditor,
+  repository: SignCatalogRepository,
+  state: Pick<
+    ProjectSessionUiRefs,
+    'templateMessage' | 'templateError' | 'signPinMessage'
+  > = storeToRefs(useProjectSessionUiStore()),
+) {
   const {
     imported,
     editorDirty,
@@ -27,9 +36,7 @@ export function useTemplateActions(editor: TemplateEditor, repository: SignCatal
     normativeRules,
     onProjectApplied,
   } = editor
-  const templateMessage = ref('')
-  const templateError = ref('')
-  const signPinMessage = ref('')
+  const { templateMessage, templateError, signPinMessage } = state
   /**
    * Правки этапа 2: если шаблон уже собран и изменились параметры раскладки, типовые объекты
    * перестраиваются в том же действии истории (П5, issue #106). Ручные объекты не трогаются.

@@ -1,4 +1,6 @@
-import { ref, watch, type Ref, type WatchSource } from 'vue'
+import { watch, type Ref, type WatchSource } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useProjectSessionUiStore, type ProjectSessionUiRefs } from '../stores/project-session-ui'
 import {
   RecoverySession,
   RECOVERY_HEARTBEAT_MS,
@@ -18,11 +20,16 @@ export interface ProjectRecoveryOptions {
 }
 
 /** Debounce and ownership adapter around the existing serialized application workflow. */
-export function useProjectRecovery(options: ProjectRecoveryOptions) {
+export function useProjectRecovery(
+  options: ProjectRecoveryOptions,
+  state: Pick<
+    ProjectSessionUiRefs,
+    'recoveryCopies' | 'recoveryStatus' | 'activeRecoveryId'
+  > = storeToRefs(useProjectSessionUiStore()),
+) {
   const recovery = new RecoverySession(options.repository)
-  const recoveryCopies = ref<RecoverySummary[]>([])
-  const recoveryStatus = ref<'idle' | 'pending' | 'saving' | 'saved' | 'error'>('idle')
-  const activeRecoveryId = ref(options.initialId)
+  const { recoveryCopies, recoveryStatus, activeRecoveryId } = state
+  activeRecoveryId.value = options.initialId
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
   let recoveryTimer: ReturnType<typeof setTimeout> | null = null
   let changes = 0

@@ -1,4 +1,6 @@
 import { effectScope, nextTick, ref, shallowRef } from 'vue'
+import { createPinia, setActivePinia, storeToRefs } from 'pinia'
+import { useProjectSessionUiStore } from '../../stores/project-session-ui'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import raw from '../../../tests/fixtures/manual-v1.json?raw'
 import { importSchemeJson } from '../../domain/import'
@@ -9,6 +11,7 @@ const cleanups: Array<() => void> = []
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => {
   cleanups.splice(0).forEach((stop) => stop())
+  setActivePinia(undefined)
   vi.useRealTimers()
 })
 
@@ -21,6 +24,8 @@ function deferred<T>() {
 }
 
 function harness() {
+  const pinia = createPinia()
+  const state = storeToRefs(useProjectSessionUiStore(pinia))
   const scheme = shallowRef(importSchemeJson(raw).scheme)
   const dirty = ref(true)
   const repository = {
@@ -37,26 +42,29 @@ function harness() {
   const showError = vi.fn()
   const scope = effectScope()
   const recovery = scope.run(() =>
-    useProjectRecovery({
-      initialId: 'first',
-      repository,
-      list: async () => [],
-      hasUnsavedWork: dirty,
-      changes: [scheme, dirty],
-      showError,
-      snapshot(sessionId) {
-        return dirty.value
-          ? {
-              sessionId,
-              scheme: scheme.value,
-              baseRevision: null,
-              detailsDraft: null,
-              placementDraft: null,
-              fileName: 'учебный.json',
-            }
-          : null
+    useProjectRecovery(
+      {
+        initialId: 'first',
+        repository,
+        list: async () => [],
+        hasUnsavedWork: dirty,
+        changes: [scheme, dirty],
+        showError,
+        snapshot(sessionId) {
+          return dirty.value
+            ? {
+                sessionId,
+                scheme: scheme.value,
+                baseRevision: null,
+                detailsDraft: null,
+                placementDraft: null,
+                fileName: 'учебный.json',
+              }
+            : null
+        },
       },
-    }),
+      state,
+    ),
   )!
   cleanups.push(() => {
     recovery.stop()
@@ -68,10 +76,55 @@ function harness() {
       parameters: { ...scheme.value.parameters, locationText: text },
     }
   }
-  return { scheme, dirty, repository, showError, recovery, edit }
+  return { scheme, dirty, repository, showError, recovery, edit, pinia, state }
 }
 
 describe('recovery adapter without a mounted component or browser', () => {
+  it('shares a live projection without resetting or starting another recovery owner', async () => {
+    const { recovery, repository, edit, pinia, state } = harness()
+    edit('Общий ввод')
+    await nextTick()
+    const timers = vi.getTimerCount()
+    const reader = storeToRefs(useProjectSessionUiStore(pinia))
+    expect(reader.activeRecoveryId.value).toBe('first')
+    expect(reader.recoveryStatus.value).toBe('pending')
+    expect(vi.getTimerCount()).toBe(timers)
+    const other = useProjectSessionUiStore(createPinia())
+    setActivePinia(createPinia())
+    await recovery.flush()
+    expect(reader.recoveryStatus.value).toBe('saved')
+    expect(state.recoveryStatus.value).toBe('saved')
+    expect(other.recoveryStatus).toBe('idle')
+    expect(other.activeRecoveryId).toBe('')
+    expect(repository.save).toHaveBeenCalledTimes(1)
+    expect(repository.heartbeat).not.toHaveBeenCalled()
+  })
+
+  it('initializes the projection without starting requests or timers', () => {
+    const { recovery, repository } = harness()
+    expect(recovery.activeRecoveryId.value).toBe('first')
+    expect(recovery.recoveryStatus.value).toBe('idle')
+    expect(recovery.recoveryCopies.value).toEqual([])
+    expect(vi.getTimerCount()).toBe(0)
+    expect(repository.save).not.toHaveBeenCalled()
+    expect(repository.heartbeat).not.toHaveBeenCalled()
+  })
+
+  it('preserves pending input and copies when beginning another recovery id', async () => {
+    const { recovery, edit, scheme, dirty } = harness()
+    edit('Неприменённый ввод')
+    await nextTick()
+    const before = scheme.value
+    const copies = recovery.recoveryCopies.value
+    recovery.begin('second')
+    expect(recovery.activeRecoveryId.value).toBe('second')
+    expect(recovery.recoveryStatus.value).toBe('idle')
+    expect(recovery.recoveryCopies.value).toBe(copies)
+    expect(scheme.value).toBe(before)
+    expect(dirty.value).toBe(true)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('retries a failed snapshot after wake and captures the latest unapplied input', async () => {
     const { repository, recovery, edit } = harness()
     repository.save.mockRejectedValueOnce(new Error('Нет связи'))
