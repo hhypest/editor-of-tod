@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useProjectDocumentStore } from '../../stores/project-document'
+import { useProjectSessionUiStore } from '../../stores/project-session-ui'
+import { useEditorNavigationStore } from '../../stores/editor-navigation'
+import { useCatalogRefreshStore } from '../../stores/catalog-refresh'
 import { templateLabel } from '../../domain/registry'
 import type { ReviewFinding } from '../../domain/review-scheme'
-import type { ProjectSession } from '../../composables/useProjectSession'
+import type { EditorWorkspaceCommands } from '../../composables/project-view-commands'
 import type { EditorView } from '../../presentation/editor-navigation'
 import Pu66Linker from '../Pu66Linker.vue'
 import TemplateChoice from '../TemplateChoice.vue'
@@ -13,10 +18,7 @@ import SchemeDetailsEditor from '../SchemeDetailsEditor.vue'
 import SchemeDraftSheet from '../SchemeDraftSheet.vue'
 import ProjectDataInspector from '../ProjectDataInspector.vue'
 const props = defineProps<{
-  session: ProjectSession
-  activeView: EditorView
-  signCatalogVersion: number
-  pu66CatalogVersion: number
+  commands: EditorWorkspaceCommands
 }>()
 const emit = defineEmits<{ show: [view: EditorView]; navigate: [finding: ReviewFinding] }>()
 const {
@@ -24,8 +26,21 @@ const {
   selectedFileName,
   localRevision,
   editorDirty,
-  localBusy,
   history,
+  selectedPlacementId,
+  detailsDirty,
+  placementDirty,
+  recoverySeed,
+  pendingPlacement,
+  pendingDetails,
+  modifiedSinceLocalSave,
+} = storeToRefs(useProjectDocumentStore())
+const { localBusy, signPinMessage, templateMessage, templateError } = storeToRefs(
+  useProjectSessionUiStore(),
+)
+const { activeView } = storeToRefs(useEditorNavigationStore())
+const { signCatalogVersion, pu66CatalogVersion } = storeToRefs(useCatalogRefreshStore())
+const {
   saveAsNew,
   exportCurrentProject,
   exportOriginalProject,
@@ -34,28 +49,18 @@ const {
   onPu66Linked,
   buildDraftTemplate,
   pinCurrentSigns,
-  signPinMessage,
-  templateMessage,
-  templateError,
-  selectedPlacementId,
   onProjectApplied,
   onDetailsApplied,
-  detailsDirty,
-  placementDirty,
-  recoverySeed,
-  pendingPlacement,
-  pendingDetails,
-  modifiedSinceLocalSave,
-} = props.session
+} = props.commands
 const frontMetres = computed(
   () =>
     imported.value?.scheme.parameters.workZones[imported.value.scheme.template.code]?.workMetres,
 )
 const detailsMode = computed<'source' | 'geometry' | 'title'>(() =>
-  props.activeView === 'source' ? 'source' : props.activeView === 'geometry' ? 'geometry' : 'title',
+  activeView.value === 'source' ? 'source' : activeView.value === 'geometry' ? 'geometry' : 'title',
 )
 const inProject = computed(() =>
-  ['source', 'geometry', 'objects', 'review'].includes(props.activeView),
+  ['source', 'geometry', 'objects', 'review'].includes(activeView.value),
 )
 </script>
 

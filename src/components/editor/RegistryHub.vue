@@ -1,22 +1,24 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useProjectDocumentStore } from '../../stores/project-document'
+import { useProjectSessionUiStore } from '../../stores/project-session-ui'
+import { useEditorNavigationStore } from '../../stores/editor-navigation'
+import { useCatalogRefreshStore } from '../../stores/catalog-refresh'
+import { usedSignCodes } from '../../domain/sign-images'
 import DiagnosticsPanel from '../DiagnosticsPanel.vue'
 import LocalRegistries from '../LocalRegistries.vue'
 import ImportedData from '../ImportedData.vue'
 import NormativeDocuments from '../NormativeDocuments.vue'
 import NormativeParameters from '../NormativeParameters.vue'
 import Pu66Lifecycle from '../Pu66Lifecycle.vue'
-import type { Scheme } from '../../domain/model'
-import type { EditorView, RegistryTab } from '../../presentation/editor-navigation'
-defineProps<{
-  scheme: Scheme | null
-  view: EditorView
-  registryTab: RegistryTab
-  editorDirty: boolean
-  localBusy: boolean
-  referencedSignIds: string[]
-  signCatalogVersion: number
-  pu66CatalogVersion: number
-}>()
+import type { RegistryTab } from '../../presentation/editor-navigation'
+const { imported, editorDirty } = storeToRefs(useProjectDocumentStore())
+const { localBusy } = storeToRefs(useProjectSessionUiStore())
+const { activeView: view, registryTab } = storeToRefs(useEditorNavigationStore())
+const { signCatalogVersion, pu66CatalogVersion } = storeToRefs(useCatalogRefreshStore())
+const scheme = computed(() => imported.value?.scheme ?? null)
+const referencedSignIds = computed(() => (scheme.value ? usedSignCodes(scheme.value) : []))
 const emit = defineEmits<{
   'choose-tab': [tab: RegistryTab]
   'signs-updated': []

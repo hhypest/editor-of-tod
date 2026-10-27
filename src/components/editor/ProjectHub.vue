@@ -1,14 +1,17 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useProjectDocumentStore } from '../../stores/project-document'
+import { useProjectSessionUiStore } from '../../stores/project-session-ui'
+import { useEditorNavigationStore } from '../../stores/editor-navigation'
 import NewScheme from '../NewScheme.vue'
 import LocalProjects from '../LocalProjects.vue'
 import FirstRunWizard from '../FirstRunWizard.vue'
-import type { ProjectSession } from '../../composables/useProjectSession'
+import type { ProjectHubCommands } from '../../composables/project-view-commands'
 import type { ProjectTab, SetupImportTarget } from '../../presentation/editor-navigation'
 import type { FirstRunStatus } from '../../presentation/first-run'
 const props = defineProps<{
-  session: ProjectSession
-  projectTab: ProjectTab
-  active: boolean
+  commands: ProjectHubCommands
   setupStatus: FirstRunStatus | null
   setupError: string
 }>()
@@ -18,24 +21,16 @@ const emit = defineEmits<{
   'setup-import': [target: SetupImportTarget]
   help: [section: string]
 }>()
-// These refs and commands belong to App's single session; this view creates no session.
-const {
-  imported,
-  recoveryCopies,
-  activeRecoveryId,
-  localBusy,
-  editorDirty,
-  loading,
-  openRecovery,
-  discardRecovery,
-  createProject,
-  localRevision,
-  projectsRefreshKey,
-  openLocal,
-  restoreLocal,
-  onFileSelected,
-  errorMessage,
-} = props.session
+// Reading shared state never constructs the session or its recovery workflow.
+const { imported, editorDirty, loading, localRevision, errorMessage } =
+  storeToRefs(useProjectDocumentStore())
+const { recoveryCopies, activeRecoveryId, localBusy, projectsRefreshKey } = storeToRefs(
+  useProjectSessionUiStore(),
+)
+const { projectTab, activeView } = storeToRefs(useEditorNavigationStore())
+const active = computed(() => activeView.value === 'projects')
+const { openRecovery, discardRecovery, createProject, openLocal, restoreLocal, onFileSelected } =
+  props.commands
 </script>
 
 <template>

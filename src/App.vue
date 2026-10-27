@@ -4,12 +4,17 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useEditorNavigationStore } from './stores/editor-navigation'
 import { useCatalogRefreshStore } from './stores/catalog-refresh'
+import { useProjectDocumentStore } from './stores/project-document'
+import { useProjectSessionUiStore } from './stores/project-session-ui'
 import HelpPage from './components/HelpPage.vue'
 import { usePu66StatusInvalidation } from './composables/usePu66Status'
 import SchemeDraftSheet from './components/SchemeDraftSheet.vue'
 import { reviewScheme } from './domain/review-scheme'
-import { usedSignCodes } from './domain/sign-images'
 import { useProjectSession } from './composables/useProjectSession'
+import type {
+  ProjectHubCommands,
+  EditorWorkspaceCommands,
+} from './composables/project-view-commands'
 import { useNormativeRules } from './composables/useNormativeRules'
 import { parameterDefinitions } from './domain/normative-parameters'
 import { loadSetupStatus } from './services/setup-status'
@@ -90,18 +95,32 @@ watch([setupStatus, normativeLoading], ([status, loading]) => {
 })
 const setupError = ref('')
 const session = useProjectSession(() => showView('source'))
-const {
-  imported,
-  modifiedSinceLocalSave,
-  localRevision,
-  localBusy,
-  localError,
-  localNotice,
-  editorDirty,
-  recoveryStatus,
-  placementDirty,
-  saveLocally,
-} = session
+const { imported, modifiedSinceLocalSave, localRevision, editorDirty, placementDirty } =
+  storeToRefs(useProjectDocumentStore())
+const { localBusy, localError, localNotice, recoveryStatus } = storeToRefs(
+  useProjectSessionUiStore(),
+)
+const { saveLocally } = session
+const projectHubCommands: ProjectHubCommands = {
+  openRecovery: session.openRecovery,
+  discardRecovery: session.discardRecovery,
+  createProject: session.createProject,
+  openLocal: session.openLocal,
+  restoreLocal: session.restoreLocal,
+  onFileSelected: session.onFileSelected,
+}
+const editorWorkspaceCommands: EditorWorkspaceCommands = {
+  saveAsNew: session.saveAsNew,
+  exportCurrentProject: session.exportCurrentProject,
+  exportOriginalProject: session.exportOriginalProject,
+  stepBack: session.stepBack,
+  stepForward: session.stepForward,
+  onPu66Linked: session.onPu66Linked,
+  buildDraftTemplate: session.buildDraftTemplate,
+  pinCurrentSigns: session.pinCurrentSigns,
+  onProjectApplied: session.onProjectApplied,
+  onDetailsApplied: session.onDetailsApplied,
+}
 const {
   activeView,
   projectTab,
@@ -184,9 +203,6 @@ const fillCount = computed(() =>
         (finding) => finding.kind === 'fill',
       ).length
     : 0,
-)
-const referencedSignIds = computed(() =>
-  imported.value ? usedSignCodes(imported.value.scheme) : [],
 )
 </script>
 
@@ -330,9 +346,7 @@ const referencedSignIds = computed(() =>
 
         <ProjectHub
           v-show="activeView === 'projects'"
-          :session="session"
-          :project-tab="projectTab"
-          :active="activeView === 'projects'"
+          :commands="projectHubCommands"
           :setup-status="setupStatus"
           :setup-error="setupError"
           @open-setup="openSetup"
@@ -343,14 +357,6 @@ const referencedSignIds = computed(() =>
         <RegistryHub
           v-if="registriesVisited"
           v-show="activeView === 'registries'"
-          :scheme="imported?.scheme ?? null"
-          :view="activeView"
-          :registry-tab="registryTab"
-          :editor-dirty="editorDirty"
-          :local-busy="localBusy"
-          :referenced-sign-ids="referencedSignIds"
-          :sign-catalog-version="signCatalogVersion"
-          :pu66-catalog-version="pu66CatalogVersion"
           @choose-tab="registryTab = $event"
           @signs-updated="onSignsUpdated"
           @pu66-updated="onPu66Updated"
@@ -358,10 +364,7 @@ const referencedSignIds = computed(() =>
         <HelpPage v-if="activeView === 'help'" :section="helpSection" :open-key="helpOpenKey" />
         <EditorWorkspace
           v-if="imported"
-          :session="session"
-          :active-view="activeView"
-          :sign-catalog-version="signCatalogVersion"
-          :pu66-catalog-version="pu66CatalogVersion"
+          :commands="editorWorkspaceCommands"
           @show="showView"
           @navigate="navigateToFinding"
         />
