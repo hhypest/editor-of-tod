@@ -1254,15 +1254,44 @@ test('downloads a diagnostics file without card data', async ({ page, request })
   }
 })
 
-test('A4 print layout and Chromium single-page PDF', async ({ page, browserName }) => {
+test('A4 print layout and Chromium single-page PDF', async ({ page, request, browserName }) => {
+  await importSampleSignCatalog(request)
+  const scheme = createUnlinkedScheme({
+    referenceId: 'TEST-PRINT',
+    locationText: 'Учебная дорога',
+    directionLeft: 'А',
+    directionRight: 'Б',
+    frontMetres: '18',
+    taperMetres: '10',
+    bufferMetres: '10',
+    location: 'out',
+    approachSpeedKmh: '90',
+    speedStagesKmh: ['70', '50', '40'],
+    yellowTemporarySigns: false,
+  })
+  scheme.placements = [
+    {
+      kind: 'sign-post',
+      id: 1,
+      generatedByTemplate: false,
+      position: { anchor: 'abs', offsetXSvg: 300, offsetYSvg: 0 },
+      side: 'up',
+      stand: 'right',
+      signIds: ['1.25'],
+      distanceLabel: null,
+      distance: null,
+    },
+  ]
+  scheme.nextPlacementId = 2
   await page.goto('/')
   await page.getByRole('button', { name: 'Открыть файл' }).click()
   await page.locator('#scheme-file').setInputFiles({
-    name: 'anonymized-v1.json',
+    name: `printable-${scheme.id}.json`,
     mimeType: 'application/json',
-    buffer: readFileSync('tests/fixtures/legacy-v1-new-fields.json'),
+    buffer: Buffer.from(exportSchemeJson(scheme)),
   })
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  await expect(page.locator('.print-host .preview-scroll')).not.toHaveClass(/blocked/)
   await page.emulateMedia({ media: 'print' })
   await expect(page.locator('.print-host')).toHaveCSS('margin-top', '0px')
   await expect(page.locator('.print-host')).toBeVisible()

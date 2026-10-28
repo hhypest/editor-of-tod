@@ -10,6 +10,7 @@ export const diagnosticProgramFiles = [
   'scripts/generate-pu66-samples.ts',
   'scripts/release-checksums.d.mts',
   'scripts/release-checksums.mjs',
+  'scripts/test-e2e.ts',
   'scripts/third-party-licenses.ts',
   'server.cjs',
   'server/app-paths.ts',
