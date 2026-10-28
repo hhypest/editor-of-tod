@@ -1,3 +1,4 @@
+import { regulationThresholds } from './regulation-thresholds'
 import type { Scheme } from './model'
 import type { NormativeRules } from './normative-parameters'
 import { cellNumber } from './pu66-norms'
@@ -62,7 +63,7 @@ export function workConditionProblems(scheme: Scheme, rules: NormativeRules): st
       (regulation.mode === 'one' &&
         (regulation.vis ||
           (parseHourly(regulation.hourly) ?? Infinity) >
-            Math.min(rules.alternateHourly, rules.workTraffic.alternateHourly)))
+            regulationThresholds(rules).alternateHourly))
     )
       problems.push(
         'Выбранный режим не соответствует условиям Б.34: при ограниченной видимости или потоке свыше верхней границы нужны два регулировщика; знаки допускаются только при обеспеченной видимости, потоке менее нормативной границы и участке между устройствами менее нормативной длины. Для одного требуется подтверждение светлого времени суток и прямого участка.',

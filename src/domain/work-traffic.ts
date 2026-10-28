@@ -1,3 +1,4 @@
+import { regulationThresholds } from './regulation-thresholds'
 import type { NormativeRules } from './normative-parameters'
 import type { Scheme } from './model'
 
@@ -34,9 +35,11 @@ export function workTrafficDecision(
     hourly < 0
   )
     return 'unknown'
-  const length = Math.min(rules.signsLengthMetres, rules.workTraffic.signsLength)
-  const intensity = Math.min(rules.signsHourly, rules.workTraffic.signsHourly)
-  const maximum = Math.min(rules.alternateHourly, rules.workTraffic.alternateHourly)
+  const {
+    signsLengthMetres: length,
+    signsHourly: intensity,
+    alternateHourly: maximum,
+  } = regulationThresholds(rules)
   if (sectionMetres < length && hourly < intensity)
     return limitedVisibility ? 'regulators' : 'signs'
   if (sectionMetres < length && hourly <= maximum)

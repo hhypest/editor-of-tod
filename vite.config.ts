@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process'
+import { writeDiagnosticFiles } from './scripts/diagnostic-files.ts'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 
@@ -64,6 +65,9 @@ function thirdPartyLicenses(): Plugin {
     },
   }
 }
+
+// Generate before Vite resolves application modules, including dev/test source execution.
+writeDiagnosticFiles(fileURLToPath(new URL('.', import.meta.url)))
 
 // https://vite.dev/config/
 export default defineConfig({

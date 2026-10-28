@@ -1,3 +1,24 @@
+import {
+  schemeV2Schema,
+  schemeV3Schema,
+  schemeV4Schema,
+  schemeV5Schema,
+  schemeV6Schema,
+  schemeV7Schema,
+  schemeV8Schema,
+  schemeV9Schema,
+  type HistoricalTitleBlock,
+} from './formats/frozen/project-v2-v9.ts'
+export {
+  schemeV2Schema,
+  schemeV3Schema,
+  schemeV4Schema,
+  schemeV5Schema,
+  schemeV6Schema,
+  schemeV7Schema,
+  schemeV8Schema,
+  schemeV9Schema,
+} from './formats/frozen/project-v2-v9.ts'
 import { z } from 'zod'
 import { PHONE_PATTERN, responsibleFromLegacy } from './title-block.ts'
 import { pu66SnapshotSchema } from './pu66-snapshot.ts'
@@ -17,16 +38,6 @@ const workZoneSchema = z.strictObject({
   labels: z.strictObject({ taper: text, buffer: text, work: text }),
 })
 
-const crossingV2Schema = z.strictObject({
-  referenceId: z.string().min(1).max(120),
-  source: z.literal('legacy-pu66'),
-  snapshot: z.null(),
-})
-const crossingV3Schema = z.strictObject({
-  referenceId: z.string().min(1).max(120),
-  source: z.enum(['legacy-pu66', 'entered-by-editor']),
-  snapshot: z.null(),
-})
 const crossingSchema = z.discriminatedUnion('source', [
   z.strictObject({
     referenceId: z.string().min(1).max(120),
@@ -120,15 +131,6 @@ const elementPlacementV5Schema = elementPlacementSchema.extend({
   position: position.extend({ ySvg: finite, zoneFraction: finite.optional() }),
 })
 
-/** Реквизиты листа v1–v5: ответственные — две строки текста. */
-const titleBlockV5Schema = z.strictObject({
-  developer: z.strictObject({ organization: text, name: text, date: text }),
-  work: z.strictObject({ organization: text, description: text, period: text }),
-  responsible: z.tuple([text, text]),
-  approver: z.strictObject({ position: text, organization: text, name: text }),
-  agreement: z.strictObject({ position: text, name: text, year: text }),
-})
-
 /** Телефон ответственного по маске +7 (XXX) XXX-XX-XX или пусто, пока не введён. */
 export const phoneSchema = z.union([z.literal(''), z.string().regex(PHONE_PATTERN)])
 export const responsiblePersonSchema = z.strictObject({
@@ -217,7 +219,7 @@ const sharedFields = {
   id: z.uuid(),
   createdAt: z.iso.datetime(),
   template: templateSchema,
-  titleBlock: titleBlockV5Schema,
+  titleBlock: titleBlockSchema,
   placements: z
     .array(z.discriminatedUnion('kind', [signPlacementSchema, elementPlacementSchema]))
     .max(2_000),
@@ -274,53 +276,16 @@ function checkModernScheme(
   // Расхождение показывает проверка листа (пункт «Вариант и длина фронта»).
 }
 
-/** Read-only validator for files and SQLite revisions produced before native project creation. */
-export const schemeV2Schema = z
-  .strictObject({
-    ...sharedFields,
-    schemaVersion: z.literal(2),
-    crossing: crossingV2Schema,
-    parameters: z.strictObject({
-      ...parameterFields,
-      workZones: z.strictObject({ b33: workZoneSchema, b34: workZoneSchema }),
-    }),
-    source: legacySourceSchema,
-  })
-  .superRefine(checkPlacements)
+export const workConditionsSchema = z.strictObject({
+  kind: z.enum(['unknown', 'short', 'long']).default('unknown'),
+  durationHours: finite.positive().nullable().default(null),
+  daylight: z.enum(['unknown', 'day', 'night']).default('unknown'),
+  regulatorsPresent: z.boolean().default(false),
+  sectionMetres: finite.positive().nullable().default(null),
+})
 
-export const schemeV3Schema = z
-  .strictObject({
-    ...sharedFields,
-    schemaVersion: z.literal(3),
-    crossing: crossingV3Schema,
-    parameters: z.strictObject({
-      ...parameterFields,
-      workZones: z.strictObject({
-        b33: workZoneSchema.nullable(),
-        b34: workZoneSchema.nullable(),
-      }),
-    }),
-    source: z.union([legacySourceSchema, z.strictObject({ kind: z.literal('created-in-editor') })]),
-  })
-  .superRefine(checkModernScheme)
-
-export const schemeV4Schema = z
-  .strictObject({
-    ...sharedFields,
-    schemaVersion: z.literal(4),
-    crossing: crossingSchema,
-    parameters: z.strictObject({
-      ...parameterFields,
-      workZones: z.strictObject({
-        b33: workZoneSchema.nullable(),
-        b34: workZoneSchema.nullable(),
-      }),
-    }),
-    source: z.union([legacySourceSchema, z.strictObject({ kind: z.literal('created-in-editor') })]),
-  })
-  .superRefine(checkModernScheme)
-
-const schemeV5Fields = {
+// Field order is part of serialized fingerprints; keep the v10 order.
+const currentFields = {
   ...sharedFields,
   template: templateV5Schema,
   signImages: z
@@ -340,88 +305,23 @@ const schemeV5Fields = {
     signDistancesMetres: signDistancesV5Schema,
     location: z.enum(['auto', 'in', 'out']),
     signSize: z.enum(['auto', 'I', 'II', 'III', 'IV']),
-    settlementSpeedKmh: finite.positive(),
     lastSettlement: z.boolean().nullable(),
     frontStyle: z.enum(['part', 'solid']),
     frontFromPu66: z.boolean(),
     regulation: regulationSchema,
-    workZones: z.strictObject({
-      b33: workZoneSchema.nullable(),
-      b34: workZoneSchema.nullable(),
+    workZones: z.strictObject({ b33: workZoneSchema.nullable(), b34: workZoneSchema.nullable() }),
+    approachSpeedKmh: finite.positive().nullable(),
+    workConditions: workConditionsSchema.default({
+      kind: 'unknown',
+      durationHours: null,
+      daylight: 'unknown',
+      regulatorsPresent: false,
+      sectionMetres: null,
     }),
+    speedConditions: speedConditionsSchema.default({ road: '', vehicle: '' }),
   }),
   source: z.union([legacySourceSchema, z.strictObject({ kind: z.literal('created-in-editor') })]),
 }
-
-/** Read-only validator for files and SQLite revisions saved before 30.09.2026 (format v5). */
-export const schemeV5Schema = z
-  .strictObject({ ...schemeV5Fields, schemaVersion: z.literal(5) })
-  .superRefine(checkModernScheme)
-
-const schemeV6Fields = {
-  ...schemeV5Fields,
-  titleBlock: titleBlockSchema,
-  reviewMarks: reviewMarksSchema.default(() => ({})),
-}
-
-/** Read-only validator for files and SQLite revisions saved before 01.10.2026 (format v6). */
-export const schemeV6Schema = z
-  .strictObject({ ...schemeV6Fields, schemaVersion: z.literal(6) })
-  .superRefine(checkModernScheme)
-
-const { settlementSpeedKmh: _settlementSpeed, ...parametersV7Fields } =
-  schemeV5Fields.parameters.shape
-void _settlementSpeed
-
-/**
- * Прежний формат проекта v7: вместо «скорости в населённом пункте» — разрешённая скорость на
- * подходе к месту работ для обоих вариантов местоположения. От неё считаются ступени 3.24 по
- * умолчанию; null — скорость не указана (проекты вне населённого пункта до v7).
- */
-export const schemeV7Schema = z
-  .strictObject({
-    ...schemeV6Fields,
-    schemaVersion: z.literal(7),
-    parameters: z.strictObject({
-      ...parametersV7Fields,
-      approachSpeedKmh: finite.positive().nullable(),
-    }),
-  })
-  .superRefine(checkModernScheme)
-
-export const workConditionsSchema = z.strictObject({
-  kind: z.enum(['unknown', 'short', 'long']).default('unknown'),
-  durationHours: finite.positive().nullable().default(null),
-  daylight: z.enum(['unknown', 'day', 'night']).default('unknown'),
-  regulatorsPresent: z.boolean().default(false),
-  sectionMetres: finite.positive().nullable().default(null),
-})
-/** v8 adds explicit work conditions; missing historical conditions remain unknown. */
-export const schemeV8Schema = z
-  .strictObject({
-    ...schemeV7Schema.shape,
-    schemaVersion: z.literal(8),
-    parameters: schemeV7Schema.shape.parameters.extend({
-      workConditions: workConditionsSchema.default({
-        kind: 'unknown',
-        durationHours: null,
-        daylight: 'unknown',
-        regulatorsPresent: false,
-        sectionMetres: null,
-      }),
-    }),
-  })
-  .superRefine(checkModernScheme)
-
-/** v9 records explicit speed conditions and historical decision evidence without inventing it. */
-const schemeV9Object = z.strictObject({
-  ...schemeV8Schema.shape,
-  schemaVersion: z.literal(9),
-  parameters: schemeV8Schema.shape.parameters.extend({
-    speedConditions: speedConditionsSchema.default({ road: '', vehicle: '' }),
-  }),
-  decisionEvidence: decisionEvidenceSchema.default({ speed: null, regulation: null }),
-})
 
 function checkSpeedConditions(
   scheme: { parameters: { speedConditions: { road: string } } },
@@ -436,19 +336,17 @@ function checkSpeedConditions(
     })
 }
 
-/** Read-only validator for files and SQLite revisions saved before Р1 (format v9). */
-export const schemeV9Schema = schemeV9Object
-  .superRefine(checkModernScheme)
-  .superRefine(checkSpeedConditions)
-
 /**
  * v10 (Р1, ADR-0008): у стойки расстояние до начала работ и подход; положение по горизонтали и
  * подпись расстояния выводятся из них. У стойки с расстоянием собственной подписи нет.
  */
 export const schemeSchema = z
   .strictObject({
-    ...schemeV9Object.shape,
+    ...currentFields,
+    titleBlock: titleBlockSchema,
+    reviewMarks: reviewMarksSchema.default(() => ({})),
     schemaVersion: z.literal(10),
+    decisionEvidence: decisionEvidenceSchema.default({ speed: null, regulation: null }),
     placements: z
       .array(z.discriminatedUnion('kind', [signPlacementV10Schema, elementPlacementV5Schema]))
       .max(2_000),
@@ -505,7 +403,7 @@ export function upgradeSchemeV4(value: unknown): Scheme {
 }
 
 /** Реквизиты v1–v5 → v6: строки ответственных разбираются на должность, ФИО и телефон. */
-export function upgradeTitleBlock(previous: z.infer<typeof titleBlockV5Schema>): TitleBlock {
+export function upgradeTitleBlock(previous: HistoricalTitleBlock): TitleBlock {
   return {
     developer: { ...previous.developer, position: '' },
     work: { ...previous.work },

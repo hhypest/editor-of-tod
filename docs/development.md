@@ -88,3 +88,5 @@ Vitest ограничивает сам тест и подготовку/очис
 | `tests/fixtures/frozen/`        | Неизменяемые образцы проектов и баз прежних версий; правила — в README каталога |
 
 Формат проекта описан в [контракте](scheme-format.md), устройство и ограничения — в [архитектуре](architecture.md), причины выбора — в [ADR](adr/README.md).
+
+После добавления/перемещения исходников обновите список безопасных мест диагностики: `node scripts/diagnostic-files.ts`. Build/dev/test обновляют его автоматически; `npm run check:diagnostics` проверяет согласованность перед общим check. [Правила и границы](refactoring/debt-rules-formats-diagnostics.md).

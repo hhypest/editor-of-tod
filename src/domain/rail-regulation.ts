@@ -1,3 +1,4 @@
+import { regulationThresholds } from './regulation-thresholds'
 import type { NormativeRules } from './normative-parameters'
 
 /** ГОСТ Р 58350-2019, Д.1 and ОДМ 218.6.019-2016, 6.4, 7.3.1, 13.7.5.
@@ -17,9 +18,11 @@ export function railRegulationMode(
   },
   rules: NormativeRules,
 ): 'signs' | 'one' | 'two' | null {
-  const signs = Math.min(rules.signsHourly, rules.workTraffic.signsHourly)
-  const one = Math.min(rules.alternateHourly, rules.workTraffic.alternateHourly)
-  const length = Math.min(rules.signsLengthMetres, rules.workTraffic.signsLength)
+  const {
+    signsHourly: signs,
+    alternateHourly: one,
+    signsLengthMetres: length,
+  } = regulationThresholds(rules)
   if (![signs, one, length].every((v) => Number.isFinite(v) && v > 0) || signs >= one) return null
   if (
     input.frontMetres === null ||

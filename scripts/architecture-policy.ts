@@ -4,6 +4,8 @@ export const moduleLayers = {
   server: /^server\//,
   core: /^src\/(?:domain|application)\//,
   domain: /^src\/domain\//,
+  historicalFormat: /^src\/domain\/formats\/frozen\//,
+  currentDomain: /^src\/domain\/(?!formats\/frozen\/)/,
   application: /^src\/application\//,
   adapter: /^src\/(?:components|composables|services|presentation|stores)\//,
   review: /^src\/domain\/review[^/]*\.(?:ts|tsx|mts)$/,
@@ -11,6 +13,12 @@ export const moduleLayers = {
 } as const
 
 export const localImportRules = [
+  {
+    from: 'historicalFormat',
+    to: 'currentDomain',
+    message: 'historical format imports current domain',
+    includeTarget: true,
+  },
   { from: 'client', to: 'server', message: 'client imports server module', includeTarget: true },
   { from: 'core', to: 'adapter', message: 'core imports adapter', includeTarget: true },
   { from: 'domain', to: 'application', message: 'domain imports application', includeTarget: true },
