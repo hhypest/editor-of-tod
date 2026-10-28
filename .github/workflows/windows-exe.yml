@@ -49,7 +49,7 @@ jobs:
           "source=$source" >> $env:GITHUB_OUTPUT
       - run: npm ci
       - run: npm run build:exe
-      - run: npx playwright install chromium
+      - run: npx playwright install chromium firefox
       - run: npm run test:e2e
         env:
           TOD_E2E_EXE: ${{ github.workspace }}\release\editor-of-tod.exe
@@ -79,3 +79,11 @@ jobs:
             release/SHA256SUMS.txt
           retention-days: 90
           if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: exe-browser-failure-${{ github.run_id }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7

@@ -90,3 +90,5 @@ Vitest ограничивает сам тест и подготовку/очис
 Формат проекта описан в [контракте](scheme-format.md), устройство и ограничения — в [архитектуре](architecture.md), причины выбора — в [ADR](adr/README.md).
 
 После добавления/перемещения исходников обновите список безопасных мест диагностики: `node scripts/diagnostic-files.ts`. Build/dev/test обновляют его автоматически; `npm run check:diagnostics` проверяет согласованность перед общим check. [Правила и границы](refactoring/debt-rules-formats-diagnostics.md).
+
+`npm run test:coverage` формирует HTML/LCOV/JSON в coverage/. CI Ubuntu включает то же измерение в обычный check; сводка — в Actions Summary, файлы — в артефакте coverage. `npm run test:e2e` запускает Chromium и Firefox (установите оба: `npx playwright install --with-deps chromium firefox`); один браузер: `npm run test:e2e -- --project=firefox`. [Границы измерения и печатной проверки](refactoring/test-coverage-browsers.md).
