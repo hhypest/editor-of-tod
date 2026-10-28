@@ -1,3 +1,4 @@
+import { regulationThresholds } from './regulation-thresholds'
 import {
   PROTOTYPE_RULES,
   REGULATION_PARAMETERS,
@@ -86,11 +87,14 @@ export function adviseRegulation(
     },
     rules,
   )
-  const signs = Math.min(rules.signsHourly, rules.workTraffic.signsHourly)
-  const one = Math.min(rules.alternateHourly, rules.workTraffic.alternateHourly)
+  const {
+    signsHourly: signs,
+    alternateHourly: one,
+    signsLengthMetres: length,
+  } = regulationThresholds(rules)
   const maximum = rules.frontLimitMetres
   reasons.push(
-    `Б.34 при обеспеченной видимости и участке менее ${Math.min(rules.signsLengthMetres, rules.workTraffic.signsLength)} м: менее ${signs} авт./ч — знаки 2.6/2.7; от ${signs} до ${one} включительно — один при выполненных условиях ОДМ, п. 13.7.5; свыше ${one} — два. При ограниченной видимости и для Б.33 — два. Пороги: ${rules.sources['gost-work-traffic']}; ${rules.sources['odm-signs-hourly']}; ${rules.sources['odm-alternate-hourly']}. Наибольший фронт работ на переезде ${maximum} м (${rules.sources['project-front-limit']}), дополнительно действует п. 8 ПУ-66.`,
+    `Б.34 при обеспеченной видимости и участке менее ${length} м: менее ${signs} авт./ч — знаки 2.6/2.7; от ${signs} до ${one} включительно — один при выполненных условиях ОДМ, п. 13.7.5; свыше ${one} — два. При ограниченной видимости и для Б.33 — два. Пороги: ${rules.sources['gost-work-traffic']}; ${rules.sources['odm-signs-hourly']}; ${rules.sources['odm-alternate-hourly']}. Наибольший фронт работ на переезде ${maximum} м (${rules.sources['project-front-limit']}), дополнительно действует п. 8 ПУ-66.`,
   )
   if (mode === null) {
     reasons.push(
@@ -135,7 +139,7 @@ export function adviseRegulation(
     (mode === 'signs' && normative !== 'signs')
   )
     warnings.push(
-      `Сверьте применимость краткосрочной схемы по фактической длине участка и интенсивности. Таблица Д.1 использует строгий порог «менее ${Math.min(rules.signsHourly, rules.workTraffic.signsHourly)} авт./ч» и сочетания длины/потока; её значения не задают количество регулировщиков. Сверьте условия Б.34 с действующим текстом (${rules.sources['gost-work-traffic']}).`,
+      `Сверьте применимость краткосрочной схемы по фактической длине участка и интенсивности. Таблица Д.1 использует строгий порог «менее ${signs} авт./ч» и сочетания длины/потока; её значения не задают количество регулировщиков. Сверьте условия Б.34 с действующим текстом (${rules.sources['gost-work-traffic']}).`,
     )
   if (section !== null)
     reasons.push(

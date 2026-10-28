@@ -213,6 +213,32 @@ describe('resolved architecture checks', () => {
     ])
   })
 
+  it('keeps historical readers independent of live schemas and allows their internal frozen imports', () => {
+    expect(
+      architectureProblems(
+        new Map([
+          ['src/domain/formats/frozen/project.ts', 'import "./snapshot"; import "../../model"'],
+          ['src/domain/formats/frozen/snapshot.ts', 'import { z } from "zod"'],
+          ['src/domain/model.ts', 'export const model = {}'],
+        ]),
+      ),
+    ).toEqual([
+      'src/domain/formats/frozen/project.ts: historical format imports current domain src/domain/model.ts',
+    ])
+    expect(
+      architectureProblems(
+        new Map([
+          ['src/domain/model.ts', 'export { old } from "./formats/frozen/project"'],
+          [
+            'src/domain/formats/frozen/project.ts',
+            'import "./snapshot"; import { z } from "zod"; export const old = {}',
+          ],
+          ['src/domain/formats/frozen/snapshot.ts', 'export const snapshot = {}'],
+        ]),
+      ),
+    ).toEqual([])
+  })
+
   it('allows independent core consumers, server-to-core imports and external libraries', () => {
     const sources = new Map([
       ['src/domain/a.ts', 'import { z } from "zod"'],

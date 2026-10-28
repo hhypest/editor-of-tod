@@ -1,3 +1,4 @@
+import { regulationThresholds } from './regulation-thresholds'
 import type { Scheme } from './model'
 import { figureDimensions } from './figure-dimensions'
 import { PROTOTYPE_RULES, REGULATION_PARAMETERS, type NormativeRules } from './normative-parameters'
@@ -529,7 +530,7 @@ export function reviewScheme(
       id: 'b34-traffic',
       kind: 'verify',
       title: 'Условия движения для Б.34',
-      detail: `На листе размещено регулировщиков: ${regulators}; участок между устройствами ${section ?? 'не введён'} м, фронт ${frontMetres ?? 'не введён'} м. Б.34: знаки при потоке менее ${Math.min(rules.signsHourly, rules.workTraffic.signsHourly)} авт/ч, участке менее ${Math.min(rules.signsLengthMetres, rules.workTraffic.signsLength)} м и обеспеченной видимости (${rules.sources['gost-work-traffic']}; ${rules.sources['odm-signs-hourly']}). От этой границы до ${Math.min(rules.alternateHourly, rules.workTraffic.alternateHourly)} авт/ч включительно предлагается один при дневных работах, прямом коротком участке и видимости с обоих концов (ОДМ, п. 13.7.5); свыше — два. При ограниченной видимости — два. Рекомендация: ${decision ?? 'нет данных'}. Постоянное присутствие — ОДМ, п. 6.4.3. Таблица Д.1 не задаёт количество регулировщиков; для сочетаний вне её строк сверяется применимость краткосрочной схемы Б.34. Два допустимы и в нижних диапазонах.`,
+      detail: `На листе размещено регулировщиков: ${regulators}; участок между устройствами ${section ?? 'не введён'} м, фронт ${frontMetres ?? 'не введён'} м. Б.34: знаки при потоке менее ${regulationThresholds(rules).signsHourly} авт/ч, участке менее ${regulationThresholds(rules).signsLengthMetres} м и обеспеченной видимости (${rules.sources['gost-work-traffic']}; ${rules.sources['odm-signs-hourly']}). От этой границы до ${regulationThresholds(rules).alternateHourly} авт/ч включительно предлагается один при дневных работах, прямом коротком участке и видимости с обоих концов (ОДМ, п. 13.7.5); свыше — два. При ограниченной видимости — два. Рекомендация: ${decision ?? 'нет данных'}. Постоянное присутствие — ОДМ, п. 6.4.3. Таблица Д.1 не задаёт количество регулировщиков; для сочетаний вне её строк сверяется применимость краткосрочной схемы Б.34. Два допустимы и в нижних диапазонах.`,
       ...(incompatible
         ? {
             markBlocked: `Выбранный режим, отгон или условия работ не соответствуют Б.34: ${conditionsProblems.join(' ') || 'проверьте отгон для знаков'}.`,

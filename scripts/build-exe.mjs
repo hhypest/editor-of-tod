@@ -15,6 +15,7 @@ import {
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { writeDiagnosticFiles } from './diagnostic-files.ts'
 import { inject } from 'postject'
 import { CHECKSUMS_FILE, writeChecksums } from './release-checksums.mjs'
 
@@ -42,6 +43,8 @@ if (!existsSync(join(dist, 'index.html'))) {
 }
 mkdirSync(work, { recursive: true })
 mkdirSync(cache, { recursive: true })
+
+writeDiagnosticFiles(root)
 
 // 1. Сервер и зависимости в один CommonJS-файл.
 const bundle = join(work, 'app.cjs')
