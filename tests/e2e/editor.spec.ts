@@ -1254,7 +1254,7 @@ test('downloads a diagnostics file without card data', async ({ page, request })
   }
 })
 
-test('A4 print contains exactly one page', async ({ page }) => {
+test('A4 print layout and Chromium single-page PDF', async ({ page, browserName }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Открыть файл' }).click()
   await page.locator('#scheme-file').setInputFiles({
@@ -1265,8 +1265,14 @@ test('A4 print contains exactly one page', async ({ page }) => {
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   await page.emulateMedia({ media: 'print' })
   await expect(page.locator('.print-host')).toHaveCSS('margin-top', '0px')
-  const pdf = await page.pdf({ printBackground: true, preferCSSPageSize: true })
-  expect(pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).toHaveLength(1)
+  await expect(page.locator('.print-host')).toBeVisible()
+  await expect(page.locator('.print-host svg')).toBeVisible()
+  // Playwright exposes PDF generation only for Chromium. All print-media checks above
+  // run in Firefox as well; the existing one-page assertion remains on Chromium.
+  if (browserName === 'chromium') {
+    const pdf = await page.pdf({ printBackground: true, preferCSSPageSize: true })
+    expect(pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).toHaveLength(1)
+  }
 })
 
 test('distances and speeds follow normative values but stay editable; saved projects are easy to find', async ({

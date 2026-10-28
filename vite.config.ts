@@ -72,6 +72,15 @@ writeDiagnosticFiles(fileURLToPath(new URL('.', import.meta.url)))
 // https://vite.dev/config/
 export default defineConfig({
   test: {
+    coverage: {
+      provider: 'v8',
+      enabled: process.env.TOD_TEST_COVERAGE === '1',
+      include: ['src/**/*.{ts,vue}', 'server/**/*.ts'],
+      exclude: ['**/__tests__/**', '**/*.d.ts', 'src/shared/diagnostic-files.generated.ts'],
+      reporter: ['text', 'json-summary', 'lcov', 'html'],
+      reportsDirectory: './coverage',
+      reportOnFailure: true,
+    },
     // Concurrent cold SQLite fixtures exceed the per-test I/O budget on Windows CI.
     // Concurrency checks inside a test still run; other environments retain four workers.
     maxWorkers: process.platform === 'win32' && process.env.CI ? 1 : 4,

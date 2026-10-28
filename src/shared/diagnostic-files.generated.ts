@@ -5,6 +5,7 @@ export const diagnosticProgramFiles = [
   'scripts/check-architecture.ts',
   'scripts/check-node-entrypoints.mjs',
   'scripts/check-public-files.mjs',
+  'scripts/coverage-summary.ts',
   'scripts/diagnostic-files.ts',
   'scripts/generate-pu66-samples.ts',
   'scripts/release-checksums.d.mts',

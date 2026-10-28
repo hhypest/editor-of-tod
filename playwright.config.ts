@@ -15,9 +15,13 @@ export default defineConfig({
   // ошибкой самого агента (net::ERR_NO_BUFFER_SPACE). Такой сценарий повторяется; прошедший со
   // второй попытки помечается в отчёте как «flaky», постоянная ошибка по-прежнему роняет запуск.
   retries: process.env.CI ? 2 : 0,
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+  ],
   use: {
-    ...devices['Desktop Chrome'],
     trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
     baseURL: executable ? 'http://127.0.0.1:4100' : 'http://127.0.0.1:5173',
   },
   webServer: executable

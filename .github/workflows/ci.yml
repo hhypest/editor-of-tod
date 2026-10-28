@@ -27,6 +27,18 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+        env:
+          TOD_TEST_COVERAGE: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
+      - name: Coverage summary
+        if: always() && matrix.os == 'ubuntu-latest'
+        run: node scripts/coverage-summary.ts
+      - uses: actions/upload-artifact@v7
+        if: always() && matrix.os == 'ubuntu-latest'
+        with:
+          name: coverage-${{ github.run_id }}
+          path: coverage/
+          if-no-files-found: warn
+          retention-days: 14
 
   browser:
     runs-on: ubuntu-latest
@@ -37,12 +49,12 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium firefox
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: browser-failure-${{ github.run_id }}
-          path: test-results/**/trace.zip
+          path: test-results/
           if-no-files-found: ignore
           retention-days: 7
