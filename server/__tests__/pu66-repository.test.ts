@@ -77,6 +77,8 @@ describe('PU-66 read repository and key resolver without RegistryStore', () => {
       roadName: '',
       crossingWidthMetres: '7,5',
       crossingRoadLengthMetres: 0,
+      railwayLocation: { section: card.section, station: card.station },
+      visibility: { train: card.trainVisibilityMetres, years: card.years, technical: [] },
       revision: 1,
       updatedAt: '2030-02-01T00:00:00.000Z',
     })

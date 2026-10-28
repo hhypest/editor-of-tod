@@ -202,6 +202,12 @@ describe('local API', () => {
       roadName: 'Вымышленная дорога',
       crossingWidthMetres: 8,
       crossingRoadLengthMetres: 9,
+      railwayLocation: { section: 'Учебный участок (99999)', station: '' },
+      visibility: {
+        train: { rightOdd: null, rightEven: null, leftOdd: null, leftEven: null },
+        years: { previous: '', current: '' },
+        technical: [],
+      },
       revision: 1,
       updatedAt: expect.any(String),
     })

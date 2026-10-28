@@ -29,20 +29,32 @@ const { rules } = useNormativeRules()
 const norms = ref<Pu66Norms | null>(null)
 const error = ref('')
 const loading = ref(false)
+let loadGeneration = 0
 
 async function load(): Promise<void> {
+  const generation = ++loadGeneration
+  const referenceId = props.referenceId
+  norms.value = null
   loading.value = true
   error.value = ''
   try {
-    norms.value = await getPu66Norms(props.referenceId)
+    const selected = await getPu66Norms(referenceId)
+    if (generation !== loadGeneration || referenceId !== props.referenceId) return
+    norms.value = selected
     if (!norms.value) error.value = 'Карточки нет в локальной базе: сведения ПУ-66 недоступны.'
   } catch (cause) {
+    if (generation !== loadGeneration) return
     error.value = cause instanceof Error ? cause.message : 'Не удалось прочитать карточку ПУ-66.'
   } finally {
-    loading.value = false
+    if (generation === loadGeneration) loading.value = false
   }
 }
-watch(() => props.referenceId, load, { immediate: true })
+watch(() => [props.referenceId, props.pinnedRevision], load, { immediate: true })
+const matchesPinned = computed(
+  () =>
+    norms.value?.referenceId === props.referenceId &&
+    norms.value?.revision === props.pinnedRevision,
+)
 
 const shareConfirmed = computed(() => rules.value.confirmed['peak-hour-share'])
 const hourly = computed(() =>
@@ -120,9 +132,16 @@ function show(value: string | number | null): string {
           </template>
           <template v-else-if="hourly !== null">
             × {{ rules.peakHourShare }} (доля часа пик, решение составителя) ≈ {{ hourly }} авт/ч.
-            <button type="button" :disabled="locked" @click="emit('hourly', String(hourly))">
+            <button
+              type="button"
+              :disabled="locked || !matchesPinned"
+              @click="matchesPinned && !locked && emit('hourly', String(hourly))"
+            >
               Подставить {{ hourly }} авт/ч
             </button>
+            <span v-if="norms.revision !== pinnedRevision">
+              Для подстановки сначала сравните и закрепите новую версию карточки на этапе 1.</span
+            >
           </template>
         </dd>
         <dt>Категория дороги</dt>

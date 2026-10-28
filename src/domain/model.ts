@@ -1,3 +1,5 @@
+import { schemeV10Schema } from './formats/frozen/project-v10.ts'
+export { schemeV10Schema } from './formats/frozen/project-v10.ts'
 import {
   schemeV2Schema,
   schemeV3Schema,
@@ -337,15 +339,15 @@ function checkSpeedConditions(
 }
 
 /**
- * v10 (Р1, ADR-0008): у стойки расстояние до начала работ и подход; положение по горизонтали и
- * подпись расстояния выводятся из них. У стойки с расстоянием собственной подписи нет.
+ * v11 (#110): approved PU-66 railway and visibility fields. The v10 distance contract and
+ * property order are retained; historical snapshots gain no new values until explicit linking.
  */
 export const schemeSchema = z
   .strictObject({
     ...currentFields,
     titleBlock: titleBlockSchema,
     reviewMarks: reviewMarksSchema.default(() => ({})),
-    schemaVersion: z.literal(10),
+    schemaVersion: z.literal(11),
     decisionEvidence: decisionEvidenceSchema.default({ speed: null, regulation: null }),
     placements: z
       .array(z.discriminatedUnion('kind', [signPlacementV10Schema, elementPlacementV5Schema]))
@@ -459,7 +461,7 @@ export function upgradeSchemeV8(value: unknown): Scheme {
 export function upgradeSchemeV9(value: unknown): Scheme {
   const previous = schemeV9Schema.parse(value)
   const placements = adoptPostDistances(previous)
-  return schemeSchema.parse({
+  return upgradeSchemeV10({
     ...previous,
     schemaVersion: 10,
     placements,
@@ -489,6 +491,12 @@ function carrySpeedEvidence(
   }
 }
 
+/** v10 → v11 adds no values to a historical snapshot. New data requires explicit relinking. */
+export function upgradeSchemeV10(value: unknown): Scheme {
+  const previous = schemeV10Schema.parse(value)
+  return schemeSchema.parse({ ...previous, schemaVersion: 11 })
+}
+
 export function parseStoredScheme(value: unknown): Scheme {
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 2) {
     return upgradeSchemeV2(value)
@@ -511,5 +519,7 @@ export function parseStoredScheme(value: unknown): Scheme {
     return upgradeSchemeV8(value)
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 9)
     return upgradeSchemeV9(value)
+  if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 10)
+    return upgradeSchemeV10(value)
   return schemeSchema.parse(value)
 }

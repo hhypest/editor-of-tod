@@ -667,6 +667,11 @@ test('creates a project from a PU-66 card found by kilometre and picket', async 
   await expect(page.locator('.opening-notes')).not.toContainText('введён вручную')
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   await expect(page.locator('.print-host')).toContainText('Учебная дорога Б')
+  await expect(page.locator('.print-host')).toContainText('Условная станция Юг')
+  await expect(page.locator('.print-host')).toContainText('Учебный участок Юг')
+  await expect(page.locator('.print-host')).toContainText('нечётного направления 450')
+  await expect(page.locator('.print-host')).toContainText('чётного 420')
+  await expect(page.locator('.print-host')).toContainText('чётного 430')
   expect(errors).toEqual([])
 })
 

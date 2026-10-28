@@ -407,7 +407,7 @@ describe('local SQLite registries', () => {
       expect(store.projects.getRevision(scheme.id, 1)?.scheme).toEqual(upgraded)
       // Сохранение без правок записывает снимок в текущем формате (редакция 2), повторное — нет.
       expect(store.projects.save(schemeSchema.parse(upgraded), 1).revision).toBe(2)
-      expect(store.projects.get(scheme.id)?.storedSchemaVersion).toBe(10)
+      expect(store.projects.get(scheme.id)?.storedSchemaVersion).toBe(11)
       expect(store.projects.save(schemeSchema.parse(upgraded), 2).revision).toBe(2)
       const edited = {
         ...scheme,
@@ -424,7 +424,7 @@ describe('local SQLite registries', () => {
         .prepare('SELECT revision, scheme_json FROM project_revisions ORDER BY revision')
         .all() as { revision: number; scheme_json: string }[]
       expect(records.map((record) => JSON.parse(record.scheme_json).schemaVersion)).toEqual([
-        2, 10, 10, 10,
+        2, 11, 11, 11,
       ])
       expect(JSON.parse(records[0]!.scheme_json)).toEqual(previous)
     } finally {

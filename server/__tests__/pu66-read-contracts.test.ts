@@ -28,6 +28,8 @@ describe('PU-66 read contracts through initialized storage owners', () => {
         roadName: 'Вымышленная дорога',
         crossingWidthMetres: 8,
         crossingRoadLengthMetres: 9,
+        railwayLocation: { section: card.section, station: card.station },
+        visibility: { train: card.trainVisibilityMetres, years: card.years, technical: [] },
         revision: 1,
         updatedAt: '2030-02-01T00:00:00.000Z',
       })
