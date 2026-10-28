@@ -182,7 +182,7 @@ export function useProjectSession(onProjectOpened: () => void) {
     projectDocument.openDocument({
       result: {
         scheme,
-        format: 'scheme-v10',
+        format: 'scheme-v11',
         warnings: [
           'Схема не прошла нормативную проверку.',
           ...(storedSchemaVersion !== undefined

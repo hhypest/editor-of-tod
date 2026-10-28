@@ -141,9 +141,10 @@ describe('frozen files of previous formats', () => {
       expect(parseStoredScheme(JSON.parse(text))).toEqual(scheme)
       // Сохранение в текущем формате и повторное открытие ничего не меняют.
       expect(importSchemeJson(exportSchemeJson(scheme)).scheme).toEqual(scheme)
-      await expect(`${JSON.stringify(scheme, null, 2)}\n`).toMatchFileSnapshot(
-        join(root, 'expected', filename),
-      )
+      // The only automatic v10 → v11 change is the envelope version; frozen data stay byte-identical.
+      await expect(
+        `${JSON.stringify({ ...scheme, schemaVersion: original.schemaVersion <= 10 ? 10 : original.schemaVersion }, null, 2)}\n`,
+      ).toMatchFileSnapshot(join(root, 'expected', filename))
     })
   })
 

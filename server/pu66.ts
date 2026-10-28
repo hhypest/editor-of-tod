@@ -185,14 +185,37 @@ export function schemeFields(card: Pu66Card) {
     roadName: card.roadName === '0' ? '' : card.roadName,
     crossingWidthMetres: technical('7'),
     crossingRoadLengthMetres: technical('8'),
+    railwayLocation: { section: card.section, station: card.station },
+    visibility: {
+      train: { ...card.trainVisibilityMetres },
+      years: { ...card.years },
+      technical: visibilityRows(card.technicalRows),
+    },
   }
 }
 
-/** Local review screen; these extra fields are never returned by the scheme endpoint. */
+/** Keep visibility sections and their direction subrows, without the rest of the technical table. */
+function visibilityRows(rows: Pu66TechnicalRow[]) {
+  let item: string | null = null
+  return rows.flatMap((row) => {
+    if (/видим/iu.test(row.label)) item = row.item
+    else if (row.item !== item) item = null
+    return item === row.item
+      ? [{ item: row.item, label: row.label, previous: row.previous, current: row.current }]
+      : []
+  })
+}
+
+/** Local list summary remains small; details are obtained by explicit selection. */
 export function localCardSummary(card: Pu66Card) {
   const length = card.technicalRows.find((row) => row.item === '8')?.current ?? null
+  const fields = schemeFields(card)
   return {
-    ...schemeFields(card),
+    referenceId: fields.referenceId,
+    location: fields.location,
+    axisLabel: fields.axisLabel,
+    roadName: fields.roadName,
+    crossingWidthMetres: fields.crossingWidthMetres,
     section: card.section,
     station: card.station,
     crossingRoadLengthMetres: length,

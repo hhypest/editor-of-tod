@@ -510,6 +510,14 @@ function notes(sheet: DraftSheet, release: boolean): string[] {
       `Расстояния установки знаков приняты для участка ${sheet.settlement === 'in' ? 'в населённом пункте' : 'вне населённого пункта'}${decision}.`,
     )
   if (sheet.signSize !== 'auto') list.push(`Типоразмер знаков ${sheet.signSize}${decision}.`)
+  if (
+    sheet.crossingFromPu66?.railwayLocation &&
+    /^\d+(?:[.,]\d+)?$/.test(sheet.hourlyTraffic.trim())
+  )
+    list.push(
+      `Принятая интенсивность движения — ${sheet.hourlyTraffic.trim().replace('.', ',')} авт/ч в двух направлениях.`,
+    )
+  list.push(...sheet.pu66Notes)
   return list.map((text, index) => `${index + 1}. ${text}`)
 }
 
@@ -553,6 +561,10 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
   const object = [
     'Наименование объекта: железнодорожный переезд',
     sheet.crossingFromPu66?.location || sheet.referenceId,
+    sheet.crossingFromPu66?.railwayLocation?.station
+      ? `ст. ${sheet.crossingFromPu66.railwayLocation.station}`
+      : '',
+    sheet.crossingFromPu66?.railwayLocation?.section || '',
     sheet.location,
   ]
     .filter(Boolean)

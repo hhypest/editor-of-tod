@@ -8,6 +8,7 @@ import { getPu66SchemeRecord, listPu66Cards, type Pu66ListEntry } from '../servi
 import Pu66CardPicker from './Pu66CardPicker.vue'
 import { usePu66Status } from '../composables/usePu66Status'
 import { exclusionReasons } from '../domain/pu66-lifecycle'
+import { pu66DisplayRows } from '../domain/pu66-sheet-fields'
 
 const props = defineProps<{ scheme: Scheme; locked?: boolean; refreshKey?: number }>()
 const currentKey = computed(() => props.scheme.crossing.referenceId)
@@ -41,6 +42,26 @@ const alreadyLinked = computed(() => {
     props.scheme.crossing.referenceId === referenceId &&
     JSON.stringify(props.scheme.crossing.snapshot) === JSON.stringify(snapshot)
   )
+})
+const detailRows = computed(() => {
+  const oldRows = pu66DisplayRows(props.scheme.crossing.snapshot)
+  const newRows = pu66DisplayRows(preview.value)
+  const keyed = (rows: typeof oldRows) => {
+    const count = new Map<string, number>()
+    return rows.map((row) => {
+      const index = count.get(row.label) ?? 0
+      count.set(row.label, index + 1)
+      return { ...row, key: `${row.label}:${index}` }
+    })
+  }
+  const old = keyed(oldRows),
+    selected = keyed(newRows)
+  return [...new Set([...old, ...selected].map((row) => row.key))].map((key) => ({
+    key,
+    label: (selected.find((row) => row.key === key) ?? old.find((row) => row.key === key))!.label,
+    old: old.find((row) => row.key === key)?.value ?? 'не закреплено',
+    selected: selected.find((row) => row.key === key)?.value ?? 'не указано',
+  }))
 })
 
 watch(
@@ -209,6 +230,11 @@ onMounted(load)
             </tr>
           </thead>
           <tbody>
+            <tr v-for="row in detailRows" :key="row.key">
+              <th scope="row">{{ row.label }}</th>
+              <td>{{ row.old }}</td>
+              <td>{{ row.selected }}</td>
+            </tr>
             <tr>
               <th scope="row">Идентификатор</th>
               <td>{{ scheme.crossing.referenceId }}</td>

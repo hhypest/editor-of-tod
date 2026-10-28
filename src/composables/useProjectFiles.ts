@@ -116,7 +116,7 @@ export function useProjectFiles(
     projectDocument.openDocument({
       result: {
         scheme,
-        format: 'scheme-v10',
+        format: 'scheme-v11',
         warnings: [
           PU66_LINKED_WARNING,
           'Вариант выбран по длине фронта работ, нормативная проверка и расстановка знаков не выполнены.',

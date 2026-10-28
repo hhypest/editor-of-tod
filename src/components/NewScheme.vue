@@ -11,6 +11,7 @@ import { defaultSpeedStages, type SchemeLocation } from '../domain/normative-def
 import { useNormativeRules } from '../composables/useNormativeRules'
 import type { Scheme } from '../domain/model'
 import type { Pu66SchemeRecord } from '../domain/pu66-snapshot'
+import { pu66DisplayRows } from '../domain/pu66-sheet-fields'
 import { selectTemplateByWorkFront, templateLabel } from '../domain/registry'
 import { getPu66SchemeRecord, listPu66Cards, type Pu66ListEntry } from '../services/local-pu66'
 import Pu66CardPicker from './Pu66CardPicker.vue'
@@ -313,6 +314,10 @@ watch(
               <dd>{{ card.crossingWidthMetres ?? 'не указана' }}</dd>
               <dt>Длина в границах переезда (п. 8 ПУ-66), м</dt>
               <dd>{{ card.crossingRoadLengthMetres ?? 'не указана' }}</dd>
+              <template v-for="(row, index) in pu66DisplayRows(card)" :key="index">
+                <dt>{{ row.label }}</dt>
+                <dd>{{ row.value }}</dd>
+              </template>
             </dl>
             <button type="button" class="secondary" @click="forgetCard">Выбрать другую</button>
           </div>

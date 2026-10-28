@@ -10,6 +10,8 @@ import {
   schemeV7Schema,
   schemeV8Schema,
   schemeV9Schema,
+  schemeV10Schema,
+  upgradeSchemeV10,
   upgradeSchemeV8,
   upgradeSchemeV9,
   upgradeSchemeV7,
@@ -51,6 +53,7 @@ export interface ImportResult {
     | 'scheme-v8'
     | 'scheme-v9'
     | 'scheme-v10'
+    | 'scheme-v11'
   warnings: string[]
 }
 
@@ -511,11 +514,21 @@ function readSchemeJson(json: string, options: { id?: string; now?: string }): I
   }
 
   if ('schemaVersion' in value && value.schemaVersion === 10) {
+    const parsed = schemeV10Schema.safeParse(value)
+    if (!parsed.success) invalidIssue(parsed.error.issues)
+    return {
+      scheme: upgradeSchemeV10(parsed.data),
+      format: 'scheme-v10',
+      warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
+    }
+  }
+
+  if ('schemaVersion' in value && value.schemaVersion === 11) {
     const parsed = schemeSchema.safeParse(value)
     if (!parsed.success) invalidIssue(parsed.error.issues)
     return {
       scheme: parsed.data,
-      format: 'scheme-v10',
+      format: 'scheme-v11',
       warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
     }
   }

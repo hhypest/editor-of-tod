@@ -3,6 +3,7 @@ import type { Scheme } from './model'
 import { postCaption } from './post-distance'
 import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import { responsibleLine } from './title-block'
+import { pu66SheetNotes } from './pu66-sheet-fields'
 import { figureDimensions, type FigureDimension } from './figure-dimensions'
 import {
   type anchorCoordinates,
@@ -50,7 +51,10 @@ export type DraftSheet = {
     axisLabel: string
     roadName: string
     carriagewayWidthMetres: string
+    railwayLocation?: { section: string; station: string }
   } | null
+  pu66Notes: string[]
+  hourlyTraffic: string
   directions: { left: string; right: string }
   front: number
   taper: number
@@ -147,12 +151,17 @@ export function projectDraftSheet(
             location: scheme.crossing.snapshot.location,
             axisLabel: scheme.crossing.snapshot.axisLabel,
             roadName: scheme.crossing.snapshot.roadName,
+            ...(scheme.crossing.snapshot.railwayLocation
+              ? { railwayLocation: { ...scheme.crossing.snapshot.railwayLocation } }
+              : {}),
             carriagewayWidthMetres:
               scheme.crossing.snapshot.crossingWidthMetres === null
                 ? ''
                 : decimalComma(String(scheme.crossing.snapshot.crossingWidthMetres).trim()),
           }
         : null,
+    pu66Notes: pu66SheetNotes(scheme.crossing.snapshot),
+    hourlyTraffic: scheme.parameters.regulation.hourly,
     directions: { ...scheme.parameters.directions },
     front: zone.workMetres,
     taper: zone.taperMetres,

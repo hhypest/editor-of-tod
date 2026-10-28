@@ -11,6 +11,7 @@ import {
   schemeV8Schema,
   schemeV9Schema,
 } from '../../src/domain/formats/frozen/project-v2-v9'
+import { schemeV10Schema } from '../../src/domain/formats/frozen/project-v10'
 
 // A live schema must never be loaded while reading a historical document.
 vi.mock('../../src/domain/model', () => {
@@ -38,12 +39,13 @@ const readers = {
   7: schemeV7Schema,
   8: schemeV8Schema,
   9: schemeV9Schema,
+  10: schemeV10Schema,
 }
 const root = fileURLToPath(new URL('../../tests/fixtures/frozen/projects/', import.meta.url))
 const read = (name: string) => JSON.parse(readFileSync(`${root}/${name}`, 'utf8'))
 
 describe('independent historical readers (#137)', () => {
-  it.each(readdirSync(root).filter((name) => /-v[2-9]-/.test(name)))(
+  it.each(readdirSync(root).filter((name) => /-v(?:[2-9]|10)-/.test(name)))(
     'reads %s without live validators',
     (name) => {
       const original = read(name)
