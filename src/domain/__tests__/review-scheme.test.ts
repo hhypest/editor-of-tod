@@ -193,6 +193,7 @@ describe('live draft review', () => {
       ...atBoundary,
       parameters: {
         ...atBoundary.parameters,
+        frontStyle: 'solid' as const,
         workZones: {
           ...atBoundary.parameters.workZones,
           b34: { ...atBoundary.parameters.workZones.b34!, workMetres: 30.5 },

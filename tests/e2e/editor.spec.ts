@@ -169,6 +169,25 @@ test('recalculates the variant from the front and permits explicitly staffed sig
       .locator('..')
       .getByLabel('Фронт работ, м', { exact: true }),
   ).toHaveValue('40')
+  await expect(page.getByLabel('Вид фронта работ')).toHaveValue('solid')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await expect(page.getByRole('heading', { name: 'Зона Б.33', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Выбрать Б.34 с частичным фронтом' }).click()
+  await expect(page.getByRole('heading', { name: 'Зона Б.34', exact: true })).toBeVisible()
+  await expect(page.getByLabel('Вид фронта работ')).toHaveValue('part')
+  await expect(
+    page.getByLabel('Вид фронта работ').locator('option[value="solid"]'),
+  ).toHaveAttribute('disabled', '')
+  await page
+    .getByRole('heading', { name: 'Условия и решение составителя' })
+    .scrollIntoViewIfNeeded()
+  await page.screenshot({ path: test.info().outputPath('partial-b34.png') })
+  await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('320')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await expect(page.getByRole('heading', { name: 'Зона Б.34', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Выбрать Б.33 со сплошным фронтом' }).click()
+  await expect(page.getByRole('heading', { name: 'Зона Б.33', exact: true })).toBeVisible()
+  await expect(page.getByLabel('Вид фронта работ')).toHaveValue('solid')
 })
 
 test('new project: form edits apply, review opens, and console stays clean', async ({

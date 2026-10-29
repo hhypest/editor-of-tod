@@ -10,7 +10,7 @@ import {
 import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import { PHONE_PLACEHOLDER, phoneComplete } from './title-block'
 import { selectTemplateByWorkFront } from './registry'
-import { frontLimit } from './work-conditions'
+import { frontLimit, partialB34Allowed, solidB34Problem } from './work-conditions'
 
 type WorkZoneDraft = {
   taperMetres: string
@@ -20,6 +20,8 @@ type WorkZoneDraft = {
 }
 
 export type SchemeDetailsDraft = {
+  /** Неприменённое явное действие; не входит в сохранённый проект. */
+  pu66FrontRequested?: boolean
   decisionEvidence?: Scheme['decisionEvidence']
   decisionNotes?: { speed: string; regulation: string }
   parameters: {
@@ -303,9 +305,8 @@ export function applySchemeDetails(
   }
   const zone = candidate.parameters.workZones[scheme.template.code]
   const previousFront = scheme.parameters.workZones[scheme.template.code]?.workMetres
-  // Предел проверяется при изменении фронта: проект, сохранённый при прежнем пределе,
-  // открывается и правится, а замечание о фронте показывает проверка (work-conditions).
-  if (zone && zone.workMetres !== previousFront && zone.workMetres > rules.frontLimitMetres)
+  // Прежний проект открывается без подмены; продолжить правки можно после исправления фронта.
+  if (zone && zone.workMetres > rules.frontLimitMetres)
     throw new SchemeEditError(
       `Фронт ${zone.workMetres} м превышает наибольший фронт работ на переезде ${rules.frontLimitMetres} м (${rules.sources['project-front-limit']}).`,
     )
@@ -314,13 +315,28 @@ export function applySchemeDetails(
     throw new SchemeEditError(
       `Фронт ${zone.workMetres} м превышает длину ${maximum} м из п. 8 ПУ-66. Отгон и буфер вводятся отдельно.`,
     )
-  // Вариант выбирается заново только при изменении фронта. Проект, вариант которого
+  // Вариант выбирается заново при изменении фронта или явной подстановке п. 8. Проект, вариант которого
   // расходится с действующим порогом (например, сохранённый при прежнем правиле), открывается
   // как есть; сменить вариант можно явно — switchTemplateToRule.
-  if (zone && zone.workMetres !== previousFront) {
+  if (
+    zone &&
+    (zone.workMetres !== previousFront || (draft.pu66FrontRequested && parameters.frontFromPu66))
+  ) {
     const { code } = selectTemplateByWorkFront(zone.workMetres, rules)
     if (code !== scheme.template.code) moveZoneToTemplate(candidate, code, zone)
+    if (code === 'b33') candidate.parameters.frontStyle = 'solid'
+    if (draft.pu66FrontRequested && parameters.frontFromPu66)
+      candidate.parameters.frontStyle = 'solid'
   }
+  // Ручная правка размера снимает происхождение даже при обращении вне формы Vue.
+  if (
+    zone &&
+    zone.workMetres !== previousFront &&
+    (!parameters.frontFromPu66 || zone.workMetres !== maximum)
+  )
+    candidate.parameters.frontFromPu66 = false
+  const solidProblem = solidB34Problem(candidate, rules)
+  if (solidProblem) throw new SchemeEditError(solidProblem)
   const checked = schemeSchema.safeParse(candidate)
   if (!checked.success) {
     const issue = checked.error.issues[0]
@@ -351,6 +367,12 @@ function moveZoneToTemplate(
 export function templateByRule(scheme: Scheme, rules: NormativeRules): 'b33' | 'b34' | null {
   const zone = scheme.parameters.workZones[scheme.template.code]
   if (!zone || !(zone.workMetres > 0)) return null
+  if (
+    scheme.template.code === 'b34' &&
+    scheme.parameters.frontStyle === 'part' &&
+    partialB34Allowed(scheme, rules)
+  )
+    return null
   const { code } = selectTemplateByWorkFront(zone.workMetres, rules)
   return code === scheme.template.code ? null : code
 }
@@ -365,5 +387,25 @@ export function switchTemplateToRule(scheme: Scheme, rules: NormativeRules): Sch
   if (!code || !zone) return scheme
   const candidate = JSON.parse(JSON.stringify(scheme)) as Scheme
   moveZoneToTemplate(candidate, code, { ...zone, labels: { ...zone.labels } })
+  if (code === 'b33') candidate.parameters.frontStyle = 'solid'
+  return schemeSchema.parse(candidate)
+}
+
+/** Явное исключение #103: Б.34 с частичным фронтом свыше порога, до предела переезда. */
+export function switchToPartialB34(scheme: Scheme, rules: NormativeRules): Scheme {
+  if (scheme.template.code !== 'b33' || !partialB34Allowed(scheme, rules)) return scheme
+  const zone = scheme.parameters.workZones.b33!
+  const candidate = JSON.parse(JSON.stringify(scheme)) as Scheme
+  moveZoneToTemplate(candidate, 'b34', { ...zone, labels: { ...zone.labels } })
+  candidate.parameters.frontStyle = 'part'
+  return schemeSchema.parse(candidate)
+}
+
+export function switchToSolidB33(scheme: Scheme, rules: NormativeRules): Scheme {
+  if (scheme.template.code !== 'b34' || !partialB34Allowed(scheme, rules)) return scheme
+  const zone = scheme.parameters.workZones.b34!
+  const candidate = JSON.parse(JSON.stringify(scheme)) as Scheme
+  moveZoneToTemplate(candidate, 'b33', { ...zone, labels: { ...zone.labels } })
+  candidate.parameters.frontStyle = 'solid'
   return schemeSchema.parse(candidate)
 }

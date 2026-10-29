@@ -12,11 +12,42 @@ export function frontLimit(scheme: Scheme): number | null {
     : null
 }
 
+/** Решение приёмки 29.10.2026, #103: длинный фронт Б.34 допустим только частично. */
+export function partialB34Allowed(scheme: Scheme, rules: NormativeRules): boolean {
+  const zone = scheme.parameters.workZones[scheme.template.code]
+  const maximum = frontLimit(scheme)
+  return (
+    !!zone &&
+    zone.workMetres > rules.b34MaxFrontMetres &&
+    zone.workMetres <= rules.frontLimitMetres &&
+    (scheme.crossing.source !== 'local-pu66' ||
+      (maximum !== null && maximum > 0 && zone.workMetres <= maximum))
+  )
+}
+
+export function solidB34Problem(
+  scheme: {
+    template: Pick<Scheme['template'], 'code'>
+    parameters: Pick<Scheme['parameters'], 'frontStyle' | 'workZones'>
+  },
+  rules: NormativeRules,
+): string | null {
+  const zone = scheme.parameters.workZones.b34
+  return scheme.template.code === 'b34' &&
+    scheme.parameters.frontStyle === 'solid' &&
+    zone &&
+    zone.workMetres > rules.b34MaxFrontMetres
+    ? `Сплошной фронт Б.34 не может превышать ${rules.b34MaxFrontMetres} м (${rules.sources['project-b34-max-front']}; решение приёмки #103 от 29.10.2026). Выберите Б.33 или частичный фронт Б.34.`
+    : null
+}
+
 /** The same explicit conditions govern template building and manual acceptance. */
 export function workConditionProblems(scheme: Scheme, rules: NormativeRules): string[] {
   const { workConditions: conditions, regulation } = scheme.parameters
   const zone = scheme.parameters.workZones[scheme.template.code]
   const problems: string[] = []
+  const solidProblem = solidB34Problem(scheme, rules)
+  if (solidProblem) problems.push(solidProblem)
   if (zone && conditions.sectionMetres !== null && conditions.sectionMetres < zone.workMetres)
     problems.push(
       'Участок между устройствами не может быть короче фронта работ. Проверьте измеренные границы.',

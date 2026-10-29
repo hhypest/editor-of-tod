@@ -19,6 +19,7 @@ const titleBlockV5DraftSchema = z.strictObject({
 })
 
 export const detailsDraftSchema = z.strictObject({
+  pu66FrontRequested: z.boolean().optional(),
   decisionEvidence: decisionEvidenceSchema.optional(),
   decisionNotes: z.strictObject({ speed: text, regulation: text }).optional(),
   // Копии до 01.10.2026 (v6) хранят «скорость в населённом пункте» — она становится скоростью

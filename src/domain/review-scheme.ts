@@ -9,7 +9,7 @@ import { ZONE_PLATE } from './sign-code'
 import { parseHourly } from './regulation-advice'
 import { effectiveWorkSection } from './work-traffic'
 import { railRegulationMode } from './rail-regulation'
-import { workConditionProblems, frontLimit } from './work-conditions'
+import { workConditionProblems, frontLimit, partialB34Allowed } from './work-conditions'
 import { pddFindings } from './pdd-review'
 import { decisionFindings } from './decision-evidence'
 import {
@@ -471,7 +471,15 @@ export function reviewScheme(
     frontMetres !== undefined && frontMetres > 0
       ? selectTemplateByWorkFront(frontMetres, rules).code
       : null
-  if (ruleTemplate !== null && ruleTemplate !== scheme.template.code) {
+  if (
+    ruleTemplate !== null &&
+    ruleTemplate !== scheme.template.code &&
+    !(
+      scheme.template.code === 'b34' &&
+      parameters.frontStyle === 'part' &&
+      partialB34Allowed(scheme, rules)
+    )
+  ) {
     findings.push({
       id: 'variant-front',
       kind: 'verify',

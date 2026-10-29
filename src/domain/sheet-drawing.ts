@@ -951,7 +951,9 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
     }.${
       options.release
         ? ''
-        : ` Выбор варианта (решение проекта): фронт работ до ${decimalComma(sheet.b34MaxFrontMetres)} м включительно — Б.34, более — Б.33.`
+        : shortFront && sheet.frontStyle === 'part' && sheet.front > sheet.b34MaxFrontMetres
+          ? ' Выбор варианта (решение проекта): Б.34 с частичным фронтом свыше порога выбрана явно.'
+          : ` Выбор варианта (решение проекта): фронт работ до ${decimalComma(sheet.b34MaxFrontMetres)} м включительно — Б.34, более — Б.33.`
     }`,
     size: 11,
     italic: true,

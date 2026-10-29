@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { templateLabel, selectTemplateByWorkFront } from '../domain/registry'
 import { workSectionMetres } from '../domain/work-traffic'
-import { frontLimit } from '../domain/work-conditions'
+import { frontLimit, partialB34Allowed } from '../domain/work-conditions'
 import WorkConditionsFields from './WorkConditionsFields.vue'
 import PddSpeedReference from './PddSpeedReference.vue'
 import DecisionEvidencePanel from './DecisionEvidencePanel.vue'
@@ -17,6 +17,8 @@ import {
   resetDraftToNormative,
   SchemeEditError,
   switchTemplateToRule,
+  switchToPartialB34,
+  switchToSolidB33,
   templateByRule,
   type SchemeDetailsDraft,
 } from '../domain/edit-details'
@@ -210,6 +212,12 @@ const advice = computed(() => {
   }
   return adviseRegulation(
     {
+      variant:
+        !draft.value.pu66FrontRequested &&
+        draftNumber(zone?.workMetres) ===
+          props.scheme.parameters.workZones[props.scheme.template.code]?.workMetres
+          ? props.scheme.template.code
+          : undefined,
       hourly: regulation.hourly,
       limitedVisibility: regulation.vis,
       straight: regulation.straight,
@@ -244,6 +252,34 @@ const frontPreview = computed(() => {
 
 /** Вариант по действующему порогу, если сохранённый проект с ним расходится. */
 const ruleTemplate = computed(() => templateByRule(props.scheme, normativeRules.value))
+const canSwitchToPartial = computed(
+  () =>
+    props.scheme.template.code === 'b33' && partialB34Allowed(props.scheme, normativeRules.value),
+)
+const solidFrontDisabled = computed(
+  () =>
+    props.scheme.template.code === 'b34' &&
+    (draftNumber(draft.value.parameters.workZones.b34?.workMetres) ?? 0) >
+      normativeRules.value.b34MaxFrontMetres,
+)
+function switchPartial(): void {
+  if (props.locked || dirty.value || !canSwitchToPartial.value) return
+  emit('apply', switchToPartialB34(props.scheme, normativeRules.value))
+  status.value =
+    'Выбрана Б.34 с частичным фронтом. Сплошной фронт при этой длине недоступен. Проверьте размеры, способ пропуска и перестроенный лист.'
+}
+const canSwitchToSolid = computed(
+  () =>
+    props.scheme.template.code === 'b34' &&
+    props.scheme.parameters.frontStyle === 'part' &&
+    partialB34Allowed(props.scheme, normativeRules.value),
+)
+function switchSolid(): void {
+  if (props.locked || dirty.value || !canSwitchToSolid.value) return
+  emit('apply', switchToSolidB33(props.scheme, normativeRules.value))
+  status.value =
+    'Выбрана Б.33 со сплошным фронтом. Проверьте размеры, способ пропуска и перестроенный лист.'
+}
 function switchTemplate(): void {
   if (props.locked || dirty.value || !ruleTemplate.value) return
   emit('apply', switchTemplateToRule(props.scheme, normativeRules.value))
@@ -355,8 +391,11 @@ function usePu66Front(): void {
   const zone = draft.value.parameters.workZones[props.scheme.template.code]
   if (!zone || maximum === null || maximum <= 0) return
   zone.workMetres = String(maximum)
+  draft.value.parameters.frontStyle = 'solid'
   draft.value.parameters.frontFromPu66 = true
+  draft.value.pu66FrontRequested = true
   markDirty()
+  status.value = `Взят полный фронт ${decimalComma(maximum)} м из п. 8 ПУ-66; после применения — ${templateLabel(selectTemplateByWorkFront(maximum, normativeRules.value).code)}, сплошной фронт. Отгон и буфер сохранены.`
 }
 
 function useTypesize(value: Scheme['parameters']['signSize']): void {
@@ -472,7 +511,7 @@ function applyDraft(): void {
       <fieldset v-if="!mode || mode === 'geometry'" :disabled="locked">
         <legend>Параметры схемы</legend>
         <p class="hint">
-          Расстояния вводятся в метрах, скорости — в км/ч. По введённому фронту будет выбран
+          Расстояния вводятся в метрах, скорости — в км/ч. Автоматический выбор по длине фронта:
           {{ frontPreview }}. Отгон и буфер не меняют вариант. При смене варианта объекты
           сохраняются; соберите шаблон заново и повторите проверку листа.
         </p>
@@ -481,7 +520,9 @@ function applyDraft(): void {
             normativeRules.sources['project-front-limit']
           }}). Фронт до {{ normativeRules.b34MaxFrontMetres }} м включительно — Б.34, больше — Б.33.
           Дополнительно фронт ограничен п. 8 закреплённой ПУ-66:
-          {{ frontLimit(scheme) ?? 'не указан — обновите связь с заполненной карточкой' }} м.
+          {{ frontLimit(scheme) ?? 'не указан — обновите связь с заполненной карточкой' }} м. Это
+          полная длина ответственности за текущий ремонт, по половине в каждую сторону от оси
+          переезда. Для длинного фронта можно явно выбрать Б.34 только с частичным фронтом.
         </p>
         <div v-if="ruleTemplate" class="warning" data-variant-mismatch>
           <p>
@@ -494,6 +535,18 @@ function applyDraft(): void {
             Сменить вариант на {{ templateLabel(ruleTemplate) }}
           </button>
           <p v-if="dirty" class="hint">Сначала примените или отмените ввод формы.</p>
+        </div>
+        <div v-if="canSwitchToPartial" class="hint">
+          <button type="button" :disabled="locked || dirty" @click="switchPartial">
+            Выбрать Б.34 с частичным фронтом
+          </button>
+          <p v-if="dirty">Сначала примените или отмените ввод формы.</p>
+        </div>
+        <div v-if="canSwitchToSolid" class="hint">
+          <button type="button" :disabled="locked || dirty" @click="switchSolid">
+            Выбрать Б.33 со сплошным фронтом
+          </button>
+          <p v-if="dirty">Сначала примените или отмените ввод формы.</p>
         </div>
         <button
           v-if="(frontLimit(scheme) ?? 0) > 0"
@@ -645,9 +698,13 @@ function applyDraft(): void {
             >Вид фронта работ
             <select v-model="draft.parameters.frontStyle">
               <option value="part">Частичный</option>
-              <option value="solid">Сплошной</option>
+              <option value="solid" :disabled="solidFrontDisabled">Сплошной</option>
             </select>
           </label>
+          <p v-if="solidFrontDisabled" class="hint">
+            При фронте свыше {{ normativeRules.b34MaxFrontMetres }} м для Б.34 доступен только
+            частичный фронт. Для сплошного выберите Б.33.
+          </p>
           <label
             >Регулирование Б.34
             <select v-model="draft.parameters.regulation.mode">

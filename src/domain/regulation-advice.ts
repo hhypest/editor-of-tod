@@ -21,6 +21,8 @@ import { selectTemplateByWorkFront } from './registry.ts'
 export type RegulationMode = 'signs' | 'one' | 'two'
 
 export type RegulationInput = {
+  /** Явно выбранный вариант; без него предварительный выбор идёт по длине. */
+  variant?: 'b33' | 'b34'
   /** Часовая интенсивность в двух направлениях, как её ввёл составитель. */
   hourly: string
   /** Видимость встречного автомобиля на участке ограничена. */
@@ -75,9 +77,10 @@ export function adviseRegulation(
   const mode = railRegulationMode(
     {
       variant:
-        input.frontMetres === null
+        input.variant ??
+        (input.frontMetres === null
           ? 'b34'
-          : selectTemplateByWorkFront(input.frontMetres, rules).code,
+          : selectTemplateByWorkFront(input.frontMetres, rules).code),
       frontMetres: input.frontMetres,
       sectionMetres: section,
       hourly,

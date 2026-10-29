@@ -145,6 +145,7 @@ describe('automatic rebuild of template objects on stage 2 edits (#106)', () => 
       template: { ...before.template, code: 'b34' },
       parameters: {
         ...before.parameters,
+        frontStyle: 'part',
         workZones: {
           ...before.parameters.workZones,
           b34: { ...zone, taperMetres: 10, bufferMetres: 10, workMetres: 25 },
