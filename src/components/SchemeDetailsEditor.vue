@@ -398,6 +398,11 @@ function usePu66Front(): void {
   status.value = `Взят полный фронт ${decimalComma(maximum)} м из п. 8 ПУ-66; после применения — ${templateLabel(selectTemplateByWorkFront(maximum, normativeRules.value).code)}, сплошной фронт. Отгон и буфер сохранены.`
 }
 
+function manualFront(): void {
+  draft.value.parameters.frontFromPu66 = false
+  draft.value.pu66FrontRequested = false
+}
+
 function useTypesize(value: Scheme['parameters']['signSize']): void {
   if (props.locked) return
   draft.value.parameters.signSize = value
@@ -696,7 +701,10 @@ function applyDraft(): void {
         <div class="fields">
           <label
             >Вид фронта работ
-            <select v-model="draft.parameters.frontStyle">
+            <select
+              v-model="draft.parameters.frontStyle"
+              @change="draft.pu66FrontRequested = false"
+            >
               <option value="part">Частичный</option>
               <option value="solid" :disabled="solidFrontDisabled">Сплошной</option>
             </select>
@@ -806,7 +814,7 @@ function applyDraft(): void {
               >Фронт работ, м
               <input
                 v-model="draft.parameters.workZones[code]!.workMetres"
-                @input="draft.parameters.frontFromPu66 = false"
+                @input="manualFront"
                 type="text"
                 inputmode="decimal"
             /></label>

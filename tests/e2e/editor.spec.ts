@@ -182,6 +182,12 @@ test('recalculates the variant from the front and permits explicitly staffed sig
     .getByRole('heading', { name: 'Условия и решение составителя' })
     .scrollIntoViewIfNeeded()
   await page.screenshot({ path: test.info().outputPath('partial-b34.png') })
+  // Ручная смена вида после подстановки той же длины отменяет её неприменённое действие.
+  await page.getByRole('button', { name: 'Взять фронт из п. 8 ПУ-66' }).click()
+  await page.getByLabel('Вид фронта работ').selectOption('part')
+  await page.getByRole('button', { name: 'Применить правки' }).click()
+  await expect(page.getByRole('heading', { name: 'Зона Б.34', exact: true })).toBeVisible()
+  await expect(page.getByLabel('Вид фронта работ')).toHaveValue('part')
   await page.getByLabel('Интенсивность, авт./ч (по данным составителя)').fill('320')
   await page.getByRole('button', { name: 'Применить правки' }).click()
   await expect(page.getByRole('heading', { name: 'Зона Б.34', exact: true })).toBeVisible()
