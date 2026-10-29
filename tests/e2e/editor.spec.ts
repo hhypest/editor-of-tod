@@ -978,6 +978,8 @@ test('sign pin reset is visible across stages, undo, redo and a different projec
       revisions: { '1.25': 1 },
     },
   }
+  // Export parses the schema and canonicalizes object keys used by review fingerprints.
+  scheme = importSchemeJson(exportSchemeJson(scheme)).scheme
   scheme = setMark(scheme, reviewScheme(scheme), 'signs', true)
   const open = async () => {
     await page.getByRole('button', { name: 'Мои проекты', exact: true }).first().click()
@@ -994,6 +996,8 @@ test('sign pin reset is visible across stages, undo, redo and a different projec
   }
   await page.goto('/')
   await open()
+  await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  await expect(page.locator('[data-check="signs"]').getByRole('checkbox')).toBeChecked()
   await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
   await page.getByLabel('Коды знаков через запятую').fill('1.25, 3.24_40')
   await page.getByRole('button', { name: 'Применить объект', exact: true }).click()
