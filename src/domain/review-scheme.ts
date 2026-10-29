@@ -575,7 +575,10 @@ export function reviewScheme(
     })
   }
 
-  if (usedSignCodes(scheme).length) {
+  if (
+    placements.some((placement) => placement.kind === 'sign-post') ||
+    usedSignCodes(scheme).length
+  ) {
     findings.push({
       id: 'signs',
       kind: 'verify',
