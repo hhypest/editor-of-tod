@@ -955,6 +955,76 @@ test('release requires distances, objects, location and type size but allows pap
   }
 })
 
+test('sign pin reset is visible across stages, undo, redo and a different project', async ({
+  page,
+}) => {
+  page.on('dialog', (dialog) => dialog.accept())
+  await page.route('**/api/signs', (route) =>
+    route.fulfill({ json: [{ code: '1.25', width: 8, height: 8, revision: 1 }] }),
+  )
+  await page.route('**/api/signs/catalog', (route) =>
+    route.fulfill({ json: { id: 1, documentCode: 'УЧЕБНЫЙ', edition: '2030' } }),
+  )
+  const base = importSchemeJson(
+    readFileSync('tests/fixtures/legacy-b34-manual.json', 'utf8'),
+  ).scheme
+  const post = base.placements.find((item) => item.kind === 'sign-post')!
+  let scheme: typeof base = {
+    ...base,
+    id: randomUUID(),
+    placements: [{ ...post, signIds: ['1.25'] }],
+    signImages: {
+      catalog: { id: 1, documentCode: 'УЧЕБНЫЙ', edition: '2030' },
+      revisions: { '1.25': 1 },
+    },
+  }
+  // Export parses the schema and canonicalizes object keys used by review fingerprints.
+  scheme = importSchemeJson(exportSchemeJson(scheme)).scheme
+  scheme = setMark(scheme, reviewScheme(scheme), 'signs', true)
+  const open = async () => {
+    await page.getByRole('button', { name: 'Мои проекты', exact: true }).first().click()
+    await page
+      .getByRole('group', { name: 'Способ открытия проекта' })
+      .getByRole('button', { name: 'Открыть файл' })
+      .click()
+    await page.locator('#scheme-file').setInputFiles({
+      name: 'pin-notice.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(exportSchemeJson(scheme)),
+    })
+    await expect(page.getByText('pin-notice.json', { exact: true })).toBeVisible()
+  }
+  await page.goto('/')
+  await open()
+  await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  await expect(page.locator('[data-check="signs"]').getByRole('checkbox')).toBeChecked()
+  await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
+  await page.getByLabel('Коды знаков через запятую').fill('1.25, 3.24_40')
+  await page.getByRole('button', { name: 'Применить объект', exact: true }).click()
+  const notice = page.getByRole('status').filter({ hasText: 'Закрепление версий PNG снято' })
+  await expect(notice).toBeVisible()
+  await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  await expect(notice).toBeVisible()
+  const check = page.locator('[data-check="signs"]').getByRole('checkbox')
+  await expect(check).toBeDisabled()
+  await page.getByText('Действия с проектом', { exact: true }).click()
+  await page.getByRole('button', { name: 'Отменить действие', exact: true }).click()
+  await expect(notice).toHaveCount(0)
+  await expect(check).toBeChecked()
+  await page.getByRole('button', { name: 'Повторить действие', exact: true }).click()
+  await expect(notice).toBeVisible()
+  await expect(check).toBeDisabled()
+  await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
+  await page.getByRole('button', { name: 'Закрепить версии PNG', exact: true }).click()
+  await expect(notice).toHaveCount(0)
+  await expect(page.getByRole('status').filter({ hasText: 'Закреплены версии' })).toBeVisible()
+  await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  await expect(check).toBeEnabled()
+  await expect(check).not.toBeChecked()
+  await open()
+  await expect(page.getByRole('status').filter({ hasText: /Закреплен[ыие]/ })).toHaveCount(0)
+})
+
 test('pinned PNG proportions follow each project and ignore an older delayed response', async ({
   page,
 }) => {

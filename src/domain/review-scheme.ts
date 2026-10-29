@@ -19,6 +19,7 @@ import {
   type SpeedStep,
 } from './post-checks'
 import { decimalComma } from './number-format'
+import { usedSignCodes } from './sign-images'
 import {
   distanceTitles,
   expectedTypesize,
@@ -574,11 +575,16 @@ export function reviewScheme(
     })
   }
 
-  if (placements.some((placement) => placement.kind === 'sign-post')) {
+  if (
+    placements.some((placement) => placement.kind === 'sign-post') ||
+    usedSignCodes(scheme).length
+  ) {
     findings.push({
       id: 'signs',
       kind: 'verify',
-      title: 'Знаки на стойках',
+      title: placements.some((placement) => placement.kind === 'sign-post')
+        ? 'Знаки на стойках'
+        : 'Знаки машины и комплекса',
       detail:
         'Сверьте коды, изображения PNG и применимость знаков в локальном каталоге. Совпадение кода с каталогом не подтверждает применимость.',
       path: 'signImages',
