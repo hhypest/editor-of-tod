@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp } from 'vue'
 import { createPinia, setActivePinia, storeToRefs } from 'pinia'
+import { useProjectSessionUiStore } from '../../stores/project-session-ui'
 import { useProjectDocumentStore } from '../../stores/project-document'
 import raw from '../../../tests/fixtures/manual-v1.json?raw'
 import { importSchemeJson } from '../../domain/import'
@@ -157,8 +158,13 @@ describe('in-memory project document boundary', () => {
 
   it('keeps pin invalidation and one undo step in the applied edit, restoring original pins on undo', () => {
     const { model, drafts, edits, scheme } = document()
+    const feedback = useProjectSessionUiStore()
     drafts.detailsDirty.value = true
     model.commitScheme({ ...scheme, placements: [] })
+    expect(feedback.signPinMessage).toContain('Закрепление версий PNG снято')
+    const notice = feedback.signPinMessage
+    model.commitScheme(model.imported.value!.scheme)
+    expect(feedback.signPinMessage).toBe(notice)
     expect(model.imported.value!.scheme.signImages).toEqual({ catalog: null, revisions: {} })
     expect(edits.history.value!.past).toEqual([scheme])
     expect(drafts.editorDirty.value).toBe(false)
@@ -171,10 +177,45 @@ describe('in-memory project document boundary', () => {
     drafts.placementDirty.value = false
     expect(model.stepHistory('back')).toBe(true)
     expect(model.imported.value!.scheme).toBe(scheme)
+    expect(feedback.signPinMessage).toBe('')
     expect(model.imported.value!.scheme.signImages.revisions).toEqual({ '1.25': 2 })
     expect(model.stepHistory('forward')).toBe(true)
     expect(model.imported.value!.scheme.signImages.catalog).toBeNull()
+    expect(feedback.signPinMessage).toBe(notice)
     expect(edits.history.value!.past).toHaveLength(1)
+  })
+
+  it('keeps pins for movement and repeated codes, then clears stale success feedback on a code change', () => {
+    const { model, scheme } = document()
+    const feedback = useProjectSessionUiStore()
+    const post = scheme.placements.find((item) => item.kind === 'sign-post')!
+    model.commitScheme({ ...scheme, placements: [...scheme.placements, { ...post, id: 99 }] })
+    expect(model.imported.value!.scheme.signImages).toBe(scheme.signImages)
+    expect(feedback.signPinMessage).toBe('')
+    feedback.signPinMessage = 'Закреплены версии PNG'
+    const next = model.imported.value!.scheme
+    model.commitScheme({ ...next, placements: [] })
+    expect(feedback.signPinMessage).toContain('Закрепление версий PNG снято')
+    model.commitScheme({ ...model.imported.value!.scheme, signImages: scheme.signImages })
+    expect(feedback.signPinMessage).toBe('')
+  })
+
+  it('clears pin feedback when another document is opened or the document is cleared', () => {
+    const { model, scheme, result } = document()
+    const feedback = useProjectSessionUiStore()
+    model.commitScheme({ ...scheme, placements: [] })
+    expect(feedback.signPinMessage).not.toBe('')
+    model.openDocument({
+      result,
+      fileName: 'next.json',
+      revision: null,
+      modified: false,
+      selectedPlacementId: null,
+    })
+    expect(feedback.signPinMessage).toBe('')
+    feedback.signPinMessage = 'Прежний результат закрепления'
+    model.clearDocument('')
+    expect(feedback.signPinMessage).toBe('')
   })
 
   it('opens another document with its own metadata and a fresh history', () => {

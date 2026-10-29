@@ -35,7 +35,7 @@ export function useProjectSession(onProjectOpened: () => void) {
   const sessionState = storeToRefs(useProjectSessionUiStore())
   const drafts = useEditorDraftState(documentState)
   const edits = useProjectHistory(documentState)
-  const projectDocument = useProjectDocument(drafts, edits, documentState)
+  const projectDocument = useProjectDocument(drafts, edits, documentState, sessionState)
   const {
     imported,
     selectedFileName,

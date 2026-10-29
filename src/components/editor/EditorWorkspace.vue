@@ -111,6 +111,9 @@ const inProject = computed(() =>
         </div>
       </details>
     </div>
+    <p v-if="signPinMessage" v-show="inProject" class="feedback pending" role="status">
+      {{ signPinMessage }}
+    </p>
     <p v-show="inProject && editorDirty" class="feedback pending" role="status">
       Есть неприменённый ввод. Вернитесь к изменённой форме и нажмите «Применить правки» или
       «Отменить ввод» перед сохранением и печатью.
@@ -196,7 +199,6 @@ const inProject = computed(() =>
         <button type="button" :disabled="editorDirty || localBusy" @click="pinCurrentSigns">
           Закрепить версии PNG
         </button>
-        <p v-if="signPinMessage" role="status">{{ signPinMessage }}</p>
         <p v-if="templateMessage" role="status">{{ templateMessage }}</p>
         <p v-if="templateError" class="error" role="alert">{{ templateError }}</p>
       </section>

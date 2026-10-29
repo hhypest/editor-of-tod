@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createUnlinkedScheme } from '../create-scheme'
 import { applySchemeDetails, createSchemeDetailsDraft } from '../edit-details'
-import { newSignDraft, savePlacement } from '../edit-placements'
+import { newSymbolDraft, newSignDraft, savePlacement } from '../edit-placements'
 import { exportSchemeJson, importSchemeJson } from '../import'
 import { findingFingerprint, markState, setMark, unmarkedChecks } from '../review-marks'
 import { reviewScheme as domainReviewScheme } from '../review-scheme'
@@ -184,6 +184,36 @@ describe('manual review marks', () => {
     )
     expect(unmarkedChecks(unpinned, reviewScheme(unpinned)).map((f) => f.id)).toContain('signs')
   })
+
+  it.each(['car', 'complex'] as const)(
+    'requires pinned PNG for a %s without sign posts',
+    (kind) => {
+      const scheme = { ...project(), placements: [], signImages: { catalog: null, revisions: {} } }
+      const withVehicle = savePlacement(scheme, newSymbolDraft(kind, 0, 0))
+      const findings = reviewScheme(withVehicle)
+      const signs = findings.find((finding) => finding.id === 'signs')!
+      expect(signs.title).toBe('Знаки машины и комплекса')
+      expect(markState(withVehicle, signs).status).toBe('blocked')
+      expect(() => setMark(withVehicle, findings, 'signs', true, now)).toThrow(
+        'Закрепить версии PNG',
+      )
+      const pinned = pinSignImages(
+        withVehicle,
+        { id: 2, documentCode: 'Учебный', edition: '2030' },
+        [
+          { code: '1.25', revision: 1 },
+          { code: '4.2.2', revision: 1 },
+        ],
+      )
+      const marked = setMark(pinned, reviewScheme(pinned), 'signs', true, now)
+      expect(
+        markState(
+          marked,
+          reviewScheme(marked).find((finding) => finding.id === 'signs')!,
+        ).status,
+      ).toBe('marked')
+    },
+  )
 
   it('invalidates the layout check when any template input or normative value changes', () => {
     let scheme = project()

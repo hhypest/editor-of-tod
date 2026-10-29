@@ -5,6 +5,10 @@ import { clearPinsAfterSignChange } from '../domain/sign-images'
 import type { EditorDraftState } from './useEditorDraftState'
 import type { ProjectHistory } from './useProjectHistory'
 import { useProjectDocumentStore, type ProjectDocumentRefs } from '../stores/project-document'
+import { useProjectSessionUiStore, type ProjectSessionUiRefs } from '../stores/project-session-ui'
+
+const PIN_RESET_MESSAGE =
+  'Закрепление версий PNG снято. Лист использует текущие изображения каталога. На этапе «Знаки и объекты» нажмите «Закрепить версии PNG», затем заново проверьте знаки перед выпуском.'
 
 type DocumentState = Pick<
   ProjectDocumentRefs,
@@ -30,7 +34,9 @@ export function useProjectDocument(
   drafts: EditorDraftState,
   edits: ProjectHistory,
   state: DocumentState = storeToRefs(useProjectDocumentStore()),
+  feedback: Pick<ProjectSessionUiRefs, 'signPinMessage'> = storeToRefs(useProjectSessionUiStore()),
 ) {
+  const { signPinMessage } = feedback
   const {
     imported,
     selectedFileName,
@@ -42,6 +48,7 @@ export function useProjectDocument(
   } = state
 
   function clearDocument(fileName: string): void {
+    signPinMessage.value = ''
     imported.value = null
     edits.reset()
     selectedPlacementId.value = null
@@ -53,6 +60,7 @@ export function useProjectDocument(
   }
 
   function openDocument(input: OpenProjectDocument): void {
+    signPinMessage.value = ''
     imported.value = input.result
     edits.start(input.result.scheme)
     selectedPlacementId.value = input.selectedPlacementId
@@ -64,7 +72,9 @@ export function useProjectDocument(
 
   function commitScheme(scheme: Scheme): void {
     if (!imported.value) return
+    const previous = imported.value.scheme
     scheme = clearPinsAfterSignChange(imported.value.scheme, scheme)
+    updatePinMessage(previous, scheme)
     edits.record(imported.value.scheme, scheme)
     imported.value = { ...imported.value, scheme }
     drafts.clearDirty()
@@ -75,10 +85,17 @@ export function useProjectDocument(
     if (!imported.value || drafts.editorDirty.value) return false
     const scheme = edits.step(direction)
     if (!scheme) return false
+    updatePinMessage(imported.value.scheme, scheme)
     // History snapshots already include their own PNG pins; never recompute them on undo/redo.
     imported.value = { ...imported.value, scheme }
     modifiedSinceLocalSave.value = true
     return true
+  }
+
+  function updatePinMessage(previous: Scheme, next: Scheme): void {
+    if (previous.signImages.catalog && !next.signImages.catalog)
+      signPinMessage.value = PIN_RESET_MESSAGE
+    else if (next.signImages.catalog) signPinMessage.value = ''
   }
 
   return {
