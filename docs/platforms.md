@@ -144,7 +144,7 @@ npm run package:exe -- --target host
 TOD_E2E_EXE=release/editor-of-tod-linux-x64 npm run test:e2e
 ```
 
-Перед браузерными сценариями установите Chromium: `npx playwright install --with-deps chromium`.
+Перед браузерными сценариями установите Chromium и Firefox: `npx playwright install --with-deps chromium firefox`. Команда `npm run test:e2e` запускает оба браузера в отдельных процессах с отдельными временными базами; для одного используйте `-- --project=chromium` или `-- --project=firefox`.
 
 ## Docker
 
