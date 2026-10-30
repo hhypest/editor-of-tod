@@ -127,6 +127,7 @@ export function createUnlinkedScheme(
       ),
       ...legacyParameters,
       frontFromPu66: input.frontFromPu66 ?? false,
+      frontStyle: input.frontFromPu66 || code === 'b33' ? 'solid' : legacyParameters.frontStyle,
       location: input.location,
       speedConditions: input.speedConditions ?? { road: '', vehicle: '' },
       // Типоразмер по таблице 1 ГОСТ Р 52289 для двухполосной дороги; в населённом пункте — по
@@ -179,7 +180,15 @@ export function createSchemeFromPu66(
       `Фронт работ превышает ${maximum} м — длину в границах переезда из п. 8 выбранной карточки ПУ-66. Отгон и буфер учитываются отдельно.`,
     )
   return linkPu66Card(
-    createUnlinkedScheme({ ...input, referenceId: card.referenceId }, options),
+    createUnlinkedScheme(
+      {
+        ...input,
+        referenceId: card.referenceId,
+        frontFromPu66:
+          !!input.frontFromPu66 && positiveNumber(input.frontMetres, 'фронт работ') === maximum,
+      },
+      options,
+    ),
     card,
   )
 }

@@ -106,7 +106,7 @@ function savedB33At30() {
 }
 
 describe('variant chosen by the configurable front threshold', () => {
-  it('keeps a saved variant while the front is unchanged and does not re-check the old limit', () => {
+  it('keeps a saved variant but blocks further edits of an over-limit front', () => {
     const saved = savedB33At30()
     expect(saved.template.code).toBe('b33')
     const draft = createSchemeDetailsDraft(saved)
@@ -119,7 +119,9 @@ describe('variant chosen by the configurable front threshold', () => {
     tooLong.parameters.workZones.b33!.workMetres = 46
     const other = createSchemeDetailsDraft(tooLong)
     other.parameters.locationText = 'Другой участок'
-    expect(applySchemeDetails(tooLong, other).parameters.workZones.b33?.workMetres).toBe(46)
+    expect(() => applySchemeDetails(tooLong, other)).toThrow(
+      'наибольший фронт работ на переезде 45 м',
+    )
     other.parameters.workZones.b33!.workMetres = '47'
     expect(() => applySchemeDetails(tooLong, other)).toThrow(
       'наибольший фронт работ на переезде 45 м',

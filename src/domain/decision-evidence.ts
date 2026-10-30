@@ -122,7 +122,10 @@ export function recordRegulationDecision(
   const mode = scheme.parameters.regulation.mode
   if (mode === 'auto')
     throw new Error('Выберите явный режим пропуска транспорта перед записью обоснования.')
-  const advice = adviseRegulation(regulationInput(scheme), rules)
+  const advice = adviseRegulation(
+    { ...regulationInput(scheme), variant: scheme.template.code },
+    rules,
+  )
   const regulation: NonNullable<DecisionEvidence['regulation']> = {
     recordedAt: now,
     note: noteText(note),
