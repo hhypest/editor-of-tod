@@ -12,7 +12,7 @@ describe('documentation states the current format versions', () => {
     expect(read('AGENTS.md')).toContain(`редактирование проекта v${project}`)
     expect(read('AGENTS.md')).toContain(`\`schemaVersion\` 2–${project - 1}`)
     expect(read('README.md')).toContain(`текущий формат проекта — v${project}`)
-    expect(read('docs/architecture.md')).toContain(`\`schemaVersion: ${project}\``)
+    expect(read('docs/engineering/architecture.md')).toContain(`\`schemaVersion: ${project}\``)
     expect(read('docs/migration.md')).toContain(`\`schemaVersion: 2–${project}\``)
     expect(read('docs/migration.md')).toContain(`работают в формате v${project}`)
     expect(read('docs/scheme-format.md')).toContain(`v2–v${project} до 32 МБ`)
@@ -33,6 +33,6 @@ describe('documentation states the current format versions', () => {
 
   it('names the current database version', () => {
     expect(read('TESTING.MD')).toContain(`обновляется до версии ${SCHEMA_VERSION}:`)
-    expect(read('docs/architecture.md')).toContain(`SQLite версии ${SCHEMA_VERSION}`)
+    expect(read('docs/engineering/architecture.md')).toContain(`SQLite версии ${SCHEMA_VERSION}`)
   })
 })
