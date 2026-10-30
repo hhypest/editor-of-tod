@@ -19,7 +19,14 @@ describe('documentation states the current format versions', () => {
   })
 
   it('does not tell the tester to expect a previous version in a downloaded file', () => {
-    const testing = read('TESTING.MD')
+    const testing = [
+      'docs/verification/checklists/compatibility-and-recovery.md',
+      'docs/verification/checklists/editor-and-sheet.md',
+      'docs/verification/checklists/registries-and-sources.md',
+      'docs/verification/0.3.0/pu66-and-legacy.md',
+    ]
+      .map(read)
+      .join('\n')
     const stated = [
       ...testing.matchAll(/`schemaVersion: (\d+)`/g),
       ...testing.matchAll(/scheme_[A-Z0-9-]+_v(\d+)\.json/g),
@@ -32,7 +39,9 @@ describe('documentation states the current format versions', () => {
   })
 
   it('names the current database version', () => {
-    expect(read('TESTING.MD')).toContain(`обновляется до версии ${SCHEMA_VERSION}:`)
+    expect(read('docs/verification/checklists/compatibility-and-recovery.md')).toContain(
+      `обновляется до версии ${SCHEMA_VERSION}:`,
+    )
     expect(read('docs/engineering/architecture.md')).toContain(`SQLite версии ${SCHEMA_VERSION}`)
   })
 })
