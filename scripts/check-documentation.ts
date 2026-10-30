@@ -23,7 +23,12 @@ export function markdownInfo(source: string): {
     const marker = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1]
     if (marker) {
       if (!fence) fence = { character: marker[0]!, length: marker.length }
-      else if (marker[0] === fence.character && marker.length >= fence.length) fence = null
+      else if (
+        marker[0] === fence.character &&
+        marker.length >= fence.length &&
+        /^\s{0,3}(?:`{3,}|~{3,})\s*$/.test(line)
+      )
+        fence = null
       continue
     }
     if (fence) continue

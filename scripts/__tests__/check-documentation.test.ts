@@ -40,6 +40,7 @@ describe('documentation contracts', () => {
     )
     expect([...info.anchors]).toEqual(['a', 'visible'])
     expect(info.links).toEqual([])
+    expect(markdownInfo('```text\n```javascript\n[x](missing.md)\n```').links).toEqual([])
   })
   it('reports missing targets and anchors with the source line and preserves case sensitivity', () => {
     const sources = fixture({ 'docs/a.md': current + '\n[x](A.md) [y](#absent)\n' })
