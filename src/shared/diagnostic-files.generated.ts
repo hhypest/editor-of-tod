@@ -3,6 +3,7 @@ export const diagnosticProgramFiles = [
   'scripts/architecture-policy.ts',
   'scripts/build-exe.mjs',
   'scripts/check-architecture.ts',
+  'scripts/check-documentation.ts',
   'scripts/check-node-entrypoints.mjs',
   'scripts/check-public-files.mjs',
   'scripts/coverage-summary.ts',
