@@ -1,3 +1,4 @@
+import { legacyRoadLayoutProblem } from './legacy-road-layout'
 import { regulationThresholds } from './regulation-thresholds'
 import type { Scheme } from './model'
 import { figureDimensions } from './figure-dimensions'
@@ -80,6 +81,15 @@ export function reviewScheme(
   rules: NormativeRules = PROTOTYPE_RULES,
 ): ReviewFinding[] {
   const findings: ReviewFinding[] = []
+  const roadProblem = legacyRoadLayoutProblem(scheme.source)
+  if (roadProblem)
+    findings.push({
+      id: 'legacy-road-layout',
+      kind: 'fill',
+      title: 'Примыкания из прежнего файла',
+      detail: roadProblem,
+      path: 'source.originalJson',
+    })
   const { parameters, titleBlock, crossing, placements } = scheme
 
   const place = missingFields([

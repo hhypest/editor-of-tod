@@ -25,6 +25,12 @@ import {
   type WorkZone,
 } from './model'
 import { responsibleFromLegacy } from './title-block'
+import {
+  isLegacyRoadObject,
+  legacyPlateCode,
+  legacyRoadFieldsSchema,
+  legacyRoadLayoutProblem,
+} from './legacy-road-layout'
 
 export const MAX_PROJECT_FILE_BYTES = 32 * 1024 * 1024
 const MAX_LEGACY_FILE_BYTES = 10 * 1024 * 1024
@@ -90,9 +96,12 @@ export function legacySpeedWarning(storedSchemaVersion: number, scheme: Scheme):
 
 /** Сообщения при открытии версии, записанной в прежнем формате (файл или локальная база). */
 export function storedFormatWarnings(storedSchemaVersion: number, scheme: Scheme): string[] {
-  return storedSchemaVersion < scheme.schemaVersion
-    ? [...legacySpeedWarning(storedSchemaVersion, scheme), ...freePostWarning(scheme)]
-    : []
+  const warnings =
+    storedSchemaVersion < scheme.schemaVersion
+      ? [...legacySpeedWarning(storedSchemaVersion, scheme), ...freePostWarning(scheme)]
+      : []
+  const roadProblem = legacyRoadLayoutProblem(scheme.source)
+  return roadProblem ? [...warnings, roadProblem] : warnings
 }
 
 function approachWarning(scheme: Scheme): string[] {
@@ -157,7 +166,7 @@ function warnUnknownLegacyFields(legacy: LegacyV1, warnings: string[]): void {
       }
     }
   }
-  check(legacy, '', ['v', 'params', 'head', 'objects', 'nid'])
+  check(legacy, '', ['v', 'params', 'head', 'objects', 'nid', 'pu66'])
   check(legacy.params, 'params.', [
     'key',
     'variant',
@@ -182,6 +191,8 @@ function warnUnknownLegacyFields(legacy: LegacyV1, warnings: string[]): void {
     'locLast',
     'zPu',
     'front',
+    'junc',
+    'tee',
   ])
   check(legacy.head, 'head.', [
     'dev_org',
@@ -218,8 +229,43 @@ function warnUnknownLegacyFields(legacy: LegacyV1, warnings: string[]): void {
       object,
       `objects.${index}.`,
       object.t === 'post'
-        ? ['t', 'id', 'signs', 'anchor', 'dx', 'dy', 'side', 'stand', 'dist', 'auto']
-        : ['t', 'id', 'e', 'anchor', 'dx', 'y', 'w', 'h', 'text', 'size', 'bold', 'auto', 'fz'],
+        ? [
+            't',
+            'id',
+            'signs',
+            'anchor',
+            'dx',
+            'dy',
+            'side',
+            'stand',
+            'dist',
+            'auto',
+            'jrep',
+            'jside',
+            'tee',
+            'vert',
+            'sc',
+          ]
+        : [
+            't',
+            'id',
+            'e',
+            'anchor',
+            'dx',
+            'y',
+            'w',
+            'h',
+            'text',
+            'size',
+            'bold',
+            'auto',
+            'fz',
+            'jrep',
+            'jside',
+            'tee',
+            'vert',
+            'sc',
+          ],
     )
   }
 }
@@ -250,7 +296,13 @@ function migrateLegacy(
     'Сведения о переезде не сверены с актуальной карточкой ПУ-66.',
     'Шаблон и номера знаков перенесены как данные; нормативная проверка не выполняется, изображения доступны только из локального каталога PNG.',
   ]
+  const roadFields = legacyRoadFieldsSchema.safeParse(legacy)
+  if (!roadFields.success) invalidIssue(roadFields.error.issues)
   warnUnknownLegacyFields(legacy, warnings)
+  if (legacy.pu66 !== undefined && legacy.pu66 !== null)
+    warnings.push(
+      'Карточка ПУ-66 из прежнего файла сохранена только в исходном JSON. Она не добавлена в реестр и не закреплена как актуальная карточка проекта.',
+    )
   warnings.push(...responsibleWarning([legacy.head.resp1, legacy.head.resp2]))
   const seen = new Set<number>()
   for (const [index, object] of legacy.objects.entries()) {
@@ -335,17 +387,17 @@ function migrateLegacy(
         ? {
             kind: 'sign-post',
             id: object.id,
-            generatedByTemplate: object.auto === 1,
+            generatedByTemplate: object.auto === 1 && !isLegacyRoadObject(object),
             position: { anchor: object.anchor, offsetXSvg: object.dx, offsetYSvg: object.dy ?? 0 },
             side: object.side,
             stand: object.stand,
-            signIds: object.signs,
+            signIds: object.signs.map(legacyPlateCode),
             distanceLabel: object.dist,
           }
         : {
             kind: 'element',
             id: object.id,
-            generatedByTemplate: object.auto === 1,
+            generatedByTemplate: object.auto === 1 && !isLegacyRoadObject(object),
             elementKind: object.e,
             position: {
               anchor: object.anchor,

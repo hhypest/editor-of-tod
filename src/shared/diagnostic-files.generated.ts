@@ -174,6 +174,7 @@ export const diagnosticProgramFiles = [
   'src/domain/formats/frozen/project-v2-v9.ts',
   'src/domain/formats/frozen/pu66-snapshot-v4.ts',
   'src/domain/import.ts',
+  'src/domain/legacy-road-layout.ts',
   'src/domain/legacy-v1.ts',
   'src/domain/link-pu66.ts',
   'src/domain/local-projects.ts',

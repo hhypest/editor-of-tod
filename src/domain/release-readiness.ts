@@ -1,4 +1,5 @@
 import type { Scheme } from './model'
+import { legacyRoadLayoutProblem } from './legacy-road-layout'
 import { distanceTitles } from './normative-defaults'
 import type { SheetNode } from './sheet-drawing'
 
@@ -12,6 +13,8 @@ import type { SheetNode } from './sheet-drawing'
  */
 export function releaseProblems(scheme: Scheme, nodes: readonly SheetNode[] = []): string[] {
   const problems: string[] = []
+  const roadProblem = legacyRoadLayoutProblem(scheme.source)
+  if (roadProblem) problems.push(roadProblem)
   if (!scheme.placements.length) problems.push('На листе нет объектов схемы.')
   if (scheme.parameters.location === 'auto')
     problems.push('Укажите, находится ли место работ в населённом пункте.')
