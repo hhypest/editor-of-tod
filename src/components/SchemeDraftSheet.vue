@@ -125,7 +125,7 @@ const drawnSigns = computed(() =>
       (!signSizes.value.has(code) || brokenImages.value.has(code)) && drawableWithoutImage(code),
   ),
 )
-/** Число нанесено поверх изображения стандарта (3.24, 8.1.1, 8.2.1) — вид совпадает с ГОСТ. */
+/** Число нанесено поверх изображения стандарта (3.24, 8.1.1/3/4, 8.2.1). */
 const drawnOverBase = computed(() =>
   drawnSigns.value.filter((code) => {
     const base = drawnSignBase(code)

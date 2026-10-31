@@ -12,24 +12,37 @@ export function signImageCode(code: string, available: ReadonlySet<string>): str
 /** Табличка 8.2.1 «Зона действия» с протяжённостью, м: «8.2.1_47», «8.2.1_38.5». */
 export const ZONE_PLATE = /^8\.2\.1_(\d+(?:\.\d+)?)$/
 
+/** Расстояние до объекта; у 8.1.3 стрелка вправо, у 8.1.4 — влево. */
+export function distancePlate(code: string) {
+  const match = /^(8\.1\.[134])_(\d+)$/.exec(code)
+  if (!match) return null
+  const base = match[1]!
+  return {
+    base,
+    value: match[2]!,
+    direction: base === '8.1.3' ? ('right' as const) : base === '8.1.4' ? ('left' as const) : null,
+  }
+}
+
 /**
- * Знаки, которые можно нарисовать без PNG: ограничение скорости, табличка расстояния 8.1.1 и
+ * Знаки, которые можно нарисовать без PNG: ограничение скорости, таблички расстояния 8.1.1/3/4 и
  * табличка зоны действия 8.2.1 с протяжённостью.
  */
 export function drawableWithoutImage(code: string): boolean {
-  return /^3\.24(_\d+)?(_ж)?$/.test(code) || /^8\.1\.1_\d+$/.test(code) || ZONE_PLATE.test(code)
+  return /^3\.24(_\d+)?(_ж)?$/.test(code) || distancePlate(code) !== null || ZONE_PLATE.test(code)
 }
 
 /**
  * Изображение-основа знака, который программа дорисовывает: 3.24 с другим числом рисуется
- * поверх изображения 3.24 (3.24_ж) из каталога ГОСТ Р 52290, табличка 8.1.1 с другим
- * расстоянием — поверх 8.1.1, табличка 8.2.1 с протяжённостью — поверх 8.2.1 (стрелки остаются
+ * поверх изображения 3.24 (3.24_ж) из каталога ГОСТ Р 52290, таблички 8.1.1/3/4 с другим
+ * расстоянием — поверх соответствующей основы, табличка 8.2.1 — поверх 8.2.1 (стрелки остаются
  * из стандарта). Кайма, кольцо и фон берутся из стандарта, заменяется число.
  */
 export function drawnSignBase(code: string): string | null {
   const speed = /^3\.24(?:_\d+)?(_ж)?$/.exec(code)
   if (speed) return `3.24${speed[1] ?? ''}`
-  if (/^8\.1\.1_\d+$/.test(code)) return '8.1.1'
+  const plate = distancePlate(code)
+  if (plate) return plate.base
   return ZONE_PLATE.test(code) ? '8.2.1' : null
 }
 

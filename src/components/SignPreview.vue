@@ -6,7 +6,7 @@ import SheetSign from './SheetSign.vue'
 
 /**
  * Знак в рабочей области и в свойствах объекта: PNG из каталога, знак, дорисованный поверх
- * изображения стандарта (3.24 с числом, 8.1.1 с расстоянием), или код, если изображения нет.
+ * изображения стандарта (3.24 с числом, 8.1.1/3/4 с расстоянием), или код, если изображения нет.
  */
 const props = defineProps<{
   code: string
@@ -27,7 +27,7 @@ const view = computed(() => {
   if (image) return { kind: 'image' as const, url: image }
   if (!drawableWithoutImage(props.code)) return { kind: 'code' as const }
   const base = drawnSignBase(props.code)
-  // Пропорции таблички 8.1.1 по ГОСТ Р 52290-2024 — примерно 2 : 1.
+  // Пропорции табличек расстояния по ГОСТ Р 52290-2024 — примерно 2 : 1.
   const plate = props.code.startsWith('8.')
   const h = plate ? props.height * 0.62 : props.height
   return {

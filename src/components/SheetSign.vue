@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { drawnSignBase, ZONE_PLATE } from '../domain/sign-code'
+import { distancePlate, drawnSignBase, ZONE_PLATE } from '../domain/sign-code'
 import type { SheetNode } from '../domain/sheet-drawing'
 
 const props = defineProps<{
   node: Extract<SheetNode, { t: 'sign' }>
   /** Адрес PNG из локального каталога; null — изображения нет. */
   href: string | null
-  /** Изображение-основа из ГОСТ для дорисовываемого знака (3.24, 3.24_ж, 8.1.1, 8.2.1). */
+  /** Изображение-основа из ГОСТ для дорисовываемого знака (3.24, 8.1.1/3/4, 8.2.1). */
   baseHref?: string | null
 }>()
 const emit = defineEmits<{ error: [code: string] }>()
@@ -49,12 +49,29 @@ const speed = computed(() => {
     textLength: width,
   }
 })
-/** Табличка 8.1.1: расстояние до объекта. */
+/** Таблички расстояния: маска числа у 8.1.3/4 не задевает стрелку основы. */
 const plate = computed(() => {
-  const value = /^8\.1\.1_(\d+)$/.exec(props.node.code)?.[1]
-  if (!value) return null
+  const parsed = distancePlate(props.node.code)
+  if (!parsed) return null
   const { x, y, w, h } = props.node
-  const text = `${value} м`
+  const text = `${parsed.value} м`
+  const directional = parsed.direction !== null
+  const right = parsed.direction === 'right'
+  // Нормированные пропорции рисунка 8.1.3/4 ГОСТ Р 52290-2024. Отражаем только
+  // стрелку, не число. Это геометрия изображения, а не расстояния на местности.
+  const arrow = directional
+    ? [
+        [0.065, 0.43],
+        [0.19, 0.43],
+        [0.19, 0.31],
+        [0.35, 0.5],
+        [0.19, 0.69],
+        [0.19, 0.57],
+        [0.065, 0.57],
+      ]
+        .map(([ax, ay]) => `${x + w * (right ? ax! : 1 - ax!)},${y + h * ay!}`)
+        .join(' ')
+    : null
   // По изображению 8.1.1 ГОСТ: надпись «300 м» — 0,82 ширины, цифры — 0,49 высоты таблички.
   return {
     text,
@@ -62,9 +79,15 @@ const plate = computed(() => {
     y,
     w,
     h,
-    baseline: y + h * 0.745,
-    fontSize: (h * 0.49) / 0.72,
-    textLength: Math.min(0.86, (0.82 * text.length) / 5) * w,
+    direction: parsed.direction,
+    arrow,
+    maskX: x + w * (directional ? (right ? 0.385 : 0.055) : 0.035),
+    maskWidth: w * (directional ? 0.56 : 0.93),
+    textX: x + w * (directional ? (right ? 0.665 : 0.335) : 0.5),
+    baseline: y + h * (directional ? 0.67 : 0.745),
+    fontSize: (h * (directional ? 0.43 : 0.49)) / 0.72,
+    textLength:
+      Math.min(directional ? 0.54 : 0.86, ((directional ? 0.53 : 0.82) * text.length) / 5) * w,
   }
 })
 /**
@@ -167,9 +190,9 @@ const zone = computed(() => {
         @error="emit('error', baseCode)"
       />
       <rect
-        :x="plate.x + plate.w * 0.035"
+        :x="plate.maskX"
         :y="plate.y + plate.h * 0.07"
-        :width="plate.w * 0.93"
+        :width="plate.maskWidth"
         :height="plate.h * 0.86"
         :fill="WHITE"
       />
@@ -185,8 +208,14 @@ const zone = computed(() => {
       stroke="#1d1d1b"
       :stroke-width="plate.h * 0.03"
     />
+    <polygon
+      v-if="!baseHref && plate.arrow"
+      :points="plate.arrow"
+      :data-sign-arrow="plate.direction"
+      fill="#1d1d1b"
+    />
     <text
-      :x="plate.x + plate.w / 2"
+      :x="plate.textX"
       :y="plate.baseline"
       :font-size="plate.fontSize"
       :textLength="plate.textLength"
