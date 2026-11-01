@@ -207,6 +207,73 @@ describe('conditional road geometry, independently of automatic placement rules'
     ).toEqual([expect.objectContaining({ nodeIds: [1], objectIds: [1, 42] })])
   })
 
+  it.each(['up', 'down'] as const)(
+    'blocks a branch crossed only by the %s post leader/annotation',
+    (side) => {
+      const scheme = project(),
+        layout = schemeLayout(scheme)
+      const node = junction('left', side)
+      node.sheetOffsetXSvg = 200 - layout.anchors.L0
+      scheme.roadLayout = { nextNodeId: 2, nodes: [node], links: [] }
+      scheme.placements = [
+        {
+          kind: 'sign-post',
+          id: 72,
+          generatedByTemplate: false,
+          position: { anchor: 'abs', offsetXSvg: 200, offsetYSvg: side === 'up' ? 67 : -67 },
+          side,
+          stand: 'left',
+          signIds: ['3.24_40'],
+          distance: null,
+          distanceLabel: '120 м',
+        },
+      ]
+      scheme.nextPlacementId = 73
+      const drawing = drawSheet(projectDraftSheet(scheme), options),
+        box = drawing.objectBoxes[0]!.box
+      expect(side === 'up' ? box[1] >= 380 : box[1] + box[3] <= 540).toBe(true)
+      expect(drawing.roadProblems).toContainEqual(
+        expect.objectContaining({ code: 'road-object-overlap', nodeIds: [1], objectIds: [72] }),
+      )
+    },
+  )
+
+  it.each(['left', 'right'] as const)(
+    'does not validate a hidden %s direction but still validates the visible direction',
+    (approach) => {
+      const scheme = project(),
+        layout = schemeLayout(scheme),
+        from = approach === 'left' ? 'L0' : 'E'
+      scheme.roadLayout = {
+        nextNodeId: 2,
+        links: [],
+        nodes: [
+          {
+            id: 1,
+            kind: 'terminal-tee',
+            origin: 'manual',
+            position:
+              approach === 'left'
+                ? { approach, from: 'L0', metres: 200 }
+                : { approach, from: 'E', metres: 200 },
+            sheetOffsetXSvg: (approach === 'left' ? 300 : 1400) - layout.anchors[from],
+            branchNames: { up: 'Север', down: 'Юг' },
+          },
+        ],
+      }
+      scheme.placements = []
+      scheme.parameters.directions[approach] = 'Скрытое направление '.repeat(40)
+      const original = structuredClone(scheme)
+      expect(drawSheet(projectDraftSheet(scheme), options).overflow).toEqual([])
+      expect(scheme).toEqual(original)
+      const visible = approach === 'left' ? 'right' : 'left'
+      scheme.parameters.directions[visible] = 'Видимое направление '.repeat(40)
+      expect(drawSheet(projectDraftSheet(scheme), options).overflow).toEqual([
+        visible === 'left' ? 'Направление слева' : 'Направление справа',
+      ])
+    },
+  )
+
   it('keeps posts drawn beyond the terminus and identifies them without choosing a transfer rule', () => {
     const scheme = project(),
       layout = schemeLayout(scheme)

@@ -140,6 +140,7 @@ for (const approach of ['left', 'right'] as const)
         },
       ],
     }
+    scheme.parameters.directions[approach] = 'Скрытое направление '.repeat(40)
     await open(page, scheme)
     await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
     const host = page.locator('.print-host:not(.thumbnail)')
@@ -195,4 +196,34 @@ test('overlap blocks output, leads to node editing and is fixed by sheet offset 
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   await expect(host.locator('[data-road-problems]')).toHaveCount(0)
   expect(PNG.sync.read(await png(page)).width).toBe(3528)
+})
+
+test('a post distance leader crossing a branch blocks PNG even when the signs are clear', async ({
+  page,
+}) => {
+  const scheme = project()
+  scheme.roadLayout = { nextNodeId: 2, links: [], nodes: [junction(scheme, 1, 200, 'left', 'up')] }
+  scheme.placements = [
+    {
+      kind: 'sign-post',
+      id: 72,
+      generatedByTemplate: false,
+      position: { anchor: 'abs', offsetXSvg: 200, offsetYSvg: 67 },
+      side: 'up',
+      stand: 'left',
+      signIds: ['3.24_40'],
+      distance: null,
+      distanceLabel: '120 м',
+    },
+  ]
+  scheme.nextPlacementId = 73
+  await open(page, scheme)
+  await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
+  const host = page.locator('.print-host:not(.thumbnail)')
+  await expect(host.locator('[data-road-problems]')).toContainText('объекты № 72')
+  await page.getByRole('button', { name: 'Скачать PNG', exact: true }).click()
+  await expect(host.getByRole('alert')).toContainText('объекты № 72')
+  await page.emulateMedia({ media: 'print' })
+  await expect(host.locator('.screen-preview')).toBeHidden()
+  await expect(host.locator('.print-blocked-note')).toContainText('объекты № 72')
 })

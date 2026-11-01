@@ -362,7 +362,7 @@ export function roadObjectProblems(
     const objectIds = objects
       .filter((object) =>
         own.some(
-          (box) => intersects(box.branch, object.box) || intersects(box.caption, object.extent),
+          (box) => intersects(box.branch, object.extent) || intersects(box.caption, object.extent),
         ),
       )
       .map((object) => object.id)

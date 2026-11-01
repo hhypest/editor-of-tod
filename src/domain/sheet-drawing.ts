@@ -572,9 +572,15 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
   if (tee?.position.approach !== 'right') nodes.push(laneArrow(SHEET_WIDTH - 80, 490, false))
   // Подписи направлений не переносятся: длинная подпись останавливает печать.
   const directionWidth = 420
-  if (textWidth(`← ${sheet.directions.left.trim()}`, 14) > directionWidth)
+  if (
+    tee?.position.approach !== 'left' &&
+    textWidth(`← ${sheet.directions.left.trim()}`, 14) > directionWidth
+  )
     overflow.push('Направление слева')
-  if (textWidth(`${sheet.directions.right.trim()} →`, 14) > directionWidth)
+  if (
+    tee?.position.approach !== 'right' &&
+    textWidth(`${sheet.directions.right.trim()} →`, 14) > directionWidth
+  )
     overflow.push('Направление справа')
   if (sheet.directions.left.trim() && tee?.position.approach !== 'left')
     nodes.push({ t: 'text', x: 10, y: 372, text: `← ${sheet.directions.left.trim()}`, size: 14 })
