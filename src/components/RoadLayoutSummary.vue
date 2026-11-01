@@ -3,7 +3,8 @@ import { computed, useId } from 'vue'
 import { decimalComma } from '../domain/number-format'
 import type { RoadLayout } from '../domain/road-layout'
 
-const props = defineProps<{ layout: RoadLayout }>()
+const props = defineProps<{ layout: RoadLayout; editable?: boolean; locked?: boolean }>()
+const emit = defineEmits<{ select: [id: number] }>()
 const titleId = useId()
 const linkedCounts = computed(() => {
   const counts = new Map<number, number>()
@@ -21,9 +22,8 @@ const linkedCounts = computed(() => {
   >
     <h3 :id="titleId">Примыкания: сохранённые данные</h3>
     <p>
-      Пока доступна сверка данных. Рисунок примыканий и их редактор ещё разрабатываются;
-      автоматическая перестройка и выпуск этой схемы недоступны. Данные сохраняются вместе с
-      проектом.
+      Рисунок примыканий и автоматика ещё разрабатываются; автоматическая перестройка и выпуск этой
+      схемы недоступны. Данные сохраняются вместе с проектом.
     </p>
     <div class="table-scroll">
       <table>
@@ -33,6 +33,7 @@ const linkedCounts = computed(() => {
             <th>Подход и сторона</th>
             <th>Расстояние до оси узла</th>
             <th>Связанные объекты</th>
+            <th v-if="editable">Действия</th>
           </tr>
         </thead>
         <tbody>
@@ -52,6 +53,16 @@ const linkedCounts = computed(() => {
             </td>
             <td>{{ decimalComma(node.position.metres) }} м от {{ node.position.from }}</td>
             <td>{{ linkedCounts.get(node.id) ?? 0 }}</td>
+            <td v-if="editable">
+              <button
+                type="button"
+                :aria-label="`Изменить узел №${node.id}`"
+                :disabled="locked"
+                @click="emit('select', node.id)"
+              >
+                Изменить
+              </button>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -92,5 +103,22 @@ td {
   text-align: left;
   vertical-align: top;
   border: 1px solid #c8d1df;
+}
+button {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #185ca5;
+  border-radius: 0.4rem;
+  background: #fff;
+  color: #185ca5;
+  cursor: pointer;
+  font: inherit;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+button:not(:disabled):focus-visible {
+  outline: 2px solid #185ca5;
+  outline-offset: 2px;
 }
 </style>

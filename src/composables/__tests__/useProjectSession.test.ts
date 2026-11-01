@@ -1,6 +1,8 @@
 import { createRenderer, defineComponent, nextTick, type App } from 'vue'
 import { createPinia, setActivePinia, storeToRefs } from 'pinia'
 import { useProjectSessionUiStore } from '../../stores/project-session-ui'
+import { useProjectDocumentStore } from '../../stores/project-document'
+import { newRoadNodeDraft } from '../../domain/edit-road-nodes'
 import { useEditorDraftState } from '../useEditorDraftState'
 import { useProjectHistory } from '../useProjectHistory'
 import { useProjectDocument } from '../useProjectDocument'
@@ -467,24 +469,33 @@ describe('project revision contracts', () => {
     expect(session.localError.value).toBe('')
   })
 
-  it('does not restore after input changes while the recovery snapshot is being saved', async () => {
-    const session = await openEditedSession()
-    session.localRevision.value = 3
-    const scheme = session.imported.value!.scheme
-    const response = deferred<{ version: number }>()
-    local.saveRecoveryDraft.mockReturnValueOnce(response.promise)
-    const restoring = session.restoreLocal(scheme.id, 1, 3)
-    await vi.waitFor(() => expect(local.saveRecoveryDraft).toHaveBeenCalledTimes(2))
-    session.placementDirty.value = true
-    response.resolve({ version: 2 })
-    await restoring
-    expect(local.restoreLocalRevision).not.toHaveBeenCalled()
-    expect(session.localNotice.value).toContain('подтвердите возврат к версии заново')
-    expect(session.localBusy.value).toBe(false)
-    expect(session.localRevision.value).toBe(3)
-    expect(session.imported.value!.scheme).toBe(scheme)
-    expect(session.placementDirty.value).toBe(true)
-  })
+  it.each(['placement', 'road-node'] as const)(
+    'does not restore after %s input changes while the recovery snapshot is being saved',
+    async (kind) => {
+      let document!: ReturnType<typeof useProjectDocumentStore>
+      const session = await openEditedSession((app) => {
+        document = app.runWithContext(useProjectDocumentStore)
+      })
+      session.localRevision.value = 3
+      const scheme = session.imported.value!.scheme
+      const response = deferred<{ version: number }>()
+      local.saveRecoveryDraft.mockReturnValueOnce(response.promise)
+      const restoring = session.restoreLocal(scheme.id, 1, 3)
+      await vi.waitFor(() => expect(local.saveRecoveryDraft).toHaveBeenCalledTimes(2))
+      if (kind === 'road-node') document.roadNodeDirty = true
+      else session.placementDirty.value = true
+      response.resolve({ version: 2 })
+      await restoring
+      expect(local.restoreLocalRevision).not.toHaveBeenCalled()
+      expect(session.localNotice.value).toContain('подтвердите возврат к версии заново')
+      expect(session.localBusy.value).toBe(false)
+      expect(session.localRevision.value).toBe(3)
+      expect(session.imported.value!.scheme).toBe(scheme)
+      expect(kind === 'road-node' ? document.roadNodeDirty : session.placementDirty.value).toBe(
+        true,
+      )
+    },
+  )
 
   it('does not write when restore confirmation is cancelled', async () => {
     const session = await openEditedSession()
@@ -764,37 +775,61 @@ describe('project session characterization baseline', () => {
 })
 
 describe('JSON export does not acknowledge a database save', () => {
-  it('retries unapplied form input on returning online without creating a project revision', async () => {
-    const session = await openEditedSession()
-    Object.assign(document, { visibilityState: 'visible' })
-    const input = {
-      id: null,
-      kind: 'element' as const,
-      anchor: 'AX' as const,
-      x: '0',
-      y: '0',
-      elementKind: 'text' as const,
-      width: '',
-      height: '',
-      text: 'Неприменённая надпись',
-      fontSize: '14',
-      bold: false,
-    }
-    session.placementDirty.value = true
-    session.pendingPlacement.value = input
-    local.saveRecoveryDraft.mockRejectedValueOnce(new Error('Временный отказ'))
-    await vi.advanceTimersByTimeAsync(800)
-    expect(session.recoveryStatus.value).toBe('error')
-    const history = session.history.value
-    window.dispatchEvent(new Event('online'))
-    await vi.advanceTimersByTimeAsync(0)
-    expect(local.saveRecoveryDraft.mock.calls.at(-1)?.[0]).toMatchObject({ placementDraft: input })
-    expect(session.recoveryStatus.value).toBe('saved')
-    expect(session.pendingPlacement.value).toEqual(input)
-    expect(session.placementDirty.value).toBe(true)
-    expect(session.history.value).toBe(history)
-    expect(local.saveLocalProject).not.toHaveBeenCalled()
-  })
+  it.each(['placement', 'road-node'] as const)(
+    'retries unapplied %s input on returning online without creating a project revision',
+    async (kind) => {
+      let state!: ReturnType<typeof useProjectDocumentStore>
+      const session = await openEditedSession((app) => {
+        state = app.runWithContext(useProjectDocumentStore)
+      })
+      Object.assign(document, { visibilityState: 'visible' })
+      const input =
+        kind === 'road-node'
+          ? { ...newRoadNodeDraft('junction'), metres: '-', name: 'Неприменённое примыкание' }
+          : {
+              id: null,
+              kind: 'element' as const,
+              anchor: 'AX' as const,
+              x: '0',
+              y: '0',
+              elementKind: 'text' as const,
+              width: '',
+              height: '',
+              text: 'Неприменённая надпись',
+              fontSize: '14',
+              bold: false,
+            }
+      if (input.kind === 'road-node') {
+        state.roadNodeDirty = true
+        state.pendingRoadNode = input
+      } else {
+        session.placementDirty.value = true
+        session.pendingPlacement.value = input
+      }
+      local.saveRecoveryDraft.mockRejectedValueOnce(new Error('Временный отказ'))
+      await vi.advanceTimersByTimeAsync(800)
+      expect(session.recoveryStatus.value).toBe('error')
+      const history = session.history.value
+      window.dispatchEvent(new Event('online'))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(local.saveRecoveryDraft.mock.calls.at(-1)?.[0]).toMatchObject({
+        placementDraft: input,
+      })
+      expect(session.recoveryStatus.value).toBe('saved')
+      expect(kind === 'road-node' ? state.pendingRoadNode : session.pendingPlacement.value).toEqual(
+        input,
+      )
+      expect(kind === 'road-node' ? state.roadNodeDirty : session.placementDirty.value).toBe(true)
+      expect(session.history.value).toBe(history)
+      expect(local.saveLocalProject).not.toHaveBeenCalled()
+      // A clean form may still have its old pending ref until the SFC's post-flush watcher.
+      // Never resurrect that already-applied/cancelled input in the next recovery write.
+      if (kind === 'road-node') state.roadNodeDirty = false
+      else session.placementDirty.value = false
+      await vi.advanceTimersByTimeAsync(800)
+      expect(local.saveRecoveryDraft.mock.calls.at(-1)?.[0]).toMatchObject({ placementDraft: null })
+    },
+  )
 
   it('offers a separate project after a recovery conflict without claiming or dropping pending input', async () => {
     const session = await openEditedSession()
