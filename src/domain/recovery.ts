@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { approachSchema, distanceMarkerSchema, schemeSchema, upgradeTitleBlock } from './model.ts'
 import { decisionEvidenceSchema, speedConditionsSchema } from './decision-evidence-schema.ts'
+import { roadObjectLinkDraftSchema } from './road-object-link-draft.ts'
 import { roadNodeDraftSchema } from './road-node-draft.ts'
 
 const text = z.string().max(5_000)
@@ -118,6 +119,7 @@ export const placementDraftSchema = z.discriminatedUnion('kind', [
     distanceMode: z.union([distanceMarkerSchema, z.enum(['own', 'none'])]).default('none'),
     approach: approachSchema.default('right'),
     distanceMetres: text.default(''),
+    roadLink: roadObjectLinkDraftSchema.optional(),
   }),
   z.strictObject({
     ...baseDraft,

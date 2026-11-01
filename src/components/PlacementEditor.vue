@@ -16,6 +16,8 @@ import { distanceFields, distanceTitles } from '../domain/normative-defaults'
 import { decimalComma } from '../domain/number-format'
 import { anchorCoordinates } from '../domain/placement-workspace'
 import { drawableWithoutImage, signImageCode } from '../domain/sheet-drawing'
+import { createRoadObjectLinkDraft } from '../domain/road-object-link-draft'
+import RoadObjectLinkFields from './RoadObjectLinkFields.vue'
 import SignPreview from './SignPreview.vue'
 import {
   anchorLabels,
@@ -43,7 +45,7 @@ const initialPlacement = props.scheme.placements.find(
   (placement) => placement.id === props.selectedPlacementId,
 )
 const draft = ref<PlacementDraft | null>(
-  initialPlacement ? createPlacementDraft(initialPlacement) : null,
+  initialPlacement ? createPlacementDraft(initialPlacement, props.scheme.roadLayout) : null,
 )
 const dirty = ref(false)
 const error = ref('')
@@ -93,7 +95,7 @@ watch(
       scheme.placements[0]
     selectedId.value = selected?.id ?? null
     if (selectedId.value !== props.selectedPlacementId) emit('select', selectedId.value)
-    draft.value = selected ? createPlacementDraft(selected) : null
+    draft.value = selected ? createPlacementDraft(selected, props.scheme.roadLayout) : null
     dirty.value = false
     emit('dirty', false)
   },
@@ -104,6 +106,15 @@ watch(
   (recovery) => {
     if (!recovery?.placement) return
     draft.value = structuredClone(recovery.placement)
+    if (
+      draft.value?.kind === 'sign-post' &&
+      !draft.value.roadLink &&
+      props.scheme.roadLayout.nodes.length
+    ) {
+      draft.value.roadLink = createRoadObjectLinkDraft(
+        props.scheme.roadLayout.links.find((link) => link.placementId === draft.value?.id),
+      )
+    }
     selectedId.value = recovery.placement.id
     dirty.value = true
     emit('dirty', true)
@@ -159,7 +170,7 @@ function selectPlacement(id: number): void {
   const selected = props.scheme.placements.find((placement) => placement.id === id)
   if (!selected) return
   selectedId.value = id
-  draft.value = createPlacementDraft(selected)
+  draft.value = createPlacementDraft(selected, props.scheme.roadLayout)
   emit('select', id)
   error.value = ''
   status.value = ''
@@ -179,12 +190,14 @@ function createNew(kind: 'sign-post' | 'text' | 'reg' | 'car' | 'cone' | 'comple
             kind === 'reg' ? anchor.L0 - 30 : anchor.Z0,
             kind === 'reg' ? 350 : 465,
           )
+  if (draft.value?.kind === 'sign-post' && props.scheme.roadLayout.nodes.length)
+    draft.value.roadLink = createRoadObjectLinkDraft()
   markDirty()
 }
 
 function discard(): void {
   const selected = props.scheme.placements.find((placement) => placement.id === selectedId.value)
-  draft.value = selected ? createPlacementDraft(selected) : null
+  draft.value = selected ? createPlacementDraft(selected, props.scheme.roadLayout) : null
   dirty.value = false
   error.value = ''
   status.value = ''
@@ -398,6 +411,11 @@ function removeSelected(): void {
               >Подпись на выноске <input v-model="draft.distanceLabel" type="text"
             /></label>
           </div>
+          <RoadObjectLinkFields
+            v-if="draft.roadLink"
+            v-model="draft.roadLink"
+            :layout="scheme.roadLayout"
+          />
           <label
             >Коды знаков через запятую
             <textarea v-model="draft.signCodes" rows="2" placeholder="Например, 1.25, 3.24_40_ж" />

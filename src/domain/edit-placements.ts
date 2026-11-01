@@ -1,4 +1,11 @@
 import {
+  createRoadObjectLinkDraft,
+  editedRoadObjectLinks,
+  RoadObjectLinkEditError,
+  type RoadObjectLinkDraft,
+} from './road-object-link-draft'
+import type { RoadLayout } from './road-layout'
+import {
   schemeSchema,
   type Approach,
   type DistanceMarker,
@@ -25,6 +32,7 @@ export type PlacementDraft =
       distanceMode: DistanceMarker | 'own' | 'none'
       approach: Approach
       distanceMetres: string
+      roadLink?: RoadObjectLinkDraft
     })
   | (BaseDraft & {
       kind: 'element'
@@ -43,10 +51,20 @@ export class PlacementEditError extends Error {
   }
 }
 
-export function createPlacementDraft(placement: Placement): PlacementDraft {
+export function createPlacementDraft(
+  placement: Placement,
+  roadLayout?: RoadLayout,
+): PlacementDraft {
   if (placement.kind === 'sign-post') {
     return {
       kind: 'sign-post',
+      ...(roadLayout?.nodes.length
+        ? {
+            roadLink: createRoadObjectLinkDraft(
+              roadLayout.links.find((link) => link.placementId === placement.id),
+            ),
+          }
+        : {}),
       id: placement.id,
       anchor: placement.position.anchor,
       x: String(placement.position.offsetXSvg),
@@ -262,8 +280,18 @@ export function savePlacement(scheme: Scheme, draft: PlacementDraft): Scheme {
   }
   const id = draft.id ?? scheme.nextPlacementId
   const placement = keepTemplateContext(placementFromDraft(draft, id), existing)
+  let links = scheme.roadLayout.links
+  if (draft.kind === 'sign-post') {
+    try {
+      links = editedRoadObjectLinks(scheme.roadLayout, id, draft.roadLink)
+    } catch (cause) {
+      if (cause instanceof RoadObjectLinkEditError) throw new PlacementEditError(cause.message)
+      throw cause
+    }
+  }
   return checked({
     ...scheme,
+    roadLayout: { ...scheme.roadLayout, links },
     placements:
       draft.id === null
         ? [...scheme.placements, placement]
