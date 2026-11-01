@@ -279,5 +279,9 @@ export function removePlacement(scheme: Scheme, id: number): Scheme {
   return checked({
     ...scheme,
     placements: scheme.placements.filter((placement) => placement.id !== id),
+    roadLayout: {
+      ...scheme.roadLayout,
+      links: scheme.roadLayout.links.filter((link) => link.placementId !== id),
+    },
   })
 }

@@ -5,8 +5,10 @@ import { responsibleLine } from '../../src/domain/title-block'
  * Формат v9 (до Р1): у стойки нет расстояния, только подпись — маркер поля этапа 2 или текст.
  */
 export function v9Snapshot(scheme: Scheme) {
+  const { roadLayout: _roadLayout, ...previous } = scheme
+  void _roadLayout
   return {
-    ...scheme,
+    ...previous,
     schemaVersion: 9 as const,
     placements: scheme.placements.map((placement) => {
       if (placement.kind !== 'sign-post') return placement

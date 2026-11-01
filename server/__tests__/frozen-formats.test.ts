@@ -141,9 +141,14 @@ describe('frozen files of previous formats', () => {
       expect(parseStoredScheme(JSON.parse(text))).toEqual(scheme)
       // Сохранение в текущем формате и повторное открытие ничего не меняют.
       expect(importSchemeJson(exportSchemeJson(scheme)).scheme).toEqual(scheme)
-      // The only automatic v10 → v11 change is the envelope version; frozen data stay byte-identical.
+      // New v12 data are empty for these old projects. Compare every historical field
+      // against the unchanged golden; do not regenerate pre-v12 expected files.
+      if (original.schemaVersion < 12)
+        expect(scheme.roadLayout).toEqual({ nextNodeId: 1, nodes: [], links: [] })
+      const { roadLayout: _roadLayout, ...historical } = scheme
+      void _roadLayout
       await expect(
-        `${JSON.stringify({ ...scheme, schemaVersion: original.schemaVersion <= 10 ? 10 : original.schemaVersion }, null, 2)}\n`,
+        `${JSON.stringify(original.schemaVersion >= 12 ? scheme : { ...historical, schemaVersion: original.schemaVersion <= 10 ? 10 : original.schemaVersion }, null, 2)}\n`,
       ).toMatchFileSnapshot(join(root, 'expected', filename))
     })
   })

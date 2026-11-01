@@ -43,7 +43,11 @@ describe('versioned PU-66 sheet snapshot (#110)', () => {
   it('migrates the v10 envelope without extending or rewriting the saved snapshot and marks', () => {
     const previous = schemeV10Schema.parse(original)
     const migrated = upgradeSchemeV10(original)
-    expect(migrated).toEqual({ ...previous, schemaVersion: 11 })
+    expect(migrated).toEqual({
+      ...previous,
+      schemaVersion: 12,
+      roadLayout: { nextNodeId: 1, nodes: [], links: [] },
+    })
     expect(migrated.crossing.snapshot).not.toHaveProperty('visibility')
     expect(migrated.crossing.snapshot).not.toHaveProperty('railwayLocation')
     expect(importSchemeJson(JSON.stringify(original))).toMatchObject({
@@ -70,7 +74,7 @@ describe('versioned PU-66 sheet snapshot (#110)', () => {
     expect(linked.crossing.snapshot).toEqual(snapshot)
     expect(scheme.crossing).toEqual(original.crossing)
     expect(importSchemeJson(exportSchemeJson(linked))).toMatchObject({
-      format: 'scheme-v11',
+      format: 'scheme-v12',
       scheme: linked,
     })
     expect(

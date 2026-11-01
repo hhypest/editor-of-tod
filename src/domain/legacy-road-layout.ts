@@ -7,47 +7,60 @@ const text = z.string().max(5_000)
 const bit = z.union([z.literal(0), z.literal(1), z.boolean()])
 
 /** Extra producer fields are validated outside the frozen v1 reader. No geometry is inferred. */
-export const legacyRoadFieldsSchema = z.looseObject({
-  params: z.looseObject({
-    junc: z
-      .array(
-        z.looseObject({
-          id,
-          app: z.enum(['L', 'R']),
-          edge: z.enum(['up', 'down']),
-          d: finite.nonnegative(),
-          kind: z.enum(['road', 'yard']),
-          name: text,
-          side: z.boolean(),
-          px: finite.optional(),
-        }),
-      )
-      .max(2_000)
-      .optional(),
-    tee: z
-      .discriminatedUnion('on', [
-        z.looseObject({ on: z.literal(false) }),
-        z.looseObject({
-          on: z.literal(true),
-          app: z.enum(['L', 'R']),
-          d: finite.nonnegative(),
-          n1: text,
-          n2: text,
-          px: finite.optional(),
-        }),
-      ])
-      .optional(),
-  }),
-  objects: z.array(
-    z.looseObject({
-      jrep: id.optional(),
-      jside: id.optional(),
-      tee: bit.optional(),
-      vert: bit.optional(),
-      sc: finite.positive().optional(),
+export const legacyRoadFieldsSchema = z
+  .looseObject({
+    params: z.looseObject({
+      junc: z
+        .array(
+          z.looseObject({
+            id,
+            app: z.enum(['L', 'R']),
+            edge: z.enum(['up', 'down']),
+            d: finite.nonnegative(),
+            kind: z.enum(['road', 'yard']),
+            name: text,
+            side: z.boolean(),
+            px: finite.optional(),
+          }),
+        )
+        .max(2_000)
+        .optional(),
+      tee: z
+        .discriminatedUnion('on', [
+          z.looseObject({ on: z.literal(false) }),
+          z.looseObject({
+            on: z.literal(true),
+            app: z.enum(['L', 'R']),
+            d: finite.nonnegative(),
+            n1: text,
+            n2: text,
+            px: finite.optional(),
+          }),
+        ])
+        .optional(),
     }),
-  ),
-})
+    objects: z.array(
+      z.looseObject({
+        jrep: id.optional(),
+        jside: id.optional(),
+        tee: bit.optional(),
+        vert: bit.optional(),
+        sc: finite.positive().optional(),
+      }),
+    ),
+  })
+  .superRefine((value, context) => {
+    const ids = new Set<number>()
+    for (const [index, node] of (value.params.junc ?? []).entries()) {
+      if (ids.has(node.id))
+        context.addIssue({
+          code: 'custom',
+          path: ['params', 'junc', index, 'id'],
+          message: 'Повторяющийся идентификатор примыкания',
+        })
+      ids.add(node.id)
+    }
+  })
 
 /** Preserve junction-related posts and elements as manual until P6 can own their relations. */
 export function isLegacyRoadObject(object: LegacyV1['objects'][number]): boolean {

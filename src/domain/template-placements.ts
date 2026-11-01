@@ -1,4 +1,4 @@
-import { legacyRoadLayoutProblem } from './legacy-road-layout'
+import { roadLayoutProblem } from './road-layout-readiness'
 import { schemeSchema, type Scheme } from './model'
 import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import { workConditionProblems } from './work-conditions'
@@ -124,7 +124,7 @@ export function buildTemplatePlacements(
   scheme: Scheme,
   rules: NormativeRules = PROTOTYPE_RULES,
 ): Placement[] {
-  const roadProblem = legacyRoadLayoutProblem(scheme.source)
+  const roadProblem = roadLayoutProblem(scheme)
   if (roadProblem) throw new TemplateBuildError(roadProblem)
   checkConditions(scheme, rules)
   const { parameters, template } = scheme

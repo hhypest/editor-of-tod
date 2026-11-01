@@ -1,4 +1,5 @@
 import { defaultLegacyParameters, schemeSchema, type Scheme } from './model'
+import { emptyRoadLayout } from './road-layout'
 import { linkPu66Card } from './link-pu66'
 import {
   defaultSpeedStages,
@@ -102,7 +103,8 @@ export function createUnlinkedScheme(
     labels: { taper: '', buffer: '', work: '' },
   }
   const parsed = schemeSchema.safeParse({
-    schemaVersion: 11,
+    schemaVersion: 12,
+    roadLayout: emptyRoadLayout(),
     id: options.id ?? crypto.randomUUID(),
     createdAt: options.now ?? new Date().toISOString(),
     crossing: {
