@@ -99,6 +99,7 @@ test('an incomplete road edit is recovered after reload in its own namespace and
   const editor = page.locator('[data-test="road-node-editor"]')
   await editor.getByRole('button', { name: 'Изменить узел №2', exact: true }).click()
   await editor.getByLabel('Расстояние до оси узла, м').fill('-')
+  await editor.getByLabel('Условный отступ рисунка от L0/E').fill('-,')
   await editor
     .getByLabel('Название примыкания', { exact: true })
     .fill('Неприменённый учебный выезд')
@@ -116,6 +117,7 @@ test('an incomplete road edit is recovered after reload in its own namespace and
     .click()
   await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
   await expect(editor.getByLabel('Расстояние до оси узла, м')).toHaveValue('-')
+  await expect(editor.getByLabel('Условный отступ рисунка от L0/E')).toHaveValue('-,')
   await expect(editor.getByLabel('Название примыкания', { exact: true })).toHaveValue(
     'Неприменённый учебный выезд',
   )
@@ -127,6 +129,7 @@ test('an incomplete road edit is recovered after reload in its own namespace and
   await expect(editor.getByRole('alert')).toContainText('неотрицательное число')
   await expect(editor.getByRole('row', { name: /Учебный выезд Бета/ })).toContainText('100 м от E')
   await editor.getByLabel('Расстояние до оси узла, м').fill('90,5')
+  await editor.getByLabel('Условный отступ рисунка от L0/E').fill('250,5')
   await editor.getByRole('button', { name: 'Применить примыкание', exact: true }).click()
   await page.getByRole('button', { name: 'Сохранить проект', exact: true }).click()
   await expect(page.locator('.save-state')).toHaveText('Сохранён')
@@ -134,6 +137,7 @@ test('an incomplete road edit is recovered after reload in its own namespace and
   expect(saved.scheme.roadLayout.nodes[1]).toMatchObject({
     id: 2,
     name: 'Неприменённый учебный выезд',
+    sheetOffsetXSvg: 250.5,
     position: { from: 'E', metres: 90.5 },
   })
   expect(saved.scheme.placements).toEqual(scheme.placements)
@@ -190,5 +194,5 @@ test('a new terminus can be cancelled or applied with both branch names and bloc
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   await expect(
     page.getByRole('listitem').filter({ hasText: 'Геометрия примыканий' }),
-  ).toContainText('геометрия ещё не реализована')
+  ).toContainText('автоматика ещё не реализованы')
 })

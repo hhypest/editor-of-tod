@@ -64,7 +64,7 @@ test('legacy road objects remain clean on opening, survive refused rebuild and s
   await expect(build).toBeEnabled()
   await build.click()
   await expect(
-    page.getByRole('alert').filter({ hasText: 'геометрия ещё не поддерживается' }),
+    page.getByRole('alert').filter({ hasText: 'автоматика ещё не реализованы' }),
   ).toBeVisible()
 
   const saved = page.waitForResponse(

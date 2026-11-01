@@ -42,6 +42,7 @@ const props = defineProps<{
   modifiedSinceLocalSave: boolean
   previewOnly?: boolean
 }>()
+const emit = defineEmits<{ inspectRoadNode: [id: number] }>()
 const { rules: normativeRules } = useNormativeRules()
 const { findings: pu66Findings, reload: reloadPu66Status } = usePu66Status(
   computed(() => props.scheme.crossing.referenceId),
@@ -111,6 +112,7 @@ const drawingOptions = computed(() => ({
 }))
 /** Черновая раскладка: по ней выполняются все проверки (выпуск отличается только подписями). */
 const draftDrawing = computed(() => drawSheet(sheet.value, drawingOptions.value))
+const roadProblems = computed(() => draftDrawing.value.roadProblems ?? [])
 /** Знаки без PNG, которые нельзя нарисовать программно: печать с ними недопустима. */
 const missingSigns = computed(() =>
   draftDrawing.value.signCodes.filter(
@@ -162,6 +164,7 @@ const blockers = computed(() => {
     list.push(
       `Текст не помещается на листе: ${draftDrawing.value.overflow.join(', ')}. Сократите реквизиты.`,
     )
+  list.push(...roadProblems.value.map((problem) => problem.message))
   return list
 })
 /** Пункты «Проверить вручную» без действующей отметки: выпуск листа недоступен. */
@@ -471,6 +474,23 @@ async function exportPng(): Promise<void> {
       <p v-if="printError" class="error" role="alert">{{ printError }}</p>
     </div>
 
+    <div v-if="!previewOnly && roadProblems.length" class="road-problems" data-road-problems>
+      <p>Исправить рисунок примыканий:</p>
+      <ul>
+        <li v-for="(problem, index) in roadProblems" :key="index">
+          {{ problem.message }}
+          <button
+            v-for="id in problem.nodeIds"
+            :key="id"
+            type="button"
+            :disabled="hasPendingInput"
+            @click="emit('inspectRoadNode', id)"
+          >
+            Изменить узел №{{ id }}
+          </button>
+        </li>
+      </ul>
+    </div>
     <div v-if="!previewOnly" class="native-print-note">
       <strong>Выпускной лист не напечатан.</strong>
       <p>
@@ -590,6 +610,16 @@ h2 {
 .hint {
   color: #526273;
   line-height: 1.5;
+}
+.road-problems {
+  padding: 1rem;
+  background: #fff6e8;
+  border-left: 4px solid #b87a20;
+}
+@media print {
+  .road-problems {
+    display: none;
+  }
 }
 .error {
   color: #a22030;

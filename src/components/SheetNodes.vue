@@ -82,7 +82,12 @@ function paint(fill: string | undefined): string {
         :width="node.w"
         :height="node.h"
       />
-      <g v-else-if="node.t === 'group'" :class="node.cls" :data-object-id="node.objectId">
+      <g
+        v-else-if="node.t === 'group'"
+        :class="node.cls"
+        :data-object-id="node.objectId"
+        :data-road-node-id="node.roadNodeId"
+      >
         <SheetNodes
           :nodes="node.children"
           :sign-url="signUrl"

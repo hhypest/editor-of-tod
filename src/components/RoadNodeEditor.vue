@@ -62,6 +62,11 @@ watch(
   (recovery) => {
     if (!recovery?.roadNode) return
     draft.value = JSON.parse(JSON.stringify(recovery.roadNode))
+    if (draft.value && draft.value.sheetOffsetXSvg === undefined) {
+      const saved = props.scheme.roadLayout.nodes.find((node) => node.id === draft.value?.id)
+      draft.value.sheetOffsetXSvg =
+        saved?.sheetOffsetXSvg == null ? '' : String(saved.sheetOffsetXSvg)
+    }
     selectedId.value = recovery.roadNode.id
     emit('select', selectedId.value)
     dirty.value = true
@@ -188,6 +193,15 @@ function remove() {
             >Расстояние до оси узла, м
             <input v-model="draft.metres" inputmode="decimal" maxlength="5000" />
           </label>
+          <label
+            >Условный отступ рисунка от L0/E
+            <input
+              v-model="draft.sheetOffsetXSvg"
+              inputmode="decimal"
+              maxlength="5000"
+              placeholder="Автоматически"
+            />
+          </label>
           <template v-if="draft.nodeKind === 'junction'">
             <label
               >Сторона примыкания
@@ -220,7 +234,9 @@ function remove() {
         </label>
         <p class="hint">
           Расстояние задаётся от {{ draft.approach === 'left' ? 'L0' : 'E' }} до оси узла. Изменения
-          пока не переставляют стойки, не меняют таблички и не запускают автоматику на выездах.
+          не переставляют стойки и не меняют таблички. Отступ задаётся в условных единицах листа:
+          отрицательный — влево, положительный — вправо от L0/E. Пустое поле — автоматическое место
+          по расстоянию, без изменения метров. Автоматика знаков пока не подключена.
         </p>
         <p v-if="draft.id !== null && linkCount" class="hint">
           {{ LINKED_ROAD_NODE_DELETE_PROBLEM }}
