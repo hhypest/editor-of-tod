@@ -54,6 +54,12 @@ test('legacy road objects remain clean on opening, survive refused rebuild and s
   await expect(page.getByRole('button', { name: 'Применить правки', exact: true })).toBeDisabled()
   await expect(page.locator('.save-state')).not.toContainText(/неприменённый/i)
   await page.getByRole('button', { name: /Знаки и объекты/ }).click()
+  const summary = page.locator('[data-test="road-layout-summary"]')
+  await expect(summary).toContainText('Учебная ветвь')
+  await expect(summary).toContainText('125 м от E')
+  await expect(summary.getByRole('row', { name: /Учебная ветвь/ })).toContainText(
+    'Правый подход, сверху',
+  )
   const build = page.getByRole('button', { name: 'Собрать черновой шаблон', exact: true })
   await expect(build).toBeEnabled()
   await build.click()
@@ -76,6 +82,12 @@ test('legacy road objects remain clean on opening, survive refused rebuild and s
   const path = await download.path()
   expect(path).not.toBeNull()
   const scheme = schemeSchema.parse(JSON.parse(readFileSync(path!, 'utf8')))
+  expect(scheme.schemaVersion).toBe(12)
+  expect(scheme.roadLayout.nodes[0]).toMatchObject({
+    id: 7,
+    position: { approach: 'right', from: 'E', metres: 125 },
+  })
+  expect(scheme.roadLayout.links.map((link) => link.placementId)).toEqual([1001, 1002])
   expect(scheme.placements.filter((p) => p.id >= 1001)).toMatchObject([
     { id: 1001, generatedByTemplate: false, signIds: ['1.25', '8.1.1_115'] },
     { id: 1002, generatedByTemplate: false, signIds: ['1.25', '8.1.4_125'] },

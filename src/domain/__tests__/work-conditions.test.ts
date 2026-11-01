@@ -183,11 +183,12 @@ describe('explicit conditions after specialist review', () => {
     const { workConditions: _absent, speedConditions: _speed, ...parameters } = scheme.parameters
     void _absent
     void _speed
-    const { decisionEvidence: _evidence, ...old } = scheme
+    const { decisionEvidence: _evidence, roadLayout: _roadLayout, ...old } = scheme
+    void _roadLayout
     void _evidence
     const imported = importSchemeJson(JSON.stringify({ ...old, schemaVersion: 7, parameters }))
     expect(imported.format).toBe('scheme-v7')
-    expect(imported.scheme.schemaVersion).toBe(11)
+    expect(imported.scheme.schemaVersion).toBe(12)
     expect(imported.scheme.parameters.workConditions.kind).toBe('unknown')
     expect(() => buildTemplatePlacements(imported.scheme)).toThrow('краткосрочные')
   })

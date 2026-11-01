@@ -339,7 +339,7 @@ describe('post distance to the start of works (Р1)', () => {
       manual.distanceLabel = '{d150}'
       const previous = v9Snapshot(savePlacement(scheme, manual))
       const upgraded = upgradeSchemeV9(previous)
-      expect(upgraded.schemaVersion).toBe(11)
+      expect(upgraded.schemaVersion).toBe(12)
       // Стойки шаблона получили расстояния и не сдвинулись.
       expect(posts(upgraded).slice(0, -1)).toEqual(posts(scheme))
       // Ручная стойка с подписью «150 м» стоит не на месте 150 м: её не трогаем.
@@ -353,7 +353,7 @@ describe('post distance to the start of works (Р1)', () => {
       expect(imported.warnings.join(' ')).toContain(`У стоек № ${posts(upgraded).at(-1)!.id}`)
       // Сохранение в v10 и повторное открытие не меняют проект и не предупреждают снова.
       const reopened = importSchemeJson(exportSchemeJson(imported.scheme))
-      expect(reopened.format).toBe('scheme-v11')
+      expect(reopened.format).toBe('scheme-v12')
       expect(reopened.scheme).toEqual(imported.scheme)
       expect(reopened.warnings.join(' ')).not.toContain('У стоек')
     })

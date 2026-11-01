@@ -1,5 +1,9 @@
 import { schemeV10Schema } from './formats/frozen/project-v10.ts'
 export { schemeV10Schema } from './formats/frozen/project-v10.ts'
+import { schemeV11Schema } from './formats/frozen/project-v11.ts'
+export { schemeV11Schema } from './formats/frozen/project-v11.ts'
+import { roadLayoutSchema, checkRoadLayoutPlacements } from './road-layout.ts'
+import { migrateRoadLayout } from './migrate-road-layout.ts'
 import {
   schemeV2Schema,
   schemeV3Schema,
@@ -339,22 +343,24 @@ function checkSpeedConditions(
 }
 
 /**
- * v11 (#110): approved PU-66 railway and visibility fields. The v10 distance contract and
- * property order are retained; historical snapshots gain no new values until explicit linking.
+ * v12 (#107): explicit road nodes and historical object links. Existing project fields
+ * retain their order and values; no geometry or automatic placement is inferred.
  */
 export const schemeSchema = z
   .strictObject({
     ...currentFields,
     titleBlock: titleBlockSchema,
     reviewMarks: reviewMarksSchema.default(() => ({})),
-    schemaVersion: z.literal(11),
+    schemaVersion: z.literal(12),
     decisionEvidence: decisionEvidenceSchema.default({ speed: null, regulation: null }),
     placements: z
       .array(z.discriminatedUnion('kind', [signPlacementV10Schema, elementPlacementV5Schema]))
       .max(2_000),
+    roadLayout: roadLayoutSchema,
   })
   .superRefine(checkModernScheme)
   .superRefine(checkSpeedConditions)
+  .superRefine(checkRoadLayoutPlacements)
   .superRefine((scheme, context) => {
     for (const [index, placement] of scheme.placements.entries())
       if (placement.kind === 'sign-post' && placement.distance && placement.distanceLabel !== null)
@@ -494,7 +500,17 @@ function carrySpeedEvidence(
 /** v10 → v11 adds no values to a historical snapshot. New data requires explicit relinking. */
 export function upgradeSchemeV10(value: unknown): Scheme {
   const previous = schemeV10Schema.parse(value)
-  return schemeSchema.parse({ ...previous, schemaVersion: 11 })
+  return upgradeSchemeV11({ ...previous, schemaVersion: 11 })
+}
+
+/** v11 → v12: only explicit source distances/links; objects and historical snapshots stay intact. */
+export function upgradeSchemeV11(value: unknown): Scheme {
+  const previous = schemeV11Schema.parse(value)
+  return schemeSchema.parse({
+    ...previous,
+    schemaVersion: 12,
+    roadLayout: migrateRoadLayout(previous.source, previous.placements),
+  })
 }
 
 export function parseStoredScheme(value: unknown): Scheme {
@@ -521,5 +537,7 @@ export function parseStoredScheme(value: unknown): Scheme {
     return upgradeSchemeV9(value)
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 10)
     return upgradeSchemeV10(value)
+  if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 11)
+    return upgradeSchemeV11(value)
   return schemeSchema.parse(value)
 }

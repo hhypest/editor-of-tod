@@ -121,11 +121,11 @@ describe('legacy road layouts: preservation before P6', () => {
     ).toBe(false)
   })
 
-  it('retains protection and manual objects through v11 export/import without changing format', () => {
+  it('retains protection and manual objects through current export/import', () => {
     const first = imported().result.scheme
     const reopened = importSchemeJson(exportSchemeJson(first)).scheme
     expect(reopened).toEqual(first)
-    expect(reopened.schemaVersion).toBe(11)
+    expect(reopened.schemaVersion).toBe(12)
     expect(importSchemeJson(exportSchemeJson(first)).warnings).toContain(LEGACY_ROAD_LAYOUT_PROBLEM)
     expect(storedFormatWarnings(11, reopened)).toContain(LEGACY_ROAD_LAYOUT_PROBLEM)
     expect(legacyRoadLayoutProblem(reopened.source)).toBe(LEGACY_ROAD_LAYOUT_PROBLEM)
@@ -147,7 +147,9 @@ describe('legacy road layouts: preservation before P6', () => {
         p.id >= 1001 ? { ...p, generatedByTemplate: true } : p,
       ),
     })
-    const reopened = ready(importSchemeJson(exportSchemeJson(old)).scheme)
+    const { roadLayout: _roadLayout, ...v11 } = old
+    void _roadLayout
+    const reopened = ready(importSchemeJson(JSON.stringify({ ...v11, schemaVersion: 11 })).scheme)
     expect(() => rebuildTemplatePlacements(reopened)).toThrow(LEGACY_ROAD_LAYOUT_PROBLEM)
     expect(
       reopened.placements.filter((p) => p.id >= 1001).every((p) => p.generatedByTemplate),

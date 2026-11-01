@@ -1,4 +1,5 @@
 import type { ZodIssue } from 'zod'
+import { roadLayoutProblem } from './road-layout-readiness'
 import { legacyV1Schema, type LegacyV1 } from './legacy-v1'
 import {
   schemeSchema,
@@ -11,6 +12,8 @@ import {
   schemeV8Schema,
   schemeV9Schema,
   schemeV10Schema,
+  schemeV11Schema,
+  upgradeSchemeV11,
   upgradeSchemeV10,
   upgradeSchemeV8,
   upgradeSchemeV9,
@@ -25,12 +28,7 @@ import {
   type WorkZone,
 } from './model'
 import { responsibleFromLegacy } from './title-block'
-import {
-  isLegacyRoadObject,
-  legacyPlateCode,
-  legacyRoadFieldsSchema,
-  legacyRoadLayoutProblem,
-} from './legacy-road-layout'
+import { isLegacyRoadObject, legacyPlateCode, legacyRoadFieldsSchema } from './legacy-road-layout'
 
 export const MAX_PROJECT_FILE_BYTES = 32 * 1024 * 1024
 const MAX_LEGACY_FILE_BYTES = 10 * 1024 * 1024
@@ -60,6 +58,7 @@ export interface ImportResult {
     | 'scheme-v9'
     | 'scheme-v10'
     | 'scheme-v11'
+    | 'scheme-v12'
   warnings: string[]
 }
 
@@ -100,7 +99,7 @@ export function storedFormatWarnings(storedSchemaVersion: number, scheme: Scheme
     storedSchemaVersion < scheme.schemaVersion
       ? [...legacySpeedWarning(storedSchemaVersion, scheme), ...freePostWarning(scheme)]
       : []
-  const roadProblem = legacyRoadLayoutProblem(scheme.source)
+  const roadProblem = roadLayoutProblem(scheme)
   return roadProblem ? [...warnings, roadProblem] : warnings
 }
 
@@ -576,11 +575,21 @@ function readSchemeJson(json: string, options: { id?: string; now?: string }): I
   }
 
   if ('schemaVersion' in value && value.schemaVersion === 11) {
+    const parsed = schemeV11Schema.safeParse(value)
+    if (!parsed.success) invalidIssue(parsed.error.issues)
+    return {
+      scheme: upgradeSchemeV11(parsed.data),
+      format: 'scheme-v11',
+      warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
+    }
+  }
+
+  if ('schemaVersion' in value && value.schemaVersion === 12) {
     const parsed = schemeSchema.safeParse(value)
     if (!parsed.success) invalidIssue(parsed.error.issues)
     return {
       scheme: parsed.data,
-      format: 'scheme-v11',
+      format: 'scheme-v12',
       warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
     }
   }
