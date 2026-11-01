@@ -66,6 +66,11 @@ const detailsMode = computed<'source' | 'geometry' | 'title'>(() =>
 const inProject = computed(() =>
   ['source', 'geometry', 'objects', 'review'].includes(activeView.value),
 )
+function inspectRoadNode(id: number) {
+  if (editorDirty.value || localBusy.value) return
+  selectedRoadNodeId.value = id
+  emit('show', 'objects')
+}
 </script>
 
 <template>
@@ -225,6 +230,7 @@ const inProject = computed(() =>
         :locked="editorDirty || localBusy"
         @apply="onProjectApplied"
         @select="selectedPlacementId = $event"
+        @select-road-node="selectedRoadNodeId = $event"
       />
       <PlacementEditor
         :key="`placements-${signCatalogVersion}`"
@@ -284,6 +290,7 @@ const inProject = computed(() =>
       :has-pending-input="editorDirty"
       :local-revision="localRevision"
       :modified-since-local-save="modifiedSinceLocalSave"
+      @inspect-road-node="inspectRoadNode"
     />
     <ProjectDataInspector
       v-show="activeView === 'review'"

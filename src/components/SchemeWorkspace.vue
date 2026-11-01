@@ -15,6 +15,8 @@ import type { Scheme } from '../domain/model'
 import { figureDimensions } from '../domain/figure-dimensions'
 import { templateLabel } from '../domain/registry'
 import { useNormativeRules } from '../composables/useNormativeRules'
+import { projectRoadSheet, drawRoadSheet } from '../domain/road-sheet'
+import SheetNodes from './SheetNodes.vue'
 import RoadworkSymbol from './RoadworkSymbol.vue'
 import SignPreview from './SignPreview.vue'
 
@@ -29,13 +31,22 @@ type Drag = {
 }
 
 const props = defineProps<{ scheme: Scheme; selectedId: number | null; locked: boolean }>()
-const emit = defineEmits<{ apply: [scheme: Scheme]; select: [id: number] }>()
+const emit = defineEmits<{
+  apply: [scheme: Scheme]
+  select: [id: number]
+  selectRoadNode: [id: number]
+}>()
 const zoom = ref(0.5)
 const drag = ref<Drag | null>(null)
 const error = ref('')
 const catalog = ref<Set<string>>(new Set())
 const catalogUnavailable = ref(false)
 const layout = computed(() => schemeLayout(props.scheme))
+const roadDrawing = computed(() =>
+  drawRoadSheet(
+    projectRoadSheet(props.scheme.roadLayout.nodes, layout.value.anchors, layout.value.scale),
+  ),
+)
 const anchors = computed(() => layout.value.anchors)
 const { rules } = useNormativeRules()
 const dimensions = computed(() => figureDimensions(props.scheme, rules.value))
@@ -227,6 +238,23 @@ function nameFor(placement: Placement): string {
       За пределами области: {{ outsideCount }}. Координаты сохранены; объект доступен в списке и
       форме свойств.
     </p>
+    <div v-if="roadDrawing.problems.length" class="notice" data-road-problems>
+      <p>Замечания к рисунку примыканий:</p>
+      <ul>
+        <li v-for="(problem, index) in roadDrawing.problems" :key="index">
+          {{ problem.message }}
+          <button
+            v-for="id in problem.nodeIds"
+            :key="id"
+            type="button"
+            :disabled="locked"
+            @click="emit('selectRoadNode', id)"
+          >
+            Изменить узел №{{ id }}
+          </button>
+        </li>
+      </ul>
+    </div>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
 
     <div class="scroll" aria-label="Прокручиваемая координатная область">
@@ -242,6 +270,18 @@ function nameFor(placement: Placement): string {
             transform: `scale(${zoom})`,
           }"
         >
+          <svg
+            v-if="scheme.roadLayout.nodes.length"
+            class="road-drawing"
+            :viewBox="`0 0 ${WORKSPACE_WIDTH} ${WORKSPACE_HEIGHT}`"
+            aria-label="Условный рисунок примыканий"
+          >
+            <SheetNodes
+              :nodes="roadDrawing.nodes"
+              :sign-url="() => null"
+              prefix="workspace-roads"
+            />
+          </svg>
           <div class="axis" aria-hidden="true"><span>Y = 466</span></div>
           <div
             v-for="part in dimensions"
@@ -423,6 +463,13 @@ select {
     linear-gradient(#e9eef4 1px, transparent 1px),
     linear-gradient(90deg, #e9eef4 1px, transparent 1px);
   background-size: 50px 50px;
+}
+.road-drawing {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 .axis {
   position: absolute;

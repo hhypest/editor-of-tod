@@ -12,6 +12,7 @@ export const roadNodeDraftSchema = z.strictObject({
   branchUp: z.string().max(5_000),
   branchDown: z.string().max(5_000),
   metres: z.string().max(5_000),
+  sheetOffsetXSvg: z.string().max(5_000).optional(),
   sideWarningRequested: z.boolean(),
 })
 

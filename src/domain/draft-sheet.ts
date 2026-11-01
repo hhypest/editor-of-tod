@@ -1,3 +1,4 @@
+import { projectRoadSheet, type RoadSheet } from './road-sheet'
 import { decimalComma, decimalCommaInMeasures } from './number-format'
 import type { Scheme } from './model'
 import { postCaption } from './post-distance'
@@ -81,6 +82,7 @@ export type DraftSheet = {
   titleBlock: Scheme['titleBlock']
   titleRows: Array<{ label: string; value: string }>
   placements: Array<SheetPost | SheetElement>
+  roadSheet: RoadSheet
   outsideIds: number[]
 }
 
@@ -106,7 +108,7 @@ export function projectDraftSheet(
 ): DraftSheet {
   const zone = scheme.parameters.workZones[scheme.template.code]
   if (!zone) throw new Error('Размеры выбранного варианта не заполнены.')
-  const { anchors, coordinates } = schemeLayout(scheme)
+  const { anchors, coordinates, scale } = schemeLayout(scheme)
   const placements: DraftSheet['placements'] = scheme.placements.map((placement) => {
     const { x, y } = coordinates(placement)
     if (placement.kind === 'sign-post') {
@@ -191,6 +193,7 @@ export function projectDraftSheet(
     signSize: scheme.parameters.signSize,
     titleBlock: JSON.parse(JSON.stringify(scheme.titleBlock)) as Scheme['titleBlock'],
     placements,
+    roadSheet: projectRoadSheet(scheme.roadLayout.nodes, anchors, scale),
     titleRows: [
       {
         label: 'Разработчик',

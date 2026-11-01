@@ -1,3 +1,4 @@
+import { drawRoadSheet, roadObjectProblems, type RoadSheetProblem } from './road-sheet'
 import { decimalComma } from './number-format'
 import { drawnSignBase, isPlate, postColumns, signImageCode } from './sign-code'
 // Preserve the drawing API while code interpretation lives independently of the drawing.
@@ -20,11 +21,7 @@ export const SHEET_WIDTH = 1680
 export const SHEET_HEIGHT = 1188
 
 /** Верх и низ проезжей части, линия ограждения зоны и кромка полосы (как в рабочей области). */
-const ROAD_TOP = 380
-const ROAD_BOTTOM = 540
-const CARRIAGEWAY_TOP = 400
 const CARRIAGEWAY_BOTTOM = 520
-const CENTRE_LINE = 460
 const ZONE_LINE = 466
 const LANE_EDGE = 512
 const DIMENSION_Y = 722
@@ -34,53 +31,8 @@ const SIGN_GAP = 2.5
 
 export type SignSize = { width: number; height: number }
 
-export type SheetNode =
-  | {
-      t: 'rect'
-      x: number
-      y: number
-      w: number
-      h: number
-      fill?: string
-      stroke?: string
-      sw?: number
-      rx?: number
-    }
-  | {
-      t: 'line'
-      x1: number
-      y1: number
-      x2: number
-      y2: number
-      stroke?: string
-      sw?: number
-      dash?: string
-      arrows?: boolean
-    }
-  | { t: 'path'; d: string; fill?: string; stroke?: string; sw?: number }
-  | {
-      t: 'text'
-      x: number
-      y: number
-      text: string
-      size: number
-      anchor?: 'start' | 'middle' | 'end'
-      bold?: boolean
-      italic?: boolean
-      underline?: boolean
-      fill?: string
-      rotate?: number
-      cls?: string
-    }
-  | { t: 'sign'; x: number; y: number; w: number; h: number; code: string }
-  | { t: 'symbol'; id: 'cone' | 'reg' | 'truck'; x: number; y: number; w: number; h: number }
-  | {
-      t: 'group'
-      objectId?: number
-      cls?: string
-      box?: [number, number, number, number]
-      children: SheetNode[]
-    }
+import type { SheetNode } from './sheet-nodes'
+export type { SheetNode } from './sheet-nodes'
 
 export type SheetDrawing = {
   nodes: SheetNode[]
@@ -97,6 +49,7 @@ export type SheetDrawing = {
   signCodes: string[]
   /** Блоки текста, которые не поместились в отведённую высоту. */
   overflow: string[]
+  roadProblems?: RoadSheetProblem[]
 }
 
 export type SheetOptions = {
@@ -113,48 +66,8 @@ export type SheetOptions = {
   release?: boolean
 }
 
-/** Приблизительная ширина строки Arial: достаточно для переноса без измерения в браузере. */
-export function textWidth(text: string, size: number): number {
-  let units = 0
-  for (const char of text) {
-    if (char === ' ') units += 0.28
-    else if ('.,:;!|il1()[]\'"«»'.includes(char)) units += 0.3
-    else if (/[А-ЯЁA-ZШЩЖМЮ]/.test(char)) units += 0.68
-    else if (/[0-9]/.test(char)) units += 0.556
-    else units += 0.54
-  }
-  return units * size
-}
-
-/** Перенос по словам; слишком длинное слово переносится посимвольно. */
-export function wrapText(text: string, width: number, size: number): string[] {
-  const lines: string[] = []
-  for (const paragraph of text.split('\n')) {
-    let line = ''
-    for (const word of paragraph.split(/\s+/).filter(Boolean)) {
-      const candidate = line ? `${line} ${word}` : word
-      if (textWidth(candidate, size) <= width) {
-        line = candidate
-        continue
-      }
-      if (line) lines.push(line)
-      if (textWidth(word, size) <= width) {
-        line = word
-        continue
-      }
-      line = ''
-      for (const char of word) {
-        if (textWidth(line + char, size) > width && line) {
-          lines.push(line)
-          line = ''
-        }
-        line += char
-      }
-    }
-    lines.push(line)
-  }
-  return lines
-}
+import { textWidth, wrapText } from './sheet-text'
+export { textWidth, wrapText } from './sheet-text'
 
 function metres(value: number): string {
   return decimalComma(Math.round(value * 100) / 100)
@@ -643,30 +556,8 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
       cls: 'draft-mark',
     })
 
-  // Проезжая часть: обочины, полосы, разметка и направления движения.
-  nodes.push(
-    { t: 'rect', x: 0, y: ROAD_TOP, w: SHEET_WIDTH, h: ROAD_BOTTOM - ROAD_TOP, fill: '#e7e7e7' },
-    {
-      t: 'rect',
-      x: 0,
-      y: CARRIAGEWAY_TOP,
-      w: SHEET_WIDTH,
-      h: CARRIAGEWAY_BOTTOM - CARRIAGEWAY_TOP,
-      fill: '#bdbdbd',
-    },
-    { t: 'line', x1: 0, y1: 401.5, x2: SHEET_WIDTH, y2: 401.5, stroke: '#fff', sw: 3 },
-    { t: 'line', x1: 0, y1: 518.5, x2: SHEET_WIDTH, y2: 518.5, stroke: '#fff', sw: 3 },
-    {
-      t: 'line',
-      x1: 0,
-      y1: CENTRE_LINE,
-      x2: SHEET_WIDTH,
-      y2: CENTRE_LINE,
-      stroke: '#fff',
-      sw: 1.6,
-      dash: '18 14',
-    },
-  )
+  const roadDrawing = drawRoadSheet(sheet.roadSheet)
+  nodes.push(...roadDrawing.nodes)
   const laneArrow = (x: number, y: number, left: boolean): SheetNode => ({
     t: 'path',
     d: left
@@ -674,21 +565,26 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
       : `M${x + 40} ${y} l-12 -6 v4 h-28 v4 h28 v4 z`,
     fill: '#fff',
   })
-  nodes.push(
-    laneArrow(30, 430, true),
-    laneArrow(SHEET_WIDTH - 80, 430, true),
-    laneArrow(30, 490, false),
-    laneArrow(SHEET_WIDTH - 80, 490, false),
-  )
+  const tee = sheet.roadSheet.nodes.find((node) => node.kind === 'terminal-tee')
+  if (tee?.position.approach !== 'left') nodes.push(laneArrow(30, 430, true))
+  if (tee?.position.approach !== 'right') nodes.push(laneArrow(SHEET_WIDTH - 80, 430, true))
+  if (tee?.position.approach !== 'left') nodes.push(laneArrow(30, 490, false))
+  if (tee?.position.approach !== 'right') nodes.push(laneArrow(SHEET_WIDTH - 80, 490, false))
   // Подписи направлений не переносятся: длинная подпись останавливает печать.
   const directionWidth = 420
-  if (textWidth(`← ${sheet.directions.left.trim()}`, 14) > directionWidth)
+  if (
+    tee?.position.approach !== 'left' &&
+    textWidth(`← ${sheet.directions.left.trim()}`, 14) > directionWidth
+  )
     overflow.push('Направление слева')
-  if (textWidth(`${sheet.directions.right.trim()} →`, 14) > directionWidth)
+  if (
+    tee?.position.approach !== 'right' &&
+    textWidth(`${sheet.directions.right.trim()} →`, 14) > directionWidth
+  )
     overflow.push('Направление справа')
-  if (sheet.directions.left.trim())
+  if (sheet.directions.left.trim() && tee?.position.approach !== 'left')
     nodes.push({ t: 'text', x: 10, y: 372, text: `← ${sheet.directions.left.trim()}`, size: 14 })
-  if (sheet.directions.right.trim())
+  if (sheet.directions.right.trim() && tee?.position.approach !== 'right')
     nodes.push({
       t: 'text',
       x: SHEET_WIDTH - 10,
@@ -971,7 +867,17 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
       fill: '#9b2934',
     })
 
-  return { nodes, objectBoxes, signCodes: [...codes], overflow }
+  const roadProblems = [
+    ...roadDrawing.problems,
+    ...roadObjectProblems(roadDrawing.boxes, objectBoxes, tee),
+  ]
+  return {
+    nodes,
+    objectBoxes,
+    signCodes: [...codes],
+    overflow,
+    ...(roadProblems.length ? { roadProblems } : {}),
+  }
 }
 
 /** Пары стоек, чьи знаки перекрываются на листе. */

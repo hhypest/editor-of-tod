@@ -24,6 +24,7 @@ export function newRoadNodeDraft(nodeKind: RoadNode['kind']): RoadNodeDraft {
     branchUp: '',
     branchDown: '',
     metres: '',
+    sheetOffsetXSvg: '',
     sideWarningRequested: false,
   }
 }
@@ -34,6 +35,7 @@ export function createRoadNodeDraft(node: RoadNode): RoadNodeDraft {
     id: node.id,
     approach: node.position.approach,
     metres: String(node.position.metres),
+    sheetOffsetXSvg: node.sheetOffsetXSvg === null ? '' : String(node.sheetOffsetXSvg),
     ...(node.kind === 'junction'
       ? {
           side: node.side,
@@ -54,7 +56,7 @@ function checked(scheme: Scheme): Scheme {
   return result.data
 }
 
-/** Changes metadata only: linked objects, installation distances, plate values and sheet offsets stay. */
+/** Edit the node only: linked objects, installation distances and plate values stay. */
 export function saveRoadNode(scheme: Scheme, input: RoadNodeDraft): Scheme {
   const parsed = roadNodeDraftSchema.safeParse(input)
   if (!parsed.success)
@@ -77,6 +79,15 @@ export function saveRoadNode(scheme: Scheme, input: RoadNodeDraft): Scheme {
     scheme.roadLayout.nodes.some((node) => node.kind === 'terminal-tee' && node.id !== draft.id)
   )
     throw new RoadNodeEditError('В проекте уже есть конечный Т-перекрёсток. Измените существующий.')
+  let sheetOffsetXSvg = existing?.sheetOffsetXSvg ?? null
+  if (draft.sheetOffsetXSvg !== undefined) {
+    const offset = draft.sheetOffsetXSvg.trim().replace(',', '.')
+    if (offset !== '' && (!/^-?\d+(?:\.\d+)?$/.test(offset) || !Number.isFinite(Number(offset))))
+      throw new RoadNodeEditError(
+        'Условный отступ рисунка: введите число или оставьте поле пустым для автоматической компоновки.',
+      )
+    sheetOffsetXSvg = offset === '' ? null : Number(offset)
+  }
   const id = draft.id ?? scheme.roadLayout.nextNodeId
   const node: RoadNode = {
     id,
@@ -85,7 +96,7 @@ export function saveRoadNode(scheme: Scheme, input: RoadNodeDraft): Scheme {
       draft.approach === 'left'
         ? { approach: 'left', from: 'L0', metres }
         : { approach: 'right', from: 'E', metres },
-    sheetOffsetXSvg: existing?.sheetOffsetXSvg ?? null,
+    sheetOffsetXSvg,
     ...(draft.nodeKind === 'junction'
       ? {
           kind: 'junction',
