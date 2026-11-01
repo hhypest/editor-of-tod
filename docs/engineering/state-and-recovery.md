@@ -51,3 +51,5 @@ Setup open/status/error, startup request и отложенный setup в sessio
 | Конкуренция окон и аренда                    | [recovery-ownership](../../server/__tests__/recovery-ownership.test.ts), [recovery-repository](../../server/__tests__/recovery-repository.test.ts), [браузерные сценарии](../../tests/e2e/editor.spec.ts)                                        |
 
 Совместимые `saveV5`/`saveOriginal` остаются deprecated aliases; удаление требует отдельного изменения контракта. Проверки структурных изменений не подменяют предметную приёмку. Последний завершённый технический протокол — [28.10.2026](../verification/reports/2026-10-28-technical-regression.md); история переноса — в [каталоге архива](../catalog.md#история-технических-переносов).
+
+Ручная связь стойки использует необязательный roadLink внутри существующей формы sign-post. Подкомпонент полей не создаёт сессию; dirty/pending и cursor остаются у PlacementEditor и существующего владельца документа. Незавершённый замер (например, «-») восстанавливается как ввод, без изменения применённых links/installation. Прежние формы без roadLink сохраняют связь из проекта.
