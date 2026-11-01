@@ -19,6 +19,7 @@ type DocumentState = Pick<
   | 'modifiedSinceLocalSave'
   | 'localRevision'
   | 'selectedPlacementId'
+  | 'selectedRoadNodeId'
 >
 
 export interface OpenProjectDocument {
@@ -27,6 +28,7 @@ export interface OpenProjectDocument {
   revision: number | null
   modified: boolean
   selectedPlacementId: number | null
+  selectedRoadNodeId?: number | null
 }
 
 /** Coordinates the in-memory document and history; no HTTP, timers or browser lifecycle. */
@@ -45,6 +47,7 @@ export function useProjectDocument(
     modifiedSinceLocalSave,
     localRevision,
     selectedPlacementId,
+    selectedRoadNodeId,
   } = state
 
   function clearDocument(fileName: string): void {
@@ -52,6 +55,7 @@ export function useProjectDocument(
     imported.value = null
     edits.reset()
     selectedPlacementId.value = null
+    selectedRoadNodeId.value = null
     drafts.clearDirty()
     modifiedSinceLocalSave.value = false
     localRevision.value = null
@@ -64,6 +68,7 @@ export function useProjectDocument(
     imported.value = input.result
     edits.start(input.result.scheme)
     selectedPlacementId.value = input.selectedPlacementId
+    selectedRoadNodeId.value = input.selectedRoadNodeId ?? null
     selectedFileName.value = input.fileName
     localRevision.value = input.revision
     drafts.clearDirty()
@@ -106,6 +111,7 @@ export function useProjectDocument(
     modifiedSinceLocalSave,
     localRevision,
     selectedPlacementId,
+    selectedRoadNodeId,
     clearDocument,
     openDocument,
     commitScheme,

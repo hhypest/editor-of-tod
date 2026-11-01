@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { approachSchema, distanceMarkerSchema, schemeSchema, upgradeTitleBlock } from './model.ts'
 import { decisionEvidenceSchema, speedConditionsSchema } from './decision-evidence-schema.ts'
+import { roadNodeDraftSchema } from './road-node-draft.ts'
 
 const text = z.string().max(5_000)
 const zone = z.strictObject({
@@ -130,12 +131,15 @@ export const placementDraftSchema = z.discriminatedUnion('kind', [
   }),
 ])
 
+/** Existing placement_json slot also carries the mutually exclusive road-node form. */
+export const objectEditorDraftSchema = z.union([placementDraftSchema, roadNodeDraftSchema])
+
 export const recoveryWriteSchema = z.strictObject({
   sessionId: z.uuid(),
   scheme: schemeSchema,
   baseRevision: z.number().int().nonnegative().nullable(),
   detailsDraft: detailsDraftSchema.nullable(),
-  placementDraft: placementDraftSchema.nullable(),
+  placementDraft: objectEditorDraftSchema.nullable(),
   fileName: z.string().max(256),
   expectedVersion: z.number().int().nonnegative(),
 })

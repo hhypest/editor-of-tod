@@ -14,6 +14,7 @@ import { useProjectSession } from '../../../composables/useProjectSession'
 import { createRecoveryRepository } from '../../../services/local-projects'
 import { importSchemeJson } from '../../../domain/import'
 import { createSchemeDetailsDraft } from '../../../domain/edit-details'
+import { newRoadNodeDraft } from '../../../domain/edit-road-nodes'
 import { usedSignCodes } from '../../../domain/sign-images'
 import raw from '../../../../tests/fixtures/manual-v1.json?raw'
 
@@ -38,6 +39,7 @@ const leaves = vi.hoisted(() => {
           'activeRevision',
           'selectedId',
           'selectedPlacementId',
+          'selectedNodeId',
           'recovery',
           'mode',
           'view',
@@ -66,6 +68,7 @@ vi.mock('../../Pu66Linker.vue', () => ({ default: leaves.component('Pu66Linker')
 vi.mock('../../TemplateChoice.vue', () => ({ default: leaves.component('TemplateChoice') }))
 vi.mock('../../SchemeWorkspace.vue', () => ({ default: leaves.component('SchemeWorkspace') }))
 vi.mock('../../PlacementEditor.vue', () => ({ default: leaves.component('PlacementEditor') }))
+vi.mock('../../RoadNodeEditor.vue', () => ({ default: leaves.component('RoadNodeEditor') }))
 vi.mock('../../SchemeReview.vue', () => ({ default: leaves.component('SchemeReview') }))
 vi.mock('../../SchemeDetailsEditor.vue', () => ({
   default: leaves.component('SchemeDetailsEditor'),
@@ -259,5 +262,32 @@ it('reads registry locks, referenced signs and diagnostics directly from the sam
   expect(leaves.last('DiagnosticsPanel').props.view).toBe('registries')
   expect(leaves.last('Pu66Lifecycle').props.locked).toBe(true)
   expect(leaves.last('ImportedData').props.refreshKey).toBe(6)
+  expectNoSession()
+})
+
+it('owns road input separately and locks the other editors without merging node and placement IDs', async () => {
+  const { pinia, document, navigation } = state()
+  const commands = editorCommands()
+  navigation.activeView = 'objects'
+  mount(EditorWorkspace, { commands }, pinia)
+  const road = leaves.last('RoadNodeEditor')
+  const draft = newRoadNodeDraft('junction')
+  draft.metres = '-'
+  road.emit('select', 7)
+  road.emit('dirty', true)
+  road.emit('draft', draft)
+  await nextTick()
+  expect(document.selectedRoadNodeId).toBe(7)
+  expect(document.selectedPlacementId).not.toBe(7)
+  expect(document.pendingRoadNode).toBe(draft)
+  expect(document.pendingPlacement).toBeNull()
+  expect(document.editorDirty).toBe(true)
+  expect(leaves.last('PlacementEditor').props.locked).toBe(true)
+  expect(leaves.last('SchemeDetailsEditor').props.locked).toBe(true)
+  expect(leaves.last('SchemeWorkspace').props.locked).toBe(true)
+  expect(leaves.last('RoadNodeEditor').props.locked).toBe(false)
+  const applied = { ...document.imported!.scheme }
+  road.emit('apply', applied)
+  expect(commands.onProjectApplied).toHaveBeenCalledWith(applied)
   expectNoSession()
 })

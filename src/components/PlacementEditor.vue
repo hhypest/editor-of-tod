@@ -17,7 +17,6 @@ import { decimalComma } from '../domain/number-format'
 import { anchorCoordinates } from '../domain/placement-workspace'
 import { drawableWithoutImage, signImageCode } from '../domain/sheet-drawing'
 import SignPreview from './SignPreview.vue'
-import RoadLayoutSummary from './RoadLayoutSummary.vue'
 import {
   anchorLabels,
   elementLabels,
@@ -283,7 +282,6 @@ function removeSelected(): void {
       </button>
     </div>
 
-    <RoadLayoutSummary :layout="scheme.roadLayout" />
     <div class="workspace">
       <nav aria-label="Объекты открытого проекта" class="object-list">
         <p v-if="!scheme.placements.length" class="hint">Объектов пока нет.</p>

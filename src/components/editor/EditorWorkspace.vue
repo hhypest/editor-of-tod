@@ -13,6 +13,7 @@ import Pu66Linker from '../Pu66Linker.vue'
 import TemplateChoice from '../TemplateChoice.vue'
 import SchemeWorkspace from '../SchemeWorkspace.vue'
 import PlacementEditor from '../PlacementEditor.vue'
+import RoadNodeEditor from '../RoadNodeEditor.vue'
 import SchemeReview from '../SchemeReview.vue'
 import SchemeDetailsEditor from '../SchemeDetailsEditor.vue'
 import SchemeDraftSheet from '../SchemeDraftSheet.vue'
@@ -28,10 +29,13 @@ const {
   editorDirty,
   history,
   selectedPlacementId,
+  selectedRoadNodeId,
   detailsDirty,
   placementDirty,
+  roadNodeDirty,
   recoverySeed,
   pendingPlacement,
+  pendingRoadNode,
   pendingDetails,
   modifiedSinceLocalSave,
 } = storeToRefs(useProjectDocumentStore())
@@ -202,6 +206,17 @@ const inProject = computed(() =>
         <p v-if="templateMessage" role="status">{{ templateMessage }}</p>
         <p v-if="templateError" class="error" role="alert">{{ templateError }}</p>
       </section>
+      <RoadNodeEditor
+        class="module"
+        :scheme="imported.scheme"
+        :locked="detailsDirty || placementDirty || localBusy"
+        :selected-node-id="selectedRoadNodeId"
+        :recovery="recoverySeed"
+        @apply="onProjectApplied"
+        @dirty="roadNodeDirty = $event"
+        @draft="pendingRoadNode = $event"
+        @select="selectedRoadNodeId = $event"
+      />
       <SchemeWorkspace
         :key="`workspace-${signCatalogVersion}`"
         class="module"
@@ -215,7 +230,7 @@ const inProject = computed(() =>
         :key="`placements-${signCatalogVersion}`"
         class="module"
         :scheme="imported.scheme"
-        :locked="detailsDirty || localBusy"
+        :locked="detailsDirty || roadNodeDirty || localBusy"
         :selected-placement-id="selectedPlacementId"
         :recovery="recoverySeed"
         @apply="onProjectApplied"
@@ -254,7 +269,7 @@ const inProject = computed(() =>
       :scheme="imported.scheme"
       :mode="detailsMode"
       :recovery="recoverySeed"
-      :locked="placementDirty || localBusy"
+      :locked="placementDirty || roadNodeDirty || localBusy"
       :template-notice="templateError || templateMessage"
       :template-notice-error="Boolean(templateError)"
       @apply="onDetailsApplied"

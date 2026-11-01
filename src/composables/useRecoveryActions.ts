@@ -5,7 +5,10 @@ import type { EditorDraftState } from './useEditorDraftState'
 
 export interface RecoveryActionEditor {
   projectDocument: Pick<ReturnType<typeof useProjectDocument>, 'openDocument'>
-  drafts: Pick<EditorDraftState, 'pendingDetails' | 'pendingPlacement' | 'recoverySeed'>
+  drafts: Pick<
+    EditorDraftState,
+    'pendingDetails' | 'pendingPlacement' | 'pendingRoadNode' | 'recoverySeed'
+  >
   loading: Readonly<Ref<boolean>>
   localBusy: Ref<boolean>
   localError: Ref<string>
@@ -34,7 +37,7 @@ export function useRecoveryActions(editor: RecoveryActionEditor, recovery: Recov
     onProjectOpened,
     showLocalError,
   } = editor
-  const { pendingDetails, pendingPlacement, recoverySeed } = editor.drafts
+  const { pendingDetails, pendingPlacement, pendingRoadNode, recoverySeed } = editor.drafts
   const {
     recoveryCopies,
     activeRecoveryId,
@@ -55,23 +58,31 @@ export function useRecoveryActions(editor: RecoveryActionEditor, recovery: Recov
       const version = recoveryCopies.value.find((copy) => copy.sessionId === sessionId)?.version
       if (!version) throw new Error('Обновите список копий восстановления.')
       const record = await recovery.claim(sessionId, version)
+      const roadNode = record.placementDraft?.kind === 'road-node' ? record.placementDraft : null
+      const placement = record.placementDraft?.kind === 'road-node' ? null : record.placementDraft
       beginSession(record.sessionId)
       projectDocument.openDocument({
         result: {
           scheme: record.scheme,
-          format: 'scheme-v11',
+          format: 'scheme-v12',
           warnings: ['Восстановлена рабочая копия; проверьте ввод и сохраните проект.'],
         },
         fileName: record.fileName,
         revision: record.baseRevision,
         modified: true,
-        selectedPlacementId: record.placementDraft?.id ?? record.scheme.placements[0]?.id ?? null,
+        selectedPlacementId: placement?.id ?? record.scheme.placements[0]?.id ?? null,
+        selectedRoadNodeId: roadNode?.id ?? null,
       })
       onProjectOpened()
       await nextTick()
       pendingDetails.value = record.detailsDraft
-      pendingPlacement.value = record.placementDraft
-      recoverySeed.value = { details: record.detailsDraft, placement: record.placementDraft }
+      pendingPlacement.value = placement
+      pendingRoadNode.value = roadNode
+      recoverySeed.value = {
+        details: record.detailsDraft,
+        placement,
+        ...(roadNode ? { roadNode } : {}),
+      }
       localNotice.value = 'Рабочая копия восстановлена. Примените ввод в форме и сохраните проект.'
     } catch (cause) {
       showLocalError(cause)

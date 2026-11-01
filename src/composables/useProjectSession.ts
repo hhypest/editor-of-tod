@@ -48,8 +48,10 @@ export function useProjectSession(onProjectOpened: () => void) {
   const {
     detailsDirty,
     placementDirty,
+    roadNodeDirty,
     pendingDetails,
     pendingPlacement,
+    pendingRoadNode,
     recoverySeed,
     editorDirty,
   } = drafts
@@ -79,8 +81,10 @@ export function useProjectSession(onProjectOpened: () => void) {
     () => imported.value?.scheme,
     detailsDirty,
     placementDirty,
+    roadNodeDirty,
     pendingDetails,
     pendingPlacement,
+    pendingRoadNode,
   ])
   const revisionCursor = cursor.snapshot
   const recovery = useProjectRecovery(
@@ -93,8 +97,10 @@ export function useProjectSession(onProjectOpened: () => void) {
         imported,
         detailsDirty,
         placementDirty,
+        roadNodeDirty,
         pendingDetails,
         pendingPlacement,
+        pendingRoadNode,
         modifiedSinceLocalSave,
         localRevision,
       ],
@@ -106,7 +112,11 @@ export function useProjectSession(onProjectOpened: () => void) {
           scheme: imported.value.scheme,
           baseRevision: localRevision.value,
           detailsDraft: pendingDetails.value,
-          placementDraft: pendingPlacement.value,
+          placementDraft: roadNodeDirty.value
+            ? pendingRoadNode.value
+            : placementDirty.value
+              ? pendingPlacement.value
+              : null,
           fileName: selectedFileName.value,
         }
       },
