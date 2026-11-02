@@ -1,3 +1,5 @@
+import { schemeV12Schema } from './formats/frozen/project-v12.ts'
+export { schemeV12Schema } from './formats/frozen/project-v12.ts'
 import { schemeV10Schema } from './formats/frozen/project-v10.ts'
 export { schemeV10Schema } from './formats/frozen/project-v10.ts'
 import { schemeV11Schema } from './formats/frozen/project-v11.ts'
@@ -343,15 +345,15 @@ function checkSpeedConditions(
 }
 
 /**
- * v12 (#107): explicit road nodes and historical object links. Existing project fields
- * retain their order and values; no geometry or automatic placement is inferred.
+ * v13 (#107): optional explicit branch placement on road-object links. Existing project
+ * fields retain their order and values; migration infers no geometry or automatic placement.
  */
 export const schemeSchema = z
   .strictObject({
     ...currentFields,
     titleBlock: titleBlockSchema,
     reviewMarks: reviewMarksSchema.default(() => ({})),
-    schemaVersion: z.literal(12),
+    schemaVersion: z.literal(13),
     decisionEvidence: decisionEvidenceSchema.default({ speed: null, regulation: null }),
     placements: z
       .array(z.discriminatedUnion('kind', [signPlacementV10Schema, elementPlacementV5Schema]))
@@ -506,14 +508,22 @@ export function upgradeSchemeV10(value: unknown): Scheme {
 /** v11 → v12: only explicit source distances/links; objects and historical snapshots stay intact. */
 export function upgradeSchemeV11(value: unknown): Scheme {
   const previous = schemeV11Schema.parse(value)
-  return schemeSchema.parse({
+  return upgradeSchemeV12({
     ...previous,
     schemaVersion: 12,
     roadLayout: migrateRoadLayout(previous.source, previous.placements),
   })
 }
 
+/** v12 → v13 introduces no inferred branch placement or post movement. */
+export function upgradeSchemeV12(value: unknown): Scheme {
+  const previous = schemeV12Schema.parse(value)
+  return schemeSchema.parse({ ...previous, schemaVersion: 13 })
+}
+
 export function parseStoredScheme(value: unknown): Scheme {
+  if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 12)
+    return upgradeSchemeV12(value)
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 2) {
     return upgradeSchemeV2(value)
   }

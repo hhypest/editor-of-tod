@@ -1,7 +1,14 @@
 import { z } from 'zod'
-import type { RoadLayout, RoadObjectLink } from './road-layout'
+import { branchPlacementSchema, type RoadLayout, type RoadObjectLink } from './road-layout.ts'
 
 const text = z.string().max(5_000)
+export const branchPlacementDraftSchema = z.strictObject({
+  enabled: z.boolean(),
+  branch: z.enum(['', 'up', 'down']),
+  alongSvg: text,
+  acrossSvg: text,
+  rotation: z.enum(['0', '90', '180', '270']),
+})
 /** Raw input belongs to the existing sign-post form; no physical distance is inferred. */
 export const roadObjectLinkDraftSchema = z.strictObject({
   nodeId: text,
@@ -9,6 +16,7 @@ export const roadObjectLinkDraftSchema = z.strictObject({
   installationKnown: z.boolean(),
   installationFrom: z.enum(['L0', 'E', 'node-axis']),
   installationMetres: text,
+  branchPlacement: branchPlacementDraftSchema.optional(),
 })
 export type RoadObjectLinkDraft = z.infer<typeof roadObjectLinkDraftSchema>
 
@@ -19,6 +27,13 @@ export function createRoadObjectLinkDraft(link?: RoadObjectLink): RoadObjectLink
     installationKnown: link?.installation != null,
     installationFrom: link?.installation?.from ?? 'node-axis',
     installationMetres: link?.installation ? String(link.installation.metres) : '',
+    branchPlacement: {
+      enabled: link?.branchPlacement != null,
+      branch: link?.branchPlacement?.branch ?? '',
+      alongSvg: String(link?.branchPlacement?.alongSvg ?? 140),
+      acrossSvg: String(link?.branchPlacement?.acrossSvg ?? 100),
+      rotation: String(link?.branchPlacement?.rotation ?? 0) as '0' | '90' | '180' | '270',
+    },
   }
 }
 
@@ -35,7 +50,12 @@ export function editedRoadObjectLinks(
   if (!parsed.success)
     throw new RoadObjectLinkEditError('Проверьте поля связи стойки с примыканием.')
   const draft = parsed.data
-  if (!draft.nodeId.trim()) return layout.links.filter((link) => link.placementId !== placementId)
+  const previous = layout.links.find((link) => link.placementId === placementId)
+  if (!draft.nodeId.trim()) {
+    if (previous?.branchPlacement && draft.branchPlacement?.enabled !== false)
+      throw new RoadObjectLinkEditError('Сначала явно снимите размещение стойки на ветви.')
+    return layout.links.filter((link) => link.placementId !== placementId)
+  }
   const nodeId = Number(draft.nodeId)
   const node = layout.nodes.find((item) => item.id === nodeId)
   if (!/^[1-9]\d*$/.test(draft.nodeId) || !Number.isSafeInteger(nodeId) || !node)
@@ -54,12 +74,45 @@ export function editedRoadObjectLinks(
       )
     installation = { from: draft.installationFrom, metres }
   }
-  const previous = layout.links.find((link) => link.placementId === placementId)
+  if (
+    previous?.branchPlacement &&
+    (previous.nodeId !== nodeId || previous.role !== draft.role) &&
+    draft.branchPlacement?.enabled !== false
+  )
+    throw new RoadObjectLinkEditError('Сначала явно снимите размещение стойки на ветви.')
+  let branchPlacement = previous?.branchPlacement
+  if (draft.branchPlacement !== undefined) {
+    branchPlacement = undefined
+    if (draft.branchPlacement.enabled) {
+      const along = draft.branchPlacement.alongSvg.trim().replace(',', '.')
+      const across = draft.branchPlacement.acrossSvg.trim().replace(',', '.')
+      const branch = branchPlacementSchema.safeParse({
+        branch: draft.branchPlacement.branch,
+        alongSvg: Number(along),
+        acrossSvg: Number(across),
+        rotation: Number(draft.branchPlacement.rotation),
+      })
+      if (!/^\d+(?:\.\d+)?$/.test(along) || !/^-?\d+(?:\.\d+)?$/.test(across) || !branch.success)
+        throw new RoadObjectLinkEditError(
+          'Размещение на ветви: выберите ветвь и заполните условные отступы числами (не более 1 000 000 по модулю). Отступ вдоль ветви неотрицательный.',
+        )
+      if (
+        draft.role === 'main-repeat' ||
+        (node.kind === 'junction' && node.side !== branch.data.branch)
+      )
+        throw new RoadObjectLinkEditError('Ветвь не соответствует узлу или назначению стойки.')
+      branchPlacement = branch.data
+    }
+  }
   if (
     previous?.nodeId === nodeId &&
     previous.role === draft.role &&
     previous.installation?.from === installation?.from &&
-    previous.installation?.metres === installation?.metres
+    previous.installation?.metres === installation?.metres &&
+    previous.branchPlacement?.branch === branchPlacement?.branch &&
+    previous.branchPlacement?.alongSvg === branchPlacement?.alongSvg &&
+    previous.branchPlacement?.acrossSvg === branchPlacement?.acrossSvg &&
+    previous.branchPlacement?.rotation === branchPlacement?.rotation
   )
     return layout.links
   const next: RoadObjectLink = {
@@ -68,6 +121,7 @@ export function editedRoadObjectLinks(
     role: draft.role,
     origin: 'manual',
     installation,
+    ...(branchPlacement ? { branchPlacement } : {}),
   }
   return previous
     ? layout.links.map((link) => (link.placementId === placementId ? next : link))

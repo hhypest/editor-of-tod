@@ -1,4 +1,5 @@
 import { projectRoadSheet, type RoadSheet } from './road-sheet'
+import { branchInstallationCaption } from './branch-post-geometry'
 import { decimalComma, decimalCommaInMeasures } from './number-format'
 import type { Scheme } from './model'
 import { postCaption } from './post-distance'
@@ -24,6 +25,7 @@ type SheetPost = {
   stand: 'left' | 'right'
   /** Вертикальный сдвиг стойки относительно своей стороны дороги. */
   dy: number
+  branch?: { nodeId: number; rotation: 0 | 90 | 180 | 270 }
 }
 
 type SheetElement = {
@@ -108,22 +110,26 @@ export function projectDraftSheet(
 ): DraftSheet {
   const zone = scheme.parameters.workZones[scheme.template.code]
   if (!zone) throw new Error('Размеры выбранного варианта не заполнены.')
-  const { anchors, coordinates, scale } = schemeLayout(scheme)
+  const { anchors, coordinates, scale, branch } = schemeLayout(scheme)
   const placements: DraftSheet['placements'] = scheme.placements.map((placement) => {
     const { x, y } = coordinates(placement)
     if (placement.kind === 'sign-post') {
+      const attached = branch(placement.id)
       return {
         kind: 'sign-post',
         id: placement.id,
         x,
         y,
         signIds: [...placement.signIds],
-        distanceLabel: placement.distance
-          ? postCaption(placement.distance, scheme.parameters.signDistancesMetres)
-          : renderDistanceLabel(placement.distanceLabel, scheme.parameters.signDistancesMetres),
+        distanceLabel: attached
+          ? branchInstallationCaption(attached.link)
+          : placement.distance
+            ? postCaption(placement.distance, scheme.parameters.signDistancesMetres)
+            : renderDistanceLabel(placement.distanceLabel, scheme.parameters.signDistancesMetres),
         side: placement.side,
         stand: placement.stand,
-        dy: placement.position.offsetYSvg,
+        dy: attached ? y - (placement.side === 'up' ? 353 : 567) : placement.position.offsetYSvg,
+        ...(attached ? { branch: { nodeId: attached.nodeId, rotation: attached.rotation } } : {}),
       }
     }
     return {

@@ -1,4 +1,5 @@
 import { legacyRoadLayoutProblem } from './legacy-road-layout'
+import { branchPostIds } from './branch-post-geometry'
 import { roadLayoutProblem } from './road-layout-readiness'
 import { regulationThresholds } from './regulation-thresholds'
 import type { Scheme } from './model'
@@ -93,6 +94,7 @@ export function reviewScheme(
       path: legacyRoad ? 'source.originalJson' : 'roadLayout.nodes',
     })
   const { parameters, titleBlock, crossing, placements } = scheme
+  const branchIds = branchPostIds(scheme.roadLayout)
 
   const place = missingFields([
     ['участок', parameters.locationText, 'parameters.locationText'],
@@ -208,6 +210,7 @@ export function reviewScheme(
       .filter(
         (placement) =>
           placement.kind === 'sign-post' &&
+          !branchIds.has(placement.id) &&
           ((placement.distance?.by === 'marker' && placement.distance.marker === name) ||
             placement.distanceLabel?.includes(`{${name}}`)),
       )
@@ -230,6 +233,7 @@ export function reviewScheme(
   const freePosts = placements.filter(
     (placement) =>
       placement.kind === 'sign-post' &&
+      !branchIds.has(placement.id) &&
       !placement.distance &&
       !(
         /^post2:[LR]:end$/.test(placement.templateSlot ?? '') &&

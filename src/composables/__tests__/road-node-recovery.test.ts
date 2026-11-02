@@ -69,7 +69,7 @@ it('restores the road form in its own ID namespace without selecting a same-numb
   )
   await actions.openRecovery(record.sessionId)
   expect(showError).not.toHaveBeenCalled()
-  expect(document.imported.value?.format).toBe('scheme-v12')
+  expect(document.imported.value?.format).toBe('scheme-v13')
   expect(document.selectedPlacementId.value).toBe(scheme.placements[0]!.id)
   expect(document.selectedRoadNodeId.value).toBe(road.id)
   expect(drafts.pendingPlacement.value).toBeNull()

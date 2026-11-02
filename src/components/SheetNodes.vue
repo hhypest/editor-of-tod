@@ -87,6 +87,11 @@ function paint(fill: string | undefined): string {
         :class="node.cls"
         :data-object-id="node.objectId"
         :data-road-node-id="node.roadNodeId"
+        :transform="
+          node.rotation
+            ? `rotate(${node.rotation.degrees} ${node.rotation.cx} ${node.rotation.cy})`
+            : undefined
+        "
       >
         <SheetNodes
           :nodes="node.children"

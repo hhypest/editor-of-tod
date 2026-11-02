@@ -16,6 +16,7 @@ import { figureDimensions } from '../domain/figure-dimensions'
 import { templateLabel } from '../domain/registry'
 import { useNormativeRules } from '../composables/useNormativeRules'
 import { projectRoadSheet, drawRoadSheet } from '../domain/road-sheet'
+import { branchInstallationCaption } from '../domain/branch-post-geometry'
 import SheetNodes from './SheetNodes.vue'
 import RoadworkSymbol from './RoadworkSymbol.vue'
 import SignPreview from './SignPreview.vue'
@@ -149,7 +150,12 @@ function onKeydown(event: KeyboardEvent, placement: Placement): void {
   const deltaY = event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0
   emit('select', placement.id)
   // У стойки с расстоянием стрелки влево и вправо меняют расстояние: 5 м, с Shift — 10 м.
-  if (placement.kind === 'sign-post' && placement.distance && deltaX !== 0) {
+  if (
+    placement.kind === 'sign-post' &&
+    placement.distance &&
+    !layout.value.branch(placement.id) &&
+    deltaX !== 0
+  ) {
     try {
       emit(
         'apply',
@@ -170,6 +176,8 @@ function onKeydown(event: KeyboardEvent, placement: Placement): void {
  */
 function distanceCaption(placement: Placement): string {
   if (placement.kind !== 'sign-post') return ''
+  const branch = layout.value.branch(placement.id)
+  if (branch) return branchInstallationCaption(branch.link) ?? 'установка не задана'
   const distances = props.scheme.parameters.signDistancesMetres
   if (!placement.distance) return placement.distanceLabel ? 'без расстояния' : ''
   const moving = drag.value?.id === placement.id ? drag.value.deltaX : 0
@@ -228,6 +236,10 @@ function nameFor(placement: Placement): string {
         }}){{ part.agreesWithFigure ? '' : ' — сверить' }}
       </li>
     </ol>
+    <p v-if="scheme.roadLayout.links.some((link) => link.branchPlacement)" class="hint">
+      Стойки на ветвях перемещаются в условных единицах листа. Замер установки в метрах
+      редактируется отдельно и при переносе сохраняется.
+    </p>
     <p v-if="locked" class="hint" role="status">
       Сначала примените или отмените изменения в форме. Перемещение временно заблокировано.
     </p>
@@ -314,6 +326,12 @@ function nameFor(placement: Placement): string {
             :style="{
               left: `${left(placement)}px`,
               top: `${top(placement)}px`,
+              ...(placement.kind === 'sign-post' && layout.branch(placement.id)
+                ? {
+                    transform: `${placement.stand === 'right' ? 'translate(-100%, -50%)' : 'translateY(-50%)'} rotate(${layout.branch(placement.id)!.rotation}deg)`,
+                    transformOrigin: placement.stand === 'right' ? '100% 50%' : '0 50%',
+                  }
+                : {}),
               ...(placement.kind === 'element' && placement.elementKind !== 'text'
                 ? {
                     minWidth: `${Math.max(placement.sizeSvg.width, 28)}px`,
@@ -322,10 +340,11 @@ function nameFor(placement: Placement): string {
                 : {}),
             }"
             :aria-label="nameFor(placement)"
+            :data-branch-post="layout.branch(placement.id)?.nodeId"
             :aria-pressed="selectedId === placement.id"
             :disabled="locked"
             :title="
-              placement.kind === 'sign-post' && placement.distance
+              placement.kind === 'sign-post' && (placement.distance || layout.branch(placement.id))
                 ? `${nameFor(placement)} · ${distanceCaption(placement)}`
                 : `${nameFor(placement)} · ${placement.position.anchor}`
             "

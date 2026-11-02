@@ -148,7 +148,7 @@ describe('frozen files of previous formats', () => {
       const { roadLayout: _roadLayout, ...historical } = scheme
       void _roadLayout
       await expect(
-        `${JSON.stringify(original.schemaVersion >= 12 ? scheme : { ...historical, schemaVersion: original.schemaVersion <= 10 ? 10 : original.schemaVersion }, null, 2)}\n`,
+        `${JSON.stringify(original.schemaVersion >= 12 ? { ...scheme, schemaVersion: original.schemaVersion } : { ...historical, schemaVersion: original.schemaVersion <= 10 ? 10 : original.schemaVersion }, null, 2)}\n`,
       ).toMatchFileSnapshot(join(root, 'expected', filename))
     })
   })

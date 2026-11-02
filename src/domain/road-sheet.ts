@@ -353,7 +353,13 @@ export function drawRoadSheet(sheet: RoadSheet): {
 /** Layout conflicts only, not normative conclusions. Preserved objects are never relocated/deleted. */
 export function roadObjectProblems(
   boxes: readonly RoadNodeBox[],
-  objects: readonly { id: number; kind?: string; box: Box; extent: Box }[],
+  objects: readonly {
+    id: number
+    kind?: string
+    box: Box
+    extent: Box
+    roadBranchNodeId?: number
+  }[],
   tee?: RoadSheetNode,
 ): RoadSheetProblem[] {
   const result: RoadSheetProblem[] = []
@@ -379,6 +385,7 @@ export function roadObjectProblems(
       .filter(
         (object) =>
           object.kind === 'sign-post' &&
+          object.roadBranchNodeId === undefined &&
           (tee.position.approach === 'right'
             ? object.box[0] > tee.x + 80
             : object.box[0] + object.box[2] < tee.x - 80),

@@ -115,6 +115,14 @@ watch(
         props.scheme.roadLayout.links.find((link) => link.placementId === draft.value?.id),
       )
     }
+    if (
+      draft.value?.kind === 'sign-post' &&
+      draft.value.roadLink &&
+      !draft.value.roadLink.branchPlacement
+    )
+      draft.value.roadLink.branchPlacement = createRoadObjectLinkDraft(
+        props.scheme.roadLayout.links.find((link) => link.placementId === draft.value?.id),
+      ).branchPlacement
     selectedId.value = recovery.placement.id
     dirty.value = true
     emit('dirty', true)
@@ -326,7 +334,7 @@ function removeSelected(): void {
               : 'Ручной объект.'
           }}
         </p>
-        <template v-if="draft.kind === 'sign-post'">
+        <template v-if="draft.kind === 'sign-post' && !draft.roadLink?.branchPlacement?.enabled">
           <div class="fields distance-fields">
             <label
               >Расстояние до начала работ
@@ -367,7 +375,10 @@ function removeSelected(): void {
             }}
           </p>
         </template>
-        <div class="fields position-fields">
+        <div
+          v-if="draft.kind !== 'sign-post' || !draft.roadLink?.branchPlacement?.enabled"
+          class="fields position-fields"
+        >
           <template v-if="draft.kind !== 'sign-post' || draft.distanceMode === 'none'">
             <label
               >Привязка

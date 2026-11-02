@@ -71,7 +71,7 @@ describe('v12 road data through the production SQLite owners', () => {
       scheme_json: payload,
     })
     expect(projects.save(current, 1).revision).toBe(2)
-    expect(projects.get(current.id)?.storedSchemaVersion).toBe(12)
+    expect(projects.get(current.id)?.storedSchemaVersion).toBe(13)
     expect(
       db.prepare('SELECT scheme_json FROM project_revisions WHERE revision = 1').get(),
     ).toEqual({ scheme_json: payload })

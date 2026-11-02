@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { expect, test } from './workspace-test'
-import { schemeSchema } from '../../src/domain/model'
+import { schemeSchema, parseStoredScheme } from '../../src/domain/model'
 
 test('native v12 roads are visible, persist through save/export, and cannot bypass the geometry guard', async ({
   page,
 }, testInfo) => {
-  const scheme = schemeSchema.parse(
+  const scheme = parseStoredScheme(
     JSON.parse(readFileSync('tests/fixtures/frozen/projects/project-v12-native-b34.json', 'utf8')),
   )
   scheme.id = randomUUID()
