@@ -200,7 +200,7 @@ describe('real DiagnosticsPanel SFC contracts', () => {
     expect(serialized).not.toContain(scheme.crossing.referenceId)
     expect(JSON.parse(serialized).interface.project).toMatchObject({
       open: true,
-      schemaVersion: 12,
+      schemaVersion: 13,
       placements: scheme.placements.length,
     })
     expect(link.click).toHaveBeenCalledTimes(1)

@@ -103,7 +103,7 @@ export function createUnlinkedScheme(
     labels: { taper: '', buffer: '', work: '' },
   }
   const parsed = schemeSchema.safeParse({
-    schemaVersion: 12,
+    schemaVersion: 13,
     roadLayout: emptyRoadLayout(),
     id: options.id ?? crypto.randomUUID(),
     createdAt: options.now ?? new Date().toISOString(),

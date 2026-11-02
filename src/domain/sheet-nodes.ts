@@ -42,6 +42,7 @@ export type SheetNode =
       t: 'group'
       objectId?: number
       roadNodeId?: number
+      rotation?: { degrees: number; cx: number; cy: number }
       cls?: string
       box?: [number, number, number, number]
       children: SheetNode[]

@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import type { RoadLayout } from '../domain/road-layout'
 import type { RoadObjectLinkDraft } from '../domain/road-object-link-draft'
+import { createRoadObjectLinkDraft } from '../domain/road-object-link-draft'
+import BranchPostFields from './BranchPostFields.vue'
 
 const props = defineProps<{ modelValue: RoadObjectLinkDraft; layout: RoadLayout }>()
 const emit = defineEmits<{ 'update:modelValue': [value: RoadObjectLinkDraft] }>()
@@ -28,6 +30,7 @@ function chooseNode(event: Event) {
           : props.modelValue.role,
     installationKnown: false,
     installationMetres: '',
+    branchPlacement: createRoadObjectLinkDraft().branchPlacement,
   })
 }
 </script>
@@ -37,7 +40,11 @@ function chooseNode(event: Event) {
     <legend>Связь стойки с примыканием</legend>
     <label
       >Узел для стойки
-      <select :value="modelValue.nodeId" @change="chooseNode">
+      <select
+        :value="modelValue.nodeId"
+        :disabled="modelValue.branchPlacement?.enabled"
+        @change="chooseNode"
+      >
         <option value="">Без связи с примыканием</option>
         <option v-for="node in layout.nodes" :key="node.id" :value="String(node.id)">
           № {{ node.id }} —
@@ -64,7 +71,9 @@ function chooseNode(event: Event) {
             Объект Т-перекрёстка
           </option>
           <template v-else>
-            <option value="main-repeat">Повтор на основной дороге</option>
+            <option value="main-repeat" :disabled="modelValue.branchPlacement?.enabled">
+              Повтор на основной дороге
+            </option>
             <option value="side-warning">Предупреждение на примыкающей дороге</option>
           </template>
         </select>
@@ -99,10 +108,20 @@ function chooseNode(event: Event) {
             @input="update('installationMetres', target($event))"
         /></label>
       </div>
+      <BranchPostFields
+        v-if="modelValue.branchPlacement"
+        :model-value="modelValue.branchPlacement"
+        :node="selected"
+        :allowed="Boolean(selected) && modelValue.role !== 'main-repeat'"
+        @update:model-value="update('branchPlacement', $event)"
+      />
+      <p v-if="modelValue.branchPlacement?.enabled" class="hint">
+        Чтобы сменить узел или снять связь, сначала явно снимите размещение на ветви.
+      </p>
       <p class="hint">
         Замер установки независим от расстояния до примыкания и числа на табличке. При выборе
-        другого узла замер нужно заполнить заново. Эти поля сохраняют связь и замер; положение и
-        ориентация стойки на рисунке сохраняются.
+        другого узла замер нужно заполнить заново. Изменение замера сохраняет положение и
+        ориентацию. Размещение на ветви задаётся отдельно ниже.
       </p>
     </template>
     <p v-else class="hint">

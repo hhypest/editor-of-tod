@@ -1,4 +1,5 @@
 import { drawRoadSheet, roadObjectProblems, type RoadSheetProblem } from './road-sheet'
+import { rotatePostBox } from './branch-post-geometry'
 import { decimalComma } from './number-format'
 import { drawnSignBase, isPlate, postColumns, signImageCode } from './sign-code'
 // Preserve the drawing API while code interpretation lives independently of the drawing.
@@ -44,6 +45,7 @@ export type SheetDrawing = {
     box: [number, number, number, number]
     /** Всё, что рисует объект, включая выноску и подпись расстояния: для проверки границ листа. */
     extent: [number, number, number, number]
+    roadBranchNodeId?: number
   }>
   /** Коды знаков, для которых нужен PNG (после подстановки имени из архива). */
   signCodes: string[]
@@ -225,7 +227,14 @@ function drawPost(
   let extentRight = Math.max(rightEdge, codeRight)
   if (post.distanceLabel !== null) {
     const labelLength = textWidth(post.distanceLabel, 12.5)
-    if (down) extentBottom = Math.max(extentBottom, 655 + post.dy + labelLength)
+    if (post.branch) {
+      // A -90° caption points toward the post: end-anchor above, start-anchor below.
+      // Keep legacy main-road bounds unchanged; rotating their conservative opposite tail
+      // would incorrectly put an invisible caption outside the page.
+      const end = (down ? 655 : 245) + post.dy
+      extentTop = Math.min(extentTop, down ? end - labelLength : end)
+      extentBottom = Math.max(extentBottom, down ? end : end + labelLength)
+    } else if (down) extentBottom = Math.max(extentBottom, 655 + post.dy + labelLength)
     else extentTop = Math.min(extentTop, 245 + post.dy - labelLength)
     const labelX = right ? x + 14 : x - 3
     extentLeft = Math.min(extentLeft, labelX - 14)
@@ -704,17 +713,23 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
         ? drawPost(item, options, available)
         : drawElement(item, available, options)
     drawn.codes.forEach((code) => codes.add(code))
+    const rotation = item.kind === 'sign-post' ? (item.branch?.rotation ?? 0) : 0
+    const box = rotation ? rotatePostBox(drawn.box, item.x, item.y, rotation) : drawn.box
+    const rawExtent = 'extent' in drawn ? (drawn.extent as Box) : drawn.box
+    const extent = rotation ? rotatePostBox(rawExtent, item.x, item.y, rotation) : rawExtent
     objectBoxes.push({
       id: item.id,
       kind: item.kind,
-      box: drawn.box,
-      extent: 'extent' in drawn ? (drawn.extent as Box) : drawn.box,
+      box,
+      extent,
+      ...(item.kind === 'sign-post' && item.branch ? { roadBranchNodeId: item.branch.nodeId } : {}),
     })
     nodes.push({
       t: 'group',
       objectId: item.id,
       cls: `placed-object ${item.kind === 'sign-post' ? 'sign-post' : item.elementKind}`,
-      box: drawn.box,
+      box,
+      ...(rotation ? { rotation: { degrees: rotation, cx: item.x, cy: item.y } } : {}),
       children: drawn.nodes,
     })
   }

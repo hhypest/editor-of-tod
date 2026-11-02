@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { expect, test, type Page } from './workspace-test'
-import { schemeSchema } from '../../src/domain/model'
+import { schemeSchema, parseStoredScheme } from '../../src/domain/model'
 
 function project(reference: string) {
-  const scheme = schemeSchema.parse(
+  const scheme = parseStoredScheme(
     JSON.parse(readFileSync('tests/fixtures/frozen/projects/project-v12-native-b34.json', 'utf8')),
   )
   scheme.id = randomUUID()
@@ -22,7 +22,7 @@ async function open(page: Page, scheme: ReturnType<typeof project>) {
   await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
 }
 
-test('road edits keep linked objects and plate values, support one-step undo, and save native v12', async ({
+test('road edits keep linked objects and plate values, support one-step undo, and save as current v13', async ({
   page,
   request,
 }, testInfo) => {

@@ -1,6 +1,8 @@
 import { schemeSchema, type Scheme } from './model'
 import { postMetres, postScale, snapPostMetres, type PostScale } from './post-distance'
 import { zoneAnchors } from './zone-geometry'
+import { projectRoadSheet } from './road-sheet'
+import { branchPostPositions } from './branch-post-geometry'
 
 type Placement = Scheme['placements'][number]
 type Anchor = Placement['position']['anchor']
@@ -48,10 +50,16 @@ export function schemeLayout(scheme: Scheme) {
     scale: postScale(scheme, anchors),
     distances: scheme.parameters.signDistancesMetres,
   }
+  const branches = branchPostPositions(
+    scheme.roadLayout,
+    projectRoadSheet(scheme.roadLayout.nodes, anchors, layout.scale).nodes,
+  )
   return {
     anchors,
     scale: layout.scale,
-    coordinates: (placement: Placement) => placementCoordinates(placement, anchors, layout),
+    branch: (id: number) => branches.get(id),
+    coordinates: (placement: Placement) =>
+      branches.get(placement.id) ?? placementCoordinates(placement, anchors, layout),
   }
 }
 
@@ -62,6 +70,35 @@ export function movePlacement(scheme: Scheme, id: number, deltaX: number, deltaY
   const selected = scheme.placements.find((placement) => placement.id === id)
   if (!selected) throw new Error(`Объект ${id} не найден.`)
   if (deltaX === 0 && deltaY === 0) return scheme
+  const attached = scheme.roadLayout.links.find(
+    (link) => link.placementId === id && link.branchPlacement,
+  )
+  if (attached?.branchPlacement) {
+    const branch = attached.branchPlacement
+    const alongSvg = branch.alongSvg + (branch.branch === 'up' ? -deltaY : deltaY)
+    if (alongSvg < 0)
+      throw new Error('Для переноса за ось узла выберите другую ветвь в свойствах стойки.')
+    const result = schemeSchema.safeParse({
+      ...scheme,
+      placements: scheme.placements.map((item) =>
+        item.id === id ? { ...item, generatedByTemplate: false } : item,
+      ),
+      roadLayout: {
+        ...scheme.roadLayout,
+        links: scheme.roadLayout.links.map((link) =>
+          link.placementId === id
+            ? {
+                ...link,
+                origin: 'manual',
+                branchPlacement: { ...branch, alongSvg, acrossSvg: branch.acrossSvg + deltaX },
+              }
+            : link,
+        ),
+      },
+    })
+    if (!result.success) throw new Error('Смещение выходит за допустимые условные границы рисунка.')
+    return result.data
+  }
 
   const placements = scheme.placements.map((placement): Placement => {
     if (placement.id !== id) return placement
@@ -118,6 +155,10 @@ export function movePlacement(scheme: Scheme, id: number, deltaX: number, deltaY
  * удаляет. Стойка, связанная с полем этапа 2, получает собственное расстояние.
  */
 export function stepPostDistance(scheme: Scheme, id: number, screenStepMetres: number): Scheme {
+  if (scheme.roadLayout.links.some((link) => link.placementId === id && link.branchPlacement))
+    throw new Error(
+      'Стойка на ветви перемещается в условных единицах; замер установки редактируется отдельно.',
+    )
   const selected = scheme.placements.find((placement) => placement.id === id)
   if (!selected || selected.kind !== 'sign-post' || !selected.distance)
     throw new Error(`Стойка ${id} с расстоянием не найдена.`)

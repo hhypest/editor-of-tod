@@ -42,6 +42,15 @@ export const roadNodeSchema = z.discriminatedUnion('kind', [
   }),
 ])
 
+/** Explicit conditional placement on a branch; these are drawing units, never metres. */
+export const branchPlacementSchema = z.strictObject({
+  branch: z.enum(['up', 'down']),
+  alongSvg: finite.nonnegative().max(1_000_000),
+  acrossSvg: finite.min(-1_000_000).max(1_000_000),
+  rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]),
+})
+export type BranchPlacement = z.infer<typeof branchPlacementSchema>
+
 export const roadObjectLinkSchema = z.strictObject({
   placementId: id,
   nodeId: id,
@@ -55,6 +64,7 @@ export const roadObjectLinkSchema = z.strictObject({
       metres: finite.nonnegative(),
     })
     .nullable(),
+  branchPlacement: branchPlacementSchema.optional(),
 })
 
 export const roadLayoutSchema = z
@@ -105,6 +115,18 @@ export const roadLayoutSchema = z
           path: ['links', index, 'role'],
           message: 'Назначение связи не соответствует виду примыкания',
         })
+      if (
+        link.branchPlacement &&
+        node &&
+        (link.role === 'main-repeat' ||
+          (node.kind === 'junction' && node.side !== link.branchPlacement.branch))
+      )
+        context.addIssue({
+          code: 'custom',
+          path: ['links', index, 'branchPlacement'],
+          message:
+            'Ветвь стойки не соответствует узлу или назначению связи. Сначала явно снимите размещение на ветви.',
+        })
       if (placements.has(link.placementId))
         context.addIssue({
           code: 'custom',
@@ -142,6 +164,12 @@ export function checkRoadLayoutPlacements(
         code: 'custom',
         path: ['roadLayout', 'links', index, 'installation'],
         message: 'Расстояние установки задаётся только для стойки',
+      })
+    else if (link.branchPlacement && placement.kind !== 'sign-post')
+      context.addIssue({
+        code: 'custom',
+        path: ['roadLayout', 'links', index, 'branchPlacement'],
+        message: 'На ветви размещается только стойка.',
       })
   }
 }

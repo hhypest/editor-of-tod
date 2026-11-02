@@ -117,7 +117,7 @@ describe('historical decision evidence in format v9', () => {
     const previous = v8Snapshot(original)
     const migrated = importSchemeJson(JSON.stringify(previous))
     expect(migrated.format).toBe('scheme-v8')
-    expect(migrated.scheme.schemaVersion).toBe(12)
+    expect(migrated.scheme.schemaVersion).toBe(13)
     expect(migrated.scheme.parameters.speedConditions).toEqual({ road: '', vehicle: '' })
     expect(migrated.scheme.decisionEvidence).toEqual({ speed: null, regulation: null })
     // Стойки получили расстояние из прежней подписи; в записи прежнего формата они те же.

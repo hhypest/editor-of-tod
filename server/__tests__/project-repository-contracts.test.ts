@@ -39,7 +39,7 @@ describe('project repository contracts through initialized storage owners', () =
     const store = openTestApplication(path)
     const raw = new DatabaseSync(path)
     try {
-      const first = { ...store.projects.save(scheme, 0), storedSchemaVersion: 12 }
+      const first = { ...store.projects.save(scheme, 0), storedSchemaVersion: 13 }
       const edited = {
         ...scheme,
         parameters: { ...scheme.parameters, locationText: 'Вымышленная правка' },

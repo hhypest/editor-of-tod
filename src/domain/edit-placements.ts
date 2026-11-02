@@ -182,9 +182,13 @@ function optionalFontSize(value: string): number | null {
   return size
 }
 
-function placementFromDraft(draft: PlacementDraft, id: number): Placement {
-  const x = numberField(draft.x, 'X')
-  const y = numberField(draft.y, 'Y')
+function placementFromDraft(
+  draft: PlacementDraft,
+  id: number,
+  main?: SignPlacement | null,
+): Placement {
+  const x = main !== undefined ? (main?.position.offsetXSvg ?? 0) : numberField(draft.x, 'X')
+  const y = main !== undefined ? (main?.position.offsetYSvg ?? 0) : numberField(draft.y, 'Y')
   if (draft.kind === 'sign-post') {
     const signIds = draft.signCodes
       .split(/[,;\n]/)
@@ -194,26 +198,35 @@ function placementFromDraft(draft: PlacementDraft, id: number): Placement {
       throw new PlacementEditError('На стойке должно быть от 1 до 20 кодов знаков до 120 символов.')
     }
     const distance: SignPlacement['distance'] =
-      draft.distanceMode === 'none'
-        ? null
-        : draft.distanceMode === 'own'
-          ? {
-              by: 'metres',
-              approach: draft.approach,
-              metres: numberField(draft.distanceMetres, 'Расстояние до начала работ, м', 0),
-            }
-          : { by: 'marker', approach: draft.approach, marker: draft.distanceMode }
+      main !== undefined
+        ? (main?.distance ?? null)
+        : draft.distanceMode === 'none'
+          ? null
+          : draft.distanceMode === 'own'
+            ? {
+                by: 'metres',
+                approach: draft.approach,
+                metres: numberField(draft.distanceMetres, 'Расстояние до начала работ, м', 0),
+              }
+            : { by: 'marker', approach: draft.approach, marker: draft.distanceMode }
     return {
       kind: 'sign-post',
       id,
       generatedByTemplate: false,
-      position: { anchor: draft.anchor, offsetXSvg: x, offsetYSvg: y },
+      position: main
+        ? { ...main.position }
+        : { anchor: main === null ? 'abs' : draft.anchor, offsetXSvg: x, offsetYSvg: y },
       side: draft.side,
       stand: draft.stand,
       signIds,
       distance,
       // Подпись стойки с расстоянием строится из него.
-      distanceLabel: distance ? null : draft.distanceLabel.trim() || null,
+      distanceLabel:
+        main !== undefined
+          ? (main?.distanceLabel ?? null)
+          : distance
+            ? null
+            : draft.distanceLabel.trim() || null,
     }
   }
   if (draft.elementKind === 'text' && !draft.text.trim()) {
@@ -279,7 +292,6 @@ export function savePlacement(scheme: Scheme, draft: PlacementDraft): Scheme {
     throw new PlacementEditError('Тип существующего элемента менять нельзя.')
   }
   const id = draft.id ?? scheme.nextPlacementId
-  const placement = keepTemplateContext(placementFromDraft(draft, id), existing)
   let links = scheme.roadLayout.links
   if (draft.kind === 'sign-post') {
     try {
@@ -289,6 +301,14 @@ export function savePlacement(scheme: Scheme, draft: PlacementDraft): Scheme {
       throw cause
     }
   }
+  const attached = links.some((link) => link.placementId === id && link.branchPlacement)
+  const main =
+    attached && draft.kind === 'sign-post'
+      ? existing?.kind === 'sign-post'
+        ? existing
+        : null
+      : undefined
+  const placement = keepTemplateContext(placementFromDraft(draft, id, main), existing)
   return checked({
     ...scheme,
     roadLayout: { ...scheme.roadLayout, links },
