@@ -12,6 +12,15 @@ import { startHistory, recordEdit, undoEdit, redoEdit } from '../edit-history'
 import { createRoadNodeDraft, saveRoadNode } from '../edit-road-nodes'
 import { roadLayoutProblem } from '../road-layout-readiness'
 import type { BranchPlacement } from '../road-layout'
+import {
+  speedSteps,
+  stepIntervalProblems,
+  singleWarningProblems,
+  plateCountProblems,
+} from '../post-checks'
+import { PROTOTYPE_RULES } from '../normative-parameters'
+import { reviewScheme } from '../review-scheme'
+import { releaseProblems } from '../release-readiness'
 
 const options = { signSizes: new Map(), catalogLabel: 'Учебный', revisionLabel: 'Проверка' }
 function setup(
@@ -227,4 +236,77 @@ describe('explicit branch positions and independent v13 codec', () => {
     expect(roadLayoutProblem(setup().attached)).toBeTruthy()
     expect(schemeSchema.shape.schemaVersion.value).toBe(13)
   })
+})
+
+describe('inactive main-road data of branch posts', () => {
+  function example(branchSigns: string[], mainSigns: string[]) {
+    const { attached } = setup()
+    return schemeSchema.parse({
+      ...attached,
+      placements: attached.placements.slice(0, 2).map((post, index) => ({
+        ...post,
+        signIds: index === 0 ? branchSigns : mainSigns,
+        distance: { by: 'metres', approach: 'left', metres: index === 0 ? 200 : 150 },
+      })),
+    })
+  }
+  function detach(scheme: ReturnType<typeof example>) {
+    const draft = createPlacementDraft(scheme.placements[0]!, scheme.roadLayout)
+    if (draft.kind !== 'sign-post' || !draft.roadLink?.branchPlacement)
+      throw Error('Branch expected')
+    draft.roadLink.branchPlacement.enabled = false
+    return savePlacement(scheme, draft)
+  }
+
+  it('does not compare speed steps on different roads, and restores the checks on detachment', () => {
+    const scheme = example(['3.24_70'], ['3.24_50'])
+    expect(speedSteps(scheme, 'left')).toEqual([{ postId: 2, kmh: 50, metres: 150 }])
+    expect(stepIntervalProblems(scheme, PROTOTYPE_RULES)).toBeNull()
+    expect(reviewScheme(scheme).find((item) => item.id === 'speed-step-interval')).toBeUndefined()
+    const restored = detach(scheme)
+    expect(speedSteps(restored, 'left')).toHaveLength(2)
+    expect(stepIntervalProblems(restored, PROTOTYPE_RULES)?.problems).toMatchObject([
+      { from: { postId: 1 }, to: { postId: 2 }, gapMetres: 50 },
+    ])
+    expect(restored.placements).toEqual(scheme.placements)
+    // Plate composition is active on either road; only main-road distance checks are filtered.
+    const plates = example(['1.25', '8.1.1_120', '8.2.1_38'], ['3.24_50'])
+    expect(plateCountProblems(plates, PROTOTYPE_RULES)).toMatchObject([{ postId: 1, plates: 2 }])
+  })
+
+  it.each([true, false])(
+    'does not let a branch warning suppress the main-road single warning (retained distance: %s)',
+    (known) => {
+      const scheme = example(['1.25'], ['1.25'])
+      if (!known && scheme.placements[0]?.kind === 'sign-post') scheme.placements[0].distance = null
+      expect(singleWarningProblems(scheme, PROTOTYPE_RULES)?.problems).toEqual([
+        { approach: 'left', postId: 2, metres: 150, hasDistancePlate: false },
+      ])
+      expect(
+        reviewScheme(scheme).find((item) => item.id === 'single-warning-distance'),
+      ).toBeDefined()
+      expect(singleWarningProblems(detach(scheme), PROTOTYPE_RULES)).toBeNull()
+    },
+  )
+
+  it.each(['marker', 'label', 'none'] as const)(
+    'does not request an inactive main-road %s from a branch post',
+    (mode) => {
+      const scheme = example(['3.24_70'], ['3.24_50']),
+        post = scheme.placements[0]!
+      if (post.kind !== 'sign-post') throw Error('Post expected')
+      scheme.parameters.signDistancesMetres.d300 = null
+      post.distance = mode === 'marker' ? { by: 'marker', approach: 'left', marker: 'd300' } : null
+      post.distanceLabel = mode === 'label' ? '{d300}' : null
+      const ids = reviewScheme(scheme).map((item) => item.id)
+      expect(ids).not.toContain('distance-d300')
+      expect(ids).not.toContain('post-distance')
+      expect(releaseProblems(scheme).some((message) => message.startsWith('Стойка № 1:'))).toBe(
+        false,
+      )
+      const restoredIds = reviewScheme(detach(scheme)).map((item) => item.id)
+      expect(restoredIds).toContain(mode === 'none' ? 'post-distance' : 'distance-d300')
+      expect(roadLayoutProblem(scheme)).toBeTruthy()
+    },
+  )
 })

@@ -2,6 +2,7 @@ import type { Scheme } from './model'
 import type { NormativeRules } from './normative-parameters'
 import { postMetres, type Approach } from './post-distance'
 import { isPlate, postColumns } from './sign-code'
+import { branchPostIds } from './branch-post-geometry'
 
 /**
  * Проверки стоек по расстояниям и составу знаков. Это предупреждения для ручной сверки, а не
@@ -33,8 +34,14 @@ export type StepIntervalProblem = {
  */
 export function speedSteps(scheme: Scheme, approach: Approach): SpeedStep[] {
   const signs: SpeedStep[] = []
+  const branchIds = branchPostIds(scheme.roadLayout)
   for (const placement of scheme.placements) {
-    if (placement.kind !== 'sign-post' || placement.distance?.approach !== approach) continue
+    if (
+      placement.kind !== 'sign-post' ||
+      branchIds.has(placement.id) ||
+      placement.distance?.approach !== approach
+    )
+      continue
     const metres = postMetres(placement.distance, scheme.parameters.signDistancesMetres)
     if (metres === null) continue
     for (const code of placement.signIds) {
@@ -126,12 +133,14 @@ export function singleWarningProblems(
   )
     return null
   const range = rules.singleWarningDistance
+  const branchIds = branchPostIds(scheme.roadLayout)
   // Без подхода хотя бы одного знака нельзя утверждать, что на другом подходе знак одиночный.
   // Стойки без расстояния по-прежнему перечисляются отдельным пунктом ручной сверки.
   if (
     scheme.placements.some(
       (placement) =>
         placement.kind === 'sign-post' &&
+        !branchIds.has(placement.id) &&
         !placement.distance &&
         placement.signIds.some((code) => /^1\.25(?:_|$)/.test(code)),
     )
@@ -142,6 +151,7 @@ export function singleWarningProblems(
     const posts = scheme.placements.filter(
       (placement): placement is Extract<Scheme['placements'][number], { kind: 'sign-post' }> =>
         placement.kind === 'sign-post' &&
+        !branchIds.has(placement.id) &&
         placement.distance?.approach === approach &&
         placement.signIds.some((code) => /^1\.25(?:_|$)/.test(code)),
     )

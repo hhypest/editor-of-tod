@@ -161,6 +161,11 @@ for (const approach of ['left', 'right'] as const)
     const scheme = project(approach),
       rotation = approach === 'left' ? '90' : '270',
       across = approach === 'left' ? '150' : '-150'
+    // This retained main-road marker becomes inactive on the branch, including release checks.
+    const originalPost = scheme.placements[0]!
+    if (originalPost.kind !== 'sign-post') throw Error('Post expected')
+    originalPost.distance = { by: 'marker', approach: 'left', marker: 'd300' }
+    scheme.parameters.signDistancesMetres.d300 = null
     await open(page, scheme)
     const fields = page.locator('[data-branch-post-fields]')
     await fields.getByLabel('Разместить стойку на ветви').check()

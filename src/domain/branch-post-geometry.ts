@@ -2,6 +2,13 @@ import type { RoadLayout, RoadObjectLink } from './road-layout'
 import type { RoadSheetNode } from './road-sheet'
 import { decimalComma } from './number-format.ts'
 
+/** Retained main-road data of these posts are inactive until explicit detachment. */
+export function branchPostIds(layout: RoadLayout): ReadonlySet<number> {
+  return new Set(
+    layout.links.filter((link) => link.branchPlacement).map((link) => link.placementId),
+  )
+}
+
 export function branchPostPositions(layout: RoadLayout, nodes: readonly RoadSheetNode[]) {
   const byId = new Map(nodes.map((node) => [node.id, node]))
   return new Map(

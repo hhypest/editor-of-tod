@@ -2,6 +2,7 @@ import type { Scheme } from './model'
 import { roadLayoutProblem } from './road-layout-readiness'
 import { distanceTitles } from './normative-defaults'
 import type { SheetNode } from './sheet-drawing'
+import { branchPostIds } from './branch-post-geometry'
 
 /**
  * Ошибки целостности, которые нельзя принять отметкой составителя. Пустые текстовые
@@ -40,8 +41,9 @@ export function releaseProblems(scheme: Scheme, nodes: readonly SheetNode[] = []
     )
   const distances = scheme.parameters.signDistancesMetres
   const reported = new Set<string>()
+  const branchIds = branchPostIds(scheme.roadLayout)
   for (const placement of scheme.placements) {
-    if (placement.kind !== 'sign-post') continue
+    if (placement.kind !== 'sign-post' || branchIds.has(placement.id)) continue
     if (placement.distance?.by === 'marker' && distances[placement.distance.marker] === null) {
       const marker = `{${placement.distance.marker}}`
       reported.add(marker)
