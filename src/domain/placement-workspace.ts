@@ -47,7 +47,16 @@ export function placementCoordinates(
 export function schemeLayout(scheme: Scheme) {
   const anchors = anchorCoordinates(scheme)
   const layout = {
-    scale: postScale(scheme, anchors),
+    scale: postScale(
+      {
+        ...scheme,
+        placements: [
+          ...scheme.placements,
+          ...(scheme.roadObjectExclusions?.objects ?? []).map((item) => item.post),
+        ],
+      },
+      anchors,
+    ),
     distances: scheme.parameters.signDistancesMetres,
   }
   const branches = branchPostPositions(

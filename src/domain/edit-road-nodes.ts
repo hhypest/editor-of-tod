@@ -124,7 +124,10 @@ export function saveRoadNode(scheme: Scheme, input: RoadNodeDraft): Scheme {
 export function removeRoadNode(scheme: Scheme, id: number): Scheme {
   if (!scheme.roadLayout.nodes.some((node) => node.id === id))
     throw new RoadNodeEditError('Примыкание не найдено.')
-  if (scheme.roadLayout.links.some((link) => link.nodeId === id))
+  if (
+    scheme.roadLayout.links.some((link) => link.nodeId === id) ||
+    scheme.roadObjectExclusions?.objects.some((item) => item.link.nodeId === id)
+  )
     throw new RoadNodeEditError(LINKED_ROAD_NODE_DELETE_PROBLEM)
   return checked({
     ...scheme,

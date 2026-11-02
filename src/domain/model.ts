@@ -1,10 +1,12 @@
+import { schemeV13Schema } from './formats/frozen/project-v13.ts'
+export { schemeV13Schema } from './formats/frozen/project-v13.ts'
 import { schemeV12Schema } from './formats/frozen/project-v12.ts'
 export { schemeV12Schema } from './formats/frozen/project-v12.ts'
 import { schemeV10Schema } from './formats/frozen/project-v10.ts'
 export { schemeV10Schema } from './formats/frozen/project-v10.ts'
 import { schemeV11Schema } from './formats/frozen/project-v11.ts'
 export { schemeV11Schema } from './formats/frozen/project-v11.ts'
-import { roadLayoutSchema, checkRoadLayoutPlacements } from './road-layout.ts'
+import { roadLayoutSchema, roadObjectLinkSchema, checkRoadLayoutPlacements } from './road-layout.ts'
 import { migrateRoadLayout } from './migrate-road-layout.ts'
 import {
   schemeV2Schema,
@@ -345,7 +347,7 @@ function checkSpeedConditions(
 }
 
 /**
- * v13 (#107): optional explicit branch placement on road-object links. Existing project
+ * v14 (#107): optional reversible exclusions of linked posts. Existing project
  * fields retain their order and values; migration infers no geometry or automatic placement.
  */
 export const schemeSchema = z
@@ -353,16 +355,74 @@ export const schemeSchema = z
     ...currentFields,
     titleBlock: titleBlockSchema,
     reviewMarks: reviewMarksSchema.default(() => ({})),
-    schemaVersion: z.literal(13),
+    schemaVersion: z.literal(14),
     decisionEvidence: decisionEvidenceSchema.default({ speed: null, regulation: null }),
     placements: z
       .array(z.discriminatedUnion('kind', [signPlacementV10Schema, elementPlacementV5Schema]))
       .max(2_000),
     roadLayout: roadLayoutSchema,
+    roadObjectExclusions: z
+      .strictObject({
+        objects: z
+          .array(z.strictObject({ post: signPlacementV10Schema, link: roadObjectLinkSchema }))
+          .min(1)
+          .max(2_000),
+        placementOrder: z.array(z.number().int().positive()).max(2_000),
+        linkOrder: z.array(z.number().int().positive()).max(2_000),
+      })
+      .optional(),
   })
   .superRefine(checkModernScheme)
   .superRefine(checkSpeedConditions)
   .superRefine(checkRoadLayoutPlacements)
+  .superRefine((scheme, context) => {
+    const reserved = new Set(scheme.placements.map((post) => post.id))
+    if (scheme.placements.length + (scheme.roadObjectExclusions?.objects.length ?? 0) > 2_000)
+      context.addIssue({
+        code: 'custom',
+        path: ['roadObjectExclusions'],
+        message: 'Слишком много объектов вместе с исключёнными стойками.',
+      })
+    if (scheme.roadObjectExclusions) {
+      const { placementOrder, linkOrder, objects } = scheme.roadObjectExclusions
+      if (
+        new Set(placementOrder).size !== placementOrder.length ||
+        new Set(linkOrder).size !== linkOrder.length ||
+        objects.some(
+          ({ post }) => !placementOrder.includes(post.id) || !linkOrder.includes(post.id),
+        )
+      )
+        context.addIssue({
+          code: 'custom',
+          path: ['roadObjectExclusions'],
+          message: 'Неверный порядок восстановления исключённых стоек.',
+        })
+    }
+    for (const [index, excluded] of (scheme.roadObjectExclusions?.objects ?? []).entries()) {
+      const path = ['roadObjectExclusions', 'objects', index]
+      if (
+        reserved.has(excluded.post.id) ||
+        excluded.post.id >= scheme.nextPlacementId ||
+        excluded.link.placementId !== excluded.post.id
+      )
+        context.addIssue({
+          code: 'custom',
+          path,
+          message: 'Идентификатор исключённой стойки занят или не соответствует сохранённой связи.',
+        })
+      reserved.add(excluded.post.id)
+      if (excluded.post.distance && excluded.post.distanceLabel !== null)
+        context.addIssue({
+          code: 'custom',
+          path,
+          message: 'У исключённой стойки с расстоянием подпись строится из расстояния.',
+        })
+      const linked = roadLayoutSchema.safeParse({ ...scheme.roadLayout, links: [excluded.link] })
+      if (!linked.success)
+        for (const issue of linked.error.issues)
+          context.addIssue({ code: 'custom', path, message: issue.message })
+    }
+  })
   .superRefine((scheme, context) => {
     for (const [index, placement] of scheme.placements.entries())
       if (placement.kind === 'sign-post' && placement.distance && placement.distanceLabel !== null)
@@ -518,10 +578,18 @@ export function upgradeSchemeV11(value: unknown): Scheme {
 /** v12 → v13 introduces no inferred branch placement or post movement. */
 export function upgradeSchemeV12(value: unknown): Scheme {
   const previous = schemeV12Schema.parse(value)
-  return schemeSchema.parse({ ...previous, schemaVersion: 13 })
+  return upgradeSchemeV13({ ...previous, schemaVersion: 13 })
+}
+
+/** v13 → v14 does not infer exclusions, automatic ownership or change placements. */
+export function upgradeSchemeV13(value: unknown): Scheme {
+  const previous = schemeV13Schema.parse(value)
+  return schemeSchema.parse({ ...previous, schemaVersion: 14 })
 }
 
 export function parseStoredScheme(value: unknown): Scheme {
+  if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 13)
+    return upgradeSchemeV13(value)
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 12)
     return upgradeSchemeV12(value)
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 2) {

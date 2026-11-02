@@ -8,6 +8,7 @@ import {
   newTextDraft,
   PlacementEditError,
   removePlacement,
+  restoreRoadPlacement,
   savePlacement,
   type PlacementDraft,
 } from '../domain/edit-placements'
@@ -18,6 +19,7 @@ import { anchorCoordinates } from '../domain/placement-workspace'
 import { drawableWithoutImage, signImageCode } from '../domain/sheet-drawing'
 import { createRoadObjectLinkDraft } from '../domain/road-object-link-draft'
 import RoadObjectLinkFields from './RoadObjectLinkFields.vue'
+import ExcludedRoadPosts from './ExcludedRoadPosts.vue'
 import SignPreview from './SignPreview.vue'
 import {
   anchorLabels,
@@ -257,12 +259,32 @@ function removeSelected(): void {
     const updated = removePlacement(props.scheme, id)
     selectedId.value = null
     draft.value = null
-    status.value = `Объект ${id} удалён из проекта. Действие можно отменить.`
+    status.value = updated.roadObjectExclusions?.objects.some((item) => item.post.id === id)
+      ? `Стойка ${id} исключена с листа и сохранена в проекте. Её можно восстановить ниже или отменить действие.`
+      : `Объект ${id} удалён из проекта. Действие можно отменить.`
     error.value = ''
     emit('select', updated.placements[0]?.id ?? null)
     emit('apply', updated)
   } catch (cause) {
     error.value = cause instanceof PlacementEditError ? cause.message : 'Не удалось удалить объект.'
+  }
+}
+function restoreExcluded(id: number) {
+  if (dirty.value || props.locked) return
+  try {
+    const updated = restoreRoadPlacement(props.scheme, id)
+    selectedId.value = id
+    draft.value = createPlacementDraft(
+      updated.placements.find((item) => item.id === id)!,
+      updated.roadLayout,
+    )
+    error.value = ''
+    status.value = `Стойка ${id} восстановлена из сохранённых данных. Проверьте положение на листе.`
+    emit('select', id)
+    emit('apply', updated)
+  } catch (cause) {
+    error.value =
+      cause instanceof PlacementEditError ? cause.message : 'Не удалось восстановить стойку.'
   }
 }
 </script>
@@ -509,13 +531,24 @@ function removeSelected(): void {
             :disabled="locked || dirty"
             @click="removeSelected"
           >
-            Удалить объект
+            {{
+              scheme.roadLayout.links.some((link) => link.placementId === draft!.id) &&
+              draft.kind === 'sign-post'
+                ? 'Исключить стойку'
+                : 'Удалить объект'
+            }}
           </button>
         </div>
       </form>
       <p v-else class="hint">Выберите объект или добавьте новый.</p>
     </div>
     <p v-if="!draft && status" class="hint" role="status">{{ status }}</p>
+    <p v-if="!draft && error" class="error" role="alert">{{ error }}</p>
+    <ExcludedRoadPosts
+      :exclusions="scheme.roadObjectExclusions"
+      :locked="Boolean(locked || dirty)"
+      @restore="restoreExcluded"
+    />
   </section>
 </template>
 

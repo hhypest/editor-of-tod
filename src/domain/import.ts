@@ -14,6 +14,8 @@ import {
   schemeV10Schema,
   schemeV11Schema,
   schemeV12Schema,
+  schemeV13Schema,
+  upgradeSchemeV13,
   upgradeSchemeV12,
   upgradeSchemeV11,
   upgradeSchemeV10,
@@ -62,6 +64,7 @@ export interface ImportResult {
     | 'scheme-v11'
     | 'scheme-v12'
     | 'scheme-v13'
+    | 'scheme-v14'
   warnings: string[]
 }
 
@@ -598,11 +601,21 @@ function readSchemeJson(json: string, options: { id?: string; now?: string }): I
   }
 
   if ('schemaVersion' in value && value.schemaVersion === 13) {
+    const parsed = schemeV13Schema.safeParse(value)
+    if (!parsed.success) invalidIssue(parsed.error.issues)
+    return {
+      scheme: upgradeSchemeV13(parsed.data),
+      format: 'scheme-v13',
+      warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
+    }
+  }
+
+  if ('schemaVersion' in value && value.schemaVersion === 14) {
     const parsed = schemeSchema.safeParse(value)
     if (!parsed.success) invalidIssue(parsed.error.issues)
     return {
       scheme: parsed.data,
-      format: 'scheme-v13',
+      format: 'scheme-v14',
       warnings: ['Импортированная схема пока не проверена по действующим нормативным источникам.'],
     }
   }

@@ -8,7 +8,7 @@ import { ProjectRepository } from '../projects/project-repository'
 import { RecoveryRepository } from '../recovery/recovery-repository'
 import { importSchemeJson } from '../../src/domain/import'
 import { movePlacement } from '../../src/domain/placement-workspace'
-import { createPlacementDraft } from '../../src/domain/edit-placements'
+import { createPlacementDraft, restoreRoadPlacement } from '../../src/domain/edit-placements'
 import { RevisionConflict } from '../storage-errors'
 
 function owners() {
@@ -66,31 +66,67 @@ it('stores v13 branch geometry in history and partial branch input in the existi
   }
 })
 
-it('reads v12 project/history as v13 without rewriting or adopting any branch', () => {
-  const { db, projects } = owners()
+it.each([12, 13])(
+  'reads v%s project/history as current without rewriting or adopting exclusions',
+  (version) => {
+    const { db, projects } = owners()
+    try {
+      const payload = readFileSync(
+          `tests/fixtures/frozen/projects/project-v${version}-${version === 12 ? 'native' : 'branch'}-b34.json`,
+          'utf8',
+        ),
+        original = JSON.parse(payload)
+      db.prepare(
+        "INSERT INTO project_drafts (id, revision, scheme_json, reference_id, location_text, template_code, updated_at) VALUES (?, 1, ?, ?, '', 'b34', '2026-11-02T00:00:00.000Z')",
+      ).run(original.id, payload, original.crossing.referenceId)
+      db.prepare(
+        "INSERT INTO project_revisions (id, revision, scheme_json, updated_at) VALUES (?, 1, ?, '2026-11-02T00:00:00.000Z')",
+      ).run(original.id, payload)
+      const current = projects.get(original.id)!
+      expect(current.storedSchemaVersion).toBe(version)
+      expect(current.scheme).toEqual({ ...original, schemaVersion: 14 })
+      expect(db.prepare('SELECT scheme_json FROM project_drafts').get()).toEqual({
+        scheme_json: payload,
+      })
+      expect(projects.save(current.scheme, 1).revision).toBe(2)
+      expect(projects.get(original.id)?.storedSchemaVersion).toBe(14)
+      expect(
+        db.prepare('SELECT scheme_json FROM project_revisions WHERE revision = 1').get(),
+      ).toEqual({ scheme_json: payload })
+    } finally {
+      db.close()
+    }
+  },
+)
+
+it('stores excluded posts in revisions and recovery, with explicit restore and conflict protection', () => {
+  const { db, projects, recovery } = owners()
   try {
-    const payload = readFileSync(
-        'tests/fixtures/frozen/projects/project-v12-native-b34.json',
-        'utf8',
-      ),
-      original = JSON.parse(payload)
-    db.prepare(
-      "INSERT INTO project_drafts (id, revision, scheme_json, reference_id, location_text, template_code, updated_at) VALUES (?, 1, ?, ?, '', 'b34', '2026-11-02T00:00:00.000Z')",
-    ).run(original.id, payload, original.crossing.referenceId)
-    db.prepare(
-      "INSERT INTO project_revisions (id, revision, scheme_json, updated_at) VALUES (?, 1, ?, '2026-11-02T00:00:00.000Z')",
-    ).run(original.id, payload)
-    const current = projects.get(original.id)!
-    expect(current.storedSchemaVersion).toBe(12)
-    expect(current.scheme).toEqual({ ...original, schemaVersion: 13 })
-    expect(db.prepare('SELECT scheme_json FROM project_drafts').get()).toEqual({
-      scheme_json: payload,
-    })
-    expect(projects.save(current.scheme, 1).revision).toBe(2)
-    expect(projects.get(original.id)?.storedSchemaVersion).toBe(13)
-    expect(
-      db.prepare('SELECT scheme_json FROM project_revisions WHERE revision = 1').get(),
-    ).toEqual({ scheme_json: payload })
+    const excluded = importSchemeJson(
+      readFileSync('tests/fixtures/frozen/projects/project-v14-excluded-b34.json', 'utf8'),
+    ).scheme
+    projects.save(excluded, 0)
+    const restored = restoreRoadPlacement(excluded, 1)
+    projects.save(restored, 1)
+    expect(projects.getRevision(excluded.id, 1)?.scheme).toEqual(excluded)
+    expect(projects.restore(excluded.id, 1, 2)).toMatchObject({ scheme: excluded, revision: 3 })
+    expect(() => projects.save(restored, 2)).toThrow(RevisionConflict)
+    const input = {
+        sessionId: randomUUID(),
+        scheme: excluded,
+        baseRevision: 3,
+        detailsDraft: null,
+        placementDraft: null,
+        fileName: 'учебный.json',
+        expectedVersion: 0,
+      },
+      ownerId = randomUUID()
+    recovery.save({ input, ownerId })
+    expect(recovery.get(input.sessionId, { ownerId })?.scheme).toEqual(excluded)
+    expect(restoreRoadPlacement(recovery.get(input.sessionId, { ownerId })!.scheme, 1)).toEqual(
+      restored,
+    )
+    expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 13 })
   } finally {
     db.close()
   }

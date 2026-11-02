@@ -321,15 +321,81 @@ export function savePlacement(scheme: Scheme, draft: PlacementDraft): Scheme {
 }
 
 export function removePlacement(scheme: Scheme, id: number): Scheme {
-  if (!scheme.placements.some((placement) => placement.id === id)) {
+  const post = scheme.placements.find((placement) => placement.id === id)
+  if (!post) {
     throw new PlacementEditError(`Объект ${id} не найден.`)
   }
+  const link = scheme.roadLayout.links.find((item) => item.placementId === id)
   return checked({
     ...scheme,
+    ...(post.kind === 'sign-post' && link
+      ? {
+          roadObjectExclusions: {
+            objects: [...(scheme.roadObjectExclusions?.objects ?? []), { post, link }],
+            placementOrder: retainedOrder(
+              scheme.roadObjectExclusions?.placementOrder,
+              scheme.placements.map((item) => item.id),
+              scheme.roadObjectExclusions?.objects.map((item) => item.post.id) ?? [],
+            ),
+            linkOrder: retainedOrder(
+              scheme.roadObjectExclusions?.linkOrder,
+              scheme.roadLayout.links.map((item) => item.placementId),
+              scheme.roadObjectExclusions?.objects.map((item) => item.post.id) ?? [],
+            ),
+          },
+        }
+      : {}),
     placements: scheme.placements.filter((placement) => placement.id !== id),
     roadLayout: {
       ...scheme.roadLayout,
       links: scheme.roadLayout.links.filter((link) => link.placementId !== id),
     },
   })
+}
+
+/** Restore the reserved ID and exact recorded post/link, without re-running placement rules. */
+export function restoreRoadPlacement(scheme: Scheme, id: number): Scheme {
+  const excluded = scheme.roadObjectExclusions?.objects.find((item) => item.post.id === id)
+  if (!excluded) throw new PlacementEditError('Исключённая стойка не найдена.')
+  const next = {
+    ...scheme,
+    placements: restoreOrder(
+      [...scheme.placements, excluded.post],
+      scheme.roadObjectExclusions!.placementOrder,
+      (post) => post.id,
+    ),
+    roadLayout: {
+      ...scheme.roadLayout,
+      links: restoreOrder(
+        [...scheme.roadLayout.links, excluded.link],
+        scheme.roadObjectExclusions!.linkOrder,
+        (link) => link.placementId,
+      ),
+    },
+    roadObjectExclusions: {
+      ...scheme.roadObjectExclusions!,
+      objects: scheme.roadObjectExclusions!.objects.filter((item) => item.post.id !== id),
+    },
+  }
+  if (!next.roadObjectExclusions.objects.length) {
+    const { roadObjectExclusions: _excluded, ...restored } = next
+    void _excluded
+    return checked(restored)
+  }
+  return checked(next)
+}
+
+function retainedOrder(
+  previous: number[] | undefined,
+  active: number[],
+  excluded: number[],
+): number[] {
+  const retained = new Set([...active, ...excluded])
+  return [...new Set([...(previous ?? []).filter((id) => retained.has(id)), ...active])]
+}
+function restoreOrder<T>(items: T[], order: number[], id: (item: T) => number): T[] {
+  const ranks = new Map(order.map((value, index) => [value, index]))
+  return items.sort(
+    (a, b) => (ranks.get(id(a)) ?? order.length) - (ranks.get(id(b)) ?? order.length),
+  )
 }

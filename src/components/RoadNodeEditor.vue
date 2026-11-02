@@ -37,7 +37,11 @@ const hasTee = computed(() =>
   props.scheme.roadLayout.nodes.some((node) => node.kind === 'terminal-tee'),
 )
 const linkCount = computed(
-  () => props.scheme.roadLayout.links.filter((link) => link.nodeId === selectedId.value).length,
+  () =>
+    props.scheme.roadLayout.links.filter((link) => link.nodeId === selectedId.value).length +
+    (props.scheme.roadObjectExclusions?.objects.filter(
+      (item) => item.link.nodeId === selectedId.value,
+    ).length ?? 0),
 )
 
 watch(dirty, (value) => emit('dirty', value), { flush: 'sync' })

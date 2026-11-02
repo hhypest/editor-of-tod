@@ -190,7 +190,7 @@ for (const approach of ['left', 'right'] as const)
     const saved = (
       await (await request.get(`http://127.0.0.1:4100/api/projects/${scheme.id}`)).json()
     ).scheme as Scheme
-    expect(saved.schemaVersion).toBe(13)
+    expect(saved.schemaVersion).toBe(14)
     expect(saved.placements).toEqual(scheme.placements)
     expect(saved.roadLayout.links[0]).toMatchObject({
       installation: { from: 'L0', metres: 50 },

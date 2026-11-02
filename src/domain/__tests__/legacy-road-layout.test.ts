@@ -125,7 +125,7 @@ describe('legacy road layouts: preservation before P6', () => {
     const first = imported().result.scheme
     const reopened = importSchemeJson(exportSchemeJson(first)).scheme
     expect(reopened).toEqual(first)
-    expect(reopened.schemaVersion).toBe(13)
+    expect(reopened.schemaVersion).toBe(14)
     expect(importSchemeJson(exportSchemeJson(first)).warnings).toContain(LEGACY_ROAD_LAYOUT_PROBLEM)
     expect(storedFormatWarnings(11, reopened)).toContain(LEGACY_ROAD_LAYOUT_PROBLEM)
     expect(legacyRoadLayoutProblem(reopened.source)).toBe(LEGACY_ROAD_LAYOUT_PROBLEM)
