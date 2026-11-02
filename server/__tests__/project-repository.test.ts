@@ -62,7 +62,7 @@ describe('ProjectRepository independently of RegistryStore', () => {
     expect(projects.restore(scheme.id, 99, 3)).toBeNull()
     expect(() => projects.restore(scheme.id, 1, 2)).toThrow(RevisionConflict)
     expect(projects.listRevisions(scheme.id).map((row) => row.revision)).toEqual([3, 2, 1])
-    expect(projects.getRevision(scheme.id, 1)).toEqual({ ...first, storedSchemaVersion: 13 })
+    expect(projects.getRevision(scheme.id, 1)).toEqual({ ...first, storedSchemaVersion: 14 })
     expect(reads).toBe(3)
   })
 
@@ -115,7 +115,7 @@ describe('ProjectRepository independently of RegistryStore', () => {
     })
     expect(sourceCount(db)).toBe(0)
     expect(projects.save(current, 1).revision).toBe(2)
-    expect(projects.get(current.id)?.storedSchemaVersion).toBe(13)
+    expect(projects.get(current.id)?.storedSchemaVersion).toBe(14)
     expect(projects.save(current, 2).revision).toBe(2)
     expect(
       db.prepare('SELECT scheme_json FROM project_revisions WHERE revision = 1').get(),

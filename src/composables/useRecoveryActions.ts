@@ -64,7 +64,7 @@ export function useRecoveryActions(editor: RecoveryActionEditor, recovery: Recov
       projectDocument.openDocument({
         result: {
           scheme: record.scheme,
-          format: 'scheme-v13',
+          format: 'scheme-v14',
           warnings: ['Восстановлена рабочая копия; проверьте ввод и сохраните проект.'],
         },
         fileName: record.fileName,

@@ -16,12 +16,22 @@ export function usedSignCodes(scheme: Scheme): string[] {
 
 export function clearPinsAfterSignChange(previous: Scheme, edited: Scheme): Scheme {
   if (!previous.signImages.catalog) return edited
-  const before = usedSignCodes(previous).sort()
-  const after = usedSignCodes(edited).sort()
+  const before = retainedSignCodes(previous).sort()
+  const after = retainedSignCodes(edited).sort()
   if (before.length === after.length && before.every((code, index) => code === after[index])) {
     return edited
   }
   return { ...edited, signImages: { catalog: null, revisions: {} } }
+}
+
+/** Excluded posts are not drawn but retain the images needed for an explicit restore. */
+function retainedSignCodes(scheme: Scheme): string[] {
+  return [
+    ...new Set([
+      ...usedSignCodes(scheme),
+      ...(scheme.roadObjectExclusions?.objects ?? []).flatMap((item) => item.post.signIds),
+    ]),
+  ]
 }
 
 export function pinSignImages(
@@ -29,7 +39,7 @@ export function pinSignImages(
   catalog: { id: number; documentCode: string; edition: string },
   available: Array<{ code: string; revision: number }>,
 ): Scheme {
-  const codes = usedSignCodes(scheme)
+  const codes = retainedSignCodes(scheme)
   if (!codes.length) throw new Error('На схеме пока нет знаков для закрепления.')
   const revisions = Object.fromEntries(available.map(({ code, revision }) => [code, revision]))
   // Код проекта «3.24_50» показывается изображением «3.24»; закрепляется то, что на листе.

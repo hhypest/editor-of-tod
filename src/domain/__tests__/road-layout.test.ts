@@ -24,7 +24,7 @@ function historical() {
 describe('v12 road layout model and compatible import', () => {
   it('separates nodes, drawing offsets and historical links without guessing installation distances', () => {
     const scheme = imported()
-    expect(scheme.schemaVersion).toBe(13)
+    expect(scheme.schemaVersion).toBe(14)
     expect(scheme.roadLayout).toEqual({
       nextNodeId: 11,
       nodes: [
@@ -84,7 +84,7 @@ describe('v12 road layout model and compatible import', () => {
       ],
     })
     expect(importSchemeJson(exportSchemeJson(scheme))).toMatchObject({
-      format: 'scheme-v13',
+      format: 'scheme-v14',
       scheme,
     })
     expect(scheme.source).toMatchObject({ originalJson: JSON.stringify(legacyRoadFixture()) })
@@ -141,7 +141,7 @@ describe('v12 road layout model and compatible import', () => {
     const scheme = upgradeSchemeV11(previous)
     expect(previous).toEqual(original)
     const { roadLayout, ...rest } = scheme
-    expect(rest).toEqual({ ...previous, schemaVersion: 13 })
+    expect(rest).toEqual({ ...previous, schemaVersion: 14 })
     expect(roadLayout.links.map((link) => link.placementId)).toEqual([1002, 1003])
     expect(importSchemeJson(JSON.stringify(previous))).toMatchObject({
       format: 'scheme-v11',

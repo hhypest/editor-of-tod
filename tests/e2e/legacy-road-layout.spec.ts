@@ -82,7 +82,7 @@ test('legacy road objects remain clean on opening, survive refused rebuild and s
   const path = await download.path()
   expect(path).not.toBeNull()
   const scheme = schemeSchema.parse(JSON.parse(readFileSync(path!, 'utf8')))
-  expect(scheme.schemaVersion).toBe(13)
+  expect(scheme.schemaVersion).toBe(14)
   expect(scheme.roadLayout.nodes[0]).toMatchObject({
     id: 7,
     position: { approach: 'right', from: 'E', metres: 125 },
