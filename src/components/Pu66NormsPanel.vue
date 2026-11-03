@@ -240,7 +240,7 @@ h3 {
 }
 dl {
   display: grid;
-  grid-template-columns: max-content 1fr;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
   gap: 0.4rem 1rem;
 }
 dt {
@@ -248,6 +248,19 @@ dt {
 }
 dd {
   margin: 0;
+}
+dt,
+dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 40rem) {
+  dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  dd {
+    margin-bottom: 0.6rem;
+  }
 }
 button {
   margin-left: 0.4rem;

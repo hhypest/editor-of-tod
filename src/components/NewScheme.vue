@@ -550,7 +550,7 @@ button.secondary {
 }
 .preview dl {
   display: grid;
-  grid-template-columns: max-content 1fr;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
   gap: 0.3rem 1rem;
   margin: 0.4rem 0 0.8rem;
 }
@@ -559,6 +559,19 @@ button.secondary {
 }
 .preview dd {
   margin: 0;
+}
+.preview dt,
+.preview dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 40rem) {
+  .preview dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .preview dd {
+    margin-bottom: 0.6rem;
+  }
 }
 .location {
   margin: 1rem 0 0.6rem;
