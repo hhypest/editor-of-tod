@@ -58,7 +58,7 @@ describe('explicit branch positions and independent v13 codec', () => {
     const v12 = schemeV12Schema.parse(JSON.parse(raw)),
       current = importSchemeJson(raw)
     expect(current.format).toBe('scheme-v12')
-    expect(current.scheme).toEqual({ ...v12, schemaVersion: 14 })
+    expect(current.scheme).toEqual({ ...v12, schemaVersion: 15 })
     expect(parseStoredScheme(v12)).toEqual(current.scheme)
     expect(
       current.scheme.roadLayout.links.every((link) => link.branchPlacement === undefined),
@@ -66,7 +66,7 @@ describe('explicit branch positions and independent v13 codec', () => {
     const { attached } = setup()
     expect(schemeV12Schema.safeParse({ ...attached, schemaVersion: 12 }).success).toBe(false)
     expect(importSchemeJson(exportSchemeJson(attached))).toMatchObject({
-      format: 'scheme-v14',
+      format: 'scheme-v15',
       scheme: attached,
     })
   })
@@ -234,7 +234,7 @@ describe('explicit branch positions and independent v13 codec', () => {
 
   it('retains the release/rebuild guard even for explicit, valid branch placement', () => {
     expect(roadLayoutProblem(setup().attached)).toBeTruthy()
-    expect(schemeSchema.shape.schemaVersion.value).toBe(14)
+    expect(schemeSchema.shape.schemaVersion.value).toBe(15)
   })
 })
 

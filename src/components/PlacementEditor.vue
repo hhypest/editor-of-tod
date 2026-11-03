@@ -43,6 +43,11 @@ const emit = defineEmits<{
   draft: [value: PlacementDraft | null]
 }>()
 const selectedId = ref<number | null>(props.selectedPlacementId)
+const calculation = computed(
+  () =>
+    props.scheme.roadLayout.links.find((link) => link.placementId === selectedId.value)
+      ?.calculation,
+)
 const initialPlacement = props.scheme.placements.find(
   (placement) => placement.id === props.selectedPlacementId,
 )
@@ -349,7 +354,12 @@ function restoreExcluded(id: number) {
         @change="markDirty"
       >
         <h3>{{ draft.id === null ? 'Новый объект' : `Свойства объекта № ${draft.id}` }}</h3>
-        <p v-if="draft.id !== null" class="hint">
+        <p v-if="calculation" class="hint" :data-calculation-state="calculation.state">
+          {{ calculation.state === 'automatic' ? 'Расчётная раскладка' : 'Изменена вручную' }}:
+          перенос на обе ветви по решению Д4, исходная стойка № {{ calculation.sourcePlacementId }}.
+          Ручные изменения сохраняются; новый вариант выбирается в предложениях.
+        </p>
+        <p v-else-if="draft.id !== null" class="hint">
           {{
             scheme.placements.find((item) => item.id === draft?.id)?.generatedByTemplate
               ? 'Создан шаблоном: после изменения будет ручным.'
@@ -448,6 +458,7 @@ function restoreExcluded(id: number) {
             v-if="draft.roadLink"
             v-model="draft.roadLink"
             :layout="scheme.roadLayout"
+            :calculated="Boolean(calculation)"
           />
           <label
             >Коды знаков через запятую

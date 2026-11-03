@@ -1,3 +1,5 @@
+import { schemeV14Schema } from './formats/frozen/project-v14.ts'
+export { schemeV14Schema } from './formats/frozen/project-v14.ts'
 import { schemeV13Schema } from './formats/frozen/project-v13.ts'
 export { schemeV13Schema } from './formats/frozen/project-v13.ts'
 import { schemeV12Schema } from './formats/frozen/project-v12.ts'
@@ -6,7 +8,12 @@ import { schemeV10Schema } from './formats/frozen/project-v10.ts'
 export { schemeV10Schema } from './formats/frozen/project-v10.ts'
 import { schemeV11Schema } from './formats/frozen/project-v11.ts'
 export { schemeV11Schema } from './formats/frozen/project-v11.ts'
-import { roadLayoutSchema, roadObjectLinkSchema, checkRoadLayoutPlacements } from './road-layout.ts'
+import {
+  roadLayoutSchema,
+  roadObjectLinkSchema,
+  checkRoadLayoutPlacements,
+  checkRoadCalculationSources,
+} from './road-layout.ts'
 import { migrateRoadLayout } from './migrate-road-layout.ts'
 import {
   schemeV2Schema,
@@ -347,7 +354,7 @@ function checkSpeedConditions(
 }
 
 /**
- * v14 (#107): optional reversible exclusions of linked posts. Existing project
+ * v15 (#107): explicit tee proposals with provenance and preserved manual edits. Existing project
  * fields retain their order and values; migration infers no geometry or automatic placement.
  */
 export const schemeSchema = z
@@ -355,7 +362,7 @@ export const schemeSchema = z
     ...currentFields,
     titleBlock: titleBlockSchema,
     reviewMarks: reviewMarksSchema.default(() => ({})),
-    schemaVersion: z.literal(14),
+    schemaVersion: z.literal(15),
     decisionEvidence: decisionEvidenceSchema.default({ speed: null, regulation: null }),
     placements: z
       .array(z.discriminatedUnion('kind', [signPlacementV10Schema, elementPlacementV5Schema]))
@@ -375,6 +382,7 @@ export const schemeSchema = z
   .superRefine(checkModernScheme)
   .superRefine(checkSpeedConditions)
   .superRefine(checkRoadLayoutPlacements)
+  .superRefine(checkRoadCalculationSources)
   .superRefine((scheme, context) => {
     const reserved = new Set(scheme.placements.map((post) => post.id))
     if (scheme.placements.length + (scheme.roadObjectExclusions?.objects.length ?? 0) > 2_000)
@@ -584,10 +592,16 @@ export function upgradeSchemeV12(value: unknown): Scheme {
 /** v13 → v14 does not infer exclusions, automatic ownership or change placements. */
 export function upgradeSchemeV13(value: unknown): Scheme {
   const previous = schemeV13Schema.parse(value)
-  return schemeSchema.parse({ ...previous, schemaVersion: 14 })
+  return upgradeSchemeV14({ ...previous, schemaVersion: 14 })
+}
+
+export function upgradeSchemeV14(value: unknown): Scheme {
+  return schemeSchema.parse({ ...schemeV14Schema.parse(value), schemaVersion: 15 })
 }
 
 export function parseStoredScheme(value: unknown): Scheme {
+  if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 14)
+    return upgradeSchemeV14(value)
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 13)
     return upgradeSchemeV13(value)
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 12)

@@ -65,6 +65,17 @@ export const roadObjectLinkSchema = z.strictObject({
     })
     .nullable(),
   branchPlacement: branchPlacementSchema.optional(),
+  calculation: z
+    .strictObject({
+      ruleId: z.literal('project-tee-transfer-v1'),
+      sourcePlacementId: id,
+      branch: z.enum(['up', 'down']),
+      state: z.enum(['automatic', 'modified']),
+      basis: z.string().regex(/^[0-9a-f]{16}$/),
+      sourceSignIds: z.array(z.string().min(1).max(120)).min(1).max(20),
+      nodePosition: roadNodePositionSchema,
+    })
+    .optional(),
 })
 
 export const roadLayoutSchema = z
@@ -103,6 +114,18 @@ export const roadLayoutSchema = z
     const placements = new Set<number>()
     for (const [index, link] of layout.links.entries()) {
       const node = nodes.get(link.nodeId)
+      if (
+        link.calculation &&
+        (node?.kind !== 'terminal-tee' ||
+          link.role !== 'tee-branch' ||
+          (link.calculation.state === 'automatic' &&
+            link.branchPlacement?.branch !== link.calculation.branch))
+      )
+        context.addIssue({
+          code: 'custom',
+          path: ['links', index, 'calculation'],
+          message: 'Расчётное происхождение не соответствует Т-перекрёстку или ветви.',
+        })
       if (!node)
         context.addIssue({
           code: 'custom',
@@ -143,6 +166,47 @@ export type RoadLayout = z.infer<typeof roadLayoutSchema>
 
 export function emptyRoadLayout(): RoadLayout {
   return { nextNodeId: 1, nodes: [], links: [] }
+}
+
+/** Stable source identities span active posts and reversible exclusions. */
+export function checkRoadCalculationSources(
+  scheme: {
+    placements: Array<{ id: number; kind: string }>
+    roadLayout: RoadLayout
+    roadObjectExclusions?: {
+      objects: Array<{ post: { id: number; kind: string }; link: RoadObjectLink }>
+    }
+  },
+  context: z.RefinementCtx,
+) {
+  const links = new Map(scheme.roadLayout.links.map((link) => [link.placementId, link]))
+  const objects = new Map(
+    scheme.placements.map((post) => [post.id, { post, link: links.get(post.id) }]),
+  )
+  for (const item of scheme.roadObjectExclusions?.objects ?? []) objects.set(item.post.id, item)
+  const keys = new Set<string>()
+  for (const [id, item] of objects) {
+    const calc = item.link?.calculation
+    if (!calc) continue
+    const source = objects.get(calc.sourcePlacementId),
+      key = `${item.link!.nodeId}:${calc.sourcePlacementId}:${calc.branch}`
+    if (
+      item.post.kind !== 'sign-post' ||
+      id === calc.sourcePlacementId ||
+      !source?.link ||
+      source.post.kind !== 'sign-post' ||
+      source.link.nodeId !== item.link!.nodeId ||
+      source.link.calculation ||
+      keys.has(key)
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['roadLayout'],
+        message:
+          'Расчётная стойка имеет повторяющееся происхождение или потеряла исходную стойку и её связь.',
+      })
+    keys.add(key)
+  }
 }
 
 /** Cross-aggregate references are validated at the project boundary. */

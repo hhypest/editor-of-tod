@@ -18,6 +18,14 @@ const emit = defineEmits<{ restore: [id: number] }>()
           >Стойка № {{ item.post.id }} — узел № {{ item.link.nodeId }}:
           {{ item.post.signIds.join(', ') }}</span
         >
+        <span v-if="item.link.calculation"
+          >Перенос на ветви из стойки № {{ item.link.calculation.sourcePlacementId }};
+          {{
+            item.link.calculation.state === 'modified'
+              ? 'сохранена ручная правка'
+              : 'сохранён расчётный вариант'
+          }}.</span
+        >
         <button type="button" :disabled="locked" @click="emit('restore', item.post.id)">
           Восстановить стойку № {{ item.post.id }}
         </button>

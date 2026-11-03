@@ -99,7 +99,7 @@ test('exclusion saves the complete branch post and image pins; explicit restorat
   const excluded = (
     await (await request.get(`http://127.0.0.1:4100/api/projects/${scheme.id}`)).json()
   ).scheme
-  expect(excluded.schemaVersion).toBe(14)
+  expect(excluded.schemaVersion).toBe(15)
   expect(excluded.roadObjectExclusions.objects).toEqual([
     { post: scheme.placements[0], link: scheme.roadLayout.links[0] },
   ])
