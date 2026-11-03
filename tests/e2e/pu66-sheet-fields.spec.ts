@@ -69,6 +69,8 @@ test('sheet retains the train summary, omits technical visibility and preserves 
   await expect(notes.nth(4)).toContainText('5. Принятая интенсивность')
   await expect(notes.nth(5)).toContainText('6. Видимость поезда')
   await expect(page.locator('.print-host:not(.thumbnail) .print-blocked-note')).toHaveText([])
+  const markup = await sheet.evaluate((element) => element.outerHTML)
+  const applicationUrl = page.url()
   const pngDownload = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Скачать PNG', exact: true }).click()
   const bytes = readFileSync((await (await pngDownload).path())!),
@@ -86,23 +88,32 @@ test('sheet retains the train summary, omits technical visibility and preserves 
   await page.getByRole('button', { name: 'Скачать файл проекта', exact: true }).click()
   const saved = JSON.parse(readFileSync((await (await jsonDownload).path())!, 'utf8'))
   expect(saved.crossing.snapshot).toEqual(original.crossing.snapshot)
-  // Capture the actual SVG at its viewBox size, outside the scrollable editor viewport.
-  const markup = await sheet.evaluate((element) => element.outerHTML)
-  await page.setViewportSize({ width: 1760, height: 1250 })
-  await page.setContent(
-    `<style>body{margin:0}svg{background:white}text{white-space:pre}</style>${markup}`,
-  )
-  const standalone = page.locator('svg')
-  await standalone.evaluate((element) => {
-    element.style.width = '1680px'
-    element.style.height = '1188px'
-  })
-  const filename = testInfo.outputPath('fictional-pu66-sheet.png')
-  await standalone.screenshot({ path: filename })
-  await page.screenshot({
-    path: testInfo.outputPath('fictional-pu66-notes.png'),
-    clip: { x: 880, y: 770, width: 800, height: 250 },
-  })
-  await testInfo.attach('fictional-pu66-sheet', { path: filename, contentType: 'image/png' })
+  // Capture the actual SVG in an isolated document. A Firefox download may finish a
+  // navigation on the application page; replacing that live document races its lifecycle.
+  const render = await page.context().newPage()
+  try {
+    await render.setViewportSize({ width: 1760, height: 1250 })
+    await render.route(/\/api\/signs\/[^/]+\/image(?:\?|$)/, (route) =>
+      route.fulfill({ contentType: 'image/png', body: PNG.sync.write(icon) }),
+    )
+    await render.setContent(
+      `<base href="${applicationUrl}"><style>body{margin:0}svg{background:white}text{white-space:pre}</style>${markup}`,
+    )
+    const standalone = render.locator('svg.sheet-paper')
+    await expect(standalone).toHaveCount(1)
+    await standalone.evaluate((element) => {
+      element.style.width = '1680px'
+      element.style.height = '1188px'
+    })
+    const filename = testInfo.outputPath('fictional-pu66-sheet.png')
+    await standalone.screenshot({ path: filename })
+    await render.screenshot({
+      path: testInfo.outputPath('fictional-pu66-notes.png'),
+      clip: { x: 880, y: 770, width: 800, height: 250 },
+    })
+    await testInfo.attach('fictional-pu66-sheet', { path: filename, contentType: 'image/png' })
+  } finally {
+    await render.close()
+  }
   expect(errors).toEqual([])
 })
