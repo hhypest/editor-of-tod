@@ -18,7 +18,11 @@ function pairs(scheme: Scheme): Pair[] {
 export function teeSourcePosts(scheme: Scheme): Pair[] {
   const all = pairs(scheme),
     referenced = new Set(
-      all.flatMap((p) => (p.link.calculation ? [p.link.calculation.sourcePlacementId] : [])),
+      all.flatMap((p) =>
+        p.link.calculation?.ruleId === 'project-tee-transfer-v1'
+          ? [p.link.calculation.sourcePlacementId]
+          : [],
+      ),
     )
   return all
     .filter(

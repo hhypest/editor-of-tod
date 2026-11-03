@@ -141,7 +141,7 @@ for (const approach of ['left', 'right'] as const)
     await save(page)
     const saved = (await (await request.get(`http://127.0.0.1:4100/api/projects/${s.id}`)).json())
       .scheme
-    expect(saved.schemaVersion).toBe(15)
+    expect(saved.schemaVersion).toBe(16)
     expect(saved.roadObjectExclusions.objects[0]).toEqual({
       post: s.placements[0],
       link: s.roadLayout.links[0],

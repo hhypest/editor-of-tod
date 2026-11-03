@@ -14,7 +14,7 @@ export const ZONE_PLATE = /^8\.2\.1_(\d+(?:\.\d+)?)$/
 
 /** Расстояние до объекта; у 8.1.3 стрелка вправо, у 8.1.4 — влево. */
 export function distancePlate(code: string) {
-  const match = /^(8\.1\.[134])_(\d+)$/.exec(code)
+  const match = /^(8\.1\.[134])_(\d+(?:\.\d+)?)$/.exec(code)
   if (!match) return null
   const base = match[1]!
   return {

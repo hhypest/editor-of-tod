@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { parameterBasisSchema } from './decision-evidence-schema.ts'
 
 const id = z.number().int().positive()
 const finite = z.number().finite()
@@ -66,15 +67,34 @@ export const roadObjectLinkSchema = z.strictObject({
     .nullable(),
   branchPlacement: branchPlacementSchema.optional(),
   calculation: z
-    .strictObject({
-      ruleId: z.literal('project-tee-transfer-v1'),
-      sourcePlacementId: id,
-      branch: z.enum(['up', 'down']),
-      state: z.enum(['automatic', 'modified']),
-      basis: z.string().regex(/^[0-9a-f]{16}$/),
-      sourceSignIds: z.array(z.string().min(1).max(120)).min(1).max(20),
-      nodePosition: roadNodePositionSchema,
-    })
+    .discriminatedUnion('ruleId', [
+      z.strictObject({
+        ruleId: z.literal('project-tee-transfer-v1'),
+        sourcePlacementId: id,
+        branch: z.enum(['up', 'down']),
+        state: z.enum(['automatic', 'modified']),
+        basis: z.string().regex(/^[0-9a-f]{16}$/),
+        sourceSignIds: z.array(z.string().min(1).max(120)).min(1).max(20),
+        nodePosition: roadNodePositionSchema,
+      }),
+      z.strictObject({
+        ruleId: z.literal('project-junction-warning-v1'),
+        sourcePlacementId: z.null(),
+        branch: z.enum(['up', 'down']),
+        state: z.enum(['automatic', 'modified']),
+        basis: z.string().regex(/^[0-9a-f]{16}$/),
+        sourceSignIds: z.array(z.string().min(1).max(120)).min(1).max(20),
+        nodePosition: roadNodePositionSchema,
+        rangeBasis: parameterBasisSchema.refine(
+          (basis) =>
+            ['project-junction-range-in', 'project-junction-range-out'].includes(basis.id) &&
+            typeof basis.value === 'number' &&
+            Number.isFinite(basis.value) &&
+            basis.value >= 0,
+          'Неверное основание границы включения примыкания.',
+        ),
+      }),
+    ])
     .optional(),
 })
 
@@ -116,15 +136,16 @@ export const roadLayoutSchema = z
       const node = nodes.get(link.nodeId)
       if (
         link.calculation &&
-        (node?.kind !== 'terminal-tee' ||
-          link.role !== 'tee-branch' ||
+        ((link.calculation.ruleId === 'project-tee-transfer-v1'
+          ? node?.kind !== 'terminal-tee' || link.role !== 'tee-branch'
+          : node?.kind !== 'junction' || link.role !== 'side-warning') ||
           (link.calculation.state === 'automatic' &&
             link.branchPlacement?.branch !== link.calculation.branch))
       )
         context.addIssue({
           code: 'custom',
           path: ['links', index, 'calculation'],
-          message: 'Расчётное происхождение не соответствует Т-перекрёстку или ветви.',
+          message: 'Расчётное происхождение не соответствует узлу, назначению или ветви.',
         })
       if (!node)
         context.addIssue({
@@ -188,6 +209,17 @@ export function checkRoadCalculationSources(
   for (const [id, item] of objects) {
     const calc = item.link?.calculation
     if (!calc) continue
+    if (calc.ruleId === 'project-junction-warning-v1') {
+      const key = item.link!.nodeId + ':' + calc.ruleId
+      if (keys.has(key))
+        context.addIssue({
+          code: 'custom',
+          path: ['roadLayout'],
+          message: 'Повторяющееся расчётное предупреждение для примыкания.',
+        })
+      keys.add(key)
+      continue
+    }
     const source = objects.get(calc.sourcePlacementId),
       key = `${item.link!.nodeId}:${calc.sourcePlacementId}:${calc.branch}`
     if (

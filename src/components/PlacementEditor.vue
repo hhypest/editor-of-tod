@@ -356,7 +356,13 @@ function restoreExcluded(id: number) {
         <h3>{{ draft.id === null ? 'Новый объект' : `Свойства объекта № ${draft.id}` }}</h3>
         <p v-if="calculation" class="hint" :data-calculation-state="calculation.state">
           {{ calculation.state === 'automatic' ? 'Расчётная раскладка' : 'Изменена вручную' }}:
-          перенос на обе ветви по решению Д4, исходная стойка № {{ calculation.sourcePlacementId }}.
+          <template v-if="calculation.ruleId === 'project-tee-transfer-v1'"
+            >перенос на обе ветви по решению Д4, исходная стойка №
+            {{ calculation.sourcePlacementId }}.</template
+          >
+          <template v-else
+            >предупреждение примыкания по решениям Д3/Д9; замер установки независим.</template
+          >
           Ручные изменения сохраняются; новый вариант выбирается в предложениях.
         </p>
         <p v-else-if="draft.id !== null" class="hint">

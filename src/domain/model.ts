@@ -1,3 +1,5 @@
+import { schemeV15Schema } from './formats/frozen/project-v15.ts'
+export { schemeV15Schema } from './formats/frozen/project-v15.ts'
 import { schemeV14Schema } from './formats/frozen/project-v14.ts'
 export { schemeV14Schema } from './formats/frozen/project-v14.ts'
 import { schemeV13Schema } from './formats/frozen/project-v13.ts'
@@ -354,7 +356,7 @@ function checkSpeedConditions(
 }
 
 /**
- * v15 (#107): explicit tee proposals with provenance and preserved manual edits. Existing project
+ * v16 (#107): requested junction warning proposals, preserving tee provenance and edits. Existing project
  * fields retain their order and values; migration infers no geometry or automatic placement.
  */
 export const schemeSchema = z
@@ -362,7 +364,7 @@ export const schemeSchema = z
     ...currentFields,
     titleBlock: titleBlockSchema,
     reviewMarks: reviewMarksSchema.default(() => ({})),
-    schemaVersion: z.literal(15),
+    schemaVersion: z.literal(16),
     decisionEvidence: decisionEvidenceSchema.default({ speed: null, regulation: null }),
     placements: z
       .array(z.discriminatedUnion('kind', [signPlacementV10Schema, elementPlacementV5Schema]))
@@ -596,10 +598,16 @@ export function upgradeSchemeV13(value: unknown): Scheme {
 }
 
 export function upgradeSchemeV14(value: unknown): Scheme {
-  return schemeSchema.parse({ ...schemeV14Schema.parse(value), schemaVersion: 15 })
+  return upgradeSchemeV15({ ...schemeV14Schema.parse(value), schemaVersion: 15 })
+}
+
+export function upgradeSchemeV15(value: unknown): Scheme {
+  return schemeSchema.parse({ ...schemeV15Schema.parse(value), schemaVersion: 16 })
 }
 
 export function parseStoredScheme(value: unknown): Scheme {
+  if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 15)
+    return upgradeSchemeV15(value)
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 14)
     return upgradeSchemeV14(value)
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 13)
