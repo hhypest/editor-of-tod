@@ -15,6 +15,7 @@ import SchemeWorkspace from '../SchemeWorkspace.vue'
 import PlacementEditor from '../PlacementEditor.vue'
 import RoadNodeEditor from '../RoadNodeEditor.vue'
 import TeeProposals from '../TeeProposals.vue'
+import JunctionWarningProposals from '../JunctionWarningProposals.vue'
 import SchemeReview from '../SchemeReview.vue'
 import SchemeDetailsEditor from '../SchemeDetailsEditor.vue'
 import SchemeDraftSheet from '../SchemeDraftSheet.vue'
@@ -232,6 +233,11 @@ function inspectRoadNode(id: number) {
         @apply="onProjectApplied"
         @select="selectedPlacementId = $event"
         @select-road-node="selectedRoadNodeId = $event"
+      />
+      <JunctionWarningProposals
+        :scheme="imported.scheme"
+        :locked="editorDirty || localBusy"
+        @apply="onProjectApplied"
       />
       <TeeProposals
         class="module"

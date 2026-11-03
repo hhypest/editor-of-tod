@@ -8,7 +8,7 @@
 
 ## Проект и исторические читатели
 
-Текущий экспорт — JSON v15, SQLite — v13. [model.ts](../../src/domain/model.ts) сохраняет публичные экспорты и миграции. Автономный `v: 1` читается независимо в [legacy-v1.ts](../../src/domain/legacy-v1.ts); читатели schemaVersion 2–14 зафиксированы в [formats/frozen/](../../src/domain/formats/frozen). Они не импортируют текущие model, pu66-snapshot, decision-evidence-schema, title-block или post-distance. Общие подсхемы внутри исторического семейства допустимы, новые поля текущего формата туда автоматически не добавляются.
+Текущий экспорт — JSON v16, SQLite — v13. [model.ts](../../src/domain/model.ts) сохраняет публичные экспорты и миграции. Автономный `v: 1` читается независимо в [legacy-v1.ts](../../src/domain/legacy-v1.ts); читатели schemaVersion 2–15 зафиксированы в [formats/frozen/](../../src/domain/formats/frozen). Они не импортируют текущие model, pu66-snapshot, decision-evidence-schema, title-block или post-distance. Общие подсхемы внутри исторического семейства допустимы, новые поля текущего формата туда автоматически не добавляются.
 
 Модель примыканий v12 и её границы описаны в [ADR-0012](../adr/0012-road-layout-model.md). Узлы и исторические связи сохраняются отдельно; установка стойки не вычисляется из координат. Непустая модель закрывает перестройку/выпуск до готовности геометрии, включая проекты без legacy source.
 
@@ -50,3 +50,5 @@ Golden фиксирует вывод кода на вымышленных обр
 JSON v14 добавляет необязательный roadObjectExclusions с полными снимками post/link и порядком восстановления. Читатель v13 зафиксирован независимо вместе с road-layout-v13; миграция не создаёт исключений. Исключённые ID зарезервированы; связанные узлы и PNG pins сохранены. SQLite v13 и recovery slot не меняются, новые файлы требуют новой программы. [ADR-0014](../adr/0014-road-object-exclusions.md).
 
 JSON v15 добавляет необязательное calculation у связей предложенных стоек tee. Читатели project-v14 и road-layout-v14 зафиксированы независимо. Миграция меняет только оболочку; старые ручные/исторические связи не становятся расчётными. Сохраняются source/rule/branch, automatic/modified и прежнее основание, в том числе в исключениях. SQLite остаётся v13. [ADR-0015](../adr/0015-tee-proposals.md).
+
+JSON v16 расширяет calculation отдельным project-junction-warning-v1: sourcePlacementId null, node/rule identity, automatic/modified, прежние d/состав и rangeBasis. Читатели project-v15/road-layout-v15 независимы; миграция сохраняет tee и исключения без нового владения. SQLite v13 и recovery slot сохраняются. Дробные 8.1.1/3/4_N рисуются без нового округления. [ADR-0016](../adr/0016-junction-warning-proposals.md).

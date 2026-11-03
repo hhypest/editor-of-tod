@@ -19,7 +19,10 @@ const emit = defineEmits<{ restore: [id: number] }>()
           {{ item.post.signIds.join(', ') }}</span
         >
         <span v-if="item.link.calculation"
-          >Перенос на ветви из стойки № {{ item.link.calculation.sourcePlacementId }};
+          ><template v-if="item.link.calculation.ruleId === 'project-tee-transfer-v1'"
+            >Перенос на ветви из стойки № {{ item.link.calculation.sourcePlacementId }};</template
+          >
+          <template v-else>Предупреждение примыкания по Д3/Д9;</template>
           {{
             item.link.calculation.state === 'modified'
               ? 'сохранена ручная правка'

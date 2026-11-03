@@ -23,7 +23,7 @@ describe('reversible road-post exclusion, v14', () => {
   it('freezes v13 and changes only the envelope when opening an old project', () => {
     const old = schemeV13Schema.parse(JSON.parse(raw)),
       current = example()
-    expect(current).toEqual({ ...old, schemaVersion: 15 })
+    expect(current).toEqual({ ...old, schemaVersion: 16 })
     expect(current.roadObjectExclusions).toBeUndefined()
     expect(
       schemeV13Schema.safeParse({ ...removePlacement(current, 1), schemaVersion: 13 }).success,

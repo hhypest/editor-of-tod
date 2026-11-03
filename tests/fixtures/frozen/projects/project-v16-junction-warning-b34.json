@@ -1,0 +1,393 @@
+{
+  "id": "00000000-0000-4000-8000-000000001007",
+  "createdAt": "2026-09-26T12:00:00.000Z",
+  "template": {
+    "code": "b34",
+    "sourceReference": "ОДМ 218.6.019-2016",
+    "reviewStatus": "not-verified",
+    "projectionVersion": "draft-2"
+  },
+  "titleBlock": {
+    "developer": {
+      "organization": "Учебная организация",
+      "position": "",
+      "name": "Составитель",
+      "date": "2026-09-26"
+    },
+    "work": {
+      "organization": "",
+      "description": "Условные текущие работы",
+      "period": ""
+    },
+    "responsible": [
+      {
+        "position": "",
+        "name": "",
+        "phone": ""
+      }
+    ],
+    "approver": {
+      "position": "",
+      "organization": "",
+      "name": ""
+    },
+    "agreement": {
+      "position": "",
+      "name": "",
+      "year": ""
+    }
+  },
+  "placements": [
+    {
+      "kind": "sign-post",
+      "id": 2,
+      "generatedByTemplate": false,
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": -520,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "left",
+      "signIds": [
+        "1.25"
+      ],
+      "distanceLabel": null,
+      "distance": {
+        "by": "marker",
+        "approach": "left",
+        "marker": "d300"
+      }
+    },
+    {
+      "kind": "sign-post",
+      "id": 3,
+      "generatedByTemplate": false,
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": -520,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "left",
+      "signIds": [
+        "1.25"
+      ],
+      "distanceLabel": null,
+      "distance": {
+        "by": "marker",
+        "approach": "left",
+        "marker": "d300"
+      }
+    },
+    {
+      "kind": "sign-post",
+      "id": 4,
+      "generatedByTemplate": false,
+      "position": {
+        "anchor": "L0",
+        "offsetXSvg": 0,
+        "offsetYSvg": 0
+      },
+      "side": "up",
+      "stand": "left",
+      "signIds": [
+        "1.25",
+        "8.1.3_120.5"
+      ],
+      "distanceLabel": null,
+      "distance": null
+    }
+  ],
+  "nextPlacementId": 5,
+  "signImages": {
+    "catalog": null,
+    "revisions": {}
+  },
+  "crossing": {
+    "referenceId": "TEST-PU66",
+    "source": "local-pu66",
+    "snapshot": {
+      "location": "Учебный километр",
+      "axisLabel": "Учебная ось",
+      "roadName": "Условная дорога",
+      "crossingWidthMetres": 8,
+      "crossingRoadLengthMetres": 40,
+      "railwayLocation": {
+        "section": "Учебный перегон Альфа — Бета",
+        "station": "Учебная станция Гамма"
+      },
+      "visibility": {
+        "train": {
+          "rightOdd": 111,
+          "rightEven": 222,
+          "leftOdd": 333,
+          "leftEven": null
+        },
+        "years": {
+          "previous": "2029",
+          "current": "2030"
+        },
+        "technical": [
+          {
+            "item": "12",
+            "label": "Видимость встречного автомобиля с востока, м",
+            "previous": 101,
+            "current": 202
+          }
+        ]
+      },
+      "revision": 2,
+      "updatedAt": "2026-09-26T12:00:00.000Z"
+    }
+  },
+  "parameters": {
+    "locationText": "Учебный участок",
+    "directions": {
+      "left": "Учебный пункт А",
+      "right": "Учебный пункт Б"
+    },
+    "signDistancesMetres": {
+      "d300": 300,
+      "d250": 250,
+      "d150": 150,
+      "d50": 50,
+      "n100": null,
+      "n50": null
+    },
+    "speedStagesKmh": [
+      70,
+      50,
+      40
+    ],
+    "yellowTemporarySigns": false,
+    "location": "out",
+    "signSize": "II",
+    "lastSettlement": null,
+    "frontStyle": "part",
+    "frontFromPu66": false,
+    "regulation": {
+      "mode": "two",
+      "hourly": "300",
+      "k": 0,
+      "vis": false,
+      "straight": false,
+      "last": null
+    },
+    "workZones": {
+      "b33": null,
+      "b34": {
+        "taperMetres": 8,
+        "bufferMetres": 12,
+        "workMetres": 18,
+        "labels": {
+          "taper": "",
+          "buffer": "",
+          "work": ""
+        }
+      }
+    },
+    "approachSpeedKmh": 90,
+    "workConditions": {
+      "kind": "short",
+      "durationHours": 8,
+      "daylight": "day",
+      "regulatorsPresent": true,
+      "sectionMetres": null
+    },
+    "speedConditions": {
+      "road": "ordinary",
+      "vehicle": "heavy"
+    }
+  },
+  "source": {
+    "kind": "created-in-editor"
+  },
+  "reviewMarks": {},
+  "schemaVersion": 16,
+  "decisionEvidence": {
+    "speed": null,
+    "regulation": null
+  },
+  "roadLayout": {
+    "nextNodeId": 3,
+    "nodes": [
+      {
+        "id": 1,
+        "origin": "manual",
+        "position": {
+          "approach": "right",
+          "from": "E",
+          "metres": 120
+        },
+        "sheetOffsetXSvg": null,
+        "kind": "terminal-tee",
+        "branchNames": {
+          "up": "Учебный Север",
+          "down": "Учебный Юг"
+        }
+      },
+      {
+        "id": 2,
+        "origin": "manual",
+        "position": {
+          "approach": "left",
+          "from": "L0",
+          "metres": 120.5
+        },
+        "sheetOffsetXSvg": null,
+        "kind": "junction",
+        "side": "down",
+        "roadKind": "road",
+        "name": "Учебное примыкание",
+        "sideWarningRequested": true
+      }
+    ],
+    "links": [
+      {
+        "placementId": 2,
+        "nodeId": 1,
+        "role": "tee-branch",
+        "origin": "manual",
+        "installation": null,
+        "branchPlacement": {
+          "branch": "up",
+          "alongSvg": 140,
+          "acrossSvg": 150,
+          "rotation": 90
+        },
+        "calculation": {
+          "ruleId": "project-tee-transfer-v1",
+          "sourcePlacementId": 1,
+          "branch": "up",
+          "state": "automatic",
+          "basis": "1b53ab0bcb7c3038",
+          "sourceSignIds": [
+            "1.25"
+          ],
+          "nodePosition": {
+            "approach": "right",
+            "from": "E",
+            "metres": 120
+          }
+        }
+      },
+      {
+        "placementId": 3,
+        "nodeId": 1,
+        "role": "tee-branch",
+        "origin": "manual",
+        "installation": null,
+        "branchPlacement": {
+          "branch": "down",
+          "alongSvg": 140,
+          "acrossSvg": 150,
+          "rotation": 90
+        },
+        "calculation": {
+          "ruleId": "project-tee-transfer-v1",
+          "sourcePlacementId": 1,
+          "branch": "down",
+          "state": "automatic",
+          "basis": "1b53ab0bcb7c3038",
+          "sourceSignIds": [
+            "1.25"
+          ],
+          "nodePosition": {
+            "approach": "right",
+            "from": "E",
+            "metres": 120
+          }
+        }
+      },
+      {
+        "placementId": 4,
+        "nodeId": 2,
+        "role": "side-warning",
+        "origin": "manual",
+        "installation": null,
+        "branchPlacement": {
+          "branch": "down",
+          "alongSvg": 140,
+          "acrossSvg": -150,
+          "rotation": 270
+        },
+        "calculation": {
+          "ruleId": "project-junction-warning-v1",
+          "sourcePlacementId": null,
+          "branch": "down",
+          "state": "automatic",
+          "basis": "cc2a21b26e50f8e7",
+          "sourceSignIds": [
+            "1.25",
+            "8.1.3_120.5"
+          ],
+          "nodePosition": {
+            "approach": "left",
+            "from": "L0",
+            "metres": 120.5
+          },
+          "rangeBasis": {
+            "id": "project-junction-range-out",
+            "title": "Граница включения примыканий вне населённого пункта (включительно)",
+            "source": "Решение владельца #107, Д2 от 01.11.2026",
+            "value": 300,
+            "confirmed": false,
+            "document": null,
+            "currentDocument": null,
+            "amendments": [],
+            "confirmation": null,
+            "fingerprint": "c1807f1e68caa56a"
+          }
+        }
+      }
+    ]
+  },
+  "roadObjectExclusions": {
+    "objects": [
+      {
+        "post": {
+          "kind": "sign-post",
+          "id": 1,
+          "generatedByTemplate": true,
+          "templateSlot": "post2:L:warning",
+          "position": {
+            "anchor": "L0",
+            "offsetXSvg": -520,
+            "offsetYSvg": 0
+          },
+          "side": "down",
+          "stand": "left",
+          "signIds": [
+            "1.25"
+          ],
+          "distanceLabel": null,
+          "distance": {
+            "by": "marker",
+            "approach": "left",
+            "marker": "d300"
+          }
+        },
+        "link": {
+          "placementId": 1,
+          "nodeId": 1,
+          "role": "tee-branch",
+          "origin": "manual",
+          "installation": null
+        }
+      }
+    ],
+    "placementOrder": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "linkOrder": [
+      1,
+      2,
+      3,
+      4
+    ]
+  }
+}

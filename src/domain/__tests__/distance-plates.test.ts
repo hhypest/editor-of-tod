@@ -32,13 +32,14 @@ describe('directional distance plates', () => {
     ['8.1.1_150', '8.1.1', '150', null],
     ['8.1.3_120', '8.1.3', '120', 'right'],
     ['8.1.4_1234567', '8.1.4', '1234567', 'left'],
+    ['8.1.4_1.5', '8.1.4', '1.5', 'left'],
   ])('recognizes %s without changing its value', (code, base, value, direction) => {
     expect(distancePlate(code!)).toEqual({ base, value, direction })
     expect(drawnSignBase(code!)).toBe(base)
     expect(drawableWithoutImage(code!)).toBe(true)
   })
 
-  it.each(['8.1.3', '8.1.4#120', '8.1.2_120', '8.1.3_-1', '8.1.4_1.5', '8.1.3_120oops'])(
+  it.each(['8.1.3', '8.1.4#120', '8.1.2_120', '8.1.3_-1', '8.1.4_1.5.2', '8.1.3_120oops'])(
     'does not invent a drawable distance for %s',
     (code) => {
       expect(distancePlate(code)).toBeNull()

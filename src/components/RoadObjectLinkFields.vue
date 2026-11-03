@@ -75,7 +75,10 @@ function chooseNode(event: Event) {
             Объект Т-перекрёстка
           </option>
           <template v-else>
-            <option value="main-repeat" :disabled="modelValue.branchPlacement?.enabled">
+            <option
+              value="main-repeat"
+              :disabled="modelValue.branchPlacement?.enabled || calculated"
+            >
               Повтор на основной дороге
             </option>
             <option value="side-warning">Предупреждение на примыкающей дороге</option>
