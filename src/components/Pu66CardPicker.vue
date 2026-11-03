@@ -74,6 +74,7 @@ function onChange(event: Event): void {
   display: grid;
   gap: 0.4rem;
   max-width: 44rem;
+  min-width: 0;
 }
 label {
   font-weight: 600;
@@ -82,6 +83,7 @@ input,
 select {
   display: block;
   width: 100%;
+  min-width: 0;
   box-sizing: border-box;
   padding: 0.6rem;
   margin-top: 0.3rem;

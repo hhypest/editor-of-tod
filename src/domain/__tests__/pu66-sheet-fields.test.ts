@@ -85,16 +85,20 @@ describe('versioned PU-66 sheet snapshot (#110)', () => {
     ).toBe(false)
   })
 
-  it('prints pinned directions, source years and objects, without a live registry dependency', () => {
+  it('prints only pinned train directions and retains technical years and objects in the card', () => {
     const linked = linkPu66Card(upgradeSchemeV10(original), card)
     const projection = projectDraftSheet(linked)
     expect(projection.crossingFromPu66?.railwayLocation).toEqual(card.railwayLocation)
     const notes = pu66SheetNotes(linked.crossing.snapshot).join('\n')
     expect(notes).toContain('справа — нечётного направления')
     expect(notes).toContain('чётного 202')
-    expect(notes).toContain('2029 / 2030')
-    expect(notes).toContain('Видимость встречного автомобиля с востока, м: 110 / 220')
-    expect(notes).toContain('с запада, м: — / не измерена')
+    expect(pu66SheetNotes(linked.crossing.snapshot)).toHaveLength(1)
+    expect(notes).not.toContain('2029 / 2030')
+    expect(notes).not.toContain('Видимость встречного автомобиля')
+    expect(pu66DisplayRows(linked.crossing.snapshot)).toContainEqual({
+      label: 'ПУ-66, п. 12: Видимость встречного автомобиля с востока, м',
+      value: '2029: 110; 2030: 220',
+    })
     expect(pu66DisplayRows(linked.crossing.snapshot)).toHaveLength(8)
     expect(projection.pu66Notes).toEqual(pu66SheetNotes(linked.crossing.snapshot))
     expect(
@@ -103,7 +107,7 @@ describe('versioned PU-66 sheet snapshot (#110)', () => {
     ).not.toContain('Примечание')
   })
 
-  it('reports overflow instead of silently approving a sheet whose complete visibility cannot fit', () => {
+  it('keeps extensive technical data in the project without copying them into sheet notes', () => {
     const selected = structuredClone(card)
     selected.visibility!.technical = Array.from({ length: 100 }, (_, index) => ({
       item: '12',
@@ -111,6 +115,35 @@ describe('versioned PU-66 sheet snapshot (#110)', () => {
       previous: 101,
       current: 202,
     }))
+    const linked = linkPu66Card(upgradeSchemeV10(original), selected)
+    expect(importSchemeJson(exportSchemeJson(linked)).scheme.crossing.snapshot).toEqual(
+      linked.crossing.snapshot,
+    )
+    expect(pu66DisplayRows(linked.crossing.snapshot)).toHaveLength(106)
+    expect(pu66SheetNotes(linked.crossing.snapshot)).toHaveLength(1)
+    expect(
+      drawSheet(projectDraftSheet(linked), {
+        signSizes: new Map(),
+        catalogLabel: 'Учебный',
+        revisionLabel: '',
+      }).overflow,
+    ).not.toContain('Примечание')
+  })
+
+  it('does not replace unknown train visibility with technical-table data or drop an explicit zero', () => {
+    const selected = structuredClone(card)
+    selected.visibility!.train = { rightOdd: null, rightEven: null, leftOdd: null, leftEven: null }
+    expect(pu66SheetNotes(selected)).toEqual([])
+    expect(pu66DisplayRows(selected)).toHaveLength(8)
+    selected.visibility!.train.rightOdd = 0
+    expect(pu66SheetNotes(selected)).toEqual([
+      'Видимость поезда, м (ПУ-66): справа — нечётного направления 0, чётного —; слева — нечётного —, чётного —.',
+    ])
+  })
+
+  it('still reports note overflow for an overlong retained train-visibility summary', () => {
+    const selected = structuredClone(card)
+    selected.visibility!.train.rightOdd = 'Учебное длинное значение '.repeat(70)
     const linked = linkPu66Card(upgradeSchemeV10(original), selected)
     expect(
       drawSheet(projectDraftSheet(linked), {
