@@ -51,6 +51,13 @@ export function editedRoadObjectLinks(
     throw new RoadObjectLinkEditError('Проверьте поля связи стойки с примыканием.')
   const draft = parsed.data
   const previous = layout.links.find((link) => link.placementId === placementId)
+  if (
+    previous?.calculation &&
+    (draft.nodeId !== String(previous.nodeId) || draft.role !== previous.role)
+  )
+    throw new RoadObjectLinkEditError(
+      'Связь происхождения расчётной стойки сохраняется. Можно изменить её данные или исключить стойку с листа.',
+    )
   if (!draft.nodeId.trim()) {
     if (previous?.branchPlacement && draft.branchPlacement?.enabled !== false)
       throw new RoadObjectLinkEditError('Сначала явно снимите размещение стойки на ветви.')
@@ -121,6 +128,7 @@ export function editedRoadObjectLinks(
     role: draft.role,
     origin: 'manual',
     installation,
+    ...(previous?.calculation ? { calculation: previous.calculation } : {}),
     ...(branchPlacement ? { branchPlacement } : {}),
   }
   return previous

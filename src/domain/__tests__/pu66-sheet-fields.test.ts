@@ -45,7 +45,7 @@ describe('versioned PU-66 sheet snapshot (#110)', () => {
     const migrated = upgradeSchemeV10(original)
     expect(migrated).toEqual({
       ...previous,
-      schemaVersion: 14,
+      schemaVersion: 15,
       roadLayout: { nextNodeId: 1, nodes: [], links: [] },
     })
     expect(migrated.crossing.snapshot).not.toHaveProperty('visibility')
@@ -74,7 +74,7 @@ describe('versioned PU-66 sheet snapshot (#110)', () => {
     expect(linked.crossing.snapshot).toEqual(snapshot)
     expect(scheme.crossing).toEqual(original.crossing)
     expect(importSchemeJson(exportSchemeJson(linked))).toMatchObject({
-      format: 'scheme-v14',
+      format: 'scheme-v15',
       scheme: linked,
     })
     expect(

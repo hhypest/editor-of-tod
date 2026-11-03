@@ -14,6 +14,7 @@ import TemplateChoice from '../TemplateChoice.vue'
 import SchemeWorkspace from '../SchemeWorkspace.vue'
 import PlacementEditor from '../PlacementEditor.vue'
 import RoadNodeEditor from '../RoadNodeEditor.vue'
+import TeeProposals from '../TeeProposals.vue'
 import SchemeReview from '../SchemeReview.vue'
 import SchemeDetailsEditor from '../SchemeDetailsEditor.vue'
 import SchemeDraftSheet from '../SchemeDraftSheet.vue'
@@ -231,6 +232,12 @@ function inspectRoadNode(id: number) {
         @apply="onProjectApplied"
         @select="selectedPlacementId = $event"
         @select-road-node="selectedRoadNodeId = $event"
+      />
+      <TeeProposals
+        class="module"
+        :scheme="imported.scheme"
+        :locked="editorDirty || localBusy"
+        @apply="onProjectApplied"
       />
       <PlacementEditor
         :key="`placements-${signCatalogVersion}`"

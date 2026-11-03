@@ -5,7 +5,11 @@ import type { RoadObjectLinkDraft } from '../domain/road-object-link-draft'
 import { createRoadObjectLinkDraft } from '../domain/road-object-link-draft'
 import BranchPostFields from './BranchPostFields.vue'
 
-const props = defineProps<{ modelValue: RoadObjectLinkDraft; layout: RoadLayout }>()
+const props = defineProps<{
+  modelValue: RoadObjectLinkDraft
+  layout: RoadLayout
+  calculated?: boolean
+}>()
 const emit = defineEmits<{ 'update:modelValue': [value: RoadObjectLinkDraft] }>()
 const selected = computed(() =>
   props.layout.nodes.find((node) => String(node.id) === props.modelValue.nodeId),
@@ -42,7 +46,7 @@ function chooseNode(event: Event) {
       >Узел для стойки
       <select
         :value="modelValue.nodeId"
-        :disabled="modelValue.branchPlacement?.enabled"
+        :disabled="modelValue.branchPlacement?.enabled || calculated"
         @change="chooseNode"
       >
         <option value="">Без связи с примыканием</option>

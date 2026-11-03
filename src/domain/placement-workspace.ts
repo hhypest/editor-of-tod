@@ -3,6 +3,7 @@ import { postMetres, postScale, snapPostMetres, type PostScale } from './post-di
 import { zoneAnchors } from './zone-geometry'
 import { projectRoadSheet } from './road-sheet'
 import { branchPostPositions } from './branch-post-geometry'
+import { markRoadCalculationEdited } from './road-calculation-state'
 
 type Placement = Scheme['placements'][number]
 type Anchor = Placement['position']['anchor']
@@ -92,18 +93,21 @@ export function movePlacement(scheme: Scheme, id: number, deltaX: number, deltaY
       placements: scheme.placements.map((item) =>
         item.id === id ? { ...item, generatedByTemplate: false } : item,
       ),
-      roadLayout: {
-        ...scheme.roadLayout,
-        links: scheme.roadLayout.links.map((link) =>
-          link.placementId === id
-            ? {
-                ...link,
-                origin: 'manual',
-                branchPlacement: { ...branch, alongSvg, acrossSvg: branch.acrossSvg + deltaX },
-              }
-            : link,
-        ),
-      },
+      roadLayout: markRoadCalculationEdited(
+        {
+          ...scheme.roadLayout,
+          links: scheme.roadLayout.links.map((link) =>
+            link.placementId === id
+              ? {
+                  ...link,
+                  origin: 'manual',
+                  branchPlacement: { ...branch, alongSvg, acrossSvg: branch.acrossSvg + deltaX },
+                }
+              : link,
+          ),
+        },
+        id,
+      ),
     })
     if (!result.success) throw new Error('Смещение выходит за допустимые условные границы рисунка.')
     return result.data
@@ -153,7 +157,11 @@ export function movePlacement(scheme: Scheme, id: number, deltaX: number, deltaY
     }
   })
 
-  const result = schemeSchema.safeParse({ ...scheme, placements })
+  const result = schemeSchema.safeParse({
+    ...scheme,
+    placements,
+    roadLayout: markRoadCalculationEdited(scheme.roadLayout, id),
+  })
   if (!result.success) throw new Error('Не удалось сохранить положение объекта.')
   return result.data
 }
@@ -179,6 +187,7 @@ export function stepPostDistance(scheme: Scheme, id: number, screenStepMetres: n
   if (metres === current) return scheme
   const result = schemeSchema.safeParse({
     ...scheme,
+    roadLayout: markRoadCalculationEdited(scheme.roadLayout, id),
     placements: scheme.placements.map((placement) =>
       placement.id === id && placement.kind === 'sign-post'
         ? {

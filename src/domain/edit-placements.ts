@@ -5,6 +5,7 @@ import {
   type RoadObjectLinkDraft,
 } from './road-object-link-draft'
 import type { RoadLayout } from './road-layout'
+import { markRoadCalculationEdited, roadValuesEqual } from './road-calculation-state'
 import {
   schemeSchema,
   type Approach,
@@ -309,9 +310,19 @@ export function savePlacement(scheme: Scheme, draft: PlacementDraft): Scheme {
         : null
       : undefined
   const placement = keepTemplateContext(placementFromDraft(draft, id, main), existing)
+  let roadLayout = { ...scheme.roadLayout, links }
+  if (
+    existing &&
+    (!roadValuesEqual(existing, placement) ||
+      !roadValuesEqual(
+        scheme.roadLayout.links.find((link) => link.placementId === id),
+        links.find((link) => link.placementId === id),
+      ))
+  )
+    roadLayout = markRoadCalculationEdited(roadLayout, id)
   return checked({
     ...scheme,
-    roadLayout: { ...scheme.roadLayout, links },
+    roadLayout,
     placements:
       draft.id === null
         ? [...scheme.placements, placement]

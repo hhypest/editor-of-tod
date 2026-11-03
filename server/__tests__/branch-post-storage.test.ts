@@ -66,13 +66,13 @@ it('stores v13 branch geometry in history and partial branch input in the existi
   }
 })
 
-it.each([12, 13])(
+it.each([12, 13, 14])(
   'reads v%s project/history as current without rewriting or adopting exclusions',
   (version) => {
     const { db, projects } = owners()
     try {
       const payload = readFileSync(
-          `tests/fixtures/frozen/projects/project-v${version}-${version === 12 ? 'native' : 'branch'}-b34.json`,
+          `tests/fixtures/frozen/projects/project-v${version}-${version === 12 ? 'native' : version === 13 ? 'branch' : 'excluded'}-b34.json`,
           'utf8',
         ),
         original = JSON.parse(payload)
@@ -84,12 +84,12 @@ it.each([12, 13])(
       ).run(original.id, payload)
       const current = projects.get(original.id)!
       expect(current.storedSchemaVersion).toBe(version)
-      expect(current.scheme).toEqual({ ...original, schemaVersion: 14 })
+      expect(current.scheme).toEqual({ ...original, schemaVersion: 15 })
       expect(db.prepare('SELECT scheme_json FROM project_drafts').get()).toEqual({
         scheme_json: payload,
       })
       expect(projects.save(current.scheme, 1).revision).toBe(2)
-      expect(projects.get(original.id)?.storedSchemaVersion).toBe(14)
+      expect(projects.get(original.id)?.storedSchemaVersion).toBe(15)
       expect(
         db.prepare('SELECT scheme_json FROM project_revisions WHERE revision = 1').get(),
       ).toEqual({ scheme_json: payload })
