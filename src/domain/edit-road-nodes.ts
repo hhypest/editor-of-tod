@@ -1,9 +1,11 @@
+import { detachRoadNodeObjects } from './detach-road-node'
+import { roadValuesEqual } from './road-calculation-state'
 import { schemeSchema, type Scheme } from './model'
 import type { RoadNode } from './road-layout'
 import { roadNodeDraftSchema, type RoadNodeDraft } from './road-node-draft'
 
 export const LINKED_ROAD_NODE_DELETE_PROBLEM =
-  'У примыкания есть связанные объекты. Его удаление пока недоступно: сохранение отсоединённых ручных правок ещё разрабатывается. Объекты и связи сохранены.'
+  'При изменении или удалении узла расчётные стойки убираются; ручные данные и положение сохраняются с явным отсоединением. Действие можно отменить.'
 
 export class RoadNodeEditError extends Error {
   constructor(message: string) {
@@ -107,10 +109,25 @@ export function saveRoadNode(scheme: Scheme, input: RoadNodeDraft): Scheme {
         }
       : { kind: 'terminal-tee', branchNames: { up: draft.branchUp, down: draft.branchDown } }),
   }
+  const changed =
+    existing &&
+    !roadValuesEqual(
+      [
+        existing.position,
+        existing.kind === 'junction'
+          ? [existing.side, existing.roadKind, existing.sideWarningRequested]
+          : null,
+      ],
+      [
+        node.position,
+        node.kind === 'junction' ? [node.side, node.roadKind, node.sideWarningRequested] : null,
+      ],
+    )
+  const base = changed ? detachRoadNodeObjects(scheme, id) : scheme
   return checked({
-    ...scheme,
+    ...base,
     roadLayout: {
-      ...scheme.roadLayout,
+      ...base.roadLayout,
       nodes:
         draft.id === null
           ? [...scheme.roadLayout.nodes, node]
@@ -120,19 +137,15 @@ export function saveRoadNode(scheme: Scheme, input: RoadNodeDraft): Scheme {
   })
 }
 
-/** Linked-node removal waits for persisted detached-object states (RP4); never delete objects implicitly. */
+/** RP4 retains detached manual edits and excluded manual objects when their node is removed. */
 export function removeRoadNode(scheme: Scheme, id: number): Scheme {
   if (!scheme.roadLayout.nodes.some((node) => node.id === id))
     throw new RoadNodeEditError('Примыкание не найдено.')
-  if (
-    scheme.roadLayout.links.some((link) => link.nodeId === id) ||
-    scheme.roadObjectExclusions?.objects.some((item) => item.link.nodeId === id)
-  )
-    throw new RoadNodeEditError(LINKED_ROAD_NODE_DELETE_PROBLEM)
+  const base = detachRoadNodeObjects(scheme, id)
   return checked({
-    ...scheme,
+    ...base,
     roadLayout: {
-      ...scheme.roadLayout,
+      ...base.roadLayout,
       nodes: scheme.roadLayout.nodes.filter((node) => node.id !== id),
     },
   })

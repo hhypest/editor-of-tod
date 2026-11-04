@@ -174,7 +174,9 @@ const uncheckedItems = computed(() =>
     ...pu66Findings.value,
   ]),
 )
-const releaseErrors = computed(() => releaseProblems(props.scheme, draftDrawing.value.nodes))
+const releaseErrors = computed(() =>
+  releaseProblems(props.scheme, draftDrawing.value.nodes, normativeRules.value),
+)
 /** Повторная проверка непосредственно перед печатью/PNG и при Ctrl+P. */
 const outputBlockers = computed(() => [
   ...blockers.value,

@@ -84,7 +84,7 @@ export function reviewScheme(
 ): ReviewFinding[] {
   const findings: ReviewFinding[] = []
   const legacyRoad = legacyRoadLayoutProblem(scheme.source) !== null
-  const roadProblem = roadLayoutProblem(scheme)
+  const roadProblem = roadLayoutProblem(scheme, rules)
   if (roadProblem)
     findings.push({
       id: legacyRoad ? 'legacy-road-layout' : 'road-layout',

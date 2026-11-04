@@ -854,6 +854,17 @@ function applyDraft(): void {
       </fieldset>
 
       <fieldset v-if="!mode || mode === 'title'" :disabled="locked">
+        <legend>Редакция примечаний примыканий</legend>
+        <label
+          >Собственные примечания примыканий (по одному на строке; пусто — автоматический
+          текст)<textarea v-model="draft.roadNotesText" rows="4" maxlength="5000" />
+        </label>
+        <label
+          ><input v-model="draft.roadNotesReviewed" type="checkbox" /> Подтверждаю редакцию
+          примечаний для текущих условий</label
+        >
+      </fieldset>
+      <fieldset v-if="!mode || mode === 'title'" :disabled="locked">
         <legend>Реквизиты листа</legend>
         <h3>Разработчик</h3>
         <div class="fields">

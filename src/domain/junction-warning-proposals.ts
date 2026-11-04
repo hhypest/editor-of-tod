@@ -55,6 +55,15 @@ export function junctionWarningReason(
   )
     return 'Примыкание на подходе с конечным Т-перекрёстком требует отдельного разбора.'
   if (
+    scheme.roadLayout.detached?.some(
+      (item) =>
+        item.nodeId === node.id &&
+        item.previousLink.role === 'side-warning' &&
+        scheme.placements.some((p) => p.id === item.placementId),
+    )
+  )
+    return 'Сохранена отсоединённая ручная стойка. Используйте полный план или явно назначьте ей новую связь.'
+  if (
     objects(scheme).some(
       (item) =>
         item.link.nodeId === node.id && item.link.role === 'side-warning' && !item.link.calculation,

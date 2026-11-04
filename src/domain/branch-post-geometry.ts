@@ -4,9 +4,10 @@ import { decimalComma } from './number-format.ts'
 
 /** Retained main-road data of these posts are inactive until explicit detachment. */
 export function branchPostIds(layout: RoadLayout): ReadonlySet<number> {
-  return new Set(
-    layout.links.filter((link) => link.branchPlacement).map((link) => link.placementId),
-  )
+  return new Set([
+    ...layout.links.filter((link) => link.branchPlacement).map((link) => link.placementId),
+    ...(layout.detached ?? []).map((item) => item.placementId),
+  ])
 }
 
 export function branchPostPositions(layout: RoadLayout, nodes: readonly RoadSheetNode[]) {
@@ -44,6 +45,7 @@ export function rotatePostBox(
   cx: number,
   cy: number,
   rotation: 0 | 90 | 180 | 270,
+  scale = 1,
 ): [number, number, number, number] {
   const points = [
     [box[0], box[1]],
@@ -51,8 +53,8 @@ export function rotatePostBox(
     [box[0], box[1] + box[3]],
     [box[0] + box[2], box[1] + box[3]],
   ].map(([x, y]) => {
-    const dx = x! - cx,
-      dy = y! - cy
+    const dx = (x! - cx) * scale,
+      dy = (y! - cy) * scale
     const [rx, ry] =
       rotation === 90
         ? [-dy, dx]

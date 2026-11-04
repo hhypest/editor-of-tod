@@ -396,7 +396,7 @@ export function roadObjectProblems(
         code: 'road-objects-beyond-tee',
         nodeIds: [tee.id],
         objectIds,
-        message: `За конечным Т-перекрёстком № ${tee.id} на рисунке остались стойки № ${objectIds.join(', ')}. Их перенос на обе ветви ещё не реализован; стойки сохранены без перемещения.`,
+        message: `За конечным Т-перекрёстком № ${tee.id} на рисунке остались стойки № ${objectIds.join(', ')}. Проверьте полный план и ручные правки; стойки сохранены без перемещения.`,
       })
   }
   return result

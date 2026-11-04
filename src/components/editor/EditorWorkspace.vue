@@ -14,6 +14,7 @@ import TemplateChoice from '../TemplateChoice.vue'
 import SchemeWorkspace from '../SchemeWorkspace.vue'
 import PlacementEditor from '../PlacementEditor.vue'
 import RoadNodeEditor from '../RoadNodeEditor.vue'
+import RoadAutomation from '../RoadAutomation.vue'
 import TeeProposals from '../TeeProposals.vue'
 import JunctionWarningProposals from '../JunctionWarningProposals.vue'
 import SchemeReview from '../SchemeReview.vue'
@@ -234,12 +235,19 @@ function inspectRoadNode(id: number) {
         @select="selectedPlacementId = $event"
         @select-road-node="selectedRoadNodeId = $event"
       />
+      <RoadAutomation
+        :scheme="imported.scheme"
+        :locked="editorDirty || localBusy"
+        @apply="onProjectApplied"
+      />
       <JunctionWarningProposals
+        v-if="!imported.scheme.roadLayout.automation"
         :scheme="imported.scheme"
         :locked="editorDirty || localBusy"
         @apply="onProjectApplied"
       />
       <TeeProposals
+        v-if="!imported.scheme.roadLayout.automation"
         class="module"
         :scheme="imported.scheme"
         :locked="editorDirty || localBusy"

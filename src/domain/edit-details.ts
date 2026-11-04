@@ -1,3 +1,4 @@
+import { roadNotesBasis } from './road-notes'
 import { schemeSchema, type Scheme, type WorkZone } from './model'
 import {
   changeApproachSpeed,
@@ -21,6 +22,8 @@ type WorkZoneDraft = {
 
 export type SchemeDetailsDraft = {
   /** Неприменённое явное действие; не входит в сохранённый проект. */
+  roadNotesText?: string
+  roadNotesReviewed?: boolean
   pu66FrontRequested?: boolean
   decisionEvidence?: Scheme['decisionEvidence']
   decisionNotes?: { speed: string; regulation: string }
@@ -78,6 +81,7 @@ function cloneTitleBlock(title: Scheme['titleBlock']): Scheme['titleBlock'] {
 export function createSchemeDetailsDraft(scheme: Scheme): SchemeDetailsDraft {
   const { parameters } = scheme
   return {
+    roadNotesText: scheme.roadLayout.notes?.text ?? '',
     decisionEvidence: JSON.parse(JSON.stringify(scheme.decisionEvidence)),
     decisionNotes: {
       speed: scheme.decisionEvidence.speed?.note ?? '',
@@ -288,7 +292,7 @@ export function applySchemeDetails(
         requiredMetres(parameters.speedStagesKmh[0], 'первая ступень скорости'),
         requiredMetres(parameters.speedStagesKmh[1], 'вторая ступень скорости'),
         requiredMetres(parameters.speedStagesKmh[2], 'третья ступень скорости'),
-      ],
+      ] as [number, number, number],
       yellowTemporarySigns: parameters.yellowTemporarySigns,
       workZones: {
         b33: parseZone(parameters.workZones.b33, 'Б.33'),
@@ -337,6 +341,22 @@ export function applySchemeDetails(
     candidate.parameters.frontFromPu66 = false
   const solidProblem = solidB34Problem(candidate, rules)
   if (solidProblem) throw new SchemeEditError(solidProblem)
+  if (draft.roadNotesText !== undefined) {
+    const text = draft.roadNotesText.trim()
+    candidate.roadLayout = {
+      ...candidate.roadLayout,
+      notes: text
+        ? {
+            text,
+            basis:
+              text === scheme.roadLayout.notes?.text && !draft.roadNotesReviewed
+                ? scheme.roadLayout.notes!.basis
+                : roadNotesBasis(candidate),
+          }
+        : undefined,
+    }
+  }
+  if (candidate.roadLayout.notes === undefined) delete candidate.roadLayout.notes
   const checked = schemeSchema.safeParse(candidate)
   if (!checked.success) {
     const issue = checked.error.issues[0]

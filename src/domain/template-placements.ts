@@ -126,6 +126,14 @@ export function buildTemplatePlacements(
 ): Placement[] {
   const roadProblem = roadLayoutProblem(scheme)
   if (roadProblem) throw new TemplateBuildError(roadProblem)
+  if (scheme.roadLayout.nodes.length)
+    throw new TemplateBuildError('Используйте полный план расстановки примыканий на этапе 3.')
+  return buildBaseTemplatePlacements(scheme, rules)
+}
+export function buildBaseTemplatePlacements(
+  scheme: Scheme,
+  rules: NormativeRules = PROTOTYPE_RULES,
+): Placement[] {
   checkConditions(scheme, rules)
   const { parameters, template } = scheme
   const shortFront = template.code === 'b34'

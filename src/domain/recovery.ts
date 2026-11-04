@@ -21,6 +21,8 @@ const titleBlockV5DraftSchema = z.strictObject({
 })
 
 export const detailsDraftSchema = z.strictObject({
+  roadNotesText: text.optional(),
+  roadNotesReviewed: z.boolean().optional(),
   pu66FrontRequested: z.boolean().optional(),
   decisionEvidence: decisionEvidenceSchema.optional(),
   decisionNotes: z.strictObject({ speed: text, regulation: text }).optional(),

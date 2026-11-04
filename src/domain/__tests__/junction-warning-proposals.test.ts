@@ -68,7 +68,7 @@ describe('requested junction warning proposals', () => {
   it('freezes v15 independently and migrates existing tee states without adoption', () => {
     const old = schemeV15Schema.parse(JSON.parse(raw)),
       current = importSchemeJson(raw).scheme
-    expect(current).toEqual({ ...old, schemaVersion: 16 })
+    expect(current).toEqual({ ...old, schemaVersion: 17 })
     expect(schemeV15Schema.safeParse({ ...calculated(), schemaVersion: 15 }).success).toBe(false)
   })
   it.each([
@@ -189,8 +189,15 @@ describe('requested junction warning proposals', () => {
       const base = modified ? movePlacement(calculated(), 10, 10, 0) : calculated(),
         draft = createRoadNodeDraft(base.roadLayout.nodes[0]!)
       draft.metres = '130'
-      const changed = saveRoadNode(base, draft),
-        plan = prepareJunctionWarnings(changed, [1]),
+      const changed = saveRoadNode(base, draft)
+      if (modified) {
+        expect(
+          changed.roadLayout.detached?.[0]?.previousLink.calculation?.nodePosition.metres,
+        ).toBe(120)
+        expect(() => prepareJunctionWarnings(changed, [1])).toThrow('отсоединённая')
+        continue
+      }
+      const plan = prepareJunctionWarnings(changed, [1]),
         applied = applyJunctionWarnings(changed, plan)
       expect(applied.placements[0]!.kind === 'sign-post' && applied.placements[0]!.signIds).toEqual(
         ['1.25', modified ? '8.1.3_120' : '8.1.3_130'],

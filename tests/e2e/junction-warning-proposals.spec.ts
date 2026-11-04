@@ -122,7 +122,7 @@ for (const [approach, side, code] of [
     await expect(page.locator('.save-state')).toHaveText('Сохранён')
     const saved = (await (await request.get(`http://127.0.0.1:4100/api/projects/${s.id}`)).json())
       .scheme
-    expect(saved.schemaVersion).toBe(16)
+    expect(saved.schemaVersion).toBe(17)
     expect(saved.placements[0].signIds).toEqual(['1.25', code])
     expect(saved.roadLayout.links[0]).toMatchObject({
       installation: null,

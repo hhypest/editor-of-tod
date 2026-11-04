@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { roadDrawingNodes } from '../domain/road-automation-state'
 import { listSigns } from '../services/local-signs'
 import { elementLabels } from '../domain/placement-labels'
 import { computed, ref, watch } from 'vue'
@@ -45,7 +46,7 @@ const catalogUnavailable = ref(false)
 const layout = computed(() => schemeLayout(props.scheme))
 const roadDrawing = computed(() =>
   drawRoadSheet(
-    projectRoadSheet(props.scheme.roadLayout.nodes, layout.value.anchors, layout.value.scale),
+    projectRoadSheet(roadDrawingNodes(props.scheme), layout.value.anchors, layout.value.scale),
   ),
 )
 const anchors = computed(() => layout.value.anchors)
@@ -180,7 +181,10 @@ function distanceCaption(placement: Placement): string {
   if (branch) return branchInstallationCaption(branch.link) ?? 'установка не задана'
   const distances = props.scheme.parameters.signDistancesMetres
   if (!placement.distance) return placement.distanceLabel ? 'без расстояния' : ''
-  const moving = drag.value?.id === placement.id ? drag.value.deltaX : 0
+  const packed = props.scheme.roadLayout.automation?.layoutPositions?.some(
+    (item) => item.placementId === placement.id,
+  )
+  const moving = !packed && drag.value?.id === placement.id ? drag.value.deltaX : 0
   if (!moving) {
     const metres = postMetres(placement.distance, distances)
     return metres === null ? 'расстояние не заполнено' : postCaption(placement.distance, distances)
@@ -210,7 +214,8 @@ function nameFor(placement: Placement): string {
           Перетащите объект или выделите его и нажмите стрелку (Shift + стрелка — 10 единиц). У
           стойки подписано расстояние до начала работ: перенос влево или вправо меняет его, а
           стрелки сдвигают на 5 м (с Shift — на 10 м). Изменение попадёт в историю и сохранится
-          после сохранения проекта.
+          после сохранения проекта. В полном плане примыканий перетаскивание упакованных стоек
+          меняет только условный рисунок; метры задаются в свойствах или стрелками.
         </p>
       </div>
       <label for="workspace-zoom">
@@ -328,7 +333,15 @@ function nameFor(placement: Placement): string {
               top: `${top(placement)}px`,
               ...(placement.kind === 'sign-post' && layout.branch(placement.id)
                 ? {
-                    transform: `${placement.stand === 'right' ? 'translate(-100%, -50%)' : 'translateY(-50%)'} rotate(${layout.branch(placement.id)!.rotation}deg)`,
+                    transform: `${placement.stand === 'right' ? 'translate(-100%, -50%)' : 'translateY(-50%)'} rotate(${layout.branch(placement.id)!.rotation}deg) scale(${layout.branch(placement.id)!.link.branchPlacement?.scale ?? 1})`,
+                    transformOrigin: placement.stand === 'right' ? '100% 50%' : '0 50%',
+                  }
+                : {}),
+              ...(placement.kind === 'sign-post' &&
+              !layout.branch(placement.id) &&
+              layout.drawingScale(placement.id) !== 1
+                ? {
+                    transform: `${placement.stand === 'right' ? 'translate(-100%, -50%)' : 'translateY(-50%)'} scale(${layout.drawingScale(placement.id)})`,
                     transformOrigin: placement.stand === 'right' ? '100% 50%' : '0 50%',
                   }
                 : {}),

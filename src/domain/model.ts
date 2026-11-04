@@ -1,3 +1,5 @@
+import { schemeV16Schema } from './formats/frozen/project-v16.ts'
+export { schemeV16Schema } from './formats/frozen/project-v16.ts'
 import { schemeV15Schema } from './formats/frozen/project-v15.ts'
 export { schemeV15Schema } from './formats/frozen/project-v15.ts'
 import { schemeV14Schema } from './formats/frozen/project-v14.ts'
@@ -364,7 +366,7 @@ export const schemeSchema = z
     ...currentFields,
     titleBlock: titleBlockSchema,
     reviewMarks: reviewMarksSchema.default(() => ({})),
-    schemaVersion: z.literal(16),
+    schemaVersion: z.literal(17),
     decisionEvidence: decisionEvidenceSchema.default({ speed: null, regulation: null }),
     placements: z
       .array(z.discriminatedUnion('kind', [signPlacementV10Schema, elementPlacementV5Schema]))
@@ -428,7 +430,10 @@ export const schemeSchema = z
           message: 'У исключённой стойки с расстоянием подпись строится из расстояния.',
         })
       const linked = roadLayoutSchema.safeParse({ ...scheme.roadLayout, links: [excluded.link] })
-      if (!linked.success)
+      if (
+        !linked.success &&
+        !scheme.roadLayout.detached?.some((item) => item.placementId === excluded.post.id)
+      )
         for (const issue of linked.error.issues)
           context.addIssue({ code: 'custom', path, message: issue.message })
     }
@@ -602,10 +607,15 @@ export function upgradeSchemeV14(value: unknown): Scheme {
 }
 
 export function upgradeSchemeV15(value: unknown): Scheme {
-  return schemeSchema.parse({ ...schemeV15Schema.parse(value), schemaVersion: 16 })
+  return upgradeSchemeV16({ ...schemeV15Schema.parse(value), schemaVersion: 16 })
 }
 
+export function upgradeSchemeV16(value: unknown): Scheme {
+  return schemeSchema.parse({ ...schemeV16Schema.parse(value), schemaVersion: 17 })
+}
 export function parseStoredScheme(value: unknown): Scheme {
+  if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 16)
+    return upgradeSchemeV16(value)
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 15)
     return upgradeSchemeV15(value)
   if (value && typeof value === 'object' && 'schemaVersion' in value && value.schemaVersion === 14)

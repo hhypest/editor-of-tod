@@ -58,7 +58,7 @@ describe('explicit branch positions and independent v13 codec', () => {
     const v12 = schemeV12Schema.parse(JSON.parse(raw)),
       current = importSchemeJson(raw)
     expect(current.format).toBe('scheme-v12')
-    expect(current.scheme).toEqual({ ...v12, schemaVersion: 16 })
+    expect(current.scheme).toEqual({ ...v12, schemaVersion: 17 })
     expect(parseStoredScheme(v12)).toEqual(current.scheme)
     expect(
       current.scheme.roadLayout.links.every((link) => link.branchPlacement === undefined),
@@ -66,7 +66,7 @@ describe('explicit branch positions and independent v13 codec', () => {
     const { attached } = setup()
     expect(schemeV12Schema.safeParse({ ...attached, schemaVersion: 12 }).success).toBe(false)
     expect(importSchemeJson(exportSchemeJson(attached))).toMatchObject({
-      format: 'scheme-v16',
+      format: 'scheme-v17',
       scheme: attached,
     })
   })
@@ -216,7 +216,15 @@ describe('explicit branch positions and independent v13 codec', () => {
       schemeLayout(first).coordinates(first.placements[1]!),
     )
     draft.side = 'up'
-    expect(() => saveRoadNode(second, draft)).toThrow('Ветвь стойки')
+    const detached = saveRoadNode(second, draft)
+    expect(detached.roadLayout.links.some((l) => l.placementId === post.id)).toBe(false)
+    expect(
+      detached.roadLayout.detached?.find((d) => d.placementId === post.id)?.previousLink,
+    ).toEqual(second.roadLayout.links.find((l) => l.placementId === post.id))
+    expect(schemeLayout(detached).coordinates(post)).toMatchObject({
+      x: schemeLayout(second).coordinates(post).x,
+      y: schemeLayout(second).coordinates(post).y,
+    })
   })
 
   it.each(['', '-', '-1', 'Infinity', '1000001'])(
@@ -234,7 +242,7 @@ describe('explicit branch positions and independent v13 codec', () => {
 
   it('retains the release/rebuild guard even for explicit, valid branch placement', () => {
     expect(roadLayoutProblem(setup().attached)).toBeTruthy()
-    expect(schemeSchema.shape.schemaVersion.value).toBe(16)
+    expect(schemeSchema.shape.schemaVersion.value).toBe(17)
   })
 })
 

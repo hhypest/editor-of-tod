@@ -310,7 +310,13 @@ export function savePlacement(scheme: Scheme, draft: PlacementDraft): Scheme {
         : null
       : undefined
   const placement = keepTemplateContext(placementFromDraft(draft, id, main), existing)
-  let roadLayout = { ...scheme.roadLayout, links }
+  let roadLayout = {
+    ...scheme.roadLayout,
+    links,
+    ...(scheme.roadLayout.detached && links.some((link) => link.placementId === id)
+      ? { detached: scheme.roadLayout.detached?.filter((item) => item.placementId !== id) }
+      : {}),
+  }
   if (
     existing &&
     (!roadValuesEqual(existing, placement) ||
@@ -320,6 +326,24 @@ export function savePlacement(scheme: Scheme, draft: PlacementDraft): Scheme {
       ))
   )
     roadLayout = markRoadCalculationEdited(roadLayout, id)
+  if (
+    existing &&
+    (!roadValuesEqual(existing.position, placement.position) ||
+      (existing.kind === 'sign-post' &&
+        placement.kind === 'sign-post' &&
+        !roadValuesEqual(existing.distance, placement.distance))) &&
+    roadLayout.automation
+  ) {
+    roadLayout = {
+      ...roadLayout,
+      automation: {
+        ...roadLayout.automation,
+        layoutPositions: roadLayout.automation.layoutPositions?.filter(
+          (item) => item.placementId !== id,
+        ),
+      },
+    }
+  }
   return checked({
     ...scheme,
     roadLayout,
@@ -378,7 +402,12 @@ export function restoreRoadPlacement(scheme: Scheme, id: number): Scheme {
     roadLayout: {
       ...scheme.roadLayout,
       links: restoreOrder(
-        [...scheme.roadLayout.links, excluded.link],
+        [
+          ...scheme.roadLayout.links,
+          ...(scheme.roadLayout.detached?.some((item) => item.placementId === id)
+            ? []
+            : [excluded.link]),
+        ],
         scheme.roadObjectExclusions!.linkOrder,
         (link) => link.placementId,
       ),

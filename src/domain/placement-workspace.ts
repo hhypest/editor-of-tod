@@ -1,3 +1,4 @@
+import { roadDrawingNodes } from './road-automation-state'
 import { schemeSchema, type Scheme } from './model'
 import { postMetres, postScale, snapPostMetres, type PostScale } from './post-distance'
 import { zoneAnchors } from './zone-geometry'
@@ -62,14 +63,27 @@ export function schemeLayout(scheme: Scheme) {
   }
   const branches = branchPostPositions(
     scheme.roadLayout,
-    projectRoadSheet(scheme.roadLayout.nodes, anchors, layout.scale).nodes,
+    projectRoadSheet(roadDrawingNodes(scheme), anchors, layout.scale).nodes,
   )
+  for (const item of scheme.roadLayout.detached ?? [])
+    if (!branches.has(item.placementId))
+      branches.set(item.placementId, {
+        x: item.x,
+        y: item.y,
+        rotation: item.rotation,
+        nodeId: item.nodeId,
+        link: item.previousLink,
+      })
   return {
     anchors,
     scale: layout.scale,
     branch: (id: number) => branches.get(id),
+    drawingScale: (id: number) =>
+      scheme.roadLayout.automation?.layoutPositions?.find((p) => p.placementId === id)?.scale ?? 1,
     coordinates: (placement: Placement) =>
-      branches.get(placement.id) ?? placementCoordinates(placement, anchors, layout),
+      branches.get(placement.id) ??
+      scheme.roadLayout.automation?.layoutPositions?.find((p) => p.placementId === placement.id) ??
+      placementCoordinates(placement, anchors, layout),
   }
 }
 
@@ -80,6 +94,34 @@ export function movePlacement(scheme: Scheme, id: number, deltaX: number, deltaY
   const selected = scheme.placements.find((placement) => placement.id === id)
   if (!selected) throw new Error(`Объект ${id} не найден.`)
   if (deltaX === 0 && deltaY === 0) return scheme
+  const detached = scheme.roadLayout.detached?.find((item) => item.placementId === id)
+  if (detached)
+    return schemeSchema.parse({
+      ...scheme,
+      roadLayout: {
+        ...scheme.roadLayout,
+        detached: scheme.roadLayout.detached!.map((item) =>
+          item.placementId === id ? { ...item, x: item.x + deltaX, y: item.y + deltaY } : item,
+        ),
+      },
+    })
+  const packed = scheme.roadLayout.automation?.layoutPositions?.find((p) => p.placementId === id)
+  if (packed)
+    return schemeSchema.parse({
+      ...scheme,
+      placements: scheme.placements.map((p) =>
+        p.id === id ? { ...p, generatedByTemplate: false } : p,
+      ),
+      roadLayout: {
+        ...markRoadCalculationEdited(scheme.roadLayout, id),
+        automation: {
+          ...scheme.roadLayout.automation!,
+          layoutPositions: scheme.roadLayout.automation!.layoutPositions!.map((p) =>
+            p.placementId === id ? { ...p, x: p.x + deltaX, y: p.y + deltaY } : p,
+          ),
+        },
+      },
+    })
   const attached = scheme.roadLayout.links.find(
     (link) => link.placementId === id && link.branchPlacement,
   )
@@ -172,6 +214,10 @@ export function movePlacement(scheme: Scheme, id: number, deltaX: number, deltaY
  * удаляет. Стойка, связанная с полем этапа 2, получает собственное расстояние.
  */
 export function stepPostDistance(scheme: Scheme, id: number, screenStepMetres: number): Scheme {
+  if (scheme.roadLayout.detached?.some((item) => item.placementId === id))
+    throw new Error(
+      'Отсоединённая стойка перемещается в условных единицах; сначала задайте новую связь.',
+    )
   if (scheme.roadLayout.links.some((link) => link.placementId === id && link.branchPlacement))
     throw new Error(
       'Стойка на ветви перемещается в условных единицах; замер установки редактируется отдельно.',
@@ -185,9 +231,20 @@ export function stepPostDistance(scheme: Scheme, id: number, screenStepMetres: n
     throw new Error('Сначала заполните расстояние этой стойки на этапе 2 или задайте своё.')
   const metres = Math.max(0, current + (approach === 'left' ? -screenStepMetres : screenStepMetres))
   if (metres === current) return scheme
+  const edited = markRoadCalculationEdited(scheme.roadLayout, id)
   const result = schemeSchema.safeParse({
     ...scheme,
-    roadLayout: markRoadCalculationEdited(scheme.roadLayout, id),
+    roadLayout: edited.automation
+      ? {
+          ...edited,
+          automation: {
+            ...edited.automation,
+            layoutPositions: edited.automation.layoutPositions?.filter(
+              (item) => item.placementId !== id,
+            ),
+          },
+        }
+      : edited,
     placements: scheme.placements.map((placement) =>
       placement.id === id && placement.kind === 'sign-post'
         ? {

@@ -48,6 +48,7 @@ export const branchPlacementSchema = z.strictObject({
   branch: z.enum(['up', 'down']),
   alongSvg: finite.nonnegative().max(1_000_000),
   acrossSvg: finite.min(-1_000_000).max(1_000_000),
+  scale: z.number().min(0.5).max(1).optional(),
   rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]),
 })
 export type BranchPlacement = z.infer<typeof branchPlacementSchema>
@@ -78,6 +79,16 @@ export const roadObjectLinkSchema = z.strictObject({
         nodePosition: roadNodePositionSchema,
       }),
       z.strictObject({
+        ruleId: z.literal('project-road-layout-v1'),
+        sourcePlacementId: id.nullable(),
+        slot: z.string().min(1).max(160),
+        branch: z.enum(['up', 'down']),
+        state: z.enum(['automatic', 'modified']),
+        basis: z.string().regex(/^[0-9a-f]{16}$/),
+        sourceSignIds: z.array(z.string().min(1).max(120)).min(1).max(20),
+        nodePosition: roadNodePositionSchema,
+      }),
+      z.strictObject({
         ruleId: z.literal('project-junction-warning-v1'),
         sourcePlacementId: z.null(),
         branch: z.enum(['up', 'down']),
@@ -100,11 +111,101 @@ export const roadObjectLinkSchema = z.strictObject({
 
 export const roadLayoutSchema = z
   .strictObject({
+    automation: z
+      .strictObject({
+        basis: z.string().regex(/^[0-9a-f]{16}$/),
+        profile: z.array(parameterBasisSchema).max(100),
+        layoutPositions: z
+          .array(
+            z.strictObject({
+              placementId: id,
+              x: finite,
+              y: finite,
+              scale: z.number().min(0.5).max(1),
+            }),
+          )
+          .max(2000)
+          .optional(),
+        nodeOffsets: z
+          .array(z.strictObject({ nodeId: id, offset: finite }))
+          .max(2000)
+          .optional(),
+        hiddenSourceIds: z.array(id).max(2000),
+        baseIds: z.array(id).min(1).max(2000),
+        outputs: z
+          .array(z.strictObject({ nodeId: id, slot: z.string().max(160), placementId: id }))
+          .max(2000),
+      })
+      .optional(),
+    notes: z.strictObject({ text: z.string().max(5000), basis: z.string().max(128) }).optional(),
+    detached: z
+      .array(
+        z.strictObject({
+          placementId: id,
+          nodeId: id,
+          reason: z.string().max(5000),
+          previousLink: roadObjectLinkSchema,
+          x: finite,
+          y: finite,
+          rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]),
+        }),
+      )
+      .max(2000)
+      .optional(),
     nextNodeId: id,
     nodes: z.array(roadNodeSchema).max(2_000),
     links: z.array(roadObjectLinkSchema).max(2_000),
   })
   .superRefine((layout, context) => {
+    const unique = (values: Array<string | number>, path: string[]) => {
+      if (new Set(values).size !== values.length)
+        context.addIssue({
+          code: 'custom',
+          path,
+          message: 'Повторяющиеся идентификаторы в состоянии примыканий.',
+        })
+    }
+    const receipt = layout.automation
+    if (receipt) {
+      unique(receipt.baseIds, ['automation', 'baseIds'])
+      unique(receipt.hiddenSourceIds, ['automation', 'hiddenSourceIds'])
+      unique(
+        receipt.outputs.map((item) => `${item.nodeId}:${item.slot}`),
+        ['automation', 'outputs'],
+      )
+      unique(
+        receipt.outputs.map((item) => item.placementId),
+        ['automation', 'outputs'],
+      )
+      unique(
+        receipt.profile.map((item) => item.id),
+        ['automation', 'profile'],
+      )
+      unique(
+        (receipt.layoutPositions ?? []).map((item) => item.placementId),
+        ['automation', 'layoutPositions'],
+      )
+      unique(
+        (receipt.nodeOffsets ?? []).map((item) => item.nodeId),
+        ['automation', 'nodeOffsets'],
+      )
+    }
+    unique(
+      (layout.detached ?? []).map((item) => item.placementId),
+      ['detached'],
+    )
+    for (const [index, item] of (layout.detached ?? []).entries()) {
+      if (
+        item.placementId !== item.previousLink.placementId ||
+        item.nodeId !== item.previousLink.nodeId ||
+        layout.links.some((link) => link.placementId === item.placementId)
+      )
+        context.addIssue({
+          code: 'custom',
+          path: ['detached', index],
+          message: 'Отсоединённый объект имеет противоречивую связь.',
+        })
+    }
     const nodes = new Map<number, RoadNode>()
     let tee = false
     for (const [index, node] of layout.nodes.entries()) {
@@ -136,6 +237,7 @@ export const roadLayoutSchema = z
       const node = nodes.get(link.nodeId)
       if (
         link.calculation &&
+        link.calculation.ruleId !== 'project-road-layout-v1' &&
         ((link.calculation.ruleId === 'project-tee-transfer-v1'
           ? node?.kind !== 'terminal-tee' || link.role !== 'tee-branch'
           : node?.kind !== 'junction' || link.role !== 'side-warning') ||
@@ -207,8 +309,29 @@ export function checkRoadCalculationSources(
   for (const item of scheme.roadObjectExclusions?.objects ?? []) objects.set(item.post.id, item)
   const keys = new Set<string>()
   for (const [id, item] of objects) {
+    if (scheme.roadLayout.detached?.some((entry) => entry.placementId === id)) continue
     const calc = item.link?.calculation
     if (!calc) continue
+    if (calc.ruleId === 'project-road-layout-v1') {
+      const key = item.link!.nodeId + ':' + calc.ruleId + ':' + calc.slot
+      if (keys.has(key))
+        context.addIssue({
+          code: 'custom',
+          path: ['roadLayout'],
+          message: 'Повторяющееся происхождение расчёта примыканий.',
+        })
+      keys.add(key)
+      if (
+        calc.sourcePlacementId !== null &&
+        (!objects.has(calc.sourcePlacementId) || calc.sourcePlacementId === id)
+      )
+        context.addIssue({
+          code: 'custom',
+          path: ['roadLayout'],
+          message: 'Потеряна исходная стойка переноса.',
+        })
+      continue
+    }
     if (calc.ruleId === 'project-junction-warning-v1') {
       const key = item.link!.nodeId + ':' + calc.ruleId
       if (keys.has(key))

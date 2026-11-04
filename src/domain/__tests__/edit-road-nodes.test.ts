@@ -7,7 +7,6 @@ import {
   saveRoadNode,
   removeRoadNode,
   RoadNodeEditError,
-  LINKED_ROAD_NODE_DELETE_PROBLEM,
 } from '../edit-road-nodes'
 import { recoveryWriteSchema, placementDraftSchema } from '../recovery'
 import { createPlacementDraft } from '../edit-placements'
@@ -71,7 +70,8 @@ describe('manual road node editing before geometry', () => {
       name: 'Переименовано',
       position: { approach: 'right', from: 'E', metres: 0 },
     })
-    expect(next.roadLayout.links).toEqual(previous.roadLayout.links)
+    expect(next.roadLayout.links).toEqual(previous.roadLayout.links.filter((l) => l.nodeId !== 1))
+    expect(next.roadLayout.detached?.[0]?.previousLink).toEqual(previous.roadLayout.links[0])
     expect(next.placements).toEqual(previous.placements)
     expect(next.source).toEqual(previous.source)
     expect(next.crossing).toEqual(previous.crossing)
@@ -139,7 +139,9 @@ describe('manual road node editing before geometry', () => {
   it('refuses linked removal and deletes an unlinked node without reusing IDs or touching manual objects', () => {
     const previous = project(),
       before = structuredClone(previous)
-    expect(() => removeRoadNode(previous, 1)).toThrow(LINKED_ROAD_NODE_DELETE_PROBLEM)
+    const detached = removeRoadNode(previous, 1)
+    expect(detached.placements).toEqual(previous.placements)
+    expect(detached.roadLayout.detached?.[0]?.previousLink).toEqual(previous.roadLayout.links[0])
     expect(previous).toEqual(before)
     expect(() => removeRoadNode(previous, 999)).toThrow('не найдено')
     const removed = removeRoadNode(previous, 2)

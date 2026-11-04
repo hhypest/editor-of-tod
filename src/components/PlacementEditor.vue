@@ -43,6 +43,9 @@ const emit = defineEmits<{
   draft: [value: PlacementDraft | null]
 }>()
 const selectedId = ref<number | null>(props.selectedPlacementId)
+const detached = computed(() =>
+  props.scheme.roadLayout.detached?.find((item) => item.placementId === selectedId.value),
+)
 const calculation = computed(
   () =>
     props.scheme.roadLayout.links.find((link) => link.placementId === selectedId.value)
@@ -301,7 +304,8 @@ function restoreExcluded(id: number) {
       Выберите объект для изменения свойств или добавьте стойку, надпись или условное обозначение. У
       стойки задаётся расстояние до начала работ в метрах: её место на листе и подпись следуют из
       него. Остальные объекты и стойки без расстояния стоят по условным координатам листа. После
-      ручной правки автоматический объект становится ручным.
+      ручной правки автоматический объект становится ручным. В полном плане примыканий
+      перетаскивание меняет только условное положение; метры задаются в свойствах.
     </p>
     <p v-if="locked" class="hint" role="status">
       Сначала примените или отмените изменения параметров выше.
@@ -354,6 +358,10 @@ function restoreExcluded(id: number) {
         @change="markDirty"
       >
         <h3>{{ draft.id === null ? 'Новый объект' : `Свойства объекта № ${draft.id}` }}</h3>
+        <p v-if="detached" role="status" data-detached-road-post>
+          Связь с узлом № {{ detached.nodeId }} снята. Ручные данные, положение и поворот сохранены.
+          Для новой связи выберите узел в свойствах.
+        </p>
         <p v-if="calculation" class="hint" :data-calculation-state="calculation.state">
           {{ calculation.state === 'automatic' ? 'Расчётная раскладка' : 'Изменена вручную' }}:
           <template v-if="calculation.ruleId === 'project-tee-transfer-v1'"
@@ -372,7 +380,11 @@ function restoreExcluded(id: number) {
               : 'Ручной объект.'
           }}
         </p>
-        <template v-if="draft.kind === 'sign-post' && !draft.roadLink?.branchPlacement?.enabled">
+        <template
+          v-if="
+            draft.kind === 'sign-post' && !draft.roadLink?.branchPlacement?.enabled && !detached
+          "
+        >
           <div class="fields distance-fields">
             <label
               >Расстояние до начала работ
