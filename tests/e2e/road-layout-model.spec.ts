@@ -38,7 +38,7 @@ test('native v12 roads are visible, persist through save/export, and cannot bypa
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   await expect(
     page.getByRole('listitem').filter({ hasText: 'Геометрия примыканий' }),
-  ).toContainText('автоматика ещё не реализованы')
+  ).toContainText('Полный план расстановки не применён или устарел')
   await expect(
     page.locator('.print-host:not(.thumbnail)').getByLabel(/Я проверил лист/),
   ).toBeDisabled()

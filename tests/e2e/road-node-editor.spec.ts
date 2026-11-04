@@ -22,7 +22,7 @@ async function open(page: Page, scheme: ReturnType<typeof project>) {
   await page.getByRole('button', { name: /Знаки и объекты.*Поле и свойства/ }).click()
 }
 
-test('road edits keep linked objects and plate values, support one-step undo, and save as current v13', async ({
+test('road edits detach manual objects without changing their data, support one-step undo, and save as v17', async ({
   page,
   request,
 }, testInfo) => {
@@ -44,8 +44,8 @@ test('road edits keep linked objects and plate values, support one-step undo, an
   await expect(editor.getByRole('row', { name: /Уточнённая Альфа/ })).toContainText('125,5 м от E')
   await expect(
     editor.getByRole('button', { name: 'Удалить примыкание', exact: true }),
-  ).toBeDisabled()
-  await expect(editor).toContainText('связанные объекты')
+  ).toBeEnabled()
+  await expect(editor).toContainText('Ручные изменения сохраняются с отсоединением')
   await editor.screenshot({ path: testInfo.outputPath('road-node-editor.png') })
   await page.getByText('Действия с проектом', { exact: true }).click()
   await page.getByRole('button', { name: 'Отменить действие', exact: true }).click()
@@ -69,7 +69,12 @@ test('road edits keep linked objects and plate values, support one-step undo, an
   await expect(page.locator('.save-state')).toHaveText('Сохранён')
   const saved = await (await request.get(`http://127.0.0.1:4100/api/projects/${scheme.id}`)).json()
   expect(saved.scheme.placements).toEqual(scheme.placements)
-  expect(saved.scheme.roadLayout.links).toEqual(scheme.roadLayout.links)
+  expect(saved.scheme.roadLayout.links).toEqual(
+    scheme.roadLayout.links.filter((l) => l.nodeId !== 1),
+  )
+  expect(
+    saved.scheme.roadLayout.detached.map((item: { previousLink: unknown }) => item.previousLink),
+  ).toEqual(scheme.roadLayout.links.filter((l) => l.nodeId === 1))
   expect(saved.scheme.roadLayout.nodes[0]).toMatchObject({
     id: 1,
     name: 'Уточнённая Альфа',
@@ -194,5 +199,5 @@ test('a new terminus can be cancelled or applied with both branch names and bloc
   await page.getByRole('button', { name: /Проверка и лист.*A4 для сверки/ }).click()
   await expect(
     page.getByRole('listitem').filter({ hasText: 'Геометрия примыканий' }),
-  ).toContainText('автоматика ещё не реализованы')
+  ).toContainText('Полный план расстановки не применён или устарел')
 })

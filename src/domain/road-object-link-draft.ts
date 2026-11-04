@@ -98,6 +98,9 @@ export function editedRoadObjectLinks(
         alongSvg: Number(along),
         acrossSvg: Number(across),
         rotation: Number(draft.branchPlacement.rotation),
+        ...(previous?.branchPlacement?.scale !== undefined
+          ? { scale: previous.branchPlacement.scale }
+          : {}),
       })
       if (!/^\d+(?:\.\d+)?$/.test(along) || !/^-?\d+(?:\.\d+)?$/.test(across) || !branch.success)
         throw new RoadObjectLinkEditError(

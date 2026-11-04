@@ -1,3 +1,5 @@
+import { type NormativeRules } from './normative-parameters'
+import { roadNotesBasis } from './road-notes'
 import type { Scheme } from './model'
 import { roadLayoutProblem } from './road-layout-readiness'
 import { distanceTitles } from './normative-defaults'
@@ -12,10 +14,25 @@ import { branchPostIds } from './branch-post-geometry'
  * `nodes` — нарисованный лист: по его надписям дополнительно ищутся незаполненные
  * подстановки вида `{d150}`, попавшие в текст помимо подписей стоек.
  */
-export function releaseProblems(scheme: Scheme, nodes: readonly SheetNode[] = []): string[] {
+export function releaseProblems(
+  scheme: Scheme,
+  nodes: readonly SheetNode[] = [],
+  rules?: NormativeRules,
+): string[] {
   const problems: string[] = []
-  const roadProblem = roadLayoutProblem(scheme)
+  const roadProblem = roadLayoutProblem(scheme, rules)
   if (roadProblem) problems.push(roadProblem)
+  if (scheme.roadLayout.notes && scheme.roadLayout.notes.basis !== roadNotesBasis(scheme))
+    problems.push(
+      'Условия примечаний изменились. Проверьте и подтвердите собственную редакцию на этапе оформления.',
+    )
+  if (
+    scheme.roadLayout.automation &&
+    !scheme.roadLayout.automation.profile.find((p) => p.id === 'project-road-profile')?.confirmed
+  )
+    problems.push(
+      'Подтвердите профиль автоматики примыканий в нормативных параметрах и примените полный план.',
+    )
   if (!scheme.placements.length) problems.push('На листе нет объектов схемы.')
   if (scheme.parameters.location === 'auto')
     problems.push('Укажите, находится ли место работ в населённом пункте.')

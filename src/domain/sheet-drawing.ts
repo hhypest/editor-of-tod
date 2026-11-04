@@ -439,7 +439,7 @@ function notes(sheet: DraftSheet, release: boolean): string[] {
     list.push(
       `Принятая интенсивность движения — ${sheet.hourlyTraffic.trim().replace('.', ',')} авт/ч в двух направлениях.`,
     )
-  list.push(...sheet.pu66Notes)
+  list.push(...sheet.pu66Notes, ...(sheet.roadNotes ?? []))
   return list.map((text, index) => `${index + 1}. ${text}`)
 }
 
@@ -714,9 +714,16 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
         : drawElement(item, available, options)
     drawn.codes.forEach((code) => codes.add(code))
     const rotation = item.kind === 'sign-post' ? (item.branch?.rotation ?? 0) : 0
-    const box = rotation ? rotatePostBox(drawn.box, item.x, item.y, rotation) : drawn.box
+    const scale = item.kind === 'sign-post' ? (item.branch?.scale ?? item.drawingScale ?? 1) : 1
+    const box =
+      rotation || scale !== 1
+        ? rotatePostBox(drawn.box, item.x, item.y, rotation, scale)
+        : drawn.box
     const rawExtent = 'extent' in drawn ? (drawn.extent as Box) : drawn.box
-    const extent = rotation ? rotatePostBox(rawExtent, item.x, item.y, rotation) : rawExtent
+    const extent =
+      rotation || scale !== 1
+        ? rotatePostBox(rawExtent, item.x, item.y, rotation, scale)
+        : rawExtent
     objectBoxes.push({
       id: item.id,
       kind: item.kind,
@@ -729,7 +736,16 @@ export function drawSheet(sheet: DraftSheet, options: SheetOptions): SheetDrawin
       objectId: item.id,
       cls: `placed-object ${item.kind === 'sign-post' ? 'sign-post' : item.elementKind}`,
       box,
-      ...(rotation ? { rotation: { degrees: rotation, cx: item.x, cy: item.y } } : {}),
+      ...(rotation || scale !== 1
+        ? {
+            rotation: {
+              degrees: rotation,
+              cx: item.x,
+              cy: item.y,
+              ...(scale !== 1 ? { scale } : {}),
+            },
+          }
+        : {}),
       children: drawn.nodes,
     })
   }

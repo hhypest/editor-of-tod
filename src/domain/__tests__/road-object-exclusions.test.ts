@@ -23,7 +23,7 @@ describe('reversible road-post exclusion, v14', () => {
   it('freezes v13 and changes only the envelope when opening an old project', () => {
     const old = schemeV13Schema.parse(JSON.parse(raw)),
       current = example()
-    expect(current).toEqual({ ...old, schemaVersion: 16 })
+    expect(current).toEqual({ ...old, schemaVersion: 17 })
     expect(current.roadObjectExclusions).toBeUndefined()
     expect(
       schemeV13Schema.safeParse({ ...removePlacement(current, 1), schemaVersion: 13 }).success,
@@ -96,10 +96,10 @@ describe('reversible road-post exclusion, v14', () => {
   })
   it('protects a node referenced by an excluded post and incompatible side changes', () => {
     const scheme = removePlacement(example(), 1)
-    expect(() => removeRoadNode(scheme, 1)).toThrow('связанные объекты')
+    expect(removeRoadNode(scheme, 1).roadLayout.detached?.[0]?.placementId).toBe(1)
     const draft = createRoadNodeDraft(scheme.roadLayout.nodes[0]!)
     draft.side = 'up'
-    expect(() => saveRoadNode(scheme, draft)).toThrow('Ветвь стойки')
+    expect(saveRoadNode(scheme, draft).roadLayout.detached?.[0]?.placementId).toBe(1)
     draft.side = 'down'
     draft.sheetOffsetXSvg = '-180'
     const edited = saveRoadNode(scheme, draft),

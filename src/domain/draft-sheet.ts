@@ -1,3 +1,5 @@
+import { roadDrawingNodes } from './road-automation-state'
+import { roadSheetNotes } from './road-notes'
 import { projectRoadSheet, type RoadSheet } from './road-sheet'
 import { branchInstallationCaption } from './branch-post-geometry'
 import { decimalComma, decimalCommaInMeasures } from './number-format'
@@ -16,6 +18,7 @@ import {
 
 type SheetPost = {
   kind: 'sign-post'
+  drawingScale?: number
   id: number
   x: number
   y: number
@@ -25,7 +28,7 @@ type SheetPost = {
   stand: 'left' | 'right'
   /** Вертикальный сдвиг стойки относительно своей стороны дороги. */
   dy: number
-  branch?: { nodeId: number; rotation: 0 | 90 | 180 | 270 }
+  branch?: { scale?: number; nodeId: number; rotation: 0 | 90 | 180 | 270 }
 }
 
 type SheetElement = {
@@ -56,6 +59,7 @@ export type DraftSheet = {
     carriagewayWidthMetres: string
     railwayLocation?: { section: string; station: string }
   } | null
+  roadNotes?: string[]
   pu66Notes: string[]
   hourlyTraffic: string
   directions: { left: string; right: string }
@@ -111,6 +115,8 @@ export function projectDraftSheet(
   const zone = scheme.parameters.workZones[scheme.template.code]
   if (!zone) throw new Error('Размеры выбранного варианта не заполнены.')
   const { anchors, coordinates, scale, branch } = schemeLayout(scheme)
+  const drawingScale = (id: number) =>
+    scheme.roadLayout.automation?.layoutPositions?.find((p) => p.placementId === id)?.scale ?? 1
   const placements: DraftSheet['placements'] = scheme.placements.map((placement) => {
     const { x, y } = coordinates(placement)
     if (placement.kind === 'sign-post') {
@@ -121,6 +127,7 @@ export function projectDraftSheet(
         x,
         y,
         signIds: [...placement.signIds],
+        ...(drawingScale(placement.id) !== 1 ? { drawingScale: drawingScale(placement.id) } : {}),
         distanceLabel: attached
           ? branchInstallationCaption(attached.link)
           : placement.distance
@@ -129,7 +136,15 @@ export function projectDraftSheet(
         side: placement.side,
         stand: placement.stand,
         dy: attached ? y - (placement.side === 'up' ? 353 : 567) : placement.position.offsetYSvg,
-        ...(attached ? { branch: { nodeId: attached.nodeId, rotation: attached.rotation } } : {}),
+        ...(attached
+          ? {
+              branch: {
+                scale: attached.link.branchPlacement?.scale,
+                nodeId: attached.nodeId,
+                rotation: attached.rotation,
+              },
+            }
+          : {}),
       }
     }
     return {
@@ -147,6 +162,7 @@ export function projectDraftSheet(
   })
 
   return {
+    roadNotes: roadSheetNotes(scheme),
     id: scheme.id,
     createdAt: scheme.createdAt,
     referenceId: scheme.crossing.referenceId,
@@ -199,7 +215,7 @@ export function projectDraftSheet(
     signSize: scheme.parameters.signSize,
     titleBlock: JSON.parse(JSON.stringify(scheme.titleBlock)) as Scheme['titleBlock'],
     placements,
-    roadSheet: projectRoadSheet(scheme.roadLayout.nodes, anchors, scale),
+    roadSheet: projectRoadSheet(roadDrawingNodes(scheme), anchors, scale),
     titleRows: [
       {
         label: 'Разработчик',

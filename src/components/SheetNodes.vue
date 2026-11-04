@@ -89,7 +89,9 @@ function paint(fill: string | undefined): string {
         :data-road-node-id="node.roadNodeId"
         :transform="
           node.rotation
-            ? `rotate(${node.rotation.degrees} ${node.rotation.cx} ${node.rotation.cy})`
+            ? node.rotation.scale === undefined
+              ? `rotate(${node.rotation.degrees} ${node.rotation.cx} ${node.rotation.cy})`
+              : `translate(${node.rotation.cx} ${node.rotation.cy}) rotate(${node.rotation.degrees}) scale(${node.rotation.scale}) translate(${-node.rotation.cx} ${-node.rotation.cy})`
             : undefined
         "
       >

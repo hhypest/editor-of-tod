@@ -67,7 +67,7 @@ describe('explicit tee transfer proposals and manual ownership', () => {
   it('freezes v14 and infers neither ownership nor exclusions on migration', () => {
     const old = schemeV14Schema.parse(JSON.parse(raw)),
       current = importSchemeJson(raw).scheme
-    expect(current).toEqual({ ...old, schemaVersion: 16 })
+    expect(current).toEqual({ ...old, schemaVersion: 17 })
     expect(current.roadLayout.links.every((link) => !link.calculation)).toBe(true)
     expect(schemeV14Schema.safeParse({ ...calculated(), schemaVersion: 14 }).success).toBe(false)
   })

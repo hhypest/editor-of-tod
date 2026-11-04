@@ -40,6 +40,7 @@ describe('normative parameters', () => {
       'gost-work-traffic',
       'odm-sign-distances-outside',
       'pdd-speed-outside-conditions',
+      'project-road-profile',
     ])
     for (const definition of tables) {
       // Каждая обязательная строка есть в значении прототипа.
@@ -60,7 +61,7 @@ describe('normative parameters', () => {
           confirmation: {
             id: 1,
             parameterId: definition.id,
-            documentId: 1,
+            documentId: definition.source.kind === 'decision' ? null : 1,
             documentLabel:
               definition.source.kind === 'decision' ? '' : `${definition.source.documentCode}-2030`,
             clause:
