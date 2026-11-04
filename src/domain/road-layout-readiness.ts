@@ -4,6 +4,7 @@ import type { NormativeRules } from './normative-parameters'
 import { roadAutomationCurrent } from './road-automation-state'
 import type { Scheme } from './model'
 import type { RoadLayout } from './road-layout.ts'
+import { unsupportedLegacyRoadProblem } from './migrate-road-layout'
 
 export const ROAD_LAYOUT_PROBLEM =
   'Данные примыканий сохранены. Полный план расстановки не применён или устарел. Подготовьте и примените полный план; сохранение проекта и черновик для сверки доступны.'
@@ -20,6 +21,8 @@ export function roadLayoutProblem(
   },
   rules?: NormativeRules,
 ): string | null {
+  const unsupported = unsupportedLegacyRoadProblem(scheme.source)
+  if (unsupported) return unsupported
   if (roadAutomationCurrent(scheme)) {
     if (
       rules &&

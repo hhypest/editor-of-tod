@@ -754,7 +754,7 @@
   },
   "roadLayout": {
     "automation": {
-      "basis": "7941f66c74a53111",
+      "basis": "f3e22055213b4ea6",
       "profile": [
         {
           "id": "gost-short-term-hours",
@@ -1164,39 +1164,39 @@
       "layoutPositions": [
         {
           "placementId": 8,
-          "x": 529.2,
+          "x": 531,
           "y": 567,
-          "scale": 0.6
+          "scale": 0.5
         },
         {
           "placementId": 7,
-          "x": 453.32800000000003,
+          "x": 466.44,
           "y": 567,
-          "scale": 0.6
+          "scale": 0.5
         },
         {
           "placementId": 36,
-          "x": 349.85600000000005,
+          "x": 378.88,
           "y": 567,
-          "scale": 0.6
+          "scale": 0.5
         },
         {
           "placementId": 6,
-          "x": 108.15600000000006,
+          "x": 148.13,
           "y": 567,
-          "scale": 0.6
+          "scale": 0.5
         },
         {
           "placementId": 5,
-          "x": 34.45600000000006,
+          "x": 85.38,
           "y": 567,
-          "scale": 0.6
+          "scale": 0.5
         },
         {
           "placementId": 1,
-          "x": -14.943999999999942,
+          "x": 42.879999999999995,
           "y": 567,
-          "scale": 0.6
+          "scale": 0.5
         },
         {
           "placementId": 10,
@@ -1232,7 +1232,7 @@
       "nodeOffsets": [
         {
           "nodeId": 2,
-          "offset": -296.34399999999994
+          "offset": -265.62
         },
         {
           "nodeId": 1,
@@ -1361,7 +1361,7 @@
           "from": "L0",
           "metres": 120.5
         },
-        "sheetOffsetXSvg": -296.34399999999994,
+        "sheetOffsetXSvg": -265.62,
         "kind": "junction",
         "side": "down",
         "roadKind": "road",

@@ -3,7 +3,10 @@ import { createUnlinkedScheme } from '../create-scheme'
 import { schemeSchema, type Scheme } from '../model'
 import { prepareRoadAutomation, applyRoadAutomation } from '../road-automation'
 import { PROTOTYPE_RULES } from '../normative-parameters'
-import { roadAutomationCurrent } from '../road-automation-state'
+import legacyRaw from '../../../tests/fixtures/manual-v1.json?raw'
+import { legacyRoadFixture } from '../../../tests/fixtures/road-layout'
+import { roadCalculationBasis } from '../road-calculation-state'
+import { roadAutomationBasis, roadAutomationCurrent } from '../road-automation-state'
 import { roadLayoutProblem } from '../road-layout-readiness'
 import {
   createPlacementDraft,
@@ -405,4 +408,95 @@ it('preserves an explicitly excluded automatic output across semantic node edits
   expect(applied.roadObjectExclusions?.objects.some((item) => item.post.id === id)).toBe(true)
   const deleted = removeRoadNode(excluded, 1)
   expect(deleted.roadObjectExclusions?.objects.some((item) => item.post.id === id)).toBe(true)
+})
+
+it.each(['malformed', 'dangling', 'conflicting'] as const)(
+  'keeps %s raw geometry guarded despite current nodes or a receipt',
+  (kind) => {
+    const raw = legacyRoadFixture(JSON.parse(legacyRaw))
+    if (kind === 'malformed') raw.params.junc = { unsupported: true }
+    else {
+      const tagged = raw.objects.find((o) => o.jrep !== undefined)!
+      if (kind === 'dangling') tagged.jrep = 999
+      else tagged.jside = 7
+    }
+    const s = calculated()
+    s.source = {
+      kind: 'legacy-html-v1',
+      importedAt: s.createdAt,
+      originalJson: JSON.stringify(raw),
+    }
+    s.roadLayout.automation!.basis = roadAutomationBasis(s, s.roadLayout.automation!.profile)
+    expect(roadLayoutProblem(s)).not.toBeNull()
+    expect(() => prepareRoadAutomation(s)).toThrow('неподдержанные')
+    expect(importSchemeJson(exportSchemeJson(s)).scheme.source).toEqual(s.source)
+  },
+)
+it.each([15, 80])('keeps a manually edited end post active at tee d=%s', (d) => {
+  const s = calculated(example('junction', 'left', 200))
+  const end = s.placements.find((p) => p.templateSlot === 'post2:R:end')!,
+    draft = edit(s, end.id)
+  draft.signCodes = '3.31,1.25'
+  const manual = savePlacement(s, draft)
+  manual.roadLayout = {
+    nextNodeId: 2,
+    links: [],
+    nodes: example('terminal-tee', 'right', d).roadLayout.nodes,
+  }
+  const next = calculated(manual)
+  expect(next.placements.find((p) => p.id === end.id)).toEqual(
+    manual.placements.find((p) => p.id === end.id),
+  )
+  expect(next.roadLayout.automation!.hiddenSourceIds).not.toContain(end.id)
+  expect(prepareRoadAutomation(manual).warnings.join(' ')).toContain('ручной конец ограничений')
+})
+it('invalidates automatic repeats after changing the preceding source speed, while retaining manual output edits', () => {
+  const s = calculated(),
+    source =
+      s.placements.find((p) => p.templateSlot === 'post2:R:pre-speed') ??
+      s.placements.find(
+        (p) =>
+          p.kind === 'sign-post' &&
+          p.distance?.approach === 'right' &&
+          p.signIds.includes('3.24_ж'),
+      )!
+  const draft = edit(s, source.id)
+  draft.signCodes = '3.24_60_ж,1.20.3_ж'
+  const changed = savePlacement(s, draft)
+  expect(roadAutomationCurrent(changed)).toBe(false)
+  expect(roadLayoutProblem(changed)).not.toBeNull()
+  const next = calculated(changed)
+  expect(next.placements.find((p) => p.id === row(next, 'repeat').placementId)).toMatchObject({
+    signIds: expect.arrayContaining(['3.24_60_ж']),
+  })
+  const output = edit(s, row(s, 'repeat').placementId)
+  output.signCodes = '1.25,8.1.1_77'
+  expect(roadAutomationCurrent(savePlacement(s, output))).toBe(true)
+})
+it('rejects a coincident manual template source without silently hiding it', () => {
+  const s = calculated(example('junction', 'left', 200)),
+    source = s.placements.find((p) => p.templateSlot === 'post2:R:zone-speed')!,
+    d = edit(s, source.id)
+  d.signCodes = '3.24_30_ж'
+  const manual = savePlacement(s, d)
+  manual.roadLayout = {
+    nextNodeId: 2,
+    links: [],
+    nodes: example('junction', 'right', 60).roadLayout.nodes,
+  }
+  expect(() => prepareRoadAutomation(manual)).toThrow('совпадает с ручной стойкой')
+  expect(manual.placements.find((p) => p.id === source.id)).toMatchObject({
+    signIds: ['3.24_30_ж'],
+  })
+})
+
+it('does not reuse a cached basis after nested input mutation and keeps canonical identities after eviction', () => {
+  const value = { post: { codes: ['1.25'], metres: 120 } },
+    original = roadCalculationBasis(value)
+  expect(roadCalculationBasis({ post: { metres: 120, codes: ['1.25'] } })).toBe(original)
+  value.post.metres = 130
+  expect(roadCalculationBasis(value)).not.toBe(original)
+  for (let index = 0; index < 20; index++) roadCalculationBasis({ index })
+  expect(roadCalculationBasis({ post: { metres: 120, codes: ['1.25'] } })).toBe(original)
+  expect(roadCalculationBasis(undefined)).toMatch(/^[0-9a-f]{16}$/)
 })

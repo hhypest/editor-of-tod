@@ -15,6 +15,12 @@ export function roadAutomationBasis(
     parameters: scheme.parameters,
     template: scheme.template?.code,
     nodes: scheme.roadLayout.nodes,
+    sources: [
+      ...(scheme.placements ?? []),
+      ...(scheme.roadObjectExclusions?.objects ?? []).map((item) => item.post),
+    ]
+      .filter((post) => post.templateSlot)
+      .sort((a, b) => a.id - b.id),
     profile,
   })
 }

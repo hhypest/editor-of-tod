@@ -10,6 +10,7 @@ import {
 } from '../domain/road-automation'
 import { roadAutomationCurrent } from '../domain/road-automation-state'
 import { legacyRoadLayoutProblem } from '../domain/legacy-road-layout'
+import { roadValuesEqual } from '../domain/road-calculation-state'
 const props = defineProps<{ scheme: Scheme; locked: boolean }>()
 const emit = defineEmits<{ apply: [scheme: Scheme] }>()
 const { rules, loading, error: parameterError } = useNormativeRules()
@@ -36,6 +37,10 @@ const changes = computed(
   () =>
     plan.value &&
     (!roadAutomationCurrent(props.scheme) ||
+      !roadValuesEqual(
+        props.scheme.roadLayout.automation?.profile,
+        Object.values(rules.value.parameterBasis),
+      ) ||
       plan.value.rows.some((row) => ['create', 'update'].includes(row.kind)) ||
       Object.values(choices.value).some((value) => value !== 'keep')),
 )

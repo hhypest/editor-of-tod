@@ -1,5 +1,9 @@
 import { legacyV1Schema } from './legacy-v1.ts'
-import { legacyRoadFieldsSchema } from './legacy-road-layout.ts'
+import {
+  legacyRoadFieldsSchema,
+  legacyRoadLayoutProblem,
+  LEGACY_ROAD_LAYOUT_PROBLEM,
+} from './legacy-road-layout.ts'
 import {
   emptyRoadLayout,
   roadLayoutSchema,
@@ -8,6 +12,43 @@ import {
 } from './road-layout.ts'
 
 type Source = { kind: string; originalJson?: string }
+
+/** A nonempty current model does not resolve malformed, conflicting or dangling source tags. */
+export function unsupportedLegacyRoadProblem(source: Source): string | null {
+  if (!legacyRoadLayoutProblem(source)) return null
+  let value: unknown
+  try {
+    value = JSON.parse(source.originalJson!)
+  } catch {
+    return LEGACY_ROAD_LAYOUT_PROBLEM
+  }
+  const parsed = legacyV1Schema.safeParse(value),
+    extras = legacyRoadFieldsSchema.safeParse(value)
+  if (!parsed.success || !extras.success) return LEGACY_ROAD_LAYOUT_PROBLEM
+  const original = migrateRoadLayout(
+    source,
+    parsed.data.objects.map((object) => ({
+      id: object.id,
+      kind: object.t === 'post' ? 'sign-post' : 'element',
+    })),
+  )
+  const expectedNodes =
+    (extras.data.params.junc?.length ?? 0) + Number(extras.data.params.tee?.on === true)
+  if (original.nodes.length !== expectedNodes) return LEGACY_ROAD_LAYOUT_PROBLEM
+  for (const [index, object] of parsed.data.objects.entries()) {
+    const extra = extras.data.objects[index]!
+    const tagged =
+      extra.jrep !== undefined ||
+      extra.jside !== undefined ||
+      extra.tee === 1 ||
+      extra.tee === true ||
+      extra.vert === 1 ||
+      extra.vert === true
+    if (tagged && !original.links.some((link) => link.placementId === object.id))
+      return LEGACY_ROAD_LAYOUT_PROBLEM
+  }
+  return null
+}
 
 /** Only read the source. Never recreate deleted placements or overwrite edited objects. */
 export function migrateRoadLayout(

@@ -7,6 +7,7 @@ import { PROTOTYPE_RULES, type NormativeRules } from './normative-parameters'
 import { roadValuesEqual, roadCalculationBasis } from './road-calculation-state'
 import { roadAutomationBasis } from './road-automation-state'
 import { postMetres } from './post-distance'
+import { unsupportedLegacyRoadProblem } from './migrate-road-layout'
 import { junctionWarningCodes } from './junction-warning-proposals'
 
 type Saved = { detached?: boolean; post: SignPlacement; link: RoadObjectLink; excluded: boolean }
@@ -80,6 +81,10 @@ function inputs(s: Scheme, r: NormativeRules) {
   return JSON.stringify([s, r.parameterBasis])
 }
 function derive(s: Scheme, rules: NormativeRules, choices: RoadChoices) {
+  if (unsupportedLegacyRoadProblem(s.source))
+    throw new RoadAutomationError(
+      'Исходник содержит неподдержанные или противоречивые связи примыканий. Добавление узла не разрешает их; полный план недоступен, данные сохранены.',
+    )
   if (
     legacyRoadLayoutProblem(s.source) &&
     !s.roadLayout.nodes.length &&
@@ -374,6 +379,10 @@ function derive(s: Scheme, rules: NormativeRules, choices: RoadChoices) {
           postMetres(post.distance, s.parameters.signDistancesMetres) === distance,
       )
       if (collision?.kind === 'sign-post') {
+        if (!collision.generatedByTemplate && posts.has(collision.id))
+          throw new RoadAutomationError(
+            `Повтор узла № ${node.id} совпадает с ручной стойкой № ${collision.id}. Сначала явно измените её расстояние или исключите её; ручные данные не заменены.`,
+          )
         hide(collision, node)
         propose(
           node,
@@ -416,6 +425,12 @@ function derive(s: Scheme, rules: NormativeRules, choices: RoadChoices) {
           propose(node, `down:${slot}`, post.signIds, metres - d, 'down', post)
         }
         if (same && slot.endsWith(':end')) {
+          if (!post.generatedByTemplate) {
+            warnings.push(
+              `Стойка № ${post.id}: ручной конец ограничений сохранён без переноса; проверьте его положение.`,
+            )
+            continue
+          }
           hide(post, node)
           if (d >= p.endMin) propose(node, 'end', post.signIds, Math.round(d / 2), undefined, post)
         }
